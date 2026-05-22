@@ -2,6 +2,7 @@ pub mod account_settings;
 pub mod address_books;
 pub mod admin;
 pub mod auth;
+pub mod cancellations;
 pub mod demand_schedules;
 pub mod demand_templates;
 pub mod demands;
