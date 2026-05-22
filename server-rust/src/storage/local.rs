@@ -58,6 +58,14 @@ impl Storage for LocalStorage {
         })
     }
 
+    async fn public_url_with_expiry(
+        &self,
+        key: &str,
+        _expire_time_seconds: i64,
+    ) -> Result<String, ApiError> {
+        self.public_url(key).await
+    }
+
     async fn exists(&self, key: &str) -> Result<bool, ApiError> {
         let path = self.key_path(key)?;
 

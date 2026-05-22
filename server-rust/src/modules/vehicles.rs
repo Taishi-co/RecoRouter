@@ -108,11 +108,22 @@ where
             .await
             .map_err(|err| ApiError::BadRequest(err.to_string()))?;
         let file_name = format!("vehicles/{}_{}", Utc::now().timestamp_millis(), filename);
-        let file_key = state
+        let file_key = match state
             .storage
             .put(bytes.to_vec(), &file_name, content_type.as_deref())
-            .await?;
-        let url = state.storage.public_url(&file_key).await?;
+            .await
+        {
+            Ok(file_key) => file_key,
+            Err(err) => return Ok(vehicle_upload_error(err).into_response()),
+        };
+        let url = match state
+            .storage
+            .public_url_with_expiry(&file_key, 2_592_000)
+            .await
+        {
+            Ok(url) => url,
+            Err(err) => return Ok(vehicle_upload_error(err).into_response()),
+        };
 
         return Ok(ok(
             "上传成功",
@@ -157,12 +168,7 @@ where
     let has_cold_chain = boolish_field(&body, "has_cold_chain").unwrap_or(false);
     let operation_area = json_field(&body, "operation_area")?;
     let available_hours = json_field(&body, "available_hours")?;
-    let photo_urls = photo_urls_field(&body);
-    let photos = if photo_urls.is_empty() {
-        None
-    } else {
-        Some(json!(photo_urls))
-    };
+    let photos = photos_value(photo_urls_field(&body));
     let base_price = number_field(&body, "base_price")?.unwrap_or(20.0);
     let base_distance = number_field(&body, "base_distance")?.unwrap_or(3.0);
     let price_per_km = number_field(&body, "price_per_km")?.unwrap_or(2.0);
@@ -319,12 +325,7 @@ where
     let has_cold_chain = boolish_field(&body, "has_cold_chain");
     let operation_area = json_field(&body, "operation_area")?;
     let available_hours = json_field(&body, "available_hours")?;
-    let photo_urls = photo_urls_field(&body);
-    let photos = if photo_urls.is_empty() {
-        None
-    } else {
-        Some(json!(photo_urls))
-    };
+    let photos = photos_value(photo_urls_field(&body));
     let base_price = number_field(&body, "base_price")?;
     let base_distance = number_field(&body, "base_distance")?;
     let price_per_km = number_field(&body, "price_per_km")?;
@@ -773,6 +774,13 @@ fn vehicle_id(vehicle: &Value) -> Option<&str> {
     vehicle.get("id").and_then(Value::as_str)
 }
 
+fn vehicle_upload_error(error: ApiError) -> Json<Value> {
+    Json(json!({
+        "code": 500,
+        "message": format!("上传失败: {error}")
+    }))
+}
+
 fn required_string(body: &Value, key: &str, missing_message: &str) -> ApiResult<String> {
     string_field(body, key).ok_or_else(|| ApiError::BadRequest(missing_message.to_string()))
 }
@@ -836,6 +844,16 @@ fn photo_urls_field(body: &Value) -> Vec<String> {
             serde_json::from_str::<Vec<String>>(value).unwrap_or_default()
         }
         _ => Vec::new(),
+    }
+}
+
+fn photos_value(photo_urls: Vec<String>) -> Option<Value> {
+    if photo_urls.is_empty() {
+        None
+    } else {
+        Some(Value::String(
+            serde_json::to_string(&photo_urls).unwrap_or_else(|_| "[]".to_string()),
+        ))
     }
 }
 

@@ -19,6 +19,12 @@ pub trait Storage: Clone + Send + Sync + 'static {
 
     async fn public_url(&self, key: &str) -> Result<String, ApiError>;
 
+    async fn public_url_with_expiry(
+        &self,
+        key: &str,
+        expire_time_seconds: i64,
+    ) -> Result<String, ApiError>;
+
     async fn exists(&self, key: &str) -> Result<bool, ApiError>;
 
     async fn delete(&self, key: &str) -> Result<bool, ApiError>;
@@ -48,6 +54,25 @@ impl Storage for StorageBackend {
         match self {
             Self::Local(storage) => storage.public_url(key).await,
             Self::TencentCos(storage) => storage.public_url(key).await,
+        }
+    }
+
+    async fn public_url_with_expiry(
+        &self,
+        key: &str,
+        expire_time_seconds: i64,
+    ) -> Result<String, ApiError> {
+        match self {
+            Self::Local(storage) => {
+                storage
+                    .public_url_with_expiry(key, expire_time_seconds)
+                    .await
+            }
+            Self::TencentCos(storage) => {
+                storage
+                    .public_url_with_expiry(key, expire_time_seconds)
+                    .await
+            }
         }
     }
 

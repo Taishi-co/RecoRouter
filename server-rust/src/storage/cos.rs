@@ -134,9 +134,18 @@ impl Storage for TencentCosStorage {
     }
 
     async fn public_url(&self, key: &str) -> Result<String, ApiError> {
+        self.public_url_with_expiry(key, 86400).await
+    }
+
+    async fn public_url_with_expiry(
+        &self,
+        key: &str,
+        expire_time_seconds: i64,
+    ) -> Result<String, ApiError> {
         let key = sanitized_key(key)?;
         let host = self.host();
-        let authorization = self.authorization("get", &key, &[("host", host)], 86400)?;
+        let authorization =
+            self.authorization("get", &key, &[("host", host)], expire_time_seconds)?;
 
         Ok(format!("{}?{}", self.object_url(&key)?, authorization))
     }

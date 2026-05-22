@@ -303,7 +303,10 @@ async fn vehicle_create_validates_owner_role_and_lists_enriched_owned_and_rented
     assert_eq!(create_body["data"]["base_price"], 20.0);
     assert_eq!(create_body["data"]["base_distance"], 3.0);
     assert_eq!(create_body["data"]["price_per_km"], 2.0);
-    assert_eq!(create_body["data"]["photos"][0], "vehicles/existing-a.png");
+    let created_photos: Vec<String> =
+        serde_json::from_str(create_body["data"]["photos"].as_str().unwrap())
+            .expect("legacy vehicle photos string should parse");
+    assert_eq!(created_photos[0], "vehicles/existing-a.png");
     let owned_vehicle_id = create_body["data"]["id"].as_str().unwrap();
 
     let rented_vehicle_id: String = sqlx::query_scalar(
@@ -483,7 +486,10 @@ async fn vehicle_review_resubmit_update_availability_and_rental_settings_match_l
     assert_eq!(update_body["message"], "更新成功");
     assert_eq!(update_body["data"]["license_plate"], "沪A99999");
     assert_eq!(update_body["data"]["vehicle_type"], "冷链车");
-    assert_eq!(update_body["data"]["photos"][0], "vehicles/new.png");
+    let updated_photos: Vec<String> =
+        serde_json::from_str(update_body["data"]["photos"].as_str().unwrap())
+            .expect("legacy updated vehicle photos string should parse");
+    assert_eq!(updated_photos[0], "vehicles/new.png");
     assert_eq!(update_body["data"]["base_price"], 35.0);
     assert!(update_body["data"]["price_updated_at"].is_string());
 
