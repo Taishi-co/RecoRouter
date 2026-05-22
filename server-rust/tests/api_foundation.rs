@@ -720,6 +720,424 @@ async fn register_auth_user(
     (status, body)
 }
 
+async fn post_json(app: &Router, uri: &str, body: Value) -> (StatusCode, Value) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(uri)
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .expect("json request should build"),
+        )
+        .await
+        .expect("json request should complete");
+    let status = response.status();
+    let body = optional_body_json(response).await;
+
+    (status, body)
+}
+
+async fn put_json(app: &Router, uri: &str, body: Value) -> (StatusCode, Value) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(uri)
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .expect("json request should build"),
+        )
+        .await
+        .expect("json request should complete");
+    let status = response.status();
+    let body = optional_body_json(response).await;
+
+    (status, body)
+}
+
+async fn optional_body_json(response: Response<Body>) -> Value {
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should read");
+
+    if body.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&body).expect("response body should be json")
+    }
+}
+
+#[tokio::test]
+async fn user_roles_register_user_creates_default_active_role() {
+    let Some(context) = auth_test_context().await else {
+        return;
+    };
+    let (_, register_body) =
+        register_auth_user(&context.app, "13900000101", "merchant", "默认角色商户").await;
+    let user_id = register_body["data"]["id"]
+        .as_str()
+        .expect("registered user id should be a string");
+
+    let response = context
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/user-roles/my-roles?userId={user_id}"))
+                .body(Body::empty())
+                .expect("user roles request should build"),
+        )
+        .await
+        .expect("user roles request should complete");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_json(response).await;
+    assert_eq!(body["code"], 200);
+    assert_eq!(body["message"], "查询成功");
+    assert_eq!(
+        body["data"]
+            .as_array()
+            .expect("roles should be array")
+            .len(),
+        1
+    );
+    assert_eq!(body["data"][0]["user_id"], user_id);
+    assert_eq!(body["data"][0]["role"], "merchant");
+    assert_eq!(body["data"][0]["is_active"], true);
+    assert_eq!(body["data"][0]["status"], "active");
+
+    let active = context
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/user-roles/active?userId={user_id}"))
+                .body(Body::empty())
+                .expect("active role request should build"),
+        )
+        .await
+        .expect("active role request should complete");
+    assert_eq!(active.status(), StatusCode::OK);
+    let active_body = body_json(active).await;
+    assert_eq!(active_body["message"], "查询成功");
+    assert_eq!(active_body["data"]["role"], "merchant");
+    assert_eq!(active_body["data"]["is_active"], true);
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
+async fn user_roles_create_and_switch_updates_active_role_and_user_role() {
+    let Some(context) = auth_test_context().await else {
+        return;
+    };
+    let (_, register_body) =
+        register_auth_user(&context.app, "13900000102", "merchant", "切换角色用户").await;
+    let user_id = register_body["data"]["id"]
+        .as_str()
+        .expect("registered user id should be a string");
+
+    let default_role = context
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/user-roles/my-roles?userId={user_id}"))
+                .body(Body::empty())
+                .expect("default role request should build"),
+        )
+        .await
+        .expect("default role request should complete");
+    assert_eq!(default_role.status(), StatusCode::OK);
+
+    let (create_status, create_body) = post_json(
+        &context.app,
+        "/api/user-roles/create",
+        serde_json::json!({
+            "userId": user_id,
+            "role": "owner"
+        }),
+    )
+    .await;
+    assert_eq!(create_status, StatusCode::OK);
+    assert_eq!(create_body["message"], "角色创建成功");
+    assert_eq!(create_body["data"]["role"], "owner");
+    assert_eq!(create_body["data"]["is_active"], false);
+
+    let owner_role_id = create_body["data"]["id"]
+        .as_str()
+        .expect("created role id should be a string");
+    let (switch_status, switch_body) = post_json(
+        &context.app,
+        "/api/user-roles/switch",
+        serde_json::json!({
+            "userId": user_id,
+            "roleId": owner_role_id
+        }),
+    )
+    .await;
+    assert_eq!(switch_status, StatusCode::OK);
+    assert_eq!(switch_body["message"], "角色切换成功");
+    assert_eq!(switch_body["data"]["id"], user_id);
+    assert_eq!(switch_body["data"]["role"], "owner");
+    assert_eq!(
+        switch_body["data"]["roles"],
+        serde_json::json!(["merchant", "owner"])
+    );
+    assert!(switch_body["data"]["switchTime"].as_str().is_some());
+
+    let stored_role: String = sqlx::query_scalar("SELECT role FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_one(&context.pool)
+        .await
+        .expect("updated user role should be readable");
+    assert_eq!(stored_role, "owner");
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
+async fn platform_settings_returns_default_row_and_payment_qr_url() {
+    let Some(context) = auth_test_context().await else {
+        return;
+    };
+
+    let response = context
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/platform/settings")
+                .body(Body::empty())
+                .expect("platform settings request should build"),
+        )
+        .await
+        .expect("platform settings request should complete");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_json(response).await;
+    assert_eq!(body["code"], 200);
+    assert_eq!(body["message"], "查询成功");
+    assert_eq!(body["data"]["id"], "default");
+    assert_eq!(
+        body["data"]["commission_rate"]
+            .as_f64()
+            .expect("commission rate should be numeric"),
+        5.0
+    );
+
+    let (update_status, update_body) = put_json(
+        &context.app,
+        "/api/platform/settings",
+        serde_json::json!({
+            "commissionRate": 8.5,
+            "commissionPaymentQr": "platform/payment.png"
+        }),
+    )
+    .await;
+    assert_eq!(update_status, StatusCode::OK);
+    assert_eq!(update_body["message"], "更新成功");
+    assert_eq!(
+        update_body["data"]["commission_rate"]
+            .as_f64()
+            .expect("commission rate should be numeric"),
+        8.5
+    );
+    assert_eq!(
+        update_body["data"]["commission_payment_qr"],
+        "platform/payment.png"
+    );
+
+    let payment_qr = context
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/platform/payment-qr")
+                .body(Body::empty())
+                .expect("platform payment qr request should build"),
+        )
+        .await
+        .expect("platform payment qr request should complete");
+    assert_eq!(payment_qr.status(), StatusCode::OK);
+    let payment_body = body_json(payment_qr).await;
+    assert_eq!(payment_body["message"], "查询成功");
+    assert_eq!(
+        payment_body["data"]["paymentQr"],
+        "https://car.shcxyz.site/api/uploads/platform/payment.png"
+    );
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
+async fn account_send_sms_change_phone_and_change_password_update_login_behavior() {
+    let Some(context) = auth_test_context().await else {
+        return;
+    };
+    let (_, register_body) =
+        register_auth_user(&context.app, "13900000103", "owner", "账号设置用户").await;
+    let user_id = register_body["data"]["id"]
+        .as_str()
+        .expect("registered user id should be a string");
+    let new_phone = "13900000104";
+
+    let (sms_status, sms_body) = post_json(
+        &context.app,
+        "/api/account-settings/send-sms-code",
+        serde_json::json!({
+            "phone": new_phone,
+            "type": "change_phone"
+        }),
+    )
+    .await;
+    assert_eq!(sms_status, StatusCode::OK);
+    assert_eq!(sms_body["message"], "验证码已发送");
+    let code = sms_body["data"]["code"]
+        .as_str()
+        .expect("sms code should be returned");
+    assert_eq!(code.len(), 6);
+    assert!(code.chars().all(|ch| ch.is_ascii_digit()));
+
+    let (change_phone_status, change_phone_body) = post_json(
+        &context.app,
+        "/api/account-settings/change-phone",
+        serde_json::json!({
+            "user_id": user_id,
+            "code": code,
+            "newPhone": new_phone
+        }),
+    )
+    .await;
+    assert_eq!(change_phone_status, StatusCode::OK);
+    assert_eq!(change_phone_body["code"], 200);
+    assert_eq!(change_phone_body["message"], "手机号修改成功");
+
+    let (old_login_status, old_login_body) = post_json(
+        &context.app,
+        "/api/auth/login",
+        serde_json::json!({
+            "phone": "13900000103",
+            "password": "secret123"
+        }),
+    )
+    .await;
+    assert_eq!(old_login_status, StatusCode::UNAUTHORIZED);
+    assert_eq!(old_login_body["message"], "用户不存在");
+
+    let (new_login_status, new_login_body) = post_json(
+        &context.app,
+        "/api/auth/login",
+        serde_json::json!({
+            "phone": new_phone,
+            "password": "secret123"
+        }),
+    )
+    .await;
+    assert_eq!(new_login_status, StatusCode::OK);
+    assert_eq!(new_login_body["message"], "登录成功");
+    assert_eq!(new_login_body["data"]["id"], user_id);
+
+    let (change_password_status, change_password_body) = post_json(
+        &context.app,
+        "/api/account-settings/change-password",
+        serde_json::json!({
+            "user_id": user_id,
+            "oldPassword": "secret123",
+            "newPassword": "newsecret123"
+        }),
+    )
+    .await;
+    assert_eq!(change_password_status, StatusCode::OK);
+    assert_eq!(change_password_body["message"], "密码修改成功，请重新登录");
+
+    let (stale_password_status, stale_password_body) = post_json(
+        &context.app,
+        "/api/auth/login",
+        serde_json::json!({
+            "phone": new_phone,
+            "password": "secret123"
+        }),
+    )
+    .await;
+    assert_eq!(stale_password_status, StatusCode::UNAUTHORIZED);
+    assert_eq!(stale_password_body["message"], "密码错误");
+
+    let (changed_password_status, changed_password_body) = post_json(
+        &context.app,
+        "/api/auth/login",
+        serde_json::json!({
+            "phone": new_phone,
+            "password": "newsecret123"
+        }),
+    )
+    .await;
+    assert_eq!(changed_password_status, StatusCode::OK);
+    assert_eq!(changed_password_body["message"], "登录成功");
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
+async fn account_profile_update_matches_existing_shape() {
+    let Some(context) = auth_test_context().await else {
+        return;
+    };
+    let (_, register_body) =
+        register_auth_user(&context.app, "13900000105", "owner", "资料用户").await;
+    let user_id = register_body["data"]["id"]
+        .as_str()
+        .expect("registered user id should be a string");
+
+    let (update_status, update_body) = put_json(
+        &context.app,
+        "/api/account-settings/profile",
+        serde_json::json!({
+            "user_id": user_id,
+            "avatar_url": "avatars/profile.png",
+            "nickname": "资料昵称",
+            "gender": "female",
+            "birthday": "1995-06-07"
+        }),
+    )
+    .await;
+    assert_eq!(update_status, StatusCode::OK);
+    assert_eq!(update_body["message"], "更新成功");
+    assert_eq!(update_body["data"]["id"], user_id);
+    assert_eq!(update_body["data"]["avatar_url"], "avatars/profile.png");
+    assert_eq!(update_body["data"]["nickname"], "资料昵称");
+    assert_eq!(update_body["data"]["gender"], "female");
+    assert_eq!(update_body["data"]["birthday"], "1995-06-07");
+
+    let response = context
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/account-settings/profile?user_id={user_id}"))
+                .body(Body::empty())
+                .expect("profile request should build"),
+        )
+        .await
+        .expect("profile request should complete");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_json(response).await;
+    assert_eq!(body["message"], "获取成功");
+    assert_eq!(body["data"]["id"], user_id);
+    assert_eq!(body["data"]["phone"], "13900000105");
+    assert_eq!(body["data"]["nickname"], "资料昵称");
+    assert_eq!(body["data"]["avatar_url"], "avatars/profile.png");
+    assert_eq!(body["data"]["gender"], "female");
+    assert_eq!(body["data"]["birthday"], "1995-06-07");
+    assert_eq!(body["data"]["role"], "owner");
+    assert_eq!(body["data"]["name"], "资料用户");
+    assert!(body["data"]["created_at"].as_str().is_some());
+
+    context.cleanup().await;
+}
+
 #[tokio::test]
 async fn auth_register_and_login_preserve_response_shape() {
     let Some(context) = auth_test_context().await else {
