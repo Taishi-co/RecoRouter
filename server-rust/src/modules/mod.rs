@@ -1,10 +1,13 @@
 pub mod account_settings;
 pub mod address_books;
+pub mod admin;
 pub mod auth;
 pub mod demand_schedules;
 pub mod demand_templates;
+pub mod fare;
 pub mod favorite_routes;
 pub mod health;
 pub mod home;
+pub mod notifications;
 pub mod platform;
 pub mod user_roles;

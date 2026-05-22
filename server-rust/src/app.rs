@@ -5,8 +5,8 @@ use tower_http::services::ServeDir;
 use crate::{
     config::Config,
     modules::{
-        account_settings, address_books, auth, demand_schedules, demand_templates, favorite_routes,
-        health, home, platform, user_roles,
+        account_settings, address_books, admin, auth, demand_schedules, demand_templates, fare,
+        favorite_routes, health, home, notifications, platform, user_roles,
     },
     storage::Storage,
 };
@@ -40,6 +40,9 @@ where
         .merge(account_settings::router::<S>())
         .merge(user_roles::router::<S>())
         .merge(platform::router::<S>())
+        .merge(fare::router::<S>())
+        .merge(notifications::router::<S>())
+        .merge(admin::router::<S>())
         .merge(address_books::router::<S>())
         .merge(favorite_routes::router::<S>())
         .merge(demand_templates::router::<S>())
