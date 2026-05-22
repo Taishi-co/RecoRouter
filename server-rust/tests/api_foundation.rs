@@ -758,6 +758,24 @@ async fn put_json(app: &Router, uri: &str, body: Value) -> (StatusCode, Value) {
     (status, body)
 }
 
+async fn delete_json(app: &Router, uri: &str) -> (StatusCode, Value) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(uri)
+                .body(Body::empty())
+                .expect("delete request should build"),
+        )
+        .await
+        .expect("delete request should complete");
+    let status = response.status();
+    let body = optional_body_json(response).await;
+
+    (status, body)
+}
+
 async fn get_json(app: &Router, uri: &str) -> (StatusCode, Value) {
     let response = app
         .clone()
@@ -1022,6 +1040,405 @@ async fn favorite_routes_create_list_enrich_and_increment_use_count() {
         increment_body["data"]["delivery_address"]["id"],
         delivery_id
     );
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
+async fn demand_templates_default_rename_and_delete_linked_schedules() {
+    let Some(context) = auth_test_context().await else {
+        return;
+    };
+    let (_, register_body) =
+        register_auth_user(&context.app, "13900000109", "merchant", "需求模板用户").await;
+    let user_id = register_body["data"]["id"]
+        .as_str()
+        .expect("registered user id should be a string");
+
+    let (missing_status, missing_body) = get_json(&context.app, "/api/demand-templates").await;
+    assert_eq!(missing_status, StatusCode::OK);
+    assert_eq!(missing_body["code"], 400);
+    assert_eq!(missing_body["message"], "用户ID不能为空");
+    assert_eq!(missing_body["data"], Value::Null);
+
+    let first_template = serde_json::json!({
+        "user_id": user_id,
+        "template_name": "常用模板A",
+        "cargo_name": "冷链水果",
+        "cargo_type": "fresh",
+        "weight": 2.5,
+        "volume": 8.0,
+        "pickup_address": "上海市浦东新区民生路1号",
+        "pickup_lat": 31.2304,
+        "pickup_lng": 121.4737,
+        "delivery_address": "杭州市上城区解放东路18号",
+        "delivery_lat": 30.2741,
+        "delivery_lng": 120.1551,
+        "remarks": "轻拿轻放",
+        "estimated_distance": 180.5,
+        "estimated_fare": 920.0,
+        "is_default": true
+    });
+    let (first_status, first_body) =
+        post_json(&context.app, "/api/demand-templates", first_template).await;
+    assert_eq!(first_status, StatusCode::OK);
+    assert_eq!(first_body["message"], "模板创建成功");
+    assert_eq!(first_body["data"]["is_default"], true);
+    assert_eq!(first_body["data"]["use_count"], 0);
+    let first_id = first_body["data"]["id"]
+        .as_str()
+        .expect("first template id should be a string");
+
+    let second_template = serde_json::json!({
+        "user_id": user_id,
+        "template_name": "常用模板B",
+        "cargo_name": "普通货物",
+        "cargo_type": "normal",
+        "weight": 5.0,
+        "volume": 12.0,
+        "pickup_address": "苏州市工业园区金鸡湖大道1号",
+        "pickup_lat": 31.2989,
+        "pickup_lng": 120.5853,
+        "delivery_address": "南京市玄武区中山东路1号",
+        "delivery_lat": 32.0603,
+        "delivery_lng": 118.7969,
+        "is_default": true
+    });
+    let (second_status, second_body) =
+        post_json(&context.app, "/api/demand-templates", second_template).await;
+    assert_eq!(second_status, StatusCode::OK);
+    assert_eq!(second_body["message"], "模板创建成功");
+    let second_id = second_body["data"]["id"]
+        .as_str()
+        .expect("second template id should be a string");
+
+    let (list_status, list_body) = get_json(
+        &context.app,
+        &format!("/api/demand-templates?user_id={user_id}"),
+    )
+    .await;
+    assert_eq!(list_status, StatusCode::OK);
+    assert_eq!(list_body["message"], "查询成功");
+    let templates = list_body["data"]
+        .as_array()
+        .expect("templates should be an array");
+    assert_eq!(templates.len(), 2);
+    assert_eq!(templates[0]["id"], second_id);
+    assert_eq!(templates[0]["is_default"], true);
+    assert_eq!(templates[1]["id"], first_id);
+    assert_eq!(templates[1]["is_default"], false);
+
+    let (set_default_status, set_default_body) = post_json(
+        &context.app,
+        &format!("/api/demand-templates/{first_id}/set-default"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(set_default_status, StatusCode::OK);
+    assert_eq!(set_default_body["message"], "设置默认模板成功");
+    assert_eq!(set_default_body["data"]["id"], first_id);
+    assert_eq!(set_default_body["data"]["is_default"], true);
+
+    let exact_schedule_id: String = sqlx::query_scalar(
+        r#"
+        INSERT INTO demand_schedules (
+            user_id, template_id, schedule_name, schedule_type,
+            base_date, base_time, status, next_publish_time
+        )
+        VALUES ($1, $2, '常用模板A', 'day', '2099-01-01', '08:00:00', 'active', '2099-01-01 08:00:00+00')
+        RETURNING id
+        "#,
+    )
+    .bind(user_id)
+    .bind(first_id)
+    .fetch_one(&context.pool)
+    .await
+    .expect("linked schedule using template name should be inserted");
+    let custom_schedule_id: String = sqlx::query_scalar(
+        r#"
+        INSERT INTO demand_schedules (
+            user_id, template_id, schedule_name, schedule_type,
+            base_date, base_time, status, next_publish_time
+        )
+        VALUES ($1, $2, '自定义计划名', 'day', '2099-01-01', '09:00:00', 'paused', '2099-01-01 09:00:00+00')
+        RETURNING id
+        "#,
+    )
+    .bind(user_id)
+    .bind(first_id)
+    .fetch_one(&context.pool)
+    .await
+    .expect("linked schedule using custom name should be inserted");
+
+    let (update_status, update_body) = put_json(
+        &context.app,
+        &format!("/api/demand-templates/{first_id}"),
+        serde_json::json!({
+            "template_name": "常用模板A新"
+        }),
+    )
+    .await;
+    assert_eq!(update_status, StatusCode::OK);
+    assert_eq!(update_body["message"], "模板更新成功");
+    assert_eq!(update_body["data"]["template_name"], "常用模板A新");
+
+    let renamed_schedule_name: String =
+        sqlx::query_scalar("SELECT schedule_name FROM demand_schedules WHERE id = $1")
+            .bind(&exact_schedule_id)
+            .fetch_one(&context.pool)
+            .await
+            .expect("renamed linked schedule should be readable");
+    assert_eq!(renamed_schedule_name, "常用模板A新");
+    let custom_schedule_name: String =
+        sqlx::query_scalar("SELECT schedule_name FROM demand_schedules WHERE id = $1")
+            .bind(&custom_schedule_id)
+            .fetch_one(&context.pool)
+            .await
+            .expect("custom linked schedule should be readable");
+    assert_eq!(custom_schedule_name, "自定义计划名");
+
+    let (delete_status, delete_body) =
+        delete_json(&context.app, &format!("/api/demand-templates/{first_id}")).await;
+    assert_eq!(delete_status, StatusCode::OK);
+    assert_eq!(
+        delete_body["message"],
+        "模板删除成功，同时删除了 2 个定时计划"
+    );
+    assert_eq!(delete_body["data"], Value::Null);
+
+    let remaining_schedules: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM demand_schedules WHERE template_id = $1")
+            .bind(first_id)
+            .fetch_one(&context.pool)
+            .await
+            .expect("remaining linked schedule count should be readable");
+    assert_eq!(remaining_schedules, 0);
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
+async fn demand_schedules_create_list_pause_delete_guard_publish_now_and_logs() {
+    let Some(context) = auth_test_context().await else {
+        return;
+    };
+    let (_, register_body) =
+        register_auth_user(&context.app, "13900000110", "merchant", "定时计划用户").await;
+    let user_id = register_body["data"]["id"]
+        .as_str()
+        .expect("registered user id should be a string");
+
+    let template_id: String = sqlx::query_scalar(
+        r#"
+        INSERT INTO demand_templates (
+            user_id, template_name, cargo_name, cargo_type, weight, volume,
+            pickup_address, pickup_lat, pickup_lng,
+            delivery_address, delivery_lat, delivery_lng,
+            remarks, use_count, is_default
+        )
+        VALUES (
+            $1, '计划模板', '电子配件', 'normal', 3.5, 6.0,
+            '深圳市南山区科技园1号', 22.5405, 113.9345,
+            '广州市天河区珠江新城1号', 23.1291, 113.2644,
+            '防潮', 0, true
+        )
+        RETURNING id
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(&context.pool)
+    .await
+    .expect("template for schedule should be inserted");
+
+    let (missing_status, missing_body) = get_json(&context.app, "/api/demand-schedules").await;
+    assert_eq!(missing_status, StatusCode::OK);
+    assert_eq!(missing_body["code"], 400);
+    assert_eq!(missing_body["message"], "用户ID不能为空");
+    assert_eq!(missing_body["data"], Value::Null);
+
+    let (create_status, create_body) = post_json(
+        &context.app,
+        "/api/demand-schedules",
+        serde_json::json!({
+            "user_id": user_id,
+            "template_id": template_id,
+            "schedule_name": "计划模板",
+            "schedule_type": "interval",
+            "interval_days": 3,
+            "base_date": "2099-01-01",
+            "base_time": "08:30:00",
+            "pickup_time_offset": "2h",
+            "max_publish_count": 5,
+            "end_time": "2099-12-31T23:59:59Z"
+        }),
+    )
+    .await;
+    assert_eq!(create_status, StatusCode::OK);
+    assert_eq!(create_body["message"], "计划创建成功");
+    assert_eq!(create_body["data"]["status"], "active");
+    assert_eq!(create_body["data"]["published_count"], 0);
+    assert!(create_body["data"]["next_publish_time"]
+        .as_str()
+        .is_some_and(|value| value.starts_with("2099-01-01T08:30:00")));
+    let schedule_id = create_body["data"]["id"]
+        .as_str()
+        .expect("created schedule id should be a string");
+
+    let (list_status, list_body) = get_json(
+        &context.app,
+        &format!("/api/demand-schedules?user_id={user_id}"),
+    )
+    .await;
+    assert_eq!(list_status, StatusCode::OK);
+    assert_eq!(list_body["message"], "查询成功");
+    let schedules = list_body["data"]
+        .as_array()
+        .expect("schedules should be an array");
+    assert_eq!(schedules.len(), 1);
+    assert_eq!(schedules[0]["id"], schedule_id);
+    assert_eq!(schedules[0]["template"]["template_name"], "计划模板");
+    assert_eq!(schedules[0]["template"]["cargo_name"], "电子配件");
+    assert_eq!(
+        schedules[0]["template"]["pickup_address"],
+        "深圳市南山区科技园1号"
+    );
+    assert_eq!(
+        schedules[0]["template"]["delivery_address"],
+        "广州市天河区珠江新城1号"
+    );
+
+    let (get_status, get_body) = get_json(
+        &context.app,
+        &format!("/api/demand-schedules/{schedule_id}"),
+    )
+    .await;
+    assert_eq!(get_status, StatusCode::OK);
+    assert_eq!(get_body["message"], "查询成功");
+    assert_eq!(get_body["data"]["id"], schedule_id);
+
+    let (update_status, update_body) = put_json(
+        &context.app,
+        &format!("/api/demand-schedules/{schedule_id}"),
+        serde_json::json!({
+            "base_date": "2099-01-02",
+            "base_time": "09:15:00",
+            "schedule_type": "day"
+        }),
+    )
+    .await;
+    assert_eq!(update_status, StatusCode::OK);
+    assert_eq!(update_body["message"], "计划更新成功");
+    assert!(update_body["data"]["next_publish_time"]
+        .as_str()
+        .is_some_and(|value| value.starts_with("2099-01-02T09:15:00")));
+
+    let (active_delete_status, active_delete_body) = delete_json(
+        &context.app,
+        &format!("/api/demand-schedules/{schedule_id}"),
+    )
+    .await;
+    assert_eq!(active_delete_status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        active_delete_body["message"],
+        "正在运行的计划不能删除，请先暂停或取消"
+    );
+
+    let (pause_status, pause_body) = post_json(
+        &context.app,
+        &format!("/api/demand-schedules/{schedule_id}/pause"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(pause_status, StatusCode::OK);
+    assert_eq!(pause_body["message"], "计划已暂停");
+    assert_eq!(pause_body["data"]["status"], "paused");
+
+    let (resume_status, resume_body) = post_json(
+        &context.app,
+        &format!("/api/demand-schedules/{schedule_id}/resume"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(resume_status, StatusCode::OK);
+    assert_eq!(resume_body["message"], "计划已恢复");
+    assert_eq!(resume_body["data"]["status"], "active");
+
+    let (pause_again_status, pause_again_body) = post_json(
+        &context.app,
+        &format!("/api/demand-schedules/{schedule_id}/pause"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(pause_again_status, StatusCode::OK);
+    assert_eq!(pause_again_body["data"]["status"], "paused");
+
+    let (publish_status, publish_body) = post_json(
+        &context.app,
+        &format!("/api/demand-schedules/{schedule_id}/publish-now"),
+        serde_json::json!({
+            "user_id": user_id
+        }),
+    )
+    .await;
+    assert_eq!(publish_status, StatusCode::OK);
+    assert_eq!(publish_body["message"], "需求发布成功");
+    assert_eq!(publish_body["data"]["schedule_id"], schedule_id);
+    assert_eq!(
+        publish_body["data"]["demand_info"]["cargo_name"],
+        "电子配件"
+    );
+    assert_eq!(
+        publish_body["data"]["demand_info"]["pickup_address"],
+        "深圳市南山区科技园1号"
+    );
+    assert_eq!(
+        publish_body["data"]["demand_info"]["delivery_address"],
+        "广州市天河区珠江新城1号"
+    );
+    assert!(publish_body["data"]["published_at"].as_str().is_some());
+    let demand_id = publish_body["data"]["demand_id"]
+        .as_str()
+        .expect("published demand id should be a string");
+
+    let template_use_count: i32 =
+        sqlx::query_scalar("SELECT use_count FROM demand_templates WHERE id = $1")
+            .bind(&template_id)
+            .fetch_one(&context.pool)
+            .await
+            .expect("template use count should be readable");
+    assert_eq!(template_use_count, 1);
+    let published_count: i32 =
+        sqlx::query_scalar("SELECT published_count FROM demand_schedules WHERE id = $1")
+            .bind(schedule_id)
+            .fetch_one(&context.pool)
+            .await
+            .expect("schedule published count should be readable");
+    assert_eq!(published_count, 1);
+
+    let (logs_status, logs_body) = get_json(
+        &context.app,
+        &format!("/api/demand-schedules/{schedule_id}/logs"),
+    )
+    .await;
+    assert_eq!(logs_status, StatusCode::OK);
+    assert_eq!(logs_body["message"], "查询成功");
+    let logs = logs_body["data"]
+        .as_array()
+        .expect("publish logs should be an array");
+    assert_eq!(logs.len(), 1);
+    assert_eq!(logs[0]["schedule_id"], schedule_id);
+    assert_eq!(logs[0]["demand_id"], demand_id);
+    assert_eq!(logs[0]["publish_type"], "manual");
+    assert_eq!(logs[0]["status"], "success");
+
+    let (delete_status, delete_body) = delete_json(
+        &context.app,
+        &format!("/api/demand-schedules/{schedule_id}"),
+    )
+    .await;
+    assert_eq!(delete_status, StatusCode::OK);
+    assert_eq!(delete_body["message"], "计划删除成功");
+    assert_eq!(delete_body["data"], Value::Null);
 
     context.cleanup().await;
 }
