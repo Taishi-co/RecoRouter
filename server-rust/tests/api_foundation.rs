@@ -758,6 +758,23 @@ async fn put_json(app: &Router, uri: &str, body: Value) -> (StatusCode, Value) {
     (status, body)
 }
 
+async fn get_json(app: &Router, uri: &str) -> (StatusCode, Value) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(uri)
+                .body(Body::empty())
+                .expect("get request should build"),
+        )
+        .await
+        .expect("get request should complete");
+    let status = response.status();
+    let body = optional_body_json(response).await;
+
+    (status, body)
+}
+
 async fn optional_body_json(response: Response<Body>) -> Value {
     let body = to_bytes(response.into_body(), usize::MAX)
         .await
@@ -768,6 +785,224 @@ async fn optional_body_json(response: Response<Body>) -> Value {
     } else {
         serde_json::from_slice(&body).expect("response body should be json")
     }
+}
+
+#[tokio::test]
+async fn address_books_default_toggling_and_missing_user_id_code_400_body() {
+    let Some(context) = auth_test_context().await else {
+        return;
+    };
+    let (_, register_body) =
+        register_auth_user(&context.app, "13900000107", "merchant", "地址簿用户").await;
+    let user_id = register_body["data"]["id"]
+        .as_str()
+        .expect("registered user id should be a string");
+
+    let (missing_status, missing_body) = get_json(&context.app, "/api/address-books").await;
+    assert_eq!(missing_status, StatusCode::OK);
+    assert_eq!(missing_body["code"], 400);
+    assert_eq!(missing_body["message"], "用户ID不能为空");
+    assert_eq!(missing_body["data"], Value::Null);
+
+    let (home_status, home_body) = post_json(
+        &context.app,
+        "/api/address-books",
+        serde_json::json!({
+            "user_id": user_id,
+            "address_name": "家",
+            "address": "上海市黄浦区中山东一路1号",
+            "latitude": 31.2397,
+            "longitude": 121.4998,
+            "address_type": "home",
+            "is_default": true
+        }),
+    )
+    .await;
+    assert_eq!(home_status, StatusCode::OK);
+    assert_eq!(home_body["message"], "地址创建成功");
+    assert_eq!(home_body["data"]["is_default"], true);
+    let home_id = home_body["data"]["id"]
+        .as_str()
+        .expect("created home address id should be a string");
+
+    let (work_status, work_body) = post_json(
+        &context.app,
+        "/api/address-books",
+        serde_json::json!({
+            "user_id": user_id,
+            "address_name": "公司",
+            "address": "上海市浦东新区世纪大道100号",
+            "latitude": 31.2304,
+            "longitude": 121.4737,
+            "address_type": "work",
+            "is_default": true
+        }),
+    )
+    .await;
+    assert_eq!(work_status, StatusCode::OK);
+    assert_eq!(work_body["message"], "地址创建成功");
+    let work_id = work_body["data"]["id"]
+        .as_str()
+        .expect("created work address id should be a string");
+
+    let (list_status, list_body) = get_json(
+        &context.app,
+        &format!("/api/address-books?user_id={user_id}"),
+    )
+    .await;
+    assert_eq!(list_status, StatusCode::OK);
+    assert_eq!(list_body["message"], "查询成功");
+    let addresses = list_body["data"]
+        .as_array()
+        .expect("addresses should be an array");
+    assert_eq!(addresses.len(), 2);
+    assert_eq!(addresses[0]["id"], work_id);
+    assert_eq!(addresses[0]["is_default"], true);
+    assert_eq!(addresses[1]["id"], home_id);
+    assert_eq!(addresses[1]["is_default"], false);
+
+    let (set_default_status, set_default_body) = post_json(
+        &context.app,
+        &format!("/api/address-books/{home_id}/set-default"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(set_default_status, StatusCode::OK);
+    assert_eq!(set_default_body["message"], "设置默认地址成功");
+    assert_eq!(set_default_body["data"]["id"], home_id);
+    assert_eq!(set_default_body["data"]["is_default"], true);
+
+    let (relisted_status, relisted_body) = get_json(
+        &context.app,
+        &format!("/api/address-books?user_id={user_id}"),
+    )
+    .await;
+    assert_eq!(relisted_status, StatusCode::OK);
+    let relisted = relisted_body["data"]
+        .as_array()
+        .expect("relisted addresses should be an array");
+    assert_eq!(relisted[0]["id"], home_id);
+    assert_eq!(relisted[0]["is_default"], true);
+    assert_eq!(relisted[1]["id"], work_id);
+    assert_eq!(relisted[1]["is_default"], false);
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
+async fn favorite_routes_create_list_enrich_and_increment_use_count() {
+    let Some(context) = auth_test_context().await else {
+        return;
+    };
+    let (_, register_body) =
+        register_auth_user(&context.app, "13900000108", "merchant", "常用线路用户").await;
+    let user_id = register_body["data"]["id"]
+        .as_str()
+        .expect("registered user id should be a string");
+
+    let pickup_id: String = sqlx::query_scalar(
+        r#"
+        INSERT INTO address_books (
+            user_id, address_name, address, latitude, longitude, address_type
+        )
+        VALUES ($1, '取货仓', '苏州市工业园区金鸡湖大道1号', 31.2989, 120.5853, 'other')
+        RETURNING id
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(&context.pool)
+    .await
+    .expect("pickup address should be inserted");
+
+    let delivery_id: String = sqlx::query_scalar(
+        r#"
+        INSERT INTO address_books (
+            user_id, address_name, address, latitude, longitude, address_type
+        )
+        VALUES ($1, '收货点', '杭州市上城区解放东路18号', 30.2741, 120.1551, 'work')
+        RETURNING id
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(&context.pool)
+    .await
+    .expect("delivery address should be inserted");
+
+    let (create_status, create_body) = post_json(
+        &context.app,
+        "/api/favorite-routes",
+        serde_json::json!({
+            "user_id": user_id,
+            "route_name": "苏州到杭州",
+            "pickup_address_id": pickup_id,
+            "delivery_address_id": delivery_id,
+            "estimated_distance": 168.5,
+            "estimated_fare": 860.0
+        }),
+    )
+    .await;
+    assert_eq!(create_status, StatusCode::OK);
+    assert_eq!(create_body["message"], "常用线路创建成功");
+    assert_eq!(create_body["data"]["route_name"], "苏州到杭州");
+    assert_eq!(create_body["data"]["use_count"], 0);
+    assert_eq!(create_body["data"]["pickup_address"]["id"], pickup_id);
+    assert_eq!(
+        create_body["data"]["pickup_address"]["address_name"],
+        "取货仓"
+    );
+    assert_eq!(create_body["data"]["delivery_address"]["id"], delivery_id);
+    assert_eq!(
+        create_body["data"]["delivery_address"]["address_name"],
+        "收货点"
+    );
+    let route_id = create_body["data"]["id"]
+        .as_str()
+        .expect("created favorite route id should be a string");
+
+    let (missing_status, missing_body) = get_json(&context.app, "/api/favorite-routes").await;
+    assert_eq!(missing_status, StatusCode::OK);
+    assert_eq!(missing_body["code"], 400);
+    assert_eq!(missing_body["message"], "用户ID不能为空");
+    assert_eq!(missing_body["data"], Value::Null);
+
+    let (list_status, list_body) = get_json(
+        &context.app,
+        &format!("/api/favorite-routes?user_id={user_id}"),
+    )
+    .await;
+    assert_eq!(list_status, StatusCode::OK);
+    assert_eq!(list_body["message"], "查询成功");
+    let routes = list_body["data"]
+        .as_array()
+        .expect("favorite routes should be an array");
+    assert_eq!(routes.len(), 1);
+    assert_eq!(routes[0]["id"], route_id);
+    assert_eq!(
+        routes[0]["pickup_address"]["address"],
+        "苏州市工业园区金鸡湖大道1号"
+    );
+    assert_eq!(
+        routes[0]["delivery_address"]["address"],
+        "杭州市上城区解放东路18号"
+    );
+
+    let (increment_status, increment_body) = post_json(
+        &context.app,
+        &format!("/api/favorite-routes/{route_id}/increment-use-count"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(increment_status, StatusCode::OK);
+    assert_eq!(increment_body["message"], "使用次数更新成功");
+    assert_eq!(increment_body["data"]["id"], route_id);
+    assert_eq!(increment_body["data"]["use_count"], 1);
+    assert_eq!(increment_body["data"]["pickup_address"]["id"], pickup_id);
+    assert_eq!(
+        increment_body["data"]["delivery_address"]["id"],
+        delivery_id
+    );
+
+    context.cleanup().await;
 }
 
 #[tokio::test]
