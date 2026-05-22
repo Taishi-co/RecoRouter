@@ -84,7 +84,8 @@ where
     .bind(&body.related_order_id)
     .bind(&body.related_demand_id)
     .fetch_one(&state.db)
-    .await?;
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("创建通知失败: {err}")))?;
 
     Ok(ok("通知创建成功", notification))
 }
@@ -113,7 +114,8 @@ where
         )
         .bind(&query.user_id)
         .fetch_all(&state.db)
-        .await?
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("查询通知失败: {err}")))?
     } else {
         sqlx::query_scalar::<_, Value>(
             r#"
@@ -129,7 +131,8 @@ where
         )
         .bind(&query.user_id)
         .fetch_all(&state.db)
-        .await?
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("查询通知失败: {err}")))?
     };
 
     Ok(ok("查询成功", notifications))
@@ -147,7 +150,8 @@ where
     )
     .bind(&query.user_id)
     .fetch_one(&state.db)
-    .await?;
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("查询失败: {err}")))?;
 
     Ok(ok(
         "查询成功",
@@ -187,7 +191,8 @@ where
     )
     .bind(&id)
     .fetch_one(&state.db)
-    .await?;
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("更新失败: {err}")))?;
 
     Ok(ok("已标记为已读", notification))
 }
@@ -202,7 +207,8 @@ where
     sqlx::query("UPDATE notifications SET is_read = true WHERE user_id = $1 AND is_read = false")
         .bind(&body.user_id)
         .execute(&state.db)
-        .await?;
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("批量标记失败: {err}")))?;
 
     Ok(ok("已全部标记为已读", Value::Null))
 }

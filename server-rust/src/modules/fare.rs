@@ -220,7 +220,8 @@ async fn calculate_fare(
     )
     .bind(vehicle_id)
     .fetch_optional(pool)
-    .await?
+    .await
+    .map_err(|_| ApiError::BadRequest("车辆不存在或定价信息不完整".to_string()))?
     .ok_or_else(|| ApiError::BadRequest("车辆不存在或定价信息不完整".to_string()))?;
 
     let base_price = vehicle

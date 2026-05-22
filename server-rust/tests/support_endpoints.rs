@@ -226,6 +226,18 @@ async fn fare_calculation_matches_legacy_math_and_validation_messages() {
     assert_eq!(body["data"]["is_estimate"], false);
     assert_eq!(body["data"]["calculation_detail"]["total_fare"], 46.5);
 
+    let (missing_status, missing_body) = post_json(
+        &context.app,
+        "/api/fare/calculate",
+        json!({
+            "vehicle_id": "missing-vehicle",
+            "total_distance": 8.5
+        }),
+    )
+    .await;
+    assert_eq!(missing_status, StatusCode::BAD_REQUEST);
+    assert_eq!(missing_body["message"], "车辆不存在或定价信息不完整");
+
     let (range_status, range_body) = post_json(
         &context.app,
         "/api/fare/calculate-multiple",
@@ -509,6 +521,9 @@ async fn home_latest_statistics_and_analyze_cargo_shape() {
         latest_body["data"]["availableVehicles"][0]["licensePlate"],
         "京C****"
     );
+    assert!(latest_body["data"]["availableVehicles"][0]
+        .get("createdAt")
+        .is_none());
     assert_eq!(
         latest_body["data"]["completedOrders"][0]["ownerPhone"],
         "139****0006"

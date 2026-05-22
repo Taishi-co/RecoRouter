@@ -67,7 +67,6 @@ struct AvailableVehicleRow {
     vehicle_type: Option<String>,
     license_plate: Option<String>,
     owner_phone: Option<String>,
-    created_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, FromRow)]
@@ -186,8 +185,7 @@ where
             vehicle.id,
             vehicle.vehicle_type,
             vehicle.license_plate,
-            user_row.phone AS owner_phone,
-            vehicle.created_at
+            user_row.phone AS owner_phone
         FROM vehicles vehicle
         LEFT JOIN users user_row ON user_row.id = vehicle.owner_id
         WHERE vehicle.status = 'active'
@@ -209,8 +207,7 @@ where
                 "vehicleType": vehicle.vehicle_type,
                 "licensePlate": mask_license_plate(vehicle.license_plate.as_deref()),
                 "ownerPhone": mask_phone(vehicle.owner_phone.as_deref()),
-                "status": "active",
-                "createdAt": vehicle.created_at
+                "status": "active"
             })
         })
         .collect();
