@@ -1,7 +1,7 @@
 use axum::Router;
 use sqlx::PgPool;
 
-use crate::{config::Config, storage::Storage};
+use crate::{config::Config, modules::health, storage::Storage};
 
 #[derive(Clone)]
 pub struct AppState<S>
@@ -23,5 +23,7 @@ where
         storage,
     };
 
-    Router::new().with_state(state)
+    Router::new()
+        .merge(health::router::<AppState<S>>())
+        .with_state(state)
 }
