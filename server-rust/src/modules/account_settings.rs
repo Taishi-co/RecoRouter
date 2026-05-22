@@ -1,7 +1,7 @@
 use std::sync::OnceLock;
 
 use axum::{
-    extract::{Query, State},
+    extract::State,
     routing::{get, post},
     Json, Router,
 };
@@ -44,13 +44,6 @@ where
             post(change_password::<S>),
         )
         .route("/api/account-settings/logout", post(logout::<S>))
-}
-
-#[derive(Debug, Deserialize)]
-struct ProfileQuery {
-    user_id: Option<String>,
-    #[serde(rename = "userId")]
-    user_id_camel: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -122,13 +115,11 @@ struct SmsCodeRow {
 
 async fn get_profile<S>(
     State(state): State<AppState<S>>,
-    Query(query): Query<ProfileQuery>,
 ) -> ApiResult<Json<ApiEnvelope<ProfileRow>>>
 where
     S: Storage,
 {
-    let user_id = resolve_user_id(query.user_id, query.user_id_camel);
-    let profile = fetch_profile(&state.db, &user_id).await?;
+    let profile = fetch_profile(&state.db, DEFAULT_USER_ID).await?;
 
     Ok(ok("获取成功", profile))
 }
@@ -136,7 +127,7 @@ where
 async fn update_profile<S>(
     State(state): State<AppState<S>>,
     Json(body): Json<UpdateProfileRequest>,
-) -> ApiResult<Json<ApiEnvelope<ProfileRow>>>
+) -> ApiResult<Json<ApiEnvelope<serde_json::Value>>>
 where
     S: Storage,
 {
@@ -156,7 +147,7 @@ where
 
     let birthday = body.birthday.as_deref().map(parse_birthday).transpose()?;
     let user_id = resolve_user_id(body.user_id, body.user_id_camel);
-    let profile = sqlx::query_as::<_, ProfileRow>(
+    let profile = sqlx::query_scalar::<_, serde_json::Value>(
         r#"
         UPDATE users
         SET avatar_url = COALESCE($2, avatar_url),
@@ -165,7 +156,7 @@ where
             birthday = COALESCE($5, birthday),
             updated_at = now()
         WHERE id = $1
-        RETURNING id, phone, nickname, avatar_url, gender, birthday, role, name, created_at
+        RETURNING row_to_json(users)
         "#,
     )
     .bind(&user_id)

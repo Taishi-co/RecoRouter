@@ -1085,17 +1085,22 @@ async fn account_profile_update_matches_existing_shape() {
     let Some(context) = auth_test_context().await else {
         return;
     };
-    let (_, register_body) =
-        register_auth_user(&context.app, "13900000105", "owner", "资料用户").await;
-    let user_id = register_body["data"]["id"]
-        .as_str()
-        .expect("registered user id should be a string");
+    sqlx::query(
+        r#"
+        INSERT INTO users (id, phone, password, role, name, status, credit_score)
+        VALUES ('7428999e-92fa-4fec-9f75-09087edbf244', '13900000105', $1, 'owner', '资料用户', 'active', 100)
+        "#,
+    )
+    .bind(bcrypt::hash("secret123", 10).expect("test password should hash"))
+    .execute(&context.pool)
+    .await
+    .expect("fallback profile user should be inserted");
+    let user_id = "7428999e-92fa-4fec-9f75-09087edbf244";
 
     let (update_status, update_body) = put_json(
         &context.app,
         "/api/account-settings/profile",
         serde_json::json!({
-            "user_id": user_id,
             "avatar_url": "avatars/profile.png",
             "nickname": "资料昵称",
             "gender": "female",
@@ -1110,13 +1115,22 @@ async fn account_profile_update_matches_existing_shape() {
     assert_eq!(update_body["data"]["nickname"], "资料昵称");
     assert_eq!(update_body["data"]["gender"], "female");
     assert_eq!(update_body["data"]["birthday"], "1995-06-07");
+    assert_eq!(update_body["data"]["status"], "active");
+    assert_eq!(update_body["data"]["credit_score"], 100);
 
     let response = context
         .app
         .clone()
         .oneshot(
             Request::builder()
-                .uri(format!("/api/account-settings/profile?user_id={user_id}"))
+                .uri(format!(
+                    "/api/account-settings/profile?user_id={}",
+                    register_auth_user(&context.app, "13900000106", "owner", "旁路用户")
+                        .await
+                        .1["data"]["id"]
+                        .as_str()
+                        .expect("query user id should be present")
+                ))
                 .body(Body::empty())
                 .expect("profile request should build"),
         )
