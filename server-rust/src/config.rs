@@ -26,7 +26,8 @@ impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
         dotenvy::dotenv().ok();
 
-        let database_url = read_trimmed("DATABASE_URL").ok_or(ConfigError::Missing("DATABASE_URL"))?;
+        let database_url =
+            read_trimmed("DATABASE_URL").ok_or(ConfigError::Missing("DATABASE_URL"))?;
         let server_port = read_trimmed("SERVER_PORT")
             .unwrap_or_else(|| "34532".to_string())
             .parse::<u16>()

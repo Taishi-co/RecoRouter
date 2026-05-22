@@ -115,6 +115,8 @@ struct AuthTestContext {
     pool: PgPool,
     admin_pool: PgPool,
     database_name: String,
+    anon_role_existed: bool,
+    service_role_existed: bool,
     _upload_dir: tempfile::TempDir,
 }
 
@@ -126,6 +128,8 @@ impl AuthTestContext {
             pool,
             admin_pool,
             database_name,
+            anon_role_existed,
+            service_role_existed,
             _upload_dir,
         } = self;
 
@@ -150,6 +154,17 @@ impl AuthTestContext {
             .await
             .expect("disposable auth test database should be dropped");
 
+        if !anon_role_existed {
+            let _ = sqlx::query("DROP ROLE IF EXISTS anon")
+                .execute(&admin_pool)
+                .await;
+        }
+        if !service_role_existed {
+            let _ = sqlx::query("DROP ROLE IF EXISTS service_role")
+                .execute(&admin_pool)
+                .await;
+        }
+
         admin_pool.close().await;
     }
 }
@@ -166,6 +181,16 @@ async fn auth_test_context() -> Option<AuthTestContext> {
         .connect(&admin_database_url)
         .await
         .expect("admin test database should be reachable");
+    let anon_role_existed: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon')")
+            .fetch_one(&admin_pool)
+            .await
+            .expect("anon role existence query should run");
+    let service_role_existed: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role')")
+            .fetch_one(&admin_pool)
+            .await
+            .expect("service_role existence query should run");
 
     let database_name = format!("recorouter_auth_test_{}", uuid::Uuid::new_v4().simple());
     sqlx::query(&format!(r#"CREATE DATABASE "{database_name}""#))
@@ -207,6 +232,8 @@ async fn auth_test_context() -> Option<AuthTestContext> {
         pool,
         admin_pool,
         database_name,
+        anon_role_existed,
+        service_role_existed,
         _upload_dir: upload_dir,
     })
 }
@@ -521,11 +548,12 @@ async fn home_upload_stores_image_and_returns_key_and_url() {
     let file_key = json["data"]["fileKey"]
         .as_str()
         .expect("file key should be a string");
-    let file_key_pattern = regex::Regex::new(r"^cargo-photos/\d{13}-[A-Za-z0-9]{8}\.png$")
-        .expect("file key pattern should compile");
+    let file_key_pattern =
+        regex::Regex::new(r"^cargo-photos/\d{13}-[A-Za-z0-9]{8}_[0-9a-f]{8}\.png$")
+            .expect("file key pattern should compile");
     assert!(
         file_key_pattern.is_match(file_key),
-        "expected route-generated file key without storage suffix, got {file_key}"
+        "expected storage-generated random suffix in file key, got {file_key}"
     );
     assert_eq!(
         json["data"]["url"],
@@ -551,6 +579,29 @@ async fn home_upload_stores_image_and_returns_key_and_url() {
         .await
         .expect("served upload body should read");
     assert_eq!(&served_bytes[..], b"\x89PNG\r\n\x1a\n");
+}
+
+#[tokio::test]
+async fn storage_factory_prefers_tencent_cos_when_configured() {
+    let mut config = test_config();
+    config.cos_secret_id = Some("AKIDEXAMPLE".to_string());
+    config.cos_secret_key = Some("SECRETEXAMPLE".to_string());
+    config.cos_bucket = Some("examplebucket-1250000000".to_string());
+    config.cos_region = Some("ap-guangzhou".to_string());
+
+    let storage = recorouter_api::storage::from_config(&config);
+    let url = storage
+        .public_url("payment_qr/demo.png")
+        .await
+        .expect("cos public url should be generated");
+
+    assert!(
+        url.starts_with(
+            "https://examplebucket-1250000000.cos.ap-guangzhou.myqcloud.com/payment_qr/demo.png?sign="
+        ),
+        "expected COS signed URL, got {url}"
+    );
+    assert!(url.contains("q-sign-algorithm%3Dsha1"));
 }
 
 #[tokio::test]
@@ -772,7 +823,7 @@ async fn auth_user_info_returns_payment_qr_url_after_owner_upload() {
         .strip_prefix("https://car.shcxyz.site/api/uploads/")
         .expect("payment url should use public upload prefix");
     let key_pattern = regex::Regex::new(&format!(
-        r"^payment_qr/{}_\d{{13}}_payment\.png$",
+        r"^payment_qr/{}_\d{{13}}_payment_[0-9a-f]{{8}}\.png$",
         regex::escape(&user_id)
     ))
     .expect("payment qr key pattern should compile");
@@ -814,6 +865,25 @@ async fn auth_user_info_returns_payment_qr_url_after_owner_upload() {
     assert!(user_info_body["data"]["created_at"].as_str().is_some());
 
     context.cleanup().await;
+}
+
+#[tokio::test]
+async fn auth_json_routes_keep_default_body_limit() {
+    let large_json = format!("{{\"data\":\"{}\"}}", "a".repeat(3 * 1024 * 1024));
+
+    let response = test_app()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/login")
+                .header("content-type", "application/json")
+                .body(Body::from(large_json))
+                .expect("large auth request should build"),
+        )
+        .await
+        .expect("large auth request should complete");
+
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
 }
 
 #[tokio::test]
@@ -892,6 +962,49 @@ async fn auth_payment_qr_rejects_non_owner_user() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let body = body_json(response).await;
     assert_eq!(body["message"], "只有车主可以上传收款码");
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
+async fn auth_payment_qr_accepts_present_file_without_image_content_type() {
+    let Some(context) = auth_test_context().await else {
+        return;
+    };
+    let (_, register_body) =
+        register_auth_user(&context.app, "13900000005", "owner", "任意文件车主").await;
+    let user_id = register_body["data"]["id"]
+        .as_str()
+        .expect("registered user id should be a string")
+        .to_string();
+    let boundary = "recocar-auth-payment-boundary";
+
+    let response = context
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/update-payment-qr")
+                .header(
+                    "content-type",
+                    format!("multipart/form-data; boundary={boundary}"),
+                )
+                .body(Body::from(payment_qr_multipart_body(
+                    boundary,
+                    &user_id,
+                    Some("payment.bin"),
+                    Some("application/octet-stream"),
+                    Some(b"not image bytes"),
+                )))
+                .expect("payment qr upload request should build"),
+        )
+        .await
+        .expect("payment qr upload request should complete");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_json(response).await;
+    assert_eq!(body["message"], "收款码上传成功");
 
     context.cleanup().await;
 }

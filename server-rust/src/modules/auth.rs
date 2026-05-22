@@ -22,25 +22,21 @@ use crate::{
 const BCRYPT_COST: u32 = 10;
 const MAX_FILE_SIZE: usize = 5 * 1024 * 1024;
 const MAX_TEXT_FIELD_SIZE: usize = 1024;
-const MAX_IGNORED_FIELD_BYTES: usize = MAX_FILE_SIZE + 1024 * 1024;
-const ALLOWED_IMAGE_TYPES: [&str; 5] = [
-    "image/jpeg",
-    "image/jpg",
-    "image/png",
-    "image/gif",
-    "image/webp",
-];
+const MAX_MULTIPART_BYTES: usize = MAX_FILE_SIZE + 16 * 1024;
 
 pub fn router<S>() -> Router<AppState<S>>
 where
     S: Storage,
 {
+    let payment_qr_router = Router::new()
+        .route("/api/auth/update-payment-qr", post(update_payment_qr::<S>))
+        .route_layer(DefaultBodyLimit::disable());
+
     Router::new()
         .route("/api/auth/register", post(register::<S>))
         .route("/api/auth/login", post(login::<S>))
         .route("/api/auth/user-info", get(user_info::<S>))
-        .route("/api/auth/update-payment-qr", post(update_payment_qr::<S>))
-        .route_layer(DefaultBodyLimit::disable())
+        .merge(payment_qr_router)
 }
 
 #[derive(Debug, Deserialize)]
@@ -257,7 +253,7 @@ where
 {
     let mut user_id = None;
     let mut file = None;
-    let mut ignored_field_bytes = 0usize;
+    let mut total_multipart_bytes = 0usize;
 
     while let Some(field) = multipart
         .next_field()
@@ -267,7 +263,7 @@ where
         let field_name = field.name().map(str::to_string);
         match field_name.as_deref() {
             Some("userId") => {
-                user_id = Some(read_text_field(field).await?);
+                user_id = Some(read_text_field(field, &mut total_multipart_bytes).await?);
             }
             Some("file") => {
                 let original_name = field
@@ -276,18 +272,7 @@ where
                     .filter(|name| !name.is_empty())
                     .unwrap_or_else(|| "payment.png".to_string());
                 let content_type = field.content_type().map(str::to_string);
-
-                if !content_type
-                    .as_deref()
-                    .is_some_and(|value| ALLOWED_IMAGE_TYPES.contains(&value))
-                {
-                    return Err(ApiError::BadRequest("请上传收款码图片".to_string()));
-                }
-
-                let bytes = read_file_bytes(field).await?;
-                if bytes.is_empty() {
-                    return Err(ApiError::BadRequest("请上传收款码图片".to_string()));
-                }
+                let bytes = read_file_bytes(field, &mut total_multipart_bytes).await?;
 
                 file = Some(UploadedPaymentQr {
                     original_name,
@@ -295,7 +280,7 @@ where
                     bytes,
                 });
             }
-            _ => consume_ignored_field(field, &mut ignored_field_bytes).await?,
+            _ => consume_ignored_field(field, &mut total_multipart_bytes).await?,
         }
     }
 
@@ -391,7 +376,10 @@ fn auth_response_from_row(row: AuthUserRow) -> AuthResponse {
     }
 }
 
-async fn read_text_field(mut field: axum::extract::multipart::Field<'_>) -> ApiResult<String> {
+async fn read_text_field(
+    mut field: axum::extract::multipart::Field<'_>,
+    total: &mut usize,
+) -> ApiResult<String> {
     let mut bytes = Vec::new();
 
     while let Some(chunk) = field
@@ -399,6 +387,11 @@ async fn read_text_field(mut field: axum::extract::multipart::Field<'_>) -> ApiR
         .await
         .map_err(|err| ApiError::BadRequest(err.to_string()))?
     {
+        *total += chunk.len();
+        if *total > MAX_MULTIPART_BYTES {
+            return Err(ApiError::BadRequest("请求体过大".to_string()));
+        }
+
         if bytes.len() + chunk.len() > MAX_TEXT_FIELD_SIZE {
             return Err(ApiError::BadRequest("请求体过大".to_string()));
         }
@@ -409,7 +402,10 @@ async fn read_text_field(mut field: axum::extract::multipart::Field<'_>) -> ApiR
     String::from_utf8(bytes).map_err(|_| ApiError::BadRequest("请求体过大".to_string()))
 }
 
-async fn read_file_bytes(mut field: axum::extract::multipart::Field<'_>) -> ApiResult<Vec<u8>> {
+async fn read_file_bytes(
+    mut field: axum::extract::multipart::Field<'_>,
+    total: &mut usize,
+) -> ApiResult<Vec<u8>> {
     let mut bytes = Vec::new();
 
     while let Some(chunk) = field
@@ -417,6 +413,11 @@ async fn read_file_bytes(mut field: axum::extract::multipart::Field<'_>) -> ApiR
         .await
         .map_err(|err| ApiError::BadRequest(err.to_string()))?
     {
+        *total += chunk.len();
+        if *total > MAX_MULTIPART_BYTES {
+            return Err(ApiError::BadRequest("请求体过大".to_string()));
+        }
+
         if bytes.len() + chunk.len() > MAX_FILE_SIZE {
             return Err(ApiError::BadRequest("文件大小不能超过5MB".to_string()));
         }
@@ -437,7 +438,7 @@ async fn consume_ignored_field(
         .map_err(|err| ApiError::BadRequest(err.to_string()))?
     {
         *total += chunk.len();
-        if *total > MAX_IGNORED_FIELD_BYTES {
+        if *total > MAX_MULTIPART_BYTES {
             return Err(ApiError::BadRequest("请求体过大".to_string()));
         }
     }

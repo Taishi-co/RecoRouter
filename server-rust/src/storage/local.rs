@@ -1,9 +1,12 @@
-use std::path::{Component, Path, PathBuf};
+use std::path::PathBuf;
 
 use async_trait::async_trait;
 use tokio::fs;
 
-use crate::{error::ApiError, storage::Storage};
+use crate::{
+    error::ApiError,
+    storage::{build_storage_key, encode_key_path, sanitized_key, Storage},
+};
 
 #[derive(Clone)]
 pub struct LocalStorage {
@@ -20,7 +23,7 @@ impl LocalStorage {
     }
 
     fn key_path(&self, key: &str) -> Result<PathBuf, ApiError> {
-        let key = sanitize_key(key)?;
+        let key = sanitized_key(key)?;
         Ok(self.root.join(key))
     }
 }
@@ -33,7 +36,7 @@ impl Storage for LocalStorage {
         file_name: &str,
         _content_type: Option<&str>,
     ) -> Result<String, ApiError> {
-        let key = sanitize_key(file_name)?;
+        let key = build_storage_key(file_name)?;
         let path = self.key_path(&key)?;
 
         if let Some(parent) = path.parent() {
@@ -46,7 +49,7 @@ impl Storage for LocalStorage {
     }
 
     async fn public_url(&self, key: &str) -> Result<String, ApiError> {
-        let key = sanitize_key(key)?;
+        let key = encode_key_path(key)?;
         let path = format!("/api/uploads/{key}");
 
         Ok(match &self.public_base_url {
@@ -74,49 +77,6 @@ impl Storage for LocalStorage {
             Err(err) => Err(storage_error(err)),
         }
     }
-}
-
-fn sanitize_key(key: &str) -> Result<String, ApiError> {
-    let mut segments = Vec::new();
-
-    for component in Path::new(key).components() {
-        match component {
-            Component::Normal(segment) => {
-                let segment = segment
-                    .to_str()
-                    .ok_or_else(|| ApiError::Storage("invalid storage key".to_string()))?;
-                let sanitized = sanitize_segment(segment);
-                if !sanitized.is_empty() {
-                    segments.push(sanitized);
-                }
-            }
-            Component::CurDir => {}
-            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
-                return Err(ApiError::Storage("invalid storage key".to_string()));
-            }
-        }
-    }
-
-    if segments.is_empty() {
-        return Err(ApiError::Storage("invalid storage key".to_string()));
-    }
-
-    Ok(segments.join("/"))
-}
-
-fn sanitize_segment(segment: &str) -> String {
-    segment
-        .chars()
-        .filter_map(|ch| {
-            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_') {
-                Some(ch)
-            } else if ch.is_whitespace() {
-                Some('_')
-            } else {
-                None
-            }
-        })
-        .collect()
 }
 
 fn storage_error(err: std::io::Error) -> ApiError {
