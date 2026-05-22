@@ -10,6 +10,7 @@ pub mod favorite_routes;
 pub mod health;
 pub mod home;
 pub mod notifications;
+pub mod orders;
 pub mod platform;
 pub mod user_roles;
 pub mod vehicles;
