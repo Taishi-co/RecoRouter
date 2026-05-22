@@ -6,6 +6,7 @@
   "scripts": {
     "build": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n lint,tsc,web,weapp,tt,server -c red,blue,green,yellow,cyan,magenta \"pnpm lint:build\" \"pnpm tsc\" \"pnpm build:web\" \"pnpm build:weapp\" \"pnpm build:tt\" \"pnpm build:server\"",
     "build:pack": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n weapp,tt -c yellow,cyan \"pnpm build:weapp\" \"pnpm build:tt\"",
+    "build:rust-server": "cd server-rust && cargo build --release",
     "build:server": "pnpm --filter server build",
     "build:tt": "taro build --type tt",
     "build:weapp": "taro build --type weapp",
@@ -24,6 +25,8 @@
     "new": "taro new",
     "preview:tt": "taro build --type tt --preview",
     "preview:weapp": "taro build --type weapp --preview",
+    "test:rust-server": "cd server-rust && cargo test --lib --bins --tests",
+    "test:rust-server:db": "test -n \"$TEST_DATABASE_URL\" && cd server-rust && cargo test --lib --bins --tests",
     "tsc": "npx tsc --noEmit --skipLibCheck",
     "validate": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n lint,tsc -c red,blue \"pnpm lint:build\" \"pnpm tsc\""
   },
