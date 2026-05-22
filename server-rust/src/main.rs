@@ -10,6 +10,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = Config::from_env()?;
     let db = db::connect(&config).await?;
+    db::run_migrations(&db).await?;
     let storage = storage::from_config(&config);
     let router = app::router(config.clone(), db, storage);
     let addr = SocketAddr::from(([0, 0, 0, 0], config.server_port));
