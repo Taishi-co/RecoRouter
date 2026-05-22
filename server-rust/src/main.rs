@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use recorouter_api::{app, config::Config, db, storage::LocalStorage};
+use recorouter_api::{app, config::Config, db, storage};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -10,7 +10,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = Config::from_env()?;
     let db = db::connect(&config).await?;
-    let storage = LocalStorage::new(config.local_upload_dir.clone());
+    let storage = storage::from_config(&config);
     let router = app::router(config.clone(), db, storage);
     let addr = SocketAddr::from(([0, 0, 0, 0], config.server_port));
     let listener = tokio::net::TcpListener::bind(addr).await?;

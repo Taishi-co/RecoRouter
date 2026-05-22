@@ -12,6 +12,8 @@ use serde_json::Value;
 use sqlx::postgres::PgPoolOptions;
 use tower::ServiceExt;
 
+use recorouter_api::storage::Storage;
+
 const TOUCHED_ENV_KEYS: [&str; 4] = [
     "DATABASE_URL",
     "SERVER_PORT",
@@ -77,11 +79,15 @@ fn set_required_env(env: &EnvGuard) {
 }
 
 fn test_config() -> recorouter_api::config::Config {
+    let upload_dir = tempfile::tempdir()
+        .expect("temp upload dir should be created")
+        .keep();
+
     recorouter_api::config::Config {
         database_url: "postgres://postgres:postgres@localhost:5432/recocar_test".to_string(),
         server_port: 34532,
         public_base_url: Some("https://car.shcxyz.site".to_string()),
-        local_upload_dir: "uploads".into(),
+        local_upload_dir: upload_dir,
         cos_secret_id: None,
         cos_secret_key: None,
         cos_bucket: None,
@@ -94,9 +100,25 @@ fn test_app() -> axum::Router {
     let db = PgPoolOptions::new()
         .connect_lazy(&config.database_url)
         .expect("lazy db pool should be created");
-    let storage = recorouter_api::storage::LocalStorage::new(config.local_upload_dir.clone());
+    let storage = recorouter_api::storage::LocalStorage::new(
+        config.local_upload_dir.clone(),
+        config.public_base_url.clone(),
+    );
 
     recorouter_api::app::router(config, db, storage)
+}
+
+fn multipart_body(boundary: &str, filename: &str, content_type: &str, content: &[u8]) -> Vec<u8> {
+    let mut body = Vec::new();
+    body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+    body.extend_from_slice(
+        format!("Content-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n")
+            .as_bytes(),
+    );
+    body.extend_from_slice(format!("Content-Type: {content_type}\r\n\r\n").as_bytes());
+    body.extend_from_slice(content);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    body
 }
 
 async fn body_json(response: Response<Body>) -> Value {
@@ -282,6 +304,89 @@ async fn health_route_matches_existing_shape() {
             .is_some_and(|value| value.contains('T')),
         "expected ISO-ish timestamp containing T, got {json}"
     );
+}
+
+#[tokio::test]
+async fn home_upload_rejects_non_image_files() {
+    let boundary = "recocar-test-boundary";
+    let response = test_app()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/home/upload")
+                .header(
+                    "content-type",
+                    format!("multipart/form-data; boundary={boundary}"),
+                )
+                .body(Body::from(multipart_body(
+                    boundary,
+                    "bad.txt",
+                    "text/plain",
+                    b"not an image",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("request should complete");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let json = body_json(response).await;
+    assert_eq!(json["message"], "不支持的文件类型，请上传图片文件");
+}
+
+#[tokio::test]
+async fn home_upload_stores_image_and_returns_key_and_url() {
+    let config = test_config();
+    let db = PgPoolOptions::new()
+        .connect_lazy(&config.database_url)
+        .expect("lazy db pool should be created");
+    let storage = recorouter_api::storage::LocalStorage::new(
+        config.local_upload_dir.clone(),
+        config.public_base_url.clone(),
+    );
+    let app = recorouter_api::app::router(config, db, storage.clone());
+    let boundary = "recocar-test-boundary";
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/home/upload")
+                .header(
+                    "content-type",
+                    format!("multipart/form-data; boundary={boundary}"),
+                )
+                .body(Body::from(multipart_body(
+                    boundary,
+                    "photo.png",
+                    "image/png",
+                    b"\x89PNG\r\n\x1a\n",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("request should complete");
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let json = body_json(response).await;
+    assert_eq!(json["code"], 200);
+    assert_eq!(json["message"], "上传成功");
+
+    let file_key = json["data"]["fileKey"]
+        .as_str()
+        .expect("file key should be a string");
+    assert!(file_key.starts_with("cargo-photos/"));
+    assert!(file_key.ends_with(".png"));
+    assert_eq!(
+        json["data"]["url"],
+        format!("https://car.shcxyz.site/api/uploads/{file_key}")
+    );
+    assert!(storage
+        .exists(file_key)
+        .await
+        .expect("stored upload existence should be checked"));
 }
 
 #[tokio::test]
