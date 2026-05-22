@@ -7,6 +7,7 @@ node-compile-cache/
 dist/
 build/
 dist-*/
+server-rust/target/
 
 # Misc
 .DS_Store
