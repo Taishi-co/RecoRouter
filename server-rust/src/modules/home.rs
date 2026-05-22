@@ -15,7 +15,6 @@ use crate::{
 };
 
 const MAX_FILE_SIZE: usize = 5 * 1024 * 1024;
-const MAX_MULTIPART_SIZE: usize = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES: [&str; 5] = [
     "image/jpeg",
     "image/jpg",
@@ -30,7 +29,7 @@ where
 {
     Router::new()
         .route("/api/home/upload", post(upload))
-        .route_layer(DefaultBodyLimit::max(MAX_MULTIPART_SIZE))
+        .route_layer(DefaultBodyLimit::disable())
 }
 
 #[derive(Debug, Serialize)]
@@ -68,10 +67,7 @@ where
 
         let extension = extension_for_content_type(content_type.as_deref())
             .ok_or_else(|| ApiError::BadRequest("不支持的文件类型，请上传图片文件".to_string()))?;
-        let bytes = field
-            .bytes()
-            .await
-            .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+        let bytes = read_file_bytes(field).await?;
 
         if bytes.is_empty() {
             return Err(ApiError::BadRequest("文件不能为空".to_string()));
@@ -107,6 +103,24 @@ fn extension_for_content_type(content_type: Option<&str>) -> Option<&'static str
         Some("image/webp") => Some("webp"),
         _ => None,
     }
+}
+
+async fn read_file_bytes(mut field: axum::extract::multipart::Field<'_>) -> ApiResult<Vec<u8>> {
+    let mut bytes = Vec::new();
+
+    while let Some(chunk) = field
+        .chunk()
+        .await
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?
+    {
+        if bytes.len() + chunk.len() > MAX_FILE_SIZE {
+            return Err(ApiError::BadRequest("文件大小不能超过5MB".to_string()));
+        }
+
+        bytes.extend_from_slice(&chunk);
+    }
+
+    Ok(bytes)
 }
 
 fn random_id() -> String {

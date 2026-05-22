@@ -396,7 +396,7 @@ async fn home_upload_stores_image_and_returns_key_and_url() {
 #[tokio::test]
 async fn home_upload_rejects_oversized_image_files() {
     let boundary = "recocar-test-boundary";
-    let oversized_image: Vec<u8> = iter::repeat(b'a').take(5 * 1024 * 1024 + 1).collect();
+    let oversized_image: Vec<u8> = iter::repeat(b'a').take(10 * 1024 * 1024 + 1).collect();
     let response = test_app()
         .oneshot(
             Request::builder()
