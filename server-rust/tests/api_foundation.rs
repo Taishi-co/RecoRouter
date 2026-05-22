@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    env,
+    env, iter,
     sync::{Mutex, MutexGuard, OnceLock},
 };
 
@@ -377,8 +377,12 @@ async fn home_upload_stores_image_and_returns_key_and_url() {
     let file_key = json["data"]["fileKey"]
         .as_str()
         .expect("file key should be a string");
-    assert!(file_key.starts_with("cargo-photos/"));
-    assert!(file_key.ends_with(".png"));
+    let file_key_pattern = regex::Regex::new(r"^cargo-photos/\d{13}-[A-Za-z0-9]{8}\.png$")
+        .expect("file key pattern should compile");
+    assert!(
+        file_key_pattern.is_match(file_key),
+        "expected route-generated file key without storage suffix, got {file_key}"
+    );
     assert_eq!(
         json["data"]["url"],
         format!("https://car.shcxyz.site/api/uploads/{file_key}")
@@ -387,6 +391,36 @@ async fn home_upload_stores_image_and_returns_key_and_url() {
         .exists(file_key)
         .await
         .expect("stored upload existence should be checked"));
+}
+
+#[tokio::test]
+async fn home_upload_rejects_oversized_image_files() {
+    let boundary = "recocar-test-boundary";
+    let oversized_image: Vec<u8> = iter::repeat(b'a').take(5 * 1024 * 1024 + 1).collect();
+    let response = test_app()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/home/upload")
+                .header(
+                    "content-type",
+                    format!("multipart/form-data; boundary={boundary}"),
+                )
+                .body(Body::from(multipart_body(
+                    boundary,
+                    "large.png",
+                    "image/png",
+                    &oversized_image,
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("request should complete");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let json = body_json(response).await;
+    assert_eq!(json["message"], "文件大小不能超过5MB");
 }
 
 #[tokio::test]

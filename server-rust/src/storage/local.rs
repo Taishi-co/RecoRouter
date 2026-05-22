@@ -2,7 +2,6 @@ use std::path::{Component, Path, PathBuf};
 
 use async_trait::async_trait;
 use tokio::fs;
-use uuid::Uuid;
 
 use crate::{error::ApiError, storage::Storage};
 
@@ -34,7 +33,7 @@ impl Storage for LocalStorage {
         file_name: &str,
         _content_type: Option<&str>,
     ) -> Result<String, ApiError> {
-        let key = append_uuid_suffix(&sanitize_key(file_name)?);
+        let key = sanitize_key(file_name)?;
         let path = self.key_path(&key)?;
 
         if let Some(parent) = path.parent() {
@@ -74,27 +73,6 @@ impl Storage for LocalStorage {
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
             Err(err) => Err(storage_error(err)),
         }
-    }
-}
-
-fn append_uuid_suffix(key: &str) -> String {
-    let suffix = &Uuid::new_v4().simple().to_string()[..8];
-    let path = Path::new(key);
-    let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
-        return format!("{key}-{suffix}");
-    };
-    let stem = path
-        .file_stem()
-        .and_then(|value| value.to_str())
-        .unwrap_or(file_name);
-    let suffixed = match path.extension().and_then(|value| value.to_str()) {
-        Some(extension) if !extension.is_empty() => format!("{stem}-{suffix}.{extension}"),
-        _ => format!("{stem}-{suffix}"),
-    };
-
-    match path.parent().and_then(|parent| parent.to_str()) {
-        Some(parent) if !parent.is_empty() => format!("{parent}/{suffixed}"),
-        _ => suffixed,
     }
 }
 

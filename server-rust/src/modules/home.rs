@@ -15,7 +15,7 @@ use crate::{
 };
 
 const MAX_FILE_SIZE: usize = 5 * 1024 * 1024;
-const MAX_MULTIPART_SIZE: usize = MAX_FILE_SIZE + 1024 * 1024;
+const MAX_MULTIPART_SIZE: usize = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES: [&str; 5] = [
     "image/jpeg",
     "image/jpg",
