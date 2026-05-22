@@ -75,6 +75,16 @@ CREATE TABLE IF NOT EXISTS vehicles (
   base_price numeric DEFAULT 20,
   base_distance numeric DEFAULT 3,
   price_per_km numeric DEFAULT 2,
+  price_updated_at timestamptz,
+  rent_monthly_price numeric,
+  rent_yearly_price numeric,
+  rent_deposit numeric,
+  contact_phone text,
+  contact_wechat text,
+  rent_start_date timestamptz,
+  rent_end_date timestamptz,
+  rent_type text,
+  rental_notes text,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz
 );

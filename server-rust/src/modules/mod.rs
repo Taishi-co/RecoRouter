@@ -11,3 +11,4 @@ pub mod home;
 pub mod notifications;
 pub mod platform;
 pub mod user_roles;
+pub mod vehicles;
