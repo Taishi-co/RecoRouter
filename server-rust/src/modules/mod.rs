@@ -4,6 +4,7 @@ pub mod admin;
 pub mod auth;
 pub mod demand_schedules;
 pub mod demand_templates;
+pub mod demands;
 pub mod fare;
 pub mod favorite_routes;
 pub mod health;
