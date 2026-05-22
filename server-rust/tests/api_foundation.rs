@@ -109,10 +109,20 @@ fn test_app() -> axum::Router {
 }
 
 fn multipart_body(boundary: &str, filename: &str, content_type: &str, content: &[u8]) -> Vec<u8> {
+    multipart_body_with_field(boundary, "file", filename, content_type, content)
+}
+
+fn multipart_body_with_field(
+    boundary: &str,
+    field_name: &str,
+    filename: &str,
+    content_type: &str,
+    content: &[u8],
+) -> Vec<u8> {
     let mut body = Vec::new();
     body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
     body.extend_from_slice(
-        format!("Content-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n")
+        format!("Content-Disposition: form-data; name=\"{field_name}\"; filename=\"{filename}\"\r\n")
             .as_bytes(),
     );
     body.extend_from_slice(format!("Content-Type: {content_type}\r\n\r\n").as_bytes());
@@ -349,6 +359,7 @@ async fn home_upload_stores_image_and_returns_key_and_url() {
     let boundary = "recocar-test-boundary";
 
     let response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -391,6 +402,22 @@ async fn home_upload_stores_image_and_returns_key_and_url() {
         .exists(file_key)
         .await
         .expect("stored upload existence should be checked"));
+
+    let served_response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/uploads/{file_key}"))
+                .body(Body::empty())
+                .expect("static upload request should build"),
+        )
+        .await
+        .expect("static upload request should complete");
+
+    assert_eq!(served_response.status(), StatusCode::OK);
+    let served_bytes = to_bytes(served_response.into_body(), usize::MAX)
+        .await
+        .expect("served upload body should read");
+    assert_eq!(&served_bytes[..], b"\x89PNG\r\n\x1a\n");
 }
 
 #[tokio::test]
@@ -421,6 +448,37 @@ async fn home_upload_rejects_oversized_image_files() {
 
     let json = body_json(response).await;
     assert_eq!(json["message"], "文件大小不能超过5MB");
+}
+
+#[tokio::test]
+async fn home_upload_rejects_large_ignored_multipart_fields() {
+    let boundary = "recocar-test-boundary";
+    let large_metadata: Vec<u8> = iter::repeat(b'a').take(6 * 1024 * 1024 + 1).collect();
+    let response = test_app()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/home/upload")
+                .header(
+                    "content-type",
+                    format!("multipart/form-data; boundary={boundary}"),
+                )
+                .body(Body::from(multipart_body_with_field(
+                    boundary,
+                    "metadata",
+                    "metadata.txt",
+                    "text/plain",
+                    &large_metadata,
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("request should complete");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let json = body_json(response).await;
+    assert_eq!(json["message"], "请求体过大");
 }
 
 #[tokio::test]

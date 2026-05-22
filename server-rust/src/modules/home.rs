@@ -15,6 +15,7 @@ use crate::{
 };
 
 const MAX_FILE_SIZE: usize = 5 * 1024 * 1024;
+const MAX_IGNORED_FIELD_BYTES: usize = MAX_FILE_SIZE + 1024 * 1024;
 const ALLOWED_IMAGE_TYPES: [&str; 5] = [
     "image/jpeg",
     "image/jpg",
@@ -46,12 +47,15 @@ async fn upload<S>(
 where
     S: Storage,
 {
+    let mut ignored_field_bytes = 0usize;
+
     while let Some(field) = multipart
         .next_field()
         .await
         .map_err(|err| ApiError::BadRequest(err.to_string()))?
     {
         if field.name() != Some("file") {
+            consume_ignored_field(field, &mut ignored_field_bytes).await?;
             continue;
         }
 
@@ -121,6 +125,24 @@ async fn read_file_bytes(mut field: axum::extract::multipart::Field<'_>) -> ApiR
     }
 
     Ok(bytes)
+}
+
+async fn consume_ignored_field(
+    mut field: axum::extract::multipart::Field<'_>,
+    total: &mut usize,
+) -> ApiResult<()> {
+    while let Some(chunk) = field
+        .chunk()
+        .await
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?
+    {
+        *total += chunk.len();
+        if *total > MAX_IGNORED_FIELD_BYTES {
+            return Err(ApiError::BadRequest("请求体过大".to_string()));
+        }
+    }
+
+    Ok(())
 }
 
 fn random_id() -> String {
