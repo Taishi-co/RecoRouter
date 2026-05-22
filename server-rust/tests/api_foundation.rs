@@ -597,11 +597,12 @@ async fn storage_factory_prefers_tencent_cos_when_configured() {
 
     assert!(
         url.starts_with(
-            "https://examplebucket-1250000000.cos.ap-guangzhou.myqcloud.com/payment_qr/demo.png?sign="
+            "https://examplebucket-1250000000.cos.ap-guangzhou.myqcloud.com/payment_qr/demo.png?q-sign-algorithm=sha1&q-ak=AKIDEXAMPLE&q-sign-time="
         ),
         "expected COS signed URL, got {url}"
     );
-    assert!(url.contains("q-sign-algorithm%3Dsha1"));
+    assert!(url.contains("&q-key-time="));
+    assert!(url.contains("&q-header-list=host&q-url-param-list=&q-signature="));
 }
 
 #[tokio::test]

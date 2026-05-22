@@ -138,11 +138,7 @@ impl Storage for TencentCosStorage {
         let host = self.host();
         let authorization = self.authorization("get", &key, &[("host", host)], 86400)?;
 
-        Ok(format!(
-            "{}?sign={}",
-            self.object_url(&key)?,
-            encode_url_component(&authorization)
-        ))
+        Ok(format!("{}?{}", self.object_url(&key)?, authorization))
     }
 
     async fn exists(&self, key: &str) -> Result<bool, ApiError> {
