@@ -1,0 +1,38 @@
+[package]
+name = "recorouter-api"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "recorouter_api"
+path = "src/lib.rs"
+
+[[bin]]
+name = "recorouter-api"
+path = "src/main.rs"
+
+[dependencies]
+async-trait = "0.1"
+axum = { version = "0.7", features = ["multipart", "macros"] }
+bcrypt = "0.15"
+chrono = { version = "0.4", features = ["serde"] }
+dotenvy = "0.15"
+http = "1"
+mime = "0.3"
+rand = "0.8"
+regex = "1"
+rust_decimal = { version = "1", features = ["serde-with-str"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "json", "rust_decimal", "migrate"] }
+thiserror = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "fs"] }
+tower-http = { version = "0.6", features = ["cors", "fs", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[dev-dependencies]
+hyper = "1"
+tempfile = "3"
+tower = "0.5"
