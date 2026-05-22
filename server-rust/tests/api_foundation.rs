@@ -157,6 +157,43 @@ fn config_trims_public_base_url_trailing_slash() {
 }
 
 #[tokio::test]
+async fn migrations_create_core_tables_and_default_platform_settings() {
+    let database_url =
+        env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL must be set for migration tests");
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&database_url)
+        .await
+        .expect("test database should be reachable");
+
+    recorouter_api::db::run_migrations(&pool).await.unwrap();
+
+    let users_table_exists: bool = sqlx::query_scalar(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = 'users'
+        )
+        "#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("users table existence query should run");
+
+    assert!(users_table_exists);
+
+    let platform_settings_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM platform_settings WHERE id = 'default'")
+            .fetch_one(&pool)
+            .await
+            .expect("platform_settings default row query should run");
+
+    assert_eq!(platform_settings_count, 1);
+}
+
+#[tokio::test]
 async fn health_route_matches_existing_shape() {
     let response = test_app()
         .oneshot(
