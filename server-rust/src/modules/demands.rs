@@ -170,6 +170,7 @@ where
 
     let cargo_name = required_string(&body, "cargo_name", "货品名称不能为空")?;
     let cargo_type = required_string(&body, "cargo_type", "货品类型不能为空")?;
+    validate_create_cargo_type(&cargo_type)?;
     let weight = required_number(&body, "weight", "重量不能为空")?;
     let volume = required_number(&body, "volume", "体积不能为空")?;
     let pickup_time = required_string(&body, "pickup_time", "取货时间不能为空")?;
@@ -184,6 +185,7 @@ where
     let delivery_lng = number_field(&body, "delivery_lng")?;
     let estimated_distance = number_field(&body, "estimated_distance")?;
     let estimated_fare = number_field(&body, "estimated_fare")?;
+    let route_type = estimated_distance.map(|_| "non_highway");
     let cargo_photos = array_field(&body, "cargo_photos").unwrap_or_else(|| json!([]));
 
     let demand = sqlx::query_scalar::<_, Value>(
@@ -193,14 +195,14 @@ where
             pickup_time, pickup_address, pickup_location,
             delivery_address, delivery_location,
             remarks, pickup_lat, pickup_lng, delivery_lat, delivery_lng,
-            estimated_distance, estimated_fare, cargo_photos, status
+            estimated_distance, estimated_fare, route_type, cargo_photos, status
         )
         VALUES (
             $1, $2, $3, $4::numeric, $5::numeric,
             $6::timestamptz, $7, $8::jsonb,
             $9, $10::jsonb,
             $11, $12::numeric, $13::numeric, $14::numeric, $15::numeric,
-            $16::numeric, $17::numeric, $18::jsonb, 'pending'
+            $16::numeric, $17::numeric, $18, $19::jsonb, 'pending'
         )
         RETURNING row_to_json(demands)
         "#,
@@ -222,6 +224,7 @@ where
     .bind(delivery_lng)
     .bind(estimated_distance)
     .bind(estimated_fare)
+    .bind(route_type)
     .bind(cargo_photos)
     .fetch_one(&state.db)
     .await
@@ -304,6 +307,13 @@ where
     S: Storage,
 {
     let cargo_name = string_field(&body, "cargo_name");
+    if has_field(&body, "cargo_name")
+        && cargo_name
+            .as_deref()
+            .is_none_or(|value| value.trim().is_empty())
+    {
+        return Err(ApiError::BadRequest("货品名称不能为空".to_string()));
+    }
     let cargo_type = string_field(&body, "cargo_type");
     let weight = number_field(&body, "weight")?;
     let volume = number_field(&body, "volume")?;
@@ -879,6 +889,16 @@ fn required_string(value: &Value, key: &str, message: &str) -> ApiResult<String>
 
 fn required_number(value: &Value, key: &str, message: &str) -> ApiResult<f64> {
     number_field(value, key)?.ok_or_else(|| ApiError::BadRequest(message.to_string()))
+}
+
+fn validate_create_cargo_type(cargo_type: &str) -> ApiResult<()> {
+    if matches!(cargo_type, "normal" | "fresh" | "fragile") {
+        return Ok(());
+    }
+
+    Err(ApiError::BadRequest(
+        "货品类型必须为 normal/fresh/fragile".to_string(),
+    ))
 }
 
 fn string_field(value: &Value, key: &str) -> Option<String> {

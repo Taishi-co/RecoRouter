@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS demands (
   delivery_lng numeric,
   estimated_distance numeric,
   estimated_fare numeric,
+  route_type text,
   cargo_photos jsonb,
   remarks text,
   status text DEFAULT 'pending',

@@ -221,6 +221,16 @@ async fn demand_create_list_get_update_and_cancel_match_legacy_envelopes() {
     assert_eq!(role_status, StatusCode::BAD_REQUEST);
     assert_eq!(role_body["message"], "只有需求方可以发布需求");
 
+    let mut invalid_cargo_type_body = create_demand_body(&merchant_id);
+    invalid_cargo_type_body["cargo_type"] = json!("bulk");
+    let (invalid_cargo_status, invalid_cargo_body) =
+        post_json(&context.app, "/api/demands", invalid_cargo_type_body).await;
+    assert_eq!(invalid_cargo_status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        invalid_cargo_body["message"],
+        "货品类型必须为 normal/fresh/fragile"
+    );
+
     let (create_status, create_body) = post_json(
         &context.app,
         "/api/demands",
@@ -233,6 +243,7 @@ async fn demand_create_list_get_update_and_cancel_match_legacy_envelopes() {
     assert_eq!(create_body["data"]["status"], "pending");
     assert_eq!(create_body["data"]["weight"], 120.5);
     assert_eq!(create_body["data"]["volume"], 8.25);
+    assert_eq!(create_body["data"]["route_type"], "non_highway");
     assert_eq!(create_body["data"]["pickup_location"]["latitude"], 31.2304);
     assert_eq!(create_body["data"]["cargo_photos"][1], "cargo/b.jpg");
     let demand_id = create_body["data"]["id"].as_str().unwrap();
@@ -283,6 +294,15 @@ async fn demand_create_list_get_update_and_cancel_match_legacy_envelopes() {
         "上海市浦东新区世纪大道100号"
     );
     assert_eq!(update_body["data"]["cargo_photos"][0], "cargo/updated.jpg");
+
+    let (empty_name_status, empty_name_body) = put_json(
+        &context.app,
+        &format!("/api/demands/{demand_id}"),
+        json!({ "cargo_name": "" }),
+    )
+    .await;
+    assert_eq!(empty_name_status, StatusCode::BAD_REQUEST);
+    assert_eq!(empty_name_body["message"], "货品名称不能为空");
 
     let (cancel_status, cancel_body) = post_json(
         &context.app,
