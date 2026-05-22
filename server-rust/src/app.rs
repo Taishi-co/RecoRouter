@@ -4,7 +4,7 @@ use tower_http::services::ServeDir;
 
 use crate::{
     config::Config,
-    modules::{health, home},
+    modules::{auth, health, home},
     storage::Storage,
 };
 
@@ -33,5 +33,6 @@ where
         .nest_service("/api/uploads", ServeDir::new(upload_dir))
         .merge(health::router::<AppState<S>>())
         .merge(home::router::<S>())
+        .merge(auth::router::<S>())
         .with_state(state)
 }
