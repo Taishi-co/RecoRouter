@@ -1135,7 +1135,7 @@ async fn demand_templates_default_rename_and_delete_linked_schedules() {
     )
     .await;
     assert_eq!(set_default_status, StatusCode::OK);
-    assert_eq!(set_default_body["message"], "设置默认模板成功");
+    assert_eq!(set_default_body["message"], "设置成功");
     assert_eq!(set_default_body["data"]["id"], first_id);
     assert_eq!(set_default_body["data"]["is_default"], true);
 
@@ -1307,6 +1307,29 @@ async fn demand_schedules_create_list_pause_delete_guard_publish_now_and_logs() 
         "广州市天河区珠江新城1号"
     );
 
+    let (past_interval_status, past_interval_body) = post_json(
+        &context.app,
+        "/api/demand-schedules",
+        serde_json::json!({
+            "user_id": user_id,
+            "template_id": template_id,
+            "schedule_name": "旧版首次发布时间",
+            "schedule_type": "interval",
+            "interval_days": 3,
+            "base_date": "2000-01-01",
+            "base_time": "00:00:00",
+            "end_time": "2099-12-31"
+        }),
+    )
+    .await;
+    assert_eq!(past_interval_status, StatusCode::OK);
+    assert!(past_interval_body["data"]["next_publish_time"]
+        .as_str()
+        .is_some_and(|value| value.starts_with("2000-01-02T00:00:00")));
+    assert!(past_interval_body["data"]["end_time"]
+        .as_str()
+        .is_some_and(|value| value.starts_with("2099-12-31T00:00:00")));
+
     let (get_status, get_body) = get_json(
         &context.app,
         &format!("/api/demand-schedules/{schedule_id}"),
@@ -1400,6 +1423,21 @@ async fn demand_schedules_create_list_pause_delete_guard_publish_now_and_logs() 
         .as_str()
         .expect("published demand id should be a string");
 
+    sqlx::query(
+        r#"
+        INSERT INTO demand_publish_logs (
+            schedule_id, publish_time, publish_type, status, created_at
+        )
+        VALUES
+            ($1, '2099-01-01 00:00:00+00', 'older-publish', 'success', '2099-01-10 00:00:00+00'),
+            ($1, '2099-01-02 00:00:00+00', 'later-publish', 'success', '2099-01-01 00:00:00+00')
+        "#,
+    )
+    .bind(schedule_id)
+    .execute(&context.pool)
+    .await
+    .expect("manual publish log rows should be inserted");
+
     let template_use_count: i32 =
         sqlx::query_scalar("SELECT use_count FROM demand_templates WHERE id = $1")
             .bind(&template_id)
@@ -1425,10 +1463,12 @@ async fn demand_schedules_create_list_pause_delete_guard_publish_now_and_logs() 
     let logs = logs_body["data"]
         .as_array()
         .expect("publish logs should be an array");
-    assert_eq!(logs.len(), 1);
-    assert_eq!(logs[0]["schedule_id"], schedule_id);
-    assert_eq!(logs[0]["demand_id"], demand_id);
-    assert_eq!(logs[0]["publish_type"], "manual");
+    assert_eq!(logs.len(), 3);
+    assert_eq!(logs[0]["publish_type"], "later-publish");
+    assert_eq!(logs[1]["publish_type"], "older-publish");
+    assert_eq!(logs[2]["schedule_id"], schedule_id);
+    assert_eq!(logs[2]["demand_id"], demand_id);
+    assert_eq!(logs[2]["publish_type"], "manual");
     assert_eq!(logs[0]["status"], "success");
 
     let (delete_status, delete_body) = delete_json(

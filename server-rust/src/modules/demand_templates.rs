@@ -429,7 +429,7 @@ where
 
     tx.commit().await?;
 
-    Ok(ok("设置默认模板成功", template).into_response())
+    Ok(ok("设置成功", template).into_response())
 }
 
 async fn fetch_template(pool: &sqlx::PgPool, id: &str) -> ApiResult<Value> {

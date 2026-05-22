@@ -137,12 +137,8 @@ where
     }
 
     let end_time = parse_optional_timestamp(body.end_time.as_deref())?;
-    let next_publish_time = calculate_first_publish_time(
-        &body.base_date,
-        &body.base_time,
-        &body.schedule_type,
-        interval_days.unwrap_or(1),
-    )?;
+    let next_publish_time =
+        calculate_first_publish_time(&body.base_date, &body.base_time, "day", 1)?;
     let pickup_time_offset = normalize_optional_text(body.pickup_time_offset);
 
     let mut tx = state.db.begin().await?;
@@ -623,7 +619,7 @@ where
             SELECT *
             FROM demand_publish_logs
             WHERE schedule_id = $1
-            ORDER BY created_at DESC
+            ORDER BY publish_time DESC
         ) log_row
         "#,
     )
@@ -712,8 +708,17 @@ fn parse_optional_timestamp(value: Option<&str>) -> ApiResult<Option<DateTime<Ut
         return Ok(Some(value.with_timezone(&Utc)));
     }
 
-    let parsed = NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S")
+    if let Ok(parsed) = NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S") {
+        return Ok(Some(DateTime::<Utc>::from_naive_utc_and_offset(
+            parsed, Utc,
+        )));
+    }
+
+    let parsed_date = NaiveDate::parse_from_str(value, "%Y-%m-%d")
         .map_err(|_| ApiError::BadRequest("无效的日期时间格式".to_string()))?;
+    let parsed = parsed_date
+        .and_hms_opt(0, 0, 0)
+        .ok_or_else(|| ApiError::BadRequest("无效的日期时间格式".to_string()))?;
     Ok(Some(DateTime::<Utc>::from_naive_utc_and_offset(
         parsed, Utc,
     )))
