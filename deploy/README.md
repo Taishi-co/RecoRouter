@@ -31,11 +31,15 @@ The Rust API runs embedded migrations on startup.
 
 ## Build a release package
 
-From the repo root:
+Run this on Linux or a Linux CI runner, because the release contains a native
+Rust binary for the target server:
 
 ```bash
 deploy/make-release.sh
 ```
+
+On macOS, use `ALLOW_NON_LINUX_RELEASE=1 deploy/make-release.sh` only for a
+local smoke test. Do not upload that tarball to the Linux server.
 
 This creates `/tmp/recorouter-release.tar.gz` containing:
 
