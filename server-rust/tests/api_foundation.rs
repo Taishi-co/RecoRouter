@@ -158,13 +158,39 @@ fn config_trims_public_base_url_trailing_slash() {
 
 #[tokio::test]
 async fn migrations_create_core_tables_and_default_platform_settings() {
-    let database_url =
-        env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL must be set for migration tests");
+    let Ok(database_url) = env::var("TEST_DATABASE_URL") else {
+        eprintln!("skipping migration test because TEST_DATABASE_URL is not set");
+        return;
+    };
+
+    let admin_database_url = rewrite_database_url(&database_url, "postgres");
+    let admin_pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&admin_database_url)
+        .await
+        .expect("admin test database should be reachable");
+    let test_database = format!("recorouter_test_{}", uuid::Uuid::new_v4().simple());
+    let anon_existed: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon')")
+            .fetch_one(&admin_pool)
+            .await
+            .expect("anon role existence query should run");
+    let service_role_existed: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role')")
+            .fetch_one(&admin_pool)
+            .await
+            .expect("service_role existence query should run");
+
+    sqlx::query(&format!(r#"CREATE DATABASE "{test_database}""#))
+        .execute(&admin_pool)
+        .await
+        .expect("disposable test database should be created");
+    let test_database_url = rewrite_database_url(&database_url, &test_database);
     let pool = PgPoolOptions::new()
         .max_connections(1)
-        .connect(&database_url)
+        .connect(&test_database_url)
         .await
-        .expect("test database should be reachable");
+        .expect("disposable test database should be reachable");
 
     recorouter_api::db::run_migrations(&pool).await.unwrap();
 
@@ -191,6 +217,47 @@ async fn migrations_create_core_tables_and_default_platform_settings() {
             .expect("platform_settings default row query should run");
 
     assert_eq!(platform_settings_count, 1);
+
+    pool.close().await;
+    sqlx::query(&format!(
+        r#"
+        SELECT pg_terminate_backend(pid)
+        FROM pg_stat_activity
+        WHERE datname = '{test_database}'
+          AND pid <> pg_backend_pid()
+        "#
+    ))
+    .execute(&admin_pool)
+    .await
+    .expect("test database connections should terminate");
+    sqlx::query(&format!(r#"DROP DATABASE "{test_database}""#))
+        .execute(&admin_pool)
+        .await
+        .expect("disposable test database should be dropped");
+    if !anon_existed {
+        let _ = sqlx::query("DROP ROLE IF EXISTS anon")
+            .execute(&admin_pool)
+            .await;
+    }
+    if !service_role_existed {
+        let _ = sqlx::query("DROP ROLE IF EXISTS service_role")
+            .execute(&admin_pool)
+            .await;
+    }
+}
+
+fn rewrite_database_url(database_url: &str, database: &str) -> String {
+    let (without_query, query) = match database_url.split_once('?') {
+        Some((base, query)) => (base, Some(query)),
+        None => (database_url, None),
+    };
+    let slash = without_query
+        .rfind('/')
+        .expect("TEST_DATABASE_URL must include a database name");
+    match query {
+        Some(query) => format!("{}/{}?{}", &without_query[..slash], database, query),
+        None => format!("{}/{}", &without_query[..slash], database),
+    }
 }
 
 #[tokio::test]

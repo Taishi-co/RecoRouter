@@ -352,22 +352,46 @@ CREATE INDEX IF NOT EXISTS demands_status_idx ON demands(status);
 CREATE INDEX IF NOT EXISTS vehicles_status_idx ON vehicles(status);
 
 DO $$
+DECLARE
+  can_manage_roles boolean;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
-    CREATE ROLE anon;
-  END IF;
+  SELECT rolsuper OR rolcreaterole
+    INTO can_manage_roles
+    FROM pg_roles
+   WHERE rolname = current_user;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
-    CREATE ROLE service_role;
+  IF can_manage_roles THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+      CREATE ROLE anon;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+      CREATE ROLE service_role;
+    END IF;
+  ELSE
+    RAISE NOTICE 'Skipping PostgREST role bootstrap because current user cannot create roles';
   END IF;
 END
 $$;
 
-GRANT USAGE ON SCHEMA public TO anon, service_role;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, service_role;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, service_role;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon')
+     AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    BEGIN
+      GRANT USAGE ON SCHEMA public TO anon, service_role;
+      GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, service_role;
+      GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, service_role;
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, service_role;
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, service_role;
+    EXCEPTION WHEN insufficient_privilege THEN
+      RAISE NOTICE 'Skipping PostgREST grants because current user lacks grant privileges';
+    END;
+  ELSE
+    RAISE NOTICE 'Skipping PostgREST grants because anon/service_role do not both exist';
+  END IF;
+END
+$$;
 
 INSERT INTO platform_settings (id, commission_rate, created_at, updated_at)
 VALUES ('default', 5, now(), now())
