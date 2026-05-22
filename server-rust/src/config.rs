@@ -33,12 +33,14 @@ impl Config {
             .map_err(|err| ConfigError::InvalidServerPort(err.to_string()))?;
         let local_upload_dir = read_trimmed("LOCAL_UPLOAD_DIR")
             .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("/tmp/recorouter-uploads"));
+            .unwrap_or_else(|| PathBuf::from("uploads"));
 
         Ok(Self {
             database_url,
             server_port,
-            public_base_url: read_trimmed("PUBLIC_BASE_URL"),
+            public_base_url: read_trimmed("PUBLIC_BASE_URL")
+                .map(|value| value.trim_end_matches('/').to_string())
+                .filter(|value| !value.is_empty()),
             local_upload_dir,
             cos_secret_id: read_trimmed("COS_SECRET_ID"),
             cos_secret_key: read_trimmed("COS_SECRET_KEY"),
