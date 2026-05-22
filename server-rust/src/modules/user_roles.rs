@@ -5,7 +5,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
+use sqlx::{FromRow, Postgres, Transaction};
 
 use crate::{
     app::AppState,
@@ -146,6 +146,9 @@ where
     let user_id = require_user_id(Some(body.user_id))?;
     validate_role(&body.role)?;
 
+    let mut tx = state.db.begin().await?;
+    ensure_user_exists(&mut tx, &user_id).await?;
+
     let existing_role: Option<String> = sqlx::query_scalar(
         r#"
         SELECT id
@@ -158,7 +161,7 @@ where
     )
     .bind(&user_id)
     .bind(&body.role)
-    .fetch_optional(&state.db)
+    .fetch_optional(&mut *tx)
     .await?;
 
     if existing_role.is_some() {
@@ -171,19 +174,21 @@ where
         "SELECT COUNT(*) FROM user_roles WHERE user_id = $1 AND status = 'active'",
     )
     .bind(&user_id)
-    .fetch_one(&state.db)
+    .fetch_one(&mut *tx)
     .await?;
     let is_first_role = role_count == 0;
 
-    let new_role = insert_role(&state.db, &user_id, Some(&body.role), is_first_role).await?;
+    let new_role = insert_role(&mut tx, &user_id, Some(&body.role), is_first_role).await?;
 
     if is_first_role {
         sqlx::query("UPDATE users SET role = $1, updated_at = now() WHERE id = $2")
             .bind(&body.role)
             .bind(&user_id)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await?;
     }
+
+    tx.commit().await?;
 
     Ok(ok("角色创建成功", new_role))
 }
@@ -201,6 +206,8 @@ where
         return Err(ApiError::BadRequest("角色ID不能为空".to_string()));
     }
 
+    let mut tx = state.db.begin().await?;
+
     let target_role = sqlx::query_as::<_, UserRoleRow>(
         r#"
         SELECT id, user_id, role, is_active, status, created_at, updated_at
@@ -208,11 +215,12 @@ where
         WHERE id = $1
           AND user_id = $2
           AND status = 'active'
+        FOR UPDATE
         "#,
     )
     .bind(&role_id)
     .bind(&user_id)
-    .fetch_optional(&state.db)
+    .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| ApiError::NotFound("角色不存在或已被禁用".to_string()))?;
 
@@ -220,18 +228,18 @@ where
         "UPDATE user_roles SET is_active = false, updated_at = now() WHERE user_id = $1 AND status = 'active'",
     )
     .bind(&user_id)
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?;
 
     sqlx::query("UPDATE user_roles SET is_active = true, updated_at = now() WHERE id = $1")
         .bind(&role_id)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await?;
 
     sqlx::query("UPDATE users SET role = $1, updated_at = now() WHERE id = $2")
         .bind(&target_role.role)
         .bind(&user_id)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await?;
 
     let user = sqlx::query_as::<_, SwitchUserRow>(
@@ -242,7 +250,7 @@ where
         "#,
     )
     .bind(&user_id)
-    .fetch_optional(&state.db)
+    .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| ApiError::BadRequest("用户不存在".to_string()))?;
 
@@ -256,8 +264,10 @@ where
         "#,
     )
     .bind(&user_id)
-    .fetch_all(&state.db)
+    .fetch_all(&mut *tx)
     .await?;
+
+    tx.commit().await?;
 
     Ok(ok(
         "角色切换成功",
@@ -321,13 +331,13 @@ async fn ensure_default_active_role(db: &sqlx::PgPool, user_id: &str) -> ApiResu
                 ..role
             })
         }
-        None => insert_role(db, user_id, default_role.as_deref(), true).await,
+        None => insert_role_pool(db, user_id, default_role.as_deref(), true).await,
     }
 }
 
 async fn create_default_role(db: &sqlx::PgPool, user_id: &str) -> ApiResult<UserRoleRow> {
     let default_role = fetch_user_default_role(db, user_id).await?;
-    insert_role(db, user_id, default_role.as_deref(), true).await
+    insert_role_pool(db, user_id, default_role.as_deref(), true).await
 }
 
 async fn fetch_user_default_role(db: &sqlx::PgPool, user_id: &str) -> ApiResult<Option<String>> {
@@ -340,6 +350,26 @@ async fn fetch_user_default_role(db: &sqlx::PgPool, user_id: &str) -> ApiResult<
 }
 
 async fn insert_role(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: &str,
+    role: Option<&str>,
+    is_active: bool,
+) -> ApiResult<UserRoleRow> {
+    Ok(sqlx::query_as::<_, UserRoleRow>(
+        r#"
+        INSERT INTO user_roles (user_id, role, is_active, status)
+        VALUES ($1, $2, $3, 'active')
+        RETURNING id, user_id, role, is_active, status, created_at, updated_at
+        "#,
+    )
+    .bind(user_id)
+    .bind(role)
+    .bind(is_active)
+    .fetch_one(&mut **tx)
+    .await?)
+}
+
+async fn insert_role_pool(
     db: &sqlx::PgPool,
     user_id: &str,
     role: Option<&str>,
@@ -357,6 +387,19 @@ async fn insert_role(
     .bind(is_active)
     .fetch_one(db)
     .await?)
+}
+
+async fn ensure_user_exists(tx: &mut Transaction<'_, Postgres>, user_id: &str) -> ApiResult<()> {
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM users WHERE id = $1)")
+        .bind(user_id)
+        .fetch_one(&mut **tx)
+        .await?;
+
+    if exists {
+        Ok(())
+    } else {
+        Err(ApiError::NotFound("用户不存在".to_string()))
+    }
 }
 
 fn require_user_id(user_id: Option<String>) -> ApiResult<String> {

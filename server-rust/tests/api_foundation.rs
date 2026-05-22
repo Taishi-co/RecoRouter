@@ -900,6 +900,28 @@ async fn user_roles_create_and_switch_updates_active_role_and_user_role() {
 }
 
 #[tokio::test]
+async fn user_roles_create_rejects_missing_user_without_database_error() {
+    let Some(context) = auth_test_context().await else {
+        return;
+    };
+
+    let (status, body) = post_json(
+        &context.app,
+        "/api/user-roles/create",
+        serde_json::json!({
+            "userId": "missing-user",
+            "role": "owner"
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["message"], "用户不存在");
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
 async fn platform_settings_returns_default_row_and_payment_qr_url() {
     let Some(context) = auth_test_context().await else {
         return;
