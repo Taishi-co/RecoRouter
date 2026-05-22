@@ -871,6 +871,10 @@ async fn address_books_default_toggling_and_missing_user_id_code_400_body() {
     assert_eq!(set_default_body["message"], "设置默认地址成功");
     assert_eq!(set_default_body["data"]["id"], home_id);
     assert_eq!(set_default_body["data"]["is_default"], true);
+    assert_eq!(
+        set_default_body["data"]["updated_at"],
+        home_body["data"]["updated_at"]
+    );
 
     let (relisted_status, relisted_body) = get_json(
         &context.app,
@@ -936,13 +940,15 @@ async fn favorite_routes_create_list_enrich_and_increment_use_count() {
             "route_name": "苏州到杭州",
             "pickup_address_id": pickup_id,
             "delivery_address_id": delivery_id,
+            "pickup_address": "不应持久化的取货地址",
+            "delivery_address": "不应持久化的收货地址",
             "estimated_distance": 168.5,
             "estimated_fare": 860.0
         }),
     )
     .await;
     assert_eq!(create_status, StatusCode::OK);
-    assert_eq!(create_body["message"], "常用线路创建成功");
+    assert_eq!(create_body["message"], "线路创建成功");
     assert_eq!(create_body["data"]["route_name"], "苏州到杭州");
     assert_eq!(create_body["data"]["use_count"], 0);
     assert_eq!(create_body["data"]["pickup_address"]["id"], pickup_id);
@@ -985,6 +991,21 @@ async fn favorite_routes_create_list_enrich_and_increment_use_count() {
         routes[0]["delivery_address"]["address"],
         "杭州市上城区解放东路18号"
     );
+    assert_eq!(routes[0]["estimated_distance"], 168.5);
+
+    let (update_status, update_body) = put_json(
+        &context.app,
+        &format!("/api/favorite-routes/{route_id}"),
+        serde_json::json!({
+            "estimated_distance": null,
+            "estimated_fare": null
+        }),
+    )
+    .await;
+    assert_eq!(update_status, StatusCode::OK);
+    assert_eq!(update_body["message"], "线路更新成功");
+    assert_eq!(update_body["data"]["estimated_distance"], Value::Null);
+    assert_eq!(update_body["data"]["estimated_fare"], Value::Null);
 
     let (increment_status, increment_body) = post_json(
         &context.app,
@@ -993,7 +1014,7 @@ async fn favorite_routes_create_list_enrich_and_increment_use_count() {
     )
     .await;
     assert_eq!(increment_status, StatusCode::OK);
-    assert_eq!(increment_body["message"], "使用次数更新成功");
+    assert_eq!(increment_body["message"], "更新成功");
     assert_eq!(increment_body["data"]["id"], route_id);
     assert_eq!(increment_body["data"]["use_count"], 1);
     assert_eq!(increment_body["data"]["pickup_address"]["id"], pickup_id);

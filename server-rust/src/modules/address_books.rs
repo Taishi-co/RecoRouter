@@ -80,6 +80,10 @@ where
     let mut tx = state.db.begin().await?;
 
     if is_default {
+        lock_default_scope(&mut tx, &body.user_id).await?;
+    }
+
+    if is_default {
         sqlx::query("UPDATE address_books SET is_default = false WHERE user_id = $1")
             .bind(&body.user_id)
             .execute(&mut *tx)
@@ -172,6 +176,7 @@ where
 
     let mut tx = state.db.begin().await?;
     if body.is_default == Some(true) {
+        lock_default_scope(&mut tx, &user_id).await?;
         sqlx::query("UPDATE address_books SET is_default = false WHERE user_id = $1 AND id <> $2")
             .bind(&user_id)
             .bind(&id)
@@ -244,6 +249,8 @@ where
         .ok_or_else(|| ApiError::NotFound("地址不存在".to_string()))?;
 
     let mut tx = state.db.begin().await?;
+    lock_default_scope(&mut tx, &user_id).await?;
+
     sqlx::query("UPDATE address_books SET is_default = false WHERE user_id = $1")
         .bind(&user_id)
         .execute(&mut *tx)
@@ -252,8 +259,7 @@ where
     let address = sqlx::query_scalar::<_, Value>(
         r#"
         UPDATE address_books
-        SET is_default = true,
-            updated_at = now()
+        SET is_default = true
         WHERE id = $1
         RETURNING row_to_json(address_books)
         "#,
@@ -312,4 +318,16 @@ fn non_empty(value: Option<String>) -> Option<String> {
             Some(trimmed.to_string())
         }
     })
+}
+
+async fn lock_default_scope(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: &str,
+) -> ApiResult<()> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
+        .bind(format!("address_books_default:{user_id}"))
+        .execute(&mut **tx)
+        .await?;
+
+    Ok(())
 }

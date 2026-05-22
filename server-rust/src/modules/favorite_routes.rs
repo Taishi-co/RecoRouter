@@ -5,7 +5,7 @@ use axum::{
     Json, Router,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 use crate::{
     app::AppState,
@@ -46,33 +46,14 @@ struct CreateRouteRequest {
     route_name: String,
     pickup_address_id: Option<String>,
     delivery_address_id: Option<String>,
-    pickup_address_name: Option<String>,
-    pickup_address: Option<String>,
-    pickup_lat: Option<f64>,
-    pickup_lng: Option<f64>,
-    delivery_address_name: Option<String>,
-    delivery_address: Option<String>,
-    delivery_lat: Option<f64>,
-    delivery_lng: Option<f64>,
     estimated_distance: Option<f64>,
     estimated_fare: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
 struct UpdateRouteRequest {
-    route_name: Option<String>,
-    pickup_address_id: Option<String>,
-    delivery_address_id: Option<String>,
-    pickup_address_name: Option<String>,
-    pickup_address: Option<String>,
-    pickup_lat: Option<f64>,
-    pickup_lng: Option<f64>,
-    delivery_address_name: Option<String>,
-    delivery_address: Option<String>,
-    delivery_lat: Option<f64>,
-    delivery_lng: Option<f64>,
-    estimated_distance: Option<f64>,
-    estimated_fare: Option<f64>,
+    #[serde(flatten)]
+    fields: Map<String, Value>,
 }
 
 async fn create_route<S>(
@@ -94,15 +75,11 @@ where
         r#"
         INSERT INTO favorite_routes (
             user_id, route_name, pickup_address_id, delivery_address_id,
-            pickup_address_name, pickup_address, pickup_lat, pickup_lng,
-            delivery_address_name, delivery_address, delivery_lat, delivery_lng,
             estimated_distance, estimated_fare, use_count
         )
         VALUES (
             $1, $2, $3, $4,
-            $5, $6, $7::numeric, $8::numeric,
-            $9, $10, $11::numeric, $12::numeric,
-            $13::numeric, $14::numeric, 0
+            $5::numeric, $6::numeric, 0
         )
         RETURNING id
         "#,
@@ -111,14 +88,6 @@ where
     .bind(&body.route_name)
     .bind(&pickup_address_id)
     .bind(&delivery_address_id)
-    .bind(body.pickup_address_name)
-    .bind(body.pickup_address)
-    .bind(body.pickup_lat)
-    .bind(body.pickup_lng)
-    .bind(body.delivery_address_name)
-    .bind(body.delivery_address)
-    .bind(body.delivery_lat)
-    .bind(body.delivery_lng)
     .bind(body.estimated_distance)
     .bind(body.estimated_fare)
     .fetch_one(&state.db)
@@ -126,7 +95,7 @@ where
 
     let route = fetch_enriched_route(&state.db, &route_id).await?;
 
-    Ok(ok("常用线路创建成功", route).into_response())
+    Ok(ok("线路创建成功", route).into_response())
 }
 
 async fn list_routes<S>(
@@ -142,36 +111,42 @@ where
 
     let routes = sqlx::query_scalar::<_, Value>(
         r#"
-        SELECT row_to_json(route_row)
-        FROM (
-            SELECT
-                fr.*,
-                CASE
-                    WHEN pickup.id IS NULL THEN NULL
-                    ELSE json_build_object(
-                        'id', pickup.id,
-                        'address_name', pickup.address_name,
-                        'address', pickup.address,
-                        'latitude', pickup.latitude,
-                        'longitude', pickup.longitude
+        SELECT jsonb_set(
+                jsonb_set(
+                    to_jsonb(fr),
+                    '{pickup_address}',
+                    COALESCE(
+                        (
+                            SELECT jsonb_build_object(
+                                'id', pickup.id,
+                                'address_name', pickup.address_name,
+                                'address', pickup.address,
+                                'latitude', pickup.latitude,
+                                'longitude', pickup.longitude
+                            )
+                        ),
+                        'null'::jsonb
                     )
-                END AS pickup_address,
-                CASE
-                    WHEN delivery.id IS NULL THEN NULL
-                    ELSE json_build_object(
-                        'id', delivery.id,
-                        'address_name', delivery.address_name,
-                        'address', delivery.address,
-                        'latitude', delivery.latitude,
-                        'longitude', delivery.longitude
-                    )
-                END AS delivery_address
-            FROM favorite_routes fr
-            LEFT JOIN address_books pickup ON pickup.id = fr.pickup_address_id
-            LEFT JOIN address_books delivery ON delivery.id = fr.delivery_address_id
-            WHERE fr.user_id = $1
-            ORDER BY fr.use_count DESC, fr.created_at DESC
-        ) route_row
+                ),
+                '{delivery_address}',
+                COALESCE(
+                    (
+                        SELECT jsonb_build_object(
+                            'id', delivery.id,
+                            'address_name', delivery.address_name,
+                            'address', delivery.address,
+                            'latitude', delivery.latitude,
+                            'longitude', delivery.longitude
+                        )
+                    ),
+                    'null'::jsonb
+                )
+            )
+        FROM favorite_routes fr
+        LEFT JOIN address_books pickup ON pickup.id = fr.pickup_address_id
+        LEFT JOIN address_books delivery ON delivery.id = fr.delivery_address_id
+        WHERE fr.user_id = $1
+        ORDER BY fr.use_count DESC, fr.created_at DESC
         "#,
     )
     .bind(user_id)
@@ -203,53 +178,88 @@ where
 {
     ensure_route_exists(&state.db, &id).await?;
 
-    let pickup_address_id = normalize_optional_text(body.pickup_address_id);
-    let delivery_address_id = normalize_optional_text(body.delivery_address_id);
-    validate_address_id(&state.db, pickup_address_id.as_deref(), "取货地址不存在").await?;
-    validate_address_id(&state.db, delivery_address_id.as_deref(), "收货地址不存在").await?;
+    let route_name = text_field(&body.fields, "route_name")?;
+    let pickup_address_id = text_field(&body.fields, "pickup_address_id")?;
+    let delivery_address_id = text_field(&body.fields, "delivery_address_id")?;
+    let pickup_address_name = text_field(&body.fields, "pickup_address_name")?;
+    let pickup_address = text_field(&body.fields, "pickup_address")?;
+    let pickup_lat = number_field(&body.fields, "pickup_lat")?;
+    let pickup_lng = number_field(&body.fields, "pickup_lng")?;
+    let delivery_address_name = text_field(&body.fields, "delivery_address_name")?;
+    let delivery_address = text_field(&body.fields, "delivery_address")?;
+    let delivery_lat = number_field(&body.fields, "delivery_lat")?;
+    let delivery_lng = number_field(&body.fields, "delivery_lng")?;
+    let estimated_distance = number_field(&body.fields, "estimated_distance")?;
+    let estimated_fare = number_field(&body.fields, "estimated_fare")?;
+    let has_route_name = body.fields.contains_key("route_name");
+    let has_pickup_address_id = body.fields.contains_key("pickup_address_id");
+    let has_delivery_address_id = body.fields.contains_key("delivery_address_id");
+    let has_pickup_address_name = body.fields.contains_key("pickup_address_name");
+    let has_pickup_address = body.fields.contains_key("pickup_address");
+    let has_pickup_lat = body.fields.contains_key("pickup_lat");
+    let has_pickup_lng = body.fields.contains_key("pickup_lng");
+    let has_delivery_address_name = body.fields.contains_key("delivery_address_name");
+    let has_delivery_address = body.fields.contains_key("delivery_address");
+    let has_delivery_lat = body.fields.contains_key("delivery_lat");
+    let has_delivery_lng = body.fields.contains_key("delivery_lng");
+    let has_estimated_distance = body.fields.contains_key("estimated_distance");
+    let has_estimated_fare = body.fields.contains_key("estimated_fare");
 
     let route_id: Option<String> = sqlx::query_scalar(
         r#"
         UPDATE favorite_routes
-        SET route_name = COALESCE($2, route_name),
-            pickup_address_id = COALESCE($3, pickup_address_id),
-            delivery_address_id = COALESCE($4, delivery_address_id),
-            pickup_address_name = COALESCE($5, pickup_address_name),
-            pickup_address = COALESCE($6, pickup_address),
-            pickup_lat = COALESCE($7::numeric, pickup_lat),
-            pickup_lng = COALESCE($8::numeric, pickup_lng),
-            delivery_address_name = COALESCE($9, delivery_address_name),
-            delivery_address = COALESCE($10, delivery_address),
-            delivery_lat = COALESCE($11::numeric, delivery_lat),
-            delivery_lng = COALESCE($12::numeric, delivery_lng),
-            estimated_distance = COALESCE($13::numeric, estimated_distance),
-            estimated_fare = COALESCE($14::numeric, estimated_fare),
+        SET route_name = CASE WHEN $2 THEN $3 ELSE route_name END,
+            pickup_address_id = CASE WHEN $4 THEN $5 ELSE pickup_address_id END,
+            delivery_address_id = CASE WHEN $6 THEN $7 ELSE delivery_address_id END,
+            pickup_address_name = CASE WHEN $8 THEN $9 ELSE pickup_address_name END,
+            pickup_address = CASE WHEN $10 THEN $11 ELSE pickup_address END,
+            pickup_lat = CASE WHEN $12 THEN $13::numeric ELSE pickup_lat END,
+            pickup_lng = CASE WHEN $14 THEN $15::numeric ELSE pickup_lng END,
+            delivery_address_name = CASE WHEN $16 THEN $17 ELSE delivery_address_name END,
+            delivery_address = CASE WHEN $18 THEN $19 ELSE delivery_address END,
+            delivery_lat = CASE WHEN $20 THEN $21::numeric ELSE delivery_lat END,
+            delivery_lng = CASE WHEN $22 THEN $23::numeric ELSE delivery_lng END,
+            estimated_distance = CASE WHEN $24 THEN $25::numeric ELSE estimated_distance END,
+            estimated_fare = CASE WHEN $26 THEN $27::numeric ELSE estimated_fare END,
             updated_at = now()
         WHERE id = $1
         RETURNING id
         "#,
     )
     .bind(&id)
-    .bind(body.route_name)
-    .bind(&pickup_address_id)
-    .bind(&delivery_address_id)
-    .bind(body.pickup_address_name)
-    .bind(body.pickup_address)
-    .bind(body.pickup_lat)
-    .bind(body.pickup_lng)
-    .bind(body.delivery_address_name)
-    .bind(body.delivery_address)
-    .bind(body.delivery_lat)
-    .bind(body.delivery_lng)
-    .bind(body.estimated_distance)
-    .bind(body.estimated_fare)
+    .bind(has_route_name)
+    .bind(route_name)
+    .bind(has_pickup_address_id)
+    .bind(pickup_address_id)
+    .bind(has_delivery_address_id)
+    .bind(delivery_address_id)
+    .bind(has_pickup_address_name)
+    .bind(pickup_address_name)
+    .bind(has_pickup_address)
+    .bind(pickup_address)
+    .bind(has_pickup_lat)
+    .bind(pickup_lat)
+    .bind(has_pickup_lng)
+    .bind(pickup_lng)
+    .bind(has_delivery_address_name)
+    .bind(delivery_address_name)
+    .bind(has_delivery_address)
+    .bind(delivery_address)
+    .bind(has_delivery_lat)
+    .bind(delivery_lat)
+    .bind(has_delivery_lng)
+    .bind(delivery_lng)
+    .bind(has_estimated_distance)
+    .bind(estimated_distance)
+    .bind(has_estimated_fare)
+    .bind(estimated_fare)
     .fetch_optional(&state.db)
     .await?;
 
     let route_id = route_id.ok_or_else(|| ApiError::NotFound("线路不存在".to_string()))?;
     let route = fetch_enriched_route(&state.db, &route_id).await?;
 
-    Ok(ok("常用线路更新成功", route).into_response())
+    Ok(ok("线路更新成功", route).into_response())
 }
 
 async fn delete_route<S>(
@@ -269,7 +279,7 @@ where
         return Err(ApiError::NotFound("线路不存在".to_string()));
     }
 
-    Ok(ok("常用线路删除成功", Value::Null).into_response())
+    Ok(ok("线路删除成功", Value::Null).into_response())
 }
 
 async fn increment_use_count<S>(
@@ -295,41 +305,47 @@ where
     let route_id = route_id.ok_or_else(|| ApiError::NotFound("线路不存在".to_string()))?;
     let route = fetch_enriched_route(&state.db, &route_id).await?;
 
-    Ok(ok("使用次数更新成功", route).into_response())
+    Ok(ok("更新成功", route).into_response())
 }
 
 async fn fetch_enriched_route(pool: &sqlx::PgPool, id: &str) -> ApiResult<Value> {
     sqlx::query_scalar::<_, Value>(
         r#"
-        SELECT row_to_json(route_row)
-        FROM (
-            SELECT
-                fr.*,
-                CASE
-                    WHEN pickup.id IS NULL THEN NULL
-                    ELSE json_build_object(
-                        'id', pickup.id,
-                        'address_name', pickup.address_name,
-                        'address', pickup.address,
-                        'latitude', pickup.latitude,
-                        'longitude', pickup.longitude
+        SELECT jsonb_set(
+                jsonb_set(
+                    to_jsonb(fr),
+                    '{pickup_address}',
+                    COALESCE(
+                        (
+                            SELECT jsonb_build_object(
+                                'id', pickup.id,
+                                'address_name', pickup.address_name,
+                                'address', pickup.address,
+                                'latitude', pickup.latitude,
+                                'longitude', pickup.longitude
+                            )
+                        ),
+                        'null'::jsonb
                     )
-                END AS pickup_address,
-                CASE
-                    WHEN delivery.id IS NULL THEN NULL
-                    ELSE json_build_object(
-                        'id', delivery.id,
-                        'address_name', delivery.address_name,
-                        'address', delivery.address,
-                        'latitude', delivery.latitude,
-                        'longitude', delivery.longitude
-                    )
-                END AS delivery_address
-            FROM favorite_routes fr
-            LEFT JOIN address_books pickup ON pickup.id = fr.pickup_address_id
-            LEFT JOIN address_books delivery ON delivery.id = fr.delivery_address_id
-            WHERE fr.id = $1
-        ) route_row
+                ),
+                '{delivery_address}',
+                COALESCE(
+                    (
+                        SELECT jsonb_build_object(
+                            'id', delivery.id,
+                            'address_name', delivery.address_name,
+                            'address', delivery.address,
+                            'latitude', delivery.latitude,
+                            'longitude', delivery.longitude
+                        )
+                    ),
+                    'null'::jsonb
+                )
+            )
+        FROM favorite_routes fr
+        LEFT JOIN address_books pickup ON pickup.id = fr.pickup_address_id
+        LEFT JOIN address_books delivery ON delivery.id = fr.delivery_address_id
+        WHERE fr.id = $1
         "#,
     )
     .bind(id)
@@ -404,4 +420,23 @@ fn normalize_optional_text(value: Option<String>) -> Option<String> {
 
 fn non_empty(value: Option<String>) -> Option<String> {
     normalize_optional_text(value)
+}
+
+fn text_field(fields: &Map<String, Value>, key: &str) -> ApiResult<Option<String>> {
+    match fields.get(key) {
+        Some(Value::Null) | None => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value.clone())),
+        Some(_) => Err(ApiError::BadRequest(format!("{key} 参数不正确"))),
+    }
+}
+
+fn number_field(fields: &Map<String, Value>, key: &str) -> ApiResult<Option<f64>> {
+    match fields.get(key) {
+        Some(Value::Null) | None => Ok(None),
+        Some(Value::Number(value)) => value
+            .as_f64()
+            .map(Some)
+            .ok_or_else(|| ApiError::BadRequest(format!("{key} 参数不正确"))),
+        Some(_) => Err(ApiError::BadRequest(format!("{key} 参数不正确"))),
+    }
 }
