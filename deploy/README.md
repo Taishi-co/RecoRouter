@@ -18,7 +18,7 @@ Target:
 ```dotenv
 DATABASE_URL=postgres://postgres:change-me@recocar-postgres:5432/recocar
 SERVER_PORT=34533
-PUBLIC_BASE_URL=http://car.shcxyz.site
+PUBLIC_BASE_URL=https://car.shcxyz.site
 LOCAL_UPLOAD_DIR=/app/uploads
 
 # Optional Tencent COS. Leave unset to use local uploads.
@@ -84,8 +84,8 @@ For first install, when `/opt/recorouter/current` does not exist yet:
 ssh root@62.234.29.88 'mkdir -p /tmp/recorouter-install && tar -xzf /tmp/recorouter-release.tar.gz -C /tmp/recorouter-install && bash /tmp/recorouter-install/deploy/install-release.sh /tmp/recorouter-release.tar.gz'
 ```
 
-After DNS resolves, enable HTTPS and change `PUBLIC_BASE_URL` to `https://car.shcxyz.site`:
+If the certificate is missing, issue it with:
 
 ```bash
-certbot --nginx -d car.shcxyz.site
+certbot certonly --webroot -w /opt/recorouter/current/dist-web -d car.shcxyz.site
 ```

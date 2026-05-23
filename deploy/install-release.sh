@@ -26,7 +26,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
   cat >"$ENV_FILE" <<EOF
 DATABASE_URL=postgres://postgres:change-me@127.0.0.1:5432/recocar
 SERVER_PORT=$API_PORT
-PUBLIC_BASE_URL=http://$DOMAIN
+PUBLIC_BASE_URL=https://$DOMAIN
 LOCAL_UPLOAD_DIR=$APP_ROOT/uploads
 
 # Optional Tencent COS. Leave unset to use local uploads.
@@ -80,4 +80,4 @@ systemctl restart "$SERVICE_NAME"
 systemctl reload nginx
 
 curl -fsS "http://127.0.0.1:$API_PORT/api/health" >/dev/null
-echo "RecoRouter deployed at http://$DOMAIN"
+echo "RecoRouter deployed at https://$DOMAIN"
