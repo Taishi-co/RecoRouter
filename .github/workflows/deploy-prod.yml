@@ -1,0 +1,75 @@
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: recorouter-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SERVER_HOST: ${{ secrets.SERVER_HOST }}
+      SERVER_USER: ${{ secrets.SERVER_USER }}
+      SERVER_PORT: ${{ vars.SERVER_PORT || '22' }}
+      SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+      SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build server release
+        run: deploy/make-docker-release.sh
+
+      - name: Configure SSH
+        run: |
+          set -euo pipefail
+          test -n "$SERVER_HOST"
+          test -n "$SERVER_USER"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -p "$SERVER_PORT" -H "$SERVER_HOST" >> ~/.ssh/known_hosts
+          if [ -n "${SERVER_SSH_KEY:-}" ]; then
+            printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/recorouter_deploy_key
+            chmod 600 ~/.ssh/recorouter_deploy_key
+          elif [ -n "${SERVER_PASSWORD:-}" ]; then
+            sudo apt-get update
+            sudo apt-get install -y sshpass
+          else
+            echo "Set SERVER_SSH_KEY or SERVER_PASSWORD in GitHub Secrets." >&2
+            exit 1
+          fi
+
+      - name: Upload and install release
+        run: |
+          set -euo pipefail
+          remote="$SERVER_USER@$SERVER_HOST"
+          if [ -n "${SERVER_SSH_KEY:-}" ]; then
+            scp -P "$SERVER_PORT" -i ~/.ssh/recorouter_deploy_key /tmp/recorouter-docker-release.tar.gz "$remote:/tmp/recorouter-docker-release.tar.gz"
+            ssh -p "$SERVER_PORT" -i ~/.ssh/recorouter_deploy_key "$remote" 'mkdir -p /tmp/recorouter-install && rm -rf /tmp/recorouter-install/* && tar -xzf /tmp/recorouter-docker-release.tar.gz -C /tmp/recorouter-install && bash /tmp/recorouter-install/deploy/install-docker-release.sh /tmp/recorouter-docker-release.tar.gz'
+          else
+            SSHPASS="$SERVER_PASSWORD" sshpass -eSSHPASS scp -P "$SERVER_PORT" /tmp/recorouter-docker-release.tar.gz "$remote:/tmp/recorouter-docker-release.tar.gz"
+            SSHPASS="$SERVER_PASSWORD" sshpass -eSSHPASS ssh -p "$SERVER_PORT" "$remote" 'mkdir -p /tmp/recorouter-install && rm -rf /tmp/recorouter-install/* && tar -xzf /tmp/recorouter-docker-release.tar.gz -C /tmp/recorouter-install && bash /tmp/recorouter-install/deploy/install-docker-release.sh /tmp/recorouter-docker-release.tar.gz'
+          fi
+
+      - name: Verify production
+        run: |
+          set -euo pipefail
+          curl -fsS https://car.shcxyz.site/api/health
+          curl -fsSI https://car.shcxyz.site/

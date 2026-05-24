@@ -30,6 +30,52 @@ LOCAL_UPLOAD_DIR=/app/uploads
 
 The Rust API runs embedded migrations on startup.
 
+## GitHub Actions auto deploy
+
+The repository has two production workflows:
+
+- `.github/workflows/deploy-prod.yml`
+  - Trigger: push to `main`, or manual `workflow_dispatch`.
+  - Builds `/tmp/recorouter-docker-release.tar.gz`.
+  - Uploads it to the server.
+  - Runs `deploy/install-docker-release.sh`.
+  - Verifies `https://car.shcxyz.site/` and `/api/health`.
+- `.github/workflows/publish-miniapp.yml`
+  - Trigger: manual `workflow_dispatch`, or push to `main` when repository variable `WEAPP_UPLOAD_ON_MAIN=true`.
+  - Packages source without local env/key/build artifacts.
+  - Runs `deploy/upload-miniapp.sh` on `62.234.29.88`, so WeChat sees the fixed upload IP `62.234.29.88`.
+  - Currently supports `weapp`; `tt` and `alipay` are explicit extension points.
+
+Required GitHub Secrets:
+
+```text
+SERVER_HOST=62.234.29.88
+SERVER_USER=root
+SERVER_PASSWORD=<server password>
+# or use SERVER_SSH_KEY instead of SERVER_PASSWORD
+```
+
+Required GitHub Variables:
+
+```text
+SERVER_PORT=22
+PROJECT_DOMAIN=https://car.shcxyz.site
+MINIAPP_PLATFORM=weapp
+TARO_APP_WEAPP_APPID=wx1d00ff916a4a8ed0
+WEAPP_UPLOAD_ON_MAIN=false
+```
+
+Set `WEAPP_UPLOAD_ON_MAIN=true` only after the WeChat upload IP allowlist includes
+`62.234.29.88`.
+
+Server-only WeChat upload key path:
+
+```text
+/etc/recorouter/weapp/private.appid.key
+```
+
+Do not commit the WeChat upload key, `.env.local`, or `project.private.config.json`.
+
 ## Build a Docker release package
 
 From the repo root:
