@@ -49,7 +49,13 @@ tar -xzf "$RELEASE_TAR" -C "$RELEASE_DIR"
 ln -sfn "$RELEASE_DIR" "$APP_ROOT/current"
 
 docker network inspect "$DOCKER_NETWORK" >/dev/null
-docker build -t "recorouter-api:$RELEASE_ID" -t "recorouter-api:latest" "$RELEASE_DIR/server-rust"
+if [[ -f "$RELEASE_DIR/recorouter-api-image.tar" ]]; then
+  docker load -i "$RELEASE_DIR/recorouter-api-image.tar"
+  docker tag "recorouter-api:release" "recorouter-api:$RELEASE_ID"
+  docker tag "recorouter-api:release" "recorouter-api:latest"
+else
+  docker build -t "recorouter-api:$RELEASE_ID" -t "recorouter-api:latest" "$RELEASE_DIR/server-rust"
+fi
 
 docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 docker run -d \

@@ -37,6 +37,7 @@ The repository has two production workflows:
 - `.github/workflows/deploy-prod.yml`
   - Trigger: push to `main`, or manual `workflow_dispatch`.
   - Builds `/tmp/recorouter-docker-release.tar.gz`.
+  - Builds the Rust API Docker image on the GitHub Linux runner and packages it as `recorouter-api-image.tar`.
   - Uploads it to the server.
   - Runs `deploy/install-docker-release.sh`.
   - Verifies `https://car.shcxyz.site/` and `/api/health`.
@@ -86,9 +87,13 @@ deploy/make-docker-release.sh
 
 This creates `/tmp/recorouter-docker-release.tar.gz` containing:
 
-- `server-rust/`
 - `dist-web/`
 - `deploy/`
+
+By default the package contains `server-rust/` and lets the server build the
+Docker image. In GitHub Actions, `BUILD_DOCKER_IMAGE=1` builds the image on the
+Linux runner and packages `recorouter-api-image.tar`, so the server only runs
+`docker load` and restarts the container.
 
 Upload and install:
 
