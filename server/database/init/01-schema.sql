@@ -43,6 +43,13 @@ CREATE TABLE IF NOT EXISTS demands (
   delivery_lng numeric,
   estimated_distance numeric,
   estimated_fare numeric,
+  route_type text,
+  time_window jsonb,
+  pickup_point jsonb,
+  delivery_points jsonb,
+  cargo_info jsonb,
+  pickup_time_start text,
+  pickup_time_end text,
   cargo_photos jsonb,
   remarks text,
   status text DEFAULT 'pending',
@@ -55,10 +62,14 @@ CREATE TABLE IF NOT EXISTS vehicles (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
   owner_id text REFERENCES users(id) ON DELETE CASCADE,
   enterprise_id text,
+  vehicle_code text,
   vehicle_type text,
   license_plate text,
   load_capacity numeric,
   volume numeric,
+  length numeric,
+  width numeric,
+  height numeric,
   battery_life numeric,
   operation_area jsonb,
   available_hours jsonb,
@@ -66,6 +77,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
   is_available boolean DEFAULT true,
   is_available_for_rent boolean DEFAULT false,
   current_renter_id text REFERENCES users(id) ON DELETE SET NULL,
+  current_location text,
   usage_mode text,
   rental_status text,
   trip_status text DEFAULT 'idle',
@@ -75,6 +87,19 @@ CREATE TABLE IF NOT EXISTS vehicles (
   base_price numeric DEFAULT 20,
   base_distance numeric DEFAULT 3,
   price_per_km numeric DEFAULT 2,
+  price_updated_at timestamptz,
+  rent_monthly_price numeric,
+  rent_yearly_price numeric,
+  rent_deposit numeric,
+  contact_phone text,
+  contact_wechat text,
+  today_internal_orders integer DEFAULT 0,
+  today_external_orders integer DEFAULT 0,
+  today_distance numeric DEFAULT 0,
+  rent_start_date timestamptz,
+  rent_end_date timestamptz,
+  rent_type text,
+  rental_notes text,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz
 );
@@ -98,6 +123,9 @@ CREATE TABLE IF NOT EXISTS orders (
   delivery_address text,
   remarks text,
   fare_price numeric DEFAULT 0,
+  calculated_fare numeric,
+  fare_calculation_detail jsonb,
+  is_custom_fare boolean DEFAULT true,
   merchant_confirmed boolean DEFAULT false,
   confirm_time timestamptz,
   payment_status text DEFAULT 'unpaid',
@@ -314,6 +342,7 @@ CREATE TABLE IF NOT EXISTS dairy_stations (
   address text,
   location jsonb,
   phone text,
+  customer_type text DEFAULT 'owned',
   status text DEFAULT 'active',
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz
@@ -330,6 +359,8 @@ CREATE TABLE IF NOT EXISTS enterprise_demands (
   vehicle_source text,
   vehicle_allocation jsonb,
   optimized_routes jsonb,
+  external_demand_id text,
+  remark text,
   status text DEFAULT 'pending',
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz
@@ -350,6 +381,44 @@ CREATE INDEX IF NOT EXISTS users_role_idx ON users(role);
 CREATE INDEX IF NOT EXISTS orders_status_idx ON orders(status);
 CREATE INDEX IF NOT EXISTS demands_status_idx ON demands(status);
 CREATE INDEX IF NOT EXISTS vehicles_status_idx ON vehicles(status);
+CREATE INDEX IF NOT EXISTS enterprise_demands_external_demand_id_idx ON enterprise_demands(external_demand_id);
+CREATE INDEX IF NOT EXISTS vehicles_enterprise_dispatch_idx ON vehicles(enterprise_id, usage_mode, status, trip_status);
+
+ALTER TABLE IF EXISTS demands ADD COLUMN IF NOT EXISTS route_type text;
+ALTER TABLE IF EXISTS demands ADD COLUMN IF NOT EXISTS time_window jsonb;
+ALTER TABLE IF EXISTS demands ADD COLUMN IF NOT EXISTS pickup_point jsonb;
+ALTER TABLE IF EXISTS demands ADD COLUMN IF NOT EXISTS delivery_points jsonb;
+ALTER TABLE IF EXISTS demands ADD COLUMN IF NOT EXISTS cargo_info jsonb;
+ALTER TABLE IF EXISTS demands ADD COLUMN IF NOT EXISTS pickup_time_start text;
+ALTER TABLE IF EXISTS demands ADD COLUMN IF NOT EXISTS pickup_time_end text;
+
+ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS vehicle_code text;
+ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS length numeric;
+ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS width numeric;
+ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS height numeric;
+ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS current_location text;
+ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS price_updated_at timestamptz;
+ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS rent_monthly_price numeric;
+ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS rent_yearly_price numeric;
+ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS rent_deposit numeric;
+ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS contact_phone text;
+ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS contact_wechat text;
+ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS today_internal_orders integer DEFAULT 0;
+ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS today_external_orders integer DEFAULT 0;
+ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS today_distance numeric DEFAULT 0;
+ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS rent_start_date timestamptz;
+ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS rent_end_date timestamptz;
+ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS rent_type text;
+ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS rental_notes text;
+
+ALTER TABLE IF EXISTS orders ADD COLUMN IF NOT EXISTS calculated_fare numeric;
+ALTER TABLE IF EXISTS orders ADD COLUMN IF NOT EXISTS fare_calculation_detail jsonb;
+ALTER TABLE IF EXISTS orders ADD COLUMN IF NOT EXISTS is_custom_fare boolean DEFAULT true;
+
+ALTER TABLE IF EXISTS dairy_stations ADD COLUMN IF NOT EXISTS customer_type text DEFAULT 'owned';
+
+ALTER TABLE IF EXISTS enterprise_demands ADD COLUMN IF NOT EXISTS external_demand_id text;
+ALTER TABLE IF EXISTS enterprise_demands ADD COLUMN IF NOT EXISTS remark text;
 
 GRANT USAGE ON SCHEMA public TO anon, service_role;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, service_role;

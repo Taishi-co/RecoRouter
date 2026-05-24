@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { getApiData, getApiMessage, isApiSuccess } from '@/lib/api-response'
 import { Network } from '@/network'
 import Taro from '@tarojs/taro'
 import './index.css'
@@ -25,6 +26,14 @@ interface ExternalOrder {
   status: string
   estimated_distance?: number
   estimated_fare?: number
+  cargo_info?: {
+    businessMode?: 'enterprise_terminal' | 'community_group_buy'
+    businessModeLabel?: string
+  }
+  delivery_points?: Array<{
+    businessMode?: 'enterprise_terminal' | 'community_group_buy'
+    pointType?: string
+  }>
 }
 
 const EnterpriseOrderHallPage: FC = () => {
@@ -35,6 +44,8 @@ const EnterpriseOrderHallPage: FC = () => {
   const [adminId, setAdminId] = useState('')
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   const [showVehicleDialog, setShowVehicleDialog] = useState(false)
+  const [errorText, setErrorText] = useState('')
+  const [accepting, setAccepting] = useState(false)
 
   useEffect(() => {
     loadEnterpriseInfo()
@@ -52,15 +63,21 @@ const EnterpriseOrderHallPage: FC = () => {
         url: `/api/enterprise/admin/${userInfo.id}`,
       })
 
-      if (enterpriseRes.data.code === 200) {
-        const entData = enterpriseRes.data.data
+      if (isApiSuccess(enterpriseRes)) {
+        const entData = getApiData<{ id: string } | null>(enterpriseRes, null)
+        if (!entData?.id) {
+          setErrorText('企业信息缺失')
+          return
+        }
         setEnterpriseId(entData.id)
         setAdminId(userInfo.id)
         loadOrders()
         loadAvailableVehicles(entData.id)
+      } else {
+        setErrorText(getApiMessage(enterpriseRes, '加载企业信息失败'))
       }
-    } catch (error) {
-      console.error('加载企业信息失败:', error)
+    } catch {
+      setErrorText('加载企业信息失败')
     }
   }
 
@@ -68,15 +85,17 @@ const EnterpriseOrderHallPage: FC = () => {
     try {
       setLoading(true)
       const res = await Network.request({
-        url: '/api/demands',
-        data: { status: 'pending' },
+        url: '/api/demand/external/pending',
       })
 
-      if (res.data.code === 200) {
-        setOrders(res.data.data || [])
+      if (isApiSuccess(res)) {
+        setOrders(getApiData<ExternalOrder[]>(res, []))
+        setErrorText('')
+      } else {
+        setErrorText(getApiMessage(res, '加载外部订单失败'))
       }
-    } catch (error) {
-      console.error('加载外部订单失败:', error)
+    } catch {
+      setErrorText('加载外部订单失败')
     } finally {
       setLoading(false)
     }
@@ -89,13 +108,15 @@ const EnterpriseOrderHallPage: FC = () => {
         data: { enterprise_id: entId, usage_mode: 'external' },
       })
 
-      if (res.data.code === 200) {
-        const vehicles = res.data.data || []
+      if (isApiSuccess(res)) {
+        const vehicles = getApiData<any[]>(res, [])
         // 只显示空闲车辆
         setAvailableVehicles(vehicles.filter((v: any) => v.trip_status === 'idle'))
+      } else {
+        setErrorText(getApiMessage(res, '加载可用车辆失败'))
       }
-    } catch (error) {
-      console.error('加载可用车辆失败:', error)
+    } catch {
+      setErrorText('加载可用车辆失败')
     }
   }
 
@@ -116,6 +137,7 @@ const EnterpriseOrderHallPage: FC = () => {
     if (!selectedOrderId || !enterpriseId || !adminId) return
 
     try {
+      setAccepting(true)
       const res = await Network.request({
         url: `/api/demand/external/${selectedOrderId}/accept`,
         method: 'POST',
@@ -125,7 +147,7 @@ const EnterpriseOrderHallPage: FC = () => {
         },
       })
 
-      if (res.data.code === 200) {
+      if (isApiSuccess(res)) {
         Taro.showToast({
           title: '接单成功',
           icon: 'success',
@@ -137,17 +159,24 @@ const EnterpriseOrderHallPage: FC = () => {
         loadAvailableVehicles(enterpriseId)
       } else {
         Taro.showToast({
-          title: res.data.message || '接单失败',
+          title: getApiMessage(res, '接单失败'),
           icon: 'none',
         })
       }
-    } catch (error) {
-      console.error('接单失败:', error)
+    } catch {
       Taro.showToast({
         title: '接单失败',
         icon: 'none',
       })
+    } finally {
+      setAccepting(false)
     }
+  }
+
+  const getBusinessModeText = (order: ExternalOrder) => {
+    const mode = order.cargo_info?.businessMode || order.delivery_points?.[0]?.businessMode
+    if (mode === 'community_group_buy') return '社区团购'
+    return order.cargo_info?.businessModeLabel || '终端配送'
   }
 
   const getStatusText = (status: string) => {
@@ -183,6 +212,14 @@ const EnterpriseOrderHallPage: FC = () => {
 
       <ScrollView scrollY className="h-full" style={{ height: 'calc(100vh - 60px)' }}>
         <View className="p-4">
+          {errorText && (
+            <Card className="mb-4 border-red-200 bg-red-50">
+              <CardContent className="p-3">
+                <Text className="block text-sm text-red-600">{errorText}</Text>
+              </CardContent>
+            </Card>
+          )}
+
           <View className="flex items-center justify-between mb-4">
             <Text className="text-sm text-gray-600">
               可接订单: {orders.filter(o => o.status === 'pending').length} 单
@@ -225,6 +262,10 @@ const EnterpriseOrderHallPage: FC = () => {
                       <View>
                         <Text className="text-xs text-gray-500 block">货物类型</Text>
                         <Text className="text-sm block">{order.cargo_type}</Text>
+                      </View>
+                      <View>
+                        <Text className="text-xs text-gray-500 block">业务模式</Text>
+                        <Text className="text-sm block">{getBusinessModeText(order)}</Text>
                       </View>
                       <View className="flex gap-4">
                         <View>
@@ -277,7 +318,10 @@ const EnterpriseOrderHallPage: FC = () => {
 
       {/* 选择车辆弹窗 */}
       {showVehicleDialog && (
-        <View className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <View
+          className="bg-black bg-opacity-50 z-50"
+          style={{ position: 'fixed', top: 0, right: 0, bottom: 0, left: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
           <View className="bg-white rounded-lg p-6 w-11/12 max-w-md">
             <Text className="text-xl font-bold block mb-4">选择车辆</Text>
 
@@ -298,8 +342,9 @@ const EnterpriseOrderHallPage: FC = () => {
                   <Button
                     size="sm"
                     onClick={() => handleConfirmAccept(vehicle.id)}
+                    disabled={accepting}
                   >
-                    <Text className="text-xs">确认</Text>
+                    <Text className="text-xs">{accepting ? '提交中' : '确认'}</Text>
                   </Button>
                 </View>
               ))}
