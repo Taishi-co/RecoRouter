@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
+import { getApiData, getApiMessage, isApiSuccess } from '@/lib/api-response'
 import { Network } from '@/network'
 import Taro from '@tarojs/taro'
 
@@ -52,16 +53,15 @@ const DemandDetailPage: FC = () => {
         url: `/api/demand/${demandId}`,
       })
 
-      if (res.data.code === 200) {
-        setDemand(res.data.data)
+      if (isApiSuccess(res)) {
+        setDemand(getApiData<Demand | null>(res, null))
       } else {
         Taro.showToast({
-          title: res.data.message || '加载失败',
+          title: getApiMessage(res, '加载失败'),
           icon: 'none',
         })
       }
-    } catch (error) {
-      console.error('加载详情失败:', error)
+    } catch {
       Taro.showToast({
         title: '加载失败',
         icon: 'none',
@@ -89,7 +89,7 @@ const DemandDetailPage: FC = () => {
               },
             })
 
-            if (updateRes.data.code === 200) {
+            if (isApiSuccess(updateRes)) {
               Taro.showToast({
                 title: '取消成功',
                 icon: 'success',
@@ -97,12 +97,11 @@ const DemandDetailPage: FC = () => {
               loadDemandDetail(demand.id)
             } else {
               Taro.showToast({
-                title: updateRes.data.message || '取消失败',
+                title: getApiMessage(updateRes, '取消失败'),
                 icon: 'none',
               })
             }
-          } catch (error) {
-            console.error('取消配送点失败:', error)
+          } catch {
             Taro.showToast({
               title: '取消失败',
               icon: 'none',
@@ -175,7 +174,7 @@ const DemandDetailPage: FC = () => {
   if (loading) {
     return (
       <View className="min-h-screen bg-gray-50 p-4">
-        <Text className="text-center text-gray-500">加载中...</Text>
+        <Text className="block text-center text-gray-500">加载中...</Text>
       </View>
     )
   }
@@ -183,7 +182,7 @@ const DemandDetailPage: FC = () => {
   if (!demand) {
     return (
       <View className="min-h-screen bg-gray-50 p-4">
-        <Text className="text-center text-gray-500">未找到配送需求</Text>
+        <Text className="block text-center text-gray-500">未找到配送需求</Text>
       </View>
     )
   }

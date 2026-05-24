@@ -10,6 +10,7 @@ import {
   CardContent,
 } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { getApiData, getApiMessage, isApiSuccess } from '@/lib/api-response'
 import { Network } from '@/network'
 import Taro from '@tarojs/taro'
 import './index.css'
@@ -46,6 +47,8 @@ const EnterpriseFleetPage: FC = () => {
   const [loading, setLoading] = useState(true)
   const [enterpriseId, setEnterpriseId] = useState('')
   const [activeTab, setActiveTab] = useState('all')
+  const [errorText, setErrorText] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   // 添加车辆弹窗状态
   const [showAddDialog, setShowAddDialog] = useState(false)
@@ -77,19 +80,20 @@ const EnterpriseFleetPage: FC = () => {
         url: `/api/enterprise/admin/${userInfo.id}`,
       })
 
-      if (enterpriseRes.data.code === 200) {
-        const entId = enterpriseRes.data.data.id
+      if (isApiSuccess(enterpriseRes)) {
+        const entId = getApiData<{ id: string } | null>(enterpriseRes, null)?.id
+        if (!entId) {
+          setErrorText('企业信息缺失')
+          return
+        }
         setEnterpriseId(entId)
         loadVehicles(entId)
         loadStats(entId)
       } else {
-        Taro.showToast({
-          title: '获取企业信息失败',
-          icon: 'none',
-        })
+        setErrorText(getApiMessage(enterpriseRes, '获取企业信息失败'))
       }
-    } catch (error) {
-      console.error('加载企业信息失败:', error)
+    } catch {
+      setErrorText('加载企业信息失败')
     }
   }
 
@@ -101,13 +105,14 @@ const EnterpriseFleetPage: FC = () => {
         data: { enterprise_id: entId },
       })
 
-      console.log('车辆列表响应:', res.data)
-
-      if (res.data.code === 200) {
-        setVehicles(res.data.data || [])
+      if (isApiSuccess(res)) {
+        setVehicles(getApiData<Vehicle[]>(res, []))
+        setErrorText('')
+      } else {
+        setErrorText(getApiMessage(res, '加载车辆列表失败'))
       }
-    } catch (error) {
-      console.error('加载车辆列表失败:', error)
+    } catch {
+      setErrorText('加载车辆列表失败')
       Taro.showToast({
         title: '加载失败',
         icon: 'none',
@@ -124,13 +129,13 @@ const EnterpriseFleetPage: FC = () => {
         data: { enterprise_id: entId },
       })
 
-      console.log('车辆统计响应:', res.data)
-
-      if (res.data.code === 200) {
-        setStats(res.data.data)
+      if (isApiSuccess(res)) {
+        setStats(getApiData<VehicleStats | null>(res, null))
+      } else {
+        setErrorText(getApiMessage(res, '加载统计信息失败'))
       }
-    } catch (error) {
-      console.error('加载统计信息失败:', error)
+    } catch {
+      setErrorText('加载统计信息失败')
     }
   }
 
@@ -142,7 +147,7 @@ const EnterpriseFleetPage: FC = () => {
         data: { trip_status: newStatus },
       })
 
-      if (res.data.code === 200) {
+      if (isApiSuccess(res)) {
         Taro.showToast({
           title: '更新成功',
           icon: 'success',
@@ -151,12 +156,11 @@ const EnterpriseFleetPage: FC = () => {
         loadStats(enterpriseId)
       } else {
         Taro.showToast({
-          title: res.data.message || '更新失败',
+          title: getApiMessage(res, '更新失败'),
           icon: 'none',
         })
       }
-    } catch (error) {
-      console.error('更新失败:', error)
+    } catch {
       Taro.showToast({
         title: '更新失败',
         icon: 'none',
@@ -176,7 +180,7 @@ const EnterpriseFleetPage: FC = () => {
               method: 'DELETE',
             })
 
-            if (deleteRes.data.code === 200) {
+            if (isApiSuccess(deleteRes)) {
               Taro.showToast({
                 title: '删除成功',
                 icon: 'success',
@@ -185,12 +189,11 @@ const EnterpriseFleetPage: FC = () => {
               loadStats(enterpriseId)
             } else {
               Taro.showToast({
-                title: deleteRes.data.message || '删除失败',
+                title: getApiMessage(deleteRes, '删除失败'),
                 icon: 'none',
               })
             }
-          } catch (error) {
-            console.error('删除失败:', error)
+          } catch {
             Taro.showToast({
               title: '删除失败',
               icon: 'none',
@@ -211,7 +214,7 @@ const EnterpriseFleetPage: FC = () => {
         data: { usage_mode: nextMode },
       })
 
-      if (res.data.code === 200) {
+      if (isApiSuccess(res)) {
         Taro.showToast({
           title: '切换成功',
           icon: 'success',
@@ -220,12 +223,11 @@ const EnterpriseFleetPage: FC = () => {
         loadStats(enterpriseId)
       } else {
         Taro.showToast({
-          title: res.data.message || '切换失败',
+          title: getApiMessage(res, '切换失败'),
           icon: 'none',
         })
       }
-    } catch (error) {
-      console.error('切换失败:', error)
+    } catch {
       Taro.showToast({
         title: '切换失败',
         icon: 'none',
@@ -290,20 +292,7 @@ const EnterpriseFleetPage: FC = () => {
     }
 
     try {
-      console.log('添加车辆请求参数:', {
-        enterprise_id: enterpriseId,
-        vehicle_id: newVehicleId,
-        vehicle_code: newVehicleCode,
-        vehicle_type: newVehicleType,
-        load_capacity: capacity,
-        volume: volume,
-        length: length,
-        width: width,
-        height: height,
-        has_cold_chain: newHasColdChain,
-        usage_mode: newUsageMode,
-      })
-
+      setSubmitting(true)
       const res = await Network.request({
         url: '/api/enterprise-vehicles',
         method: 'POST',
@@ -322,9 +311,7 @@ const EnterpriseFleetPage: FC = () => {
         },
       })
 
-      console.log('添加车辆响应:', res.data)
-
-      if (res.data.code === 200) {
+      if (isApiSuccess(res)) {
         Taro.showToast({
           title: '添加成功',
           icon: 'success',
@@ -345,16 +332,17 @@ const EnterpriseFleetPage: FC = () => {
         loadStats(enterpriseId)
       } else {
         Taro.showToast({
-          title: res.data.message || '添加失败',
+          title: getApiMessage(res, '添加失败'),
           icon: 'none',
         })
       }
-    } catch (error) {
-      console.error('添加失败:', error)
+    } catch {
       Taro.showToast({
         title: '添加失败',
         icon: 'none',
       })
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -412,6 +400,14 @@ const EnterpriseFleetPage: FC = () => {
               <Text className="text-xs">添加车辆</Text>
             </Button>
           </View>
+
+          {errorText && (
+            <Card className="mb-4 border-red-200 bg-red-50">
+              <CardContent className="p-3">
+                <Text className="block text-sm text-red-600">{errorText}</Text>
+              </CardContent>
+            </Card>
+          )}
 
           {/* 统计信息 */}
           {stats && (
@@ -552,7 +548,10 @@ const EnterpriseFleetPage: FC = () => {
 
           {/* 添加车辆弹窗 */}
           {showAddDialog && (
-            <View className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <View
+              className="bg-black bg-opacity-50 z-50"
+              style={{ position: 'fixed', top: 0, right: 0, bottom: 0, left: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
               <View className="bg-white rounded-lg p-6 w-11/12 max-w-md max-h-[80vh] overflow-y-auto">
                 <Text className="text-xl font-bold block mb-4">添加车辆</Text>
 
@@ -691,8 +690,8 @@ const EnterpriseFleetPage: FC = () => {
                     >
                       <Text>取消</Text>
                     </Button>
-                    <Button className="flex-1" onClick={handleAddVehicle}>
-                      <Text>确认添加</Text>
+                    <Button className="flex-1" onClick={handleAddVehicle} disabled={submitting}>
+                      <Text>{submitting ? '添加中...' : '确认添加'}</Text>
                     </Button>
                   </View>
                 </View>

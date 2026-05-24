@@ -7,6 +7,7 @@ import {
   CardContent,
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { getApiData, getApiMessage, isApiSuccess } from '@/lib/api-response'
 import { Network } from '@/network'
 import Taro from '@tarojs/taro'
 import './index.css'
@@ -27,6 +28,8 @@ const EnterpriseStationsPage: FC = () => {
   const [loading, setLoading] = useState(true)
   const [keyword, setKeyword] = useState('')
   const [enterpriseId, setEnterpriseId] = useState('')
+  const [errorText, setErrorText] = useState('')
+  const [submitting, setSubmitting] = useState(false)
   
   // 新增奶站弹窗状态
   const [showAddDialog, setShowAddDialog] = useState(false)
@@ -43,29 +46,29 @@ const EnterpriseStationsPage: FC = () => {
   const loadEnterpriseInfo = async () => {
     try {
       const userInfo = Taro.getStorageSync('userInfo')
-      console.log('当前用户信息:', JSON.stringify(userInfo, null, 2))
-      
+
       if (!userInfo) {
         Taro.redirectTo({ url: '/pages/index/index' })
         return
       }
 
-      console.log('开始加载企业信息，用户ID:', userInfo.id)
-
       const enterpriseRes = await Network.request({
         url: `/api/enterprise/admin/${userInfo.id}`,
       })
 
-      console.log('企业信息响应:', JSON.stringify(enterpriseRes.data, null, 2))
-
-      if (enterpriseRes.data.code === 200) {
-        const entId = enterpriseRes.data.data.id
-        console.log('获取到的企业ID:', entId)
+      if (isApiSuccess(enterpriseRes)) {
+        const entId = getApiData<{ id: string } | null>(enterpriseRes, null)?.id
+        if (!entId) {
+          setErrorText('企业信息缺失')
+          return
+        }
         setEnterpriseId(entId)
         loadStations(entId)
+      } else {
+        setErrorText(getApiMessage(enterpriseRes, '加载企业信息失败'))
       }
-    } catch (error) {
-      console.error('加载企业信息失败:', error)
+    } catch {
+      setErrorText('加载企业信息失败')
     }
   }
 
@@ -81,27 +84,20 @@ const EnterpriseStationsPage: FC = () => {
         params.keyword = keyword.trim()
       }
 
-      console.log('请求参数:', JSON.stringify(params, null, 2))
-
       const res = await Network.request({
         url: '/api/station',
         data: params,
       })
 
-      console.log('奶站列表完整响应:', JSON.stringify(res.data, null, 2))
-      console.log('enterpriseId:', entId)
-      console.log('返回的列表数据:', res.data.data?.list)
-      console.log('列表长度:', res.data.data?.list?.length)
-
-      if (res.data.code === 200) {
-        const list = res.data.data?.list || []
-        console.log('设置到 stations 的数据:', list.length, '条')
-        setStations(list)
+      if (isApiSuccess(res)) {
+        const data = getApiData<{ list?: Station[] }>(res, {})
+        setStations(data.list || [])
+        setErrorText('')
       } else {
-        console.error('返回码不是200:', res.data.code, res.data.message)
+        setErrorText(getApiMessage(res, '加载点位失败'))
       }
-    } catch (error) {
-      console.error('加载奶站列表失败:', error)
+    } catch {
+      setErrorText('加载点位失败')
       Taro.showToast({
         title: '加载失败',
         icon: 'none',
@@ -130,7 +126,7 @@ const EnterpriseStationsPage: FC = () => {
           method: 'DELETE',
         })
 
-        if (delRes.data.code === 200) {
+        if (isApiSuccess(delRes)) {
           Taro.showToast({
             title: '删除成功',
             icon: 'success',
@@ -138,13 +134,12 @@ const EnterpriseStationsPage: FC = () => {
           loadStations(enterpriseId)
         } else {
           Taro.showToast({
-            title: delRes.data.message || '删除失败',
+            title: getApiMessage(delRes, '删除失败'),
             icon: 'none',
           })
         }
       }
-    } catch (error) {
-      console.error('删除失败:', error)
+    } catch {
       Taro.showToast({
         title: '删除失败',
         icon: 'none',
@@ -170,6 +165,7 @@ const EnterpriseStationsPage: FC = () => {
     }
 
     try {
+      setSubmitting(true)
       const res = await Network.request({
         url: '/api/station',
         method: 'POST',
@@ -184,7 +180,7 @@ const EnterpriseStationsPage: FC = () => {
         },
       })
 
-      if (res.data.code === 200) {
+      if (isApiSuccess(res)) {
         Taro.showToast({
           title: '添加成功',
           icon: 'success',
@@ -200,16 +196,17 @@ const EnterpriseStationsPage: FC = () => {
         loadStations(enterpriseId)
       } else {
         Taro.showToast({
-          title: res.data.message || '添加失败',
+          title: getApiMessage(res, '添加失败'),
           icon: 'none',
         })
       }
-    } catch (error) {
-      console.error('添加失败:', error)
+    } catch {
       Taro.showToast({
         title: '添加失败',
         icon: 'none',
       })
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -242,8 +239,7 @@ const EnterpriseStationsPage: FC = () => {
           icon: 'success',
         })
       }
-    } catch (error) {
-      console.error('选择位置失败:', error)
+    } catch {
       Taro.showToast({
         title: '选择位置失败',
         icon: 'none',
@@ -255,6 +251,14 @@ const EnterpriseStationsPage: FC = () => {
     <View className="enterprise-stations min-h-screen bg-gray-50 pb-20">
       <View className="p-4">
         <Text className="text-2xl font-bold block mb-4">奶站管理</Text>
+
+        {errorText && (
+          <Card className="mb-4 border-red-200 bg-red-50">
+            <CardContent className="p-3">
+              <Text className="block text-sm text-red-600">{errorText}</Text>
+            </CardContent>
+          </Card>
+        )}
 
         {/* 搜索框和新增按钮 */}
         <View className="flex gap-2 mb-4">
@@ -274,13 +278,6 @@ const EnterpriseStationsPage: FC = () => {
           >
             <Text>新增奶站</Text>
           </Button>
-        </View>
-
-        {/* 调试信息 */}
-        <View className="mb-4 p-3 bg-blue-50 rounded-lg">
-          <Text className="text-xs text-blue-600 block">调试信息:</Text>
-          <Text className="text-xs text-blue-600 block">企业ID: {enterpriseId || '未加载'}</Text>
-          <Text className="text-xs text-blue-600 block">奶站数量: {stations.length}</Text>
         </View>
 
         {/* 奶站列表 */}
@@ -339,7 +336,10 @@ const EnterpriseStationsPage: FC = () => {
 
         {/* 新增奶站弹窗 */}
         {showAddDialog && (
-          <View className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <View
+            className="bg-black bg-opacity-50 z-50"
+            style={{ position: 'fixed', top: 0, right: 0, bottom: 0, left: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
             <View className="bg-white rounded-lg p-6 w-11/12 max-w-md max-h-[80vh] overflow-y-auto">
               <Text className="text-xl font-bold block mb-4">新增奶站</Text>
 
@@ -417,8 +417,8 @@ const EnterpriseStationsPage: FC = () => {
                   >
                     <Text>取消</Text>
                   </Button>
-                  <Button className="flex-1" onClick={handleAddStation}>
-                    <Text>确认添加</Text>
+                  <Button className="flex-1" onClick={handleAddStation} disabled={submitting}>
+                    <Text>{submitting ? '添加中...' : '确认添加'}</Text>
                   </Button>
                 </View>
               </View>
