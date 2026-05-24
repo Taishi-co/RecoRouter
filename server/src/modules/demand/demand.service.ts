@@ -1,9 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { getSupabaseClient } from '../../storage/database/supabase-client';
 import { v4 as uuidv4 } from 'uuid';
 
+type BusinessMode = 'enterprise_terminal' | 'community_group_buy';
+type VehicleSource = 'internal' | 'external' | 'mixed';
+
+const BUSINESS_MODES: BusinessMode[] = ['enterprise_terminal', 'community_group_buy'];
+const VEHICLE_SOURCES: VehicleSource[] = ['internal', 'external', 'mixed'];
+
 @Injectable()
 export class DemandService {
+  private readonly logger = new Logger(DemandService.name);
+
   /**
    * 创建配送需求
    */
@@ -18,6 +26,19 @@ export class DemandService {
   }) {
     const supabase = getSupabaseClient();
     const demandId = `demand-${uuidv4().split('-')[0]}`; // 生成简短的ID
+    const vehicleSource = this.normalizeVehicleSource(data.vehicleSource);
+    const businessMode = this.normalizeBusinessMode(data.cargoInfo?.businessMode);
+    const deliveryPoints = this.normalizeDeliveryPoints(data.deliveryPoints, businessMode);
+    const cargoInfo = this.normalizeCargoInfo(data.cargoInfo, businessMode);
+    const timeWindow = this.normalizeTimeWindow(data.timeWindow);
+
+    if (!data.enterpriseId) {
+      throw new Error('enterpriseId 不能为空');
+    }
+
+    if (deliveryPoints.length === 0) {
+      throw new Error('至少需要一个配送点');
+    }
 
     // 创建企业需求
     const { data: demand, error } = await supabase
@@ -27,10 +48,10 @@ export class DemandService {
         enterprise_id: data.enterpriseId,
         pickup_point_type: data.pickupPointType,
         pickup_point_info: data.pickupPointInfo,
-        delivery_points: data.deliveryPoints,
-        cargo_info: data.cargoInfo,
-        time_window: data.timeWindow,
-        vehicle_source: data.vehicleSource,
+        delivery_points: deliveryPoints,
+        cargo_info: cargoInfo,
+        time_window: timeWindow,
+        vehicle_source: vehicleSource,
         status: 'pending',
       })
       .select()
@@ -41,15 +62,14 @@ export class DemandService {
     let linkedExternalDemandId: string | null = null;
 
     // 如果是外部运力，同时发布到demands表供接单大厅使用
-    if (data.vehicleSource === 'external') {
+    if (vehicleSource === 'external') {
       const publicDemandId = `pub-${uuidv4().split('-')[0]}`;
 
       // 获取第一个配送点作为送货地址，或者组合多个配送点
-      const firstDeliveryPoint = data.deliveryPoints[0] || {};
+      const firstDeliveryPoint = deliveryPoints[0] || {};
       const deliveryAddress = firstDeliveryPoint.address || '未指定';
 
       // 计算总重量和体积
-      const cargoInfo = data.cargoInfo;
       const totalWeight = cargoInfo.quantity || 0;
       const totalVolume = totalWeight * 0.001; // 假设每箱0.001立方米
 
@@ -64,7 +84,7 @@ export class DemandService {
 
       // 构建取货时间（使用今天的时间，加上时间窗的开始时间）
       const today = new Date();
-      const [startHour, startMinute] = data.timeWindow.start.split(':');
+      const [startHour, startMinute] = timeWindow.start.split(':');
       const pickupTime = new Date(
         today.getFullYear(),
         today.getMonth(),
@@ -101,9 +121,9 @@ export class DemandService {
             delivery_lat: firstDeliveryPoint.latitude,
             delivery_lng: firstDeliveryPoint.longitude,
             pickup_point: data.pickupPointInfo,
-            delivery_points: data.deliveryPoints,
-            cargo_info: data.cargoInfo,
-            time_window: data.timeWindow, // 存储时间窗信息
+            delivery_points: deliveryPoints,
+            cargo_info: cargoInfo,
+            time_window: timeWindow, // 存储时间窗信息
             status: 'pending',
             remarks: '企业外部需求',
             created_at: new Date().toISOString(),
@@ -113,14 +133,12 @@ export class DemandService {
           .single();
 
         if (pubError) {
-          console.error('发布到接单大厅失败:', pubError);
+          this.logger.error(`发布到接单大厅失败: ${pubError.message}`);
         } else {
           linkedExternalDemandId = publicDemand?.id || publicDemandId;
-          console.log('成功发布到接单大厅，需求ID:', linkedExternalDemandId);
         }
       } else {
         linkedExternalDemandId = existingDemands[0].id;
-        console.log('需求已存在于接单大厅，跳过创建');
       }
 
       if (linkedExternalDemandId) {
@@ -135,7 +153,7 @@ export class DemandService {
           .single();
 
         if (linkError) {
-          console.error('关联接单大厅需求失败:', linkError);
+          this.logger.error(`关联接单大厅需求失败: ${linkError.message}`);
         } else {
           return linkedDemand;
         }
@@ -264,11 +282,47 @@ export class DemandService {
    */
   async allocateVehicleToDemand(demandId: string, vehicleAllocation: any) {
     const supabase = getSupabaseClient();
+    const vehicleIds = this.normalizeIdList(vehicleAllocation?.vehicle_ids);
+
+    if (vehicleIds.length === 0) {
+      throw new Error('请选择车辆');
+    }
+
+    const { data: existingDemand, error: fetchError } = await supabase
+      .from('enterprise_demands')
+      .select('*')
+      .eq('id', demandId)
+      .single();
+
+    if (fetchError || !existingDemand) {
+      throw new Error('配送需求不存在');
+    }
+
+    if (existingDemand.status !== 'pending') {
+      throw new Error('只有待调度状态的需求可以分配车辆');
+    }
+
+    const vehicleSource = this.normalizeVehicleSource(existingDemand.vehicle_source);
+    if (vehicleSource === 'external') {
+      throw new Error('外部运力需求无需分配自有车辆');
+    }
+
+    await this.assertEnterpriseVehiclesAvailable(
+      existingDemand.enterprise_id,
+      vehicleIds,
+      vehicleSource === 'mixed' ? ['internal', 'external'] : ['internal'],
+    );
+
+    const normalizedAllocation = {
+      ...vehicleAllocation,
+      vehicle_ids: vehicleIds,
+      allocated_at: vehicleAllocation?.allocated_at || new Date().toISOString(),
+    };
 
     const { data: demand, error: updateError } = await supabase
       .from('enterprise_demands')
       .update({
-        vehicle_allocation: vehicleAllocation,
+        vehicle_allocation: normalizedAllocation,
         status: 'in_transit',
         updated_at: new Date().toISOString(),
       })
@@ -277,6 +331,17 @@ export class DemandService {
       .single();
 
     if (updateError) throw updateError;
+
+    const { error: vehicleUpdateError } = await supabase
+      .from('vehicles')
+      .update({
+        trip_status: 'in_transit',
+        updated_at: new Date().toISOString(),
+      })
+      .in('id', vehicleIds);
+
+    if (vehicleUpdateError) throw vehicleUpdateError;
+
     return demand;
   }
 
@@ -322,25 +387,12 @@ export class DemandService {
       throw new Error('只有待接单的外部需求可以接单');
     }
 
-    const uniqueVehicleIds = Array.from(new Set(vehicleIds.filter(Boolean)));
+    const uniqueVehicleIds = this.normalizeIdList(vehicleIds);
     if (uniqueVehicleIds.length === 0) {
       throw new Error('请选择车辆');
     }
 
-    const { data: availableVehicles, error: vehicleError } = await supabase
-      .from('vehicles')
-      .select('id')
-      .eq('enterprise_id', enterpriseId)
-      .eq('usage_mode', 'external')
-      .eq('status', 'active')
-      .eq('trip_status', 'idle')
-      .in('id', uniqueVehicleIds);
-
-    if (vehicleError) throw vehicleError;
-
-    if ((availableVehicles || []).length !== uniqueVehicleIds.length) {
-      throw new Error('所选车辆不可用或不属于该企业');
-    }
+    await this.assertEnterpriseVehiclesAvailable(enterpriseId, uniqueVehicleIds, ['external']);
 
     const { data: enterprise } = await supabase
       .from('enterprises')
@@ -518,6 +570,7 @@ export class DemandService {
           .eq('id', demandId);
 
         if (updateError) throw updateError;
+        await this.releaseAllocatedVehicles(demand.vehicle_allocation);
       }
     }
 
@@ -552,9 +605,9 @@ export class DemandService {
 
     if (fetchError) throw fetchError;
 
-    // 检查需求状态，只能取消pending状态的需求
-    if (demand.status !== 'pending') {
-      throw new Error('只能取消待调度状态的需求');
+    // 检查需求状态，只能取消 pending / in_transit 状态的需求
+    if (!['pending', 'in_transit'].includes(demand.status)) {
+      throw new Error('只能取消待调度或进行中状态的需求');
     }
 
     // 更新需求状态为已取消
@@ -567,6 +620,8 @@ export class DemandService {
       .eq('id', demandId);
 
     if (updateError) throw updateError;
+
+    await this.releaseAllocatedVehicles(demand.vehicle_allocation);
 
     // 如果是外部运力需求，同时取消demands表中的记录
     if (demand.vehicle_source === 'external') {
@@ -608,11 +663,113 @@ export class DemandService {
           .in('id', externalDemandIds);
 
         if (cancelExternalError) {
-          console.error('取消外部需求失败:', cancelExternalError);
+          this.logger.error(`取消外部需求失败: ${cancelExternalError.message}`);
         }
       }
     }
 
     return { success: true };
+  }
+
+  private normalizeVehicleSource(source?: string): VehicleSource {
+    if (source === 'own') return 'internal';
+    if (VEHICLE_SOURCES.includes(source as VehicleSource)) return source as VehicleSource;
+    throw new Error('vehicleSource 不合法');
+  }
+
+  private normalizeBusinessMode(mode?: string): BusinessMode {
+    if (!mode) return 'enterprise_terminal';
+    if (BUSINESS_MODES.includes(mode as BusinessMode)) return mode as BusinessMode;
+    throw new Error('businessMode 不合法');
+  }
+
+  private normalizeTimeWindow(timeWindow: any) {
+    if (!timeWindow?.start || !timeWindow?.end) {
+      throw new Error('timeWindow.start 和 timeWindow.end 不能为空');
+    }
+    return timeWindow;
+  }
+
+  private normalizeCargoInfo(cargoInfo: any, businessMode: BusinessMode) {
+    if (!cargoInfo?.type) {
+      throw new Error('cargoInfo.type 不能为空');
+    }
+
+    return {
+      ...cargoInfo,
+      businessMode,
+      businessModeLabel: businessMode === 'community_group_buy' ? '社区团购' : '终端配送',
+    };
+  }
+
+  private normalizeDeliveryPoints(deliveryPoints: any[], businessMode: BusinessMode) {
+    if (!Array.isArray(deliveryPoints)) {
+      throw new Error('deliveryPoints 必须是数组');
+    }
+
+    const pointType = businessMode === 'community_group_buy' ? 'community_leader' : 'terminal';
+    return deliveryPoints
+      .filter(point => point && (point.stationId || point.id || point.address || point.name))
+      .map((point, index) => ({
+        ...point,
+        stationId: point.stationId || point.id || `point-${index + 1}`,
+        pointType: point.pointType || pointType,
+        businessMode: point.businessMode || businessMode,
+        status: point.status || 'pending',
+      }));
+  }
+
+  private normalizeIdList(ids: unknown): string[] {
+    if (!Array.isArray(ids)) return [];
+    return Array.from(
+      new Set(
+        ids
+          .map(id => typeof id === 'string' ? id.trim() : '')
+          .filter(Boolean)
+      )
+    );
+  }
+
+  private getAllocatedVehicleIds(vehicleAllocation: any): string[] {
+    return this.normalizeIdList(vehicleAllocation?.vehicle_ids);
+  }
+
+  private async assertEnterpriseVehiclesAvailable(
+    enterpriseId: string,
+    vehicleIds: string[],
+    usageModes: VehicleSource[],
+  ) {
+    const supabase = getSupabaseClient();
+    const { data: vehicles, error } = await supabase
+      .from('vehicles')
+      .select('id')
+      .eq('enterprise_id', enterpriseId)
+      .eq('status', 'active')
+      .eq('trip_status', 'idle')
+      .in('usage_mode', usageModes)
+      .in('id', vehicleIds);
+
+    if (error) throw error;
+
+    if ((vehicles || []).length !== vehicleIds.length) {
+      throw new Error('所选车辆不可用或不属于该企业');
+    }
+  }
+
+  private async releaseAllocatedVehicles(vehicleAllocation: any) {
+    const vehicleIds = this.getAllocatedVehicleIds(vehicleAllocation);
+    if (vehicleIds.length === 0) return;
+
+    const supabase = getSupabaseClient();
+    const { error } = await supabase
+      .from('vehicles')
+      .update({
+        trip_status: 'idle',
+        updated_at: new Date().toISOString(),
+      })
+      .in('id', vehicleIds)
+      .eq('trip_status', 'in_transit');
+
+    if (error) throw error;
   }
 }

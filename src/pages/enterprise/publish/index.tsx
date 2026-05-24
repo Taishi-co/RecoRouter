@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { getApiData, getApiMessage, isApiSuccess } from '@/lib/api-response'
 import { Network } from '@/network'
 import Taro from '@tarojs/taro'
 
@@ -26,13 +27,16 @@ const EnterprisePublishPage: FC = () => {
   const [enterpriseId, setEnterpriseId] = useState('')
   const [stations, setStations] = useState<Station[]>([])
   const [selectedStations, setSelectedStations] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [errorText, setErrorText] = useState('')
 
   const [businessMode, setBusinessMode] = useState<BusinessMode>('enterprise_terminal')
   const [cargoType, setCargoType] = useState('')
   const [cargoQuantity, setCargoQuantity] = useState('')
   const [startHourIndex, setStartHourIndex] = useState(8)
   const [endHourIndex, setEndHourIndex] = useState(10)
-  const [vehicleSource, setVehicleSource] = useState<'own' | 'external'>('own')
+  const [vehicleSource, setVehicleSource] = useState<'internal' | 'external'>('internal')
 
   // 时间选择器数据
   const hours = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'))
@@ -71,13 +75,21 @@ const EnterprisePublishPage: FC = () => {
         url: `/api/enterprise/admin/${userInfo.id}`,
       })
 
-      if (enterpriseRes.data.code === 200) {
-        const entId = enterpriseRes.data.data.id
+      if (isApiSuccess(enterpriseRes)) {
+        const entId = getApiData<{ id: string } | null>(enterpriseRes, null)?.id
+        if (!entId) {
+          setErrorText('企业信息缺失')
+          return
+        }
         setEnterpriseId(entId)
         loadStations(entId)
+      } else {
+        setErrorText(getApiMessage(enterpriseRes, '加载企业信息失败'))
       }
-    } catch (error) {
-      console.error('加载企业信息失败:', error)
+    } catch {
+      setErrorText('加载企业信息失败')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -88,13 +100,16 @@ const EnterprisePublishPage: FC = () => {
         data: { enterpriseId: entId },
       })
 
-      if (res.data.code === 200) {
+      if (isApiSuccess(res)) {
         // 后端返回格式为 { list: [], total: 0, page, pageSize }
-        const data = res.data.data || {}
+        const data = getApiData<{ list?: Station[] }>(res, {})
         setStations(data.list || [])
+        setErrorText('')
+      } else {
+        setErrorText(getApiMessage(res, '加载点位失败'))
       }
-    } catch (error) {
-      console.error('加载奶站列表失败:', error)
+    } catch {
+      setErrorText('加载点位失败')
     }
   }
 
@@ -134,6 +149,7 @@ const EnterprisePublishPage: FC = () => {
     }
 
     try {
+      setSubmitting(true)
       const selectedStationObjs = stations.filter(s => selectedStations.includes(s.id))
       const deliveryPoints = selectedStationObjs.map(s => ({
         stationId: s.id,
@@ -170,17 +186,13 @@ const EnterprisePublishPage: FC = () => {
         vehicleSource: vehicleSource,
       }
 
-      console.log('发布配送请求数据:', JSON.stringify(requestData, null, 2))
-
       const res = await Network.request({
         url: '/api/demand',
         method: 'POST',
         data: requestData,
       })
 
-      console.log('发布配送响应:', JSON.stringify(res.data, null, 2))
-
-      if (res.data.code === 200) {
+      if (isApiSuccess(res)) {
         Taro.showToast({
           title: '发布成功',
           icon: 'success',
@@ -190,16 +202,17 @@ const EnterprisePublishPage: FC = () => {
         }, 1500)
       } else {
         Taro.showToast({
-          title: res.data.message || '发布失败',
+          title: getApiMessage(res, '发布失败'),
           icon: 'none',
         })
       }
-    } catch (error) {
-      console.error('发布失败:', error)
+    } catch {
       Taro.showToast({
         title: '发布失败',
         icon: 'none',
       })
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -207,6 +220,14 @@ const EnterprisePublishPage: FC = () => {
     <View className="enterprise-publish min-h-screen bg-gray-50 pb-20">
       <View className="p-4">
         <Text className="text-2xl font-bold block mb-4">发布配送</Text>
+
+        {errorText && (
+          <Card className="mb-4 border-red-200 bg-red-50">
+            <CardContent className="p-3">
+              <Text className="block text-sm text-red-600">{errorText}</Text>
+            </CardContent>
+          </Card>
+        )}
 
         {/* 业务模式 */}
         <Card className="mb-4">
@@ -270,8 +291,8 @@ const EnterprisePublishPage: FC = () => {
             <View className="flex gap-2">
               <Button
                 className="flex-1"
-                variant={vehicleSource === 'own' ? 'default' : 'outline'}
-                onClick={() => setVehicleSource('own')}
+                variant={vehicleSource === 'internal' ? 'default' : 'outline'}
+                onClick={() => setVehicleSource('internal')}
               >
                 <Text>自有车辆</Text>
               </Button>
@@ -299,7 +320,9 @@ const EnterprisePublishPage: FC = () => {
             <CardTitle className="text-base">{deliveryPointLabel}选择</CardTitle>
           </CardHeader>
           <CardContent>
-            {stations.length === 0 ? (
+            {loading ? (
+              <Text className="text-sm text-gray-500 text-center block">加载中...</Text>
+            ) : stations.length === 0 ? (
               <Text className="text-sm text-gray-500 text-center block">暂无可选{deliveryPointLabel}，请先添加点位</Text>
             ) : (
               <View className="space-y-2">
@@ -372,8 +395,9 @@ const EnterprisePublishPage: FC = () => {
           <Button
             className="w-full"
             onClick={handleSubmit}
+            disabled={submitting || loading}
           >
-            <Text>发布配送</Text>
+            <Text>{submitting ? '发布中...' : '发布配送'}</Text>
           </Button>
         </View>
       </View>
