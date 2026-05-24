@@ -1,6 +1,33 @@
 import { Injectable } from '@nestjs/common';
 import { getSupabaseClient } from '../../storage/database/supabase-client';
 
+type EnterpriseDemandStatus = 'pending' | 'in_transit' | 'completed' | 'cancelled';
+type BusinessMode = 'enterprise_terminal' | 'community_group_buy';
+type PointType = 'terminal' | 'community_leader';
+
+interface EnterpriseDemandRecord {
+  status?: EnterpriseDemandStatus;
+  created_at?: string;
+  updated_at?: string | null;
+  delivery_points?: Array<{
+    id?: string;
+    stationId?: string;
+    name?: string;
+    businessMode?: BusinessMode;
+    pointType?: PointType;
+    status?: string;
+  }> | null;
+  cargo_info?: {
+    businessMode?: BusinessMode;
+  } | null;
+}
+
+interface EnterpriseVehicleRecord {
+  status?: string;
+  trip_status?: string | null;
+  today_distance?: number | string | null;
+}
+
 @Injectable()
 export class EnterpriseService {
   /**
@@ -87,73 +114,140 @@ export class EnterpriseService {
   async getEnterpriseStats(enterpriseId: string) {
     const supabase = getSupabaseClient();
 
-    // 获取今日订单统计
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const { data: todayDemands } = await supabase
-      .from('enterprise_demands')
-      .select('*')
-      .eq('enterprise_id', enterpriseId)
-      .gte('created_at', today.toISOString());
 
-    const todayOrders = (todayDemands || []).length;
-
-    // 获取本月订单统计
     const monthStart = new Date();
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
-    const { count: monthCount } = await supabase
+
+    const { data: demands, error: demandError } = await supabase
       .from('enterprise_demands')
+      .select('status, created_at, updated_at, delivery_points, cargo_info')
+      .eq('enterprise_id', enterpriseId);
+
+    if (demandError) throw demandError;
+
+    const demandRows = (demands || []) as EnterpriseDemandRecord[];
+    const todayDemands = demandRows.filter(demand => this.isAtOrAfter(demand.created_at, today));
+    const monthDemands = demandRows.filter(demand => this.isAtOrAfter(demand.created_at, monthStart));
+    const pending = demandRows.filter(demand => demand.status === 'pending').length;
+    const inTransit = demandRows.filter(demand => demand.status === 'in_transit').length;
+    const completed = demandRows.filter(demand => demand.status === 'completed').length;
+    const cancelled = demandRows.filter(demand => demand.status === 'cancelled').length;
+
+    const { count: externalOpportunityCount, error: externalOpportunityError } = await supabase
+      .from('demands')
       .select('*', { count: 'exact', head: true })
-      .eq('enterprise_id', enterpriseId)
-      .gte('created_at', monthStart.toISOString());
+      .eq('status', 'pending');
 
-    const monthOrders = monthCount || 0;
+    if (externalOpportunityError) throw externalOpportunityError;
 
-    // 获取车辆统计
-    const { data: vehicles } = await supabase
+    const { data: vehicles, error: vehicleError } = await supabase
       .from('vehicles')
-      .select('*')
+      .select('status, trip_status, today_distance')
       .eq('enterprise_id', enterpriseId);
 
-    const activeVehicles = (vehicles || []).filter(v => v.trip_status === 'in_transit').length;
-    const totalVehicles = (vehicles || []).length;
+    if (vehicleError) throw vehicleError;
+
+    const vehicleRows = (vehicles || []) as EnterpriseVehicleRecord[];
+    const activeVehicles = vehicleRows.filter(vehicle => vehicle.trip_status === 'in_transit').length;
+    const totalVehicles = vehicleRows.length;
+    const availableVehicles = vehicleRows.filter(vehicle => (
+      vehicle.status === 'active' && (!vehicle.trip_status || vehicle.trip_status === 'idle')
+    )).length;
     const vehicleUsageRate = totalVehicles > 0 ? Math.round((activeVehicles / totalVehicles) * 100) : 0;
+    const totalDistance = vehicleRows.reduce(
+      (sum, vehicle) => sum + Number(vehicle.today_distance || 0),
+      0,
+    );
+    const avgDeliveryTime = this.calculateAverageDeliveryTime(
+      monthDemands.filter(demand => demand.status === 'completed'),
+    );
 
-    // 计算总配送距离（从车辆统计）
-    const totalDistance = (vehicles || []).reduce((sum, v) => sum + (v.today_distance || 0), 0);
-
-    // 平均配送时间（模拟数据，实际需要从订单记录中计算）
-    const avgDeliveryTime = 45;
-
-    // 奶站配送统计
-    const { data: stations } = await supabase
+    const { data: stations, error: stationError } = await supabase
       .from('dairy_stations')
-      .select('*')
+      .select('id, name, point_type')
       .eq('enterprise_id', enterpriseId);
+
+    if (stationError) throw stationError;
 
     const stationStats = (stations || []).map(station => {
-      const stationOrders = (todayDemands || []).filter(demand => {
-        return demand.delivery_points && demand.delivery_points.some(
-          point => point.name === station.name
-        );
-      }).length;
+      const pointType = this.normalizePointType(station.point_type);
+      const stationOrders = todayDemands.filter(demand => (
+        Array.isArray(demand.delivery_points) && demand.delivery_points.some(point => (
+          point.stationId === station.id || point.id === station.id || point.name === station.name
+        ))
+      )).length;
 
       return {
         stationName: station.name,
+        pointType,
+        pointTypeLabel: this.pointTypeLabel(pointType),
         orderCount: stationOrders,
       };
     });
+    const terminalPoints = stationStats.filter(station => station.pointType === 'terminal').length;
+    const communityLeaderPoints = stationStats.filter(station => station.pointType === 'community_leader').length;
+    const terminalOrders = demandRows.filter(demand => this.getDemandBusinessMode(demand) === 'enterprise_terminal').length;
+    const communityGroupBuyOrders = demandRows.filter(demand => this.getDemandBusinessMode(demand) === 'community_group_buy').length;
 
     return {
-      todayOrders,
-      monthOrders,
+      pending,
+      in_transit: inTransit,
+      completed,
+      cancelled,
+      total: demandRows.length,
+      todayOrders: todayDemands.length,
+      monthOrders: monthDemands.length,
       totalDistance,
       avgDeliveryTime,
       vehicleUsageRate,
       activeVehicles,
+      availableVehicles,
       totalVehicles,
+      externalOpportunities: externalOpportunityCount || 0,
+      terminalPoints,
+      communityLeaderPoints,
+      terminalOrders,
+      communityGroupBuyOrders,
       stationStats,
     };
+  }
+
+  private isAtOrAfter(value: string | undefined, start: Date) {
+    if (!value) return false;
+    const date = new Date(value);
+    return !Number.isNaN(date.getTime()) && date >= start;
+  }
+
+  private calculateAverageDeliveryTime(completedDemands: EnterpriseDemandRecord[]) {
+    const durations = completedDemands
+      .map(demand => {
+        if (!demand.created_at || !demand.updated_at) return null;
+        const createdAt = new Date(demand.created_at).getTime();
+        const updatedAt = new Date(demand.updated_at).getTime();
+        if (Number.isNaN(createdAt) || Number.isNaN(updatedAt) || updatedAt < createdAt) {
+          return null;
+        }
+        return Math.round((updatedAt - createdAt) / 60000);
+      })
+      .filter((duration): duration is number => duration !== null);
+
+    if (durations.length === 0) return 0;
+    return Math.round(durations.reduce((sum, duration) => sum + duration, 0) / durations.length);
+  }
+
+  private getDemandBusinessMode(demand: EnterpriseDemandRecord): BusinessMode {
+    const mode = demand.cargo_info?.businessMode || demand.delivery_points?.[0]?.businessMode;
+    return mode === 'community_group_buy' ? 'community_group_buy' : 'enterprise_terminal';
+  }
+
+  private normalizePointType(pointType: string | null | undefined): PointType {
+    return pointType === 'community_leader' ? 'community_leader' : 'terminal';
+  }
+
+  private pointTypeLabel(pointType: PointType) {
+    return pointType === 'community_leader' ? '社区团长' : '终端点';
   }
 }

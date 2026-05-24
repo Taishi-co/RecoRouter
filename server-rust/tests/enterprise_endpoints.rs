@@ -405,18 +405,126 @@ async fn enterprise_station_and_enterprise_vehicle_routes_match_legacy_shapes() 
     assert_eq!(today_status, StatusCode::OK);
     assert_eq!(today_body["data"]["success"], true);
 
+    sqlx::query(
+        r#"
+        INSERT INTO dairy_stations (
+            id, enterprise_id, name, address, point_type, status
+        )
+        VALUES ('station-leader-stats', $1, '社区团长A', '唐山市社区A', 'community_leader', 'active')
+        "#,
+    )
+    .bind(&enterprise_id)
+    .execute(&context.pool)
+    .await
+    .expect("community leader station should be inserted");
+
+    sqlx::query(
+        r#"
+        INSERT INTO enterprise_demands (
+            id, enterprise_id, pickup_point_type, pickup_point_info,
+            delivery_points, cargo_info, time_window, vehicle_source,
+            vehicle_allocation, status, created_at, updated_at
+        )
+        VALUES
+            (
+                'stats-completed-terminal', $1, 'warehouse', '{}'::jsonb,
+                $2::jsonb, $3::jsonb, '{}'::jsonb, 'internal',
+                '{"vehicle_ids":["ent-vehicle-001"]}'::jsonb, 'completed',
+                now() - interval '90 minutes', now() - interval '30 minutes'
+            ),
+            (
+                'stats-pending-community', $1, 'warehouse', '{}'::jsonb,
+                $4::jsonb, $5::jsonb, '{}'::jsonb, 'external',
+                '{}'::jsonb, 'pending', now(), now()
+            ),
+            (
+                'stats-cancelled-terminal', $1, 'warehouse', '{}'::jsonb,
+                '[]'::jsonb, $3::jsonb, '{}'::jsonb, 'internal',
+                '{}'::jsonb, 'cancelled', now(), now()
+            )
+        "#,
+    )
+    .bind(&enterprise_id)
+    .bind(json!([{
+        "stationId": station_id,
+        "name": "路北奶站",
+        "businessMode": "enterprise_terminal",
+        "pointType": "terminal",
+        "status": "completed"
+    }]))
+    .bind(json!({
+        "type": "鲜奶",
+        "businessMode": "enterprise_terminal",
+        "businessModeLabel": "终端配送"
+    }))
+    .bind(json!([{
+        "stationId": "station-leader-stats",
+        "name": "社区团长A",
+        "businessMode": "community_group_buy",
+        "pointType": "community_leader",
+        "status": "pending"
+    }]))
+    .bind(json!({
+        "type": "团购生鲜",
+        "businessMode": "community_group_buy",
+        "businessModeLabel": "社区团购"
+    }))
+    .execute(&context.pool)
+    .await
+    .expect("enterprise stats demands should be inserted");
+
+    sqlx::query(
+        r#"
+        INSERT INTO demands (id, merchant_id, cargo_name, status, remarks)
+        VALUES ('stats-public-opportunity', $1, '外部货运机会', 'pending', '测试外部机会')
+        "#,
+    )
+    .bind(&admin_id)
+    .execute(&context.pool)
+    .await
+    .expect("public opportunity should be inserted");
+
     let (enterprise_stats_status, enterprise_stats_body) = get_json(
         &context.app,
         &format!("/api/enterprise/{enterprise_id}/stats"),
     )
     .await;
     assert_eq!(enterprise_stats_status, StatusCode::OK);
+    assert_eq!(enterprise_stats_body["data"]["pending"], 1);
+    assert_eq!(enterprise_stats_body["data"]["in_transit"], 0);
+    assert_eq!(enterprise_stats_body["data"]["completed"], 1);
+    assert_eq!(enterprise_stats_body["data"]["cancelled"], 1);
+    assert_eq!(enterprise_stats_body["data"]["total"], 3);
+    assert_eq!(enterprise_stats_body["data"]["todayOrders"], 3);
+    assert_eq!(enterprise_stats_body["data"]["monthOrders"], 3);
+    assert_eq!(enterprise_stats_body["data"]["avgDeliveryTime"], 60);
     assert_eq!(enterprise_stats_body["data"]["totalVehicles"], 1);
+    assert_eq!(enterprise_stats_body["data"]["activeVehicles"], 0);
+    assert_eq!(enterprise_stats_body["data"]["availableVehicles"], 1);
     assert_eq!(enterprise_stats_body["data"]["totalDistance"], 88.5);
-    assert_eq!(
-        enterprise_stats_body["data"]["stationStats"][0]["stationName"],
-        "路北奶站"
-    );
+    assert_eq!(enterprise_stats_body["data"]["externalOpportunities"], 1);
+    assert_eq!(enterprise_stats_body["data"]["terminalPoints"], 1);
+    assert_eq!(enterprise_stats_body["data"]["communityLeaderPoints"], 1);
+    assert_eq!(enterprise_stats_body["data"]["terminalOrders"], 2);
+    assert_eq!(enterprise_stats_body["data"]["communityGroupBuyOrders"], 1);
+
+    let station_stats = enterprise_stats_body["data"]["stationStats"]
+        .as_array()
+        .expect("station stats should be an array");
+    let terminal_stat = station_stats
+        .iter()
+        .find(|station| station["stationName"] == "路北奶站")
+        .expect("terminal station stats should exist");
+    assert_eq!(terminal_stat["pointType"], "terminal");
+    assert_eq!(terminal_stat["pointTypeLabel"], "终端点");
+    assert_eq!(terminal_stat["orderCount"], 1);
+    let leader_stat = station_stats
+        .iter()
+        .find(|station| station["stationName"] == "社区团长A")
+        .expect("community leader station stats should exist");
+    assert_eq!(leader_stat["pointType"], "community_leader");
+    assert_eq!(leader_stat["pointTypeLabel"], "社区团长");
+    assert_eq!(leader_stat["orderCount"], 1);
 
     let (delete_station_status, delete_station_body) =
         delete_json(&context.app, &format!("/api/station/{station_id}")).await;

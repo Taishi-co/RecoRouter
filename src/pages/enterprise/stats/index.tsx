@@ -7,20 +7,34 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { getApiData, getApiMessage, isApiSuccess } from '@/lib/api-response'
 import { Network } from '@/network'
 import Taro from '@tarojs/taro'
 
 interface StatsData {
+  pending?: number
+  in_transit?: number
+  completed?: number
+  cancelled?: number
+  total?: number
   todayOrders: number
   monthOrders: number
   totalDistance: number
   avgDeliveryTime: number
   vehicleUsageRate: number
   activeVehicles: number
+  availableVehicles?: number
   totalVehicles: number
+  externalOpportunities?: number
+  terminalPoints?: number
+  communityLeaderPoints?: number
+  terminalOrders?: number
+  communityGroupBuyOrders?: number
   stationStats: Array<{
     stationName: string
+    pointType?: 'terminal' | 'community_leader'
+    pointTypeLabel?: string
     orderCount: number
   }>
 }
@@ -77,6 +91,10 @@ const EnterpriseStatsPage: FC = () => {
     }
   }
 
+  const vehicleUsageRate = stats
+    ? Math.max(0, Math.min(100, stats.vehicleUsageRate || 0))
+    : 0
+
   return (
     <View className="enterprise-stats min-h-screen bg-gray-50 p-4 pb-20">
       <Text className="text-2xl font-bold block mb-4">数据统计</Text>
@@ -116,6 +134,32 @@ const EnterpriseStatsPage: FC = () => {
                   </Text>
                   <Text className="text-xs text-gray-500 mt-1 block">本月订单</Text>
                 </View>
+                <View className="bg-gray-50 rounded-lg p-4">
+                  <Text className="text-3xl font-bold text-gray-900 block">
+                    {stats.total || 0}
+                  </Text>
+                  <Text className="text-xs text-gray-500 mt-1 block">累计需求</Text>
+                </View>
+                <View className="bg-red-50 rounded-lg p-4">
+                  <Text className="text-3xl font-bold text-red-600 block">
+                    {stats.cancelled || 0}
+                  </Text>
+                  <Text className="text-xs text-gray-500 mt-1 block">异常/取消</Text>
+                </View>
+              </View>
+              <View className="grid grid-cols-2 gap-3 mt-4">
+                <View>
+                  <Text className="text-sm text-gray-600 block">终端配送</Text>
+                  <Text className="text-lg font-semibold text-gray-900 block">
+                    {stats.terminalOrders || 0} 单
+                  </Text>
+                </View>
+                <View>
+                  <Text className="text-sm text-gray-600 block">社区团购</Text>
+                  <Text className="text-lg font-semibold text-gray-900 block">
+                    {stats.communityGroupBuyOrders || 0} 单
+                  </Text>
+                </View>
               </View>
             </CardContent>
           </Card>
@@ -143,6 +187,14 @@ const EnterpriseStatsPage: FC = () => {
                     {stats.avgDeliveryTime} 分钟
                   </Text>
                 </View>
+                <View>
+                  <Text className="text-sm text-gray-600 block mb-1">
+                    外部订单机会
+                  </Text>
+                  <Text className="text-xl font-bold text-teal-600 block">
+                    {stats.externalOpportunities || 0} 单
+                  </Text>
+                </View>
               </View>
             </CardContent>
           </Card>
@@ -157,17 +209,20 @@ const EnterpriseStatsPage: FC = () => {
                 <View className="flex justify-between items-center mb-2">
                   <Text className="text-sm text-gray-600">使用率</Text>
                   <Text className="text-sm font-bold text-blue-600">
-                    {stats.vehicleUsageRate}%
+                    {vehicleUsageRate}%
                   </Text>
                 </View>
                 <View className="w-full bg-gray-200 rounded-full h-3">
                   <View
                     className="bg-blue-600 h-3 rounded-full"
-                    style={{ width: `${stats.vehicleUsageRate}%` }}
+                    style={{ width: `${vehicleUsageRate}%` }}
                   />
                 </View>
                 <Text className="text-xs text-gray-500 mt-2 block">
                   活跃车辆：{stats.activeVehicles} / {stats.totalVehicles}
+                </Text>
+                <Text className="text-xs text-gray-500 mt-1 block">
+                  空闲可用：{stats.availableVehicles || 0} 辆
                 </Text>
               </View>
             </CardContent>
@@ -183,14 +238,35 @@ const EnterpriseStatsPage: FC = () => {
                 <View className="space-y-3">
                   {stats.stationStats.map((station, index) => (
                     <View key={index} className="flex justify-between items-center">
-                      <Text className="text-sm text-gray-600">
-                        {station.stationName}
-                      </Text>
+                      <View className="flex flex-row items-center">
+                        <Text className="text-sm text-gray-600 block">
+                          {station.stationName}
+                        </Text>
+                        <Badge variant="outline" className="ml-2">
+                          <Text className="text-xs text-gray-600">
+                            {station.pointTypeLabel || (station.pointType === 'community_leader' ? '社区团长' : '终端点')}
+                          </Text>
+                        </Badge>
+                      </View>
                       <Text className="text-sm font-bold text-gray-900">
                         {station.orderCount} 单
                       </Text>
                     </View>
                   ))}
+                </View>
+                <View className="grid grid-cols-2 gap-3 mt-4">
+                  <View className="bg-gray-50 rounded-lg p-3">
+                    <Text className="text-lg font-semibold text-gray-900 block">
+                      {stats.terminalPoints || 0}
+                    </Text>
+                    <Text className="text-xs text-gray-500 block">终端点</Text>
+                  </View>
+                  <View className="bg-gray-50 rounded-lg p-3">
+                    <Text className="text-lg font-semibold text-gray-900 block">
+                      {stats.communityLeaderPoints || 0}
+                    </Text>
+                    <Text className="text-xs text-gray-500 block">社区团长</Text>
+                  </View>
                 </View>
               </CardContent>
             </Card>
