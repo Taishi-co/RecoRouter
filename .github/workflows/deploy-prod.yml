@@ -62,12 +62,14 @@ jobs:
         run: |
           set -euo pipefail
           remote="$SERVER_USER@$SERVER_HOST"
+          upload_cmd='cat > /tmp/recorouter-docker-release.tar.gz.tmp && mv /tmp/recorouter-docker-release.tar.gz.tmp /tmp/recorouter-docker-release.tar.gz'
+          install_cmd='mkdir -p /tmp/recorouter-install && rm -rf /tmp/recorouter-install/* && tar -xzf /tmp/recorouter-docker-release.tar.gz -C /tmp/recorouter-install && bash /tmp/recorouter-install/deploy/install-docker-release.sh /tmp/recorouter-docker-release.tar.gz'
           if [ -n "${SERVER_SSH_KEY:-}" ]; then
-            scp -O -P "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -i ~/.ssh/recorouter_deploy_key /tmp/recorouter-docker-release.tar.gz "$remote:/tmp/recorouter-docker-release.tar.gz"
-            ssh -p "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -i ~/.ssh/recorouter_deploy_key "$remote" 'mkdir -p /tmp/recorouter-install && rm -rf /tmp/recorouter-install/* && tar -xzf /tmp/recorouter-docker-release.tar.gz -C /tmp/recorouter-install && bash /tmp/recorouter-install/deploy/install-docker-release.sh /tmp/recorouter-docker-release.tar.gz'
+            ssh -T -p "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -i ~/.ssh/recorouter_deploy_key "$remote" "$upload_cmd" < /tmp/recorouter-docker-release.tar.gz
+            ssh -p "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -i ~/.ssh/recorouter_deploy_key "$remote" "$install_cmd"
           else
-            sshpass -p "$SERVER_PASSWORD" scp -O -P "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 /tmp/recorouter-docker-release.tar.gz "$remote:/tmp/recorouter-docker-release.tar.gz"
-            sshpass -p "$SERVER_PASSWORD" ssh -p "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 "$remote" 'mkdir -p /tmp/recorouter-install && rm -rf /tmp/recorouter-install/* && tar -xzf /tmp/recorouter-docker-release.tar.gz -C /tmp/recorouter-install && bash /tmp/recorouter-install/deploy/install-docker-release.sh /tmp/recorouter-docker-release.tar.gz'
+            sshpass -p "$SERVER_PASSWORD" ssh -T -p "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 "$remote" "$upload_cmd" < /tmp/recorouter-docker-release.tar.gz
+            sshpass -p "$SERVER_PASSWORD" ssh -p "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 "$remote" "$install_cmd"
           fi
 
       - name: Verify production
