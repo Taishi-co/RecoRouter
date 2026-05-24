@@ -38,6 +38,7 @@ interface Demand {
 const DemandDetailPage: FC = () => {
   const [demand, setDemand] = useState<Demand | null>(null)
   const [loading, setLoading] = useState(false)
+  const [completingPointId, setCompletingPointId] = useState('')
 
   useEffect(() => {
     const params = Taro.getCurrentInstance().router?.params
@@ -107,6 +108,51 @@ const DemandDetailPage: FC = () => {
               icon: 'none',
             })
           }
+        }
+      },
+    })
+  }
+
+  const handleCompleteDeliveryPoint = async (point: DeliveryPoint) => {
+    if (!demand || completingPointId) return
+
+    Taro.showModal({
+      title: '确认完成',
+      content: `确认将"${point.name}"标记为已完成吗？`,
+      success: async (res) => {
+        if (!res.confirm) return
+
+        try {
+          setCompletingPointId(point.stationId)
+          const updateRes = await Network.request({
+            url: `/api/demand/${demand.id}/delivery-points`,
+            method: 'PUT',
+            data: {
+              action: 'update_status',
+              stationId: point.stationId,
+              status: 'completed',
+            },
+          })
+
+          if (isApiSuccess(updateRes)) {
+            Taro.showToast({
+              title: '已完成',
+              icon: 'success',
+            })
+            loadDemandDetail(demand.id)
+          } else {
+            Taro.showToast({
+              title: getApiMessage(updateRes, '更新失败'),
+              icon: 'none',
+            })
+          }
+        } catch {
+          Taro.showToast({
+            title: '更新失败',
+            icon: 'none',
+          })
+        } finally {
+          setCompletingPointId('')
         }
       },
     })
@@ -299,6 +345,19 @@ const DemandDetailPage: FC = () => {
                           onClick={() => handleCancelDeliveryPoint(point)}
                         >
                           <Text className="text-xs">取消</Text>
+                        </Button>
+                      )}
+                      {demand.status === 'in_transit' && point.status !== 'completed' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-green-600 border-green-600"
+                          disabled={completingPointId === point.stationId}
+                          onClick={() => handleCompleteDeliveryPoint(point)}
+                        >
+                          <Text className="text-xs">
+                            {completingPointId === point.stationId ? '提交中' : '标记完成'}
+                          </Text>
                         </Button>
                       )}
                     </View>

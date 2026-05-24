@@ -250,6 +250,14 @@ async fn update_demand<S>(
 where
     S: Storage,
 {
+    if matches!(body.status.as_deref(), Some("completed") | Some("cancelled")) {
+        return Ok(envelope(
+            500,
+            "不能通过通用接口修改为终态，请使用配送点完成或取消接口",
+            Value::Null,
+        ));
+    }
+
     let demand = sqlx::query_scalar::<_, Value>(
         r#"
         UPDATE enterprise_demands
@@ -670,8 +678,23 @@ where
             }
         }
         "update_status" => {
+            if status != "in_transit" {
+                return Ok(envelope(
+                    500,
+                    "只有进行中的配送需求才能更新配送点状态",
+                    Value::Null,
+                ));
+            }
+
             let station_id = body.station_id.unwrap_or_default();
             let new_status = body.status.unwrap_or_default();
+            if station_id.is_empty() || new_status.is_empty() {
+                return Ok(envelope(500, "stationId 和 status 不能为空", Value::Null));
+            }
+            if !matches!(new_status.as_str(), "pending" | "in_transit" | "completed") {
+                return Ok(envelope(500, "配送点状态不合法", Value::Null));
+            }
+
             let mut found = false;
             for point in &mut delivery_points {
                 if point.get("stationId").and_then(Value::as_str) == Some(station_id.as_str()) {

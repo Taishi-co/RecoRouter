@@ -81,11 +81,19 @@ export class DemandController {
       status: string;
     }>,
   ) {
-    return {
-      code: 200,
-      message: 'success',
-      data: await this.demandService.updateDemand(id, body),
-    };
+    try {
+      return {
+        code: 200,
+        message: 'success',
+        data: await this.demandService.updateDemand(id, body),
+      };
+    } catch (error) {
+      return {
+        code: 500,
+        message: error.message || '更新失败',
+        data: null,
+      };
+    }
   }
 
   /**

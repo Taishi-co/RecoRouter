@@ -613,7 +613,8 @@ async fn enterprise_internal_demand_completion_releases_allocated_vehicle() {
             "pickupPointType": "warehouse",
             "pickupPointInfo": { "name": "中心仓", "address": "唐山配送中心" },
             "deliveryPoints": [
-                { "stationId": "terminal-1", "name": "终端A", "address": "终端A地址", "status": "pending" }
+                { "stationId": "terminal-1", "name": "终端A", "address": "终端A地址", "status": "pending" },
+                { "stationId": "terminal-2", "name": "终端B", "address": "终端B地址", "status": "pending" }
             ],
             "cargoInfo": { "type": "鲜奶", "quantity": 80, "businessMode": "enterprise_terminal" },
             "timeWindow": { "start": "08:00", "end": "10:00" },
@@ -639,7 +640,27 @@ async fn enterprise_internal_demand_completion_releases_allocated_vehicle() {
     )
     .await;
     assert_eq!(point_status, StatusCode::OK);
-    assert_eq!(point_body["data"]["status"], "completed");
+    assert_eq!(point_body["data"]["status"], "in_transit");
+    assert_eq!(
+        point_body["data"]["delivery_points"][0]["status"],
+        "completed"
+    );
+
+    let vehicle_status: String =
+        sqlx::query_scalar("SELECT trip_status FROM vehicles WHERE id = 'release-v1'")
+            .fetch_one(&context.pool)
+            .await
+            .expect("vehicle status should fetch");
+    assert_eq!(vehicle_status, "in_transit");
+
+    let (final_point_status, final_point_body) = put_json(
+        &context.app,
+        &format!("/api/demand/{demand_id}/delivery-points"),
+        json!({ "action": "update_status", "stationId": "terminal-2", "status": "completed" }),
+    )
+    .await;
+    assert_eq!(final_point_status, StatusCode::OK);
+    assert_eq!(final_point_body["data"]["status"], "completed");
 
     let vehicle_status: String =
         sqlx::query_scalar("SELECT trip_status FROM vehicles WHERE id = 'release-v1'")
@@ -647,6 +668,244 @@ async fn enterprise_internal_demand_completion_releases_allocated_vehicle() {
             .await
             .expect("vehicle status should fetch");
     assert_eq!(vehicle_status, "idle");
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
+async fn enterprise_delivery_point_state_guards_reject_invalid_transitions() {
+    let Some(context) = TestContext::new().await else {
+        return;
+    };
+    let admin_id = insert_user(&context.pool, "13950000005", "enterprise", "企业管理员五").await;
+    let enterprise_id: String = sqlx::query_scalar(
+        r#"
+        INSERT INTO enterprises (name, type, admin_id, status)
+        VALUES ('唐山状态机配送', 'dairy', $1, 'active')
+        RETURNING id
+        "#,
+    )
+    .bind(&admin_id)
+    .fetch_one(&context.pool)
+    .await
+    .expect("enterprise should be inserted");
+
+    sqlx::query(
+        r#"
+        INSERT INTO vehicles (
+            id, owner_id, enterprise_id, vehicle_code, vehicle_type,
+            load_capacity, volume, status, trip_status, usage_mode
+        )
+        VALUES ('guard-v1', $1, $2, 'GUARD-V1', '无人配送车', 500, 10, 'active', 'idle', 'internal')
+        "#,
+    )
+    .bind(&admin_id)
+    .bind(&enterprise_id)
+    .execute(&context.pool)
+    .await
+    .expect("internal vehicle should be inserted");
+
+    let (create_status, create_body) = post_json(
+        &context.app,
+        "/api/demand",
+        json!({
+            "enterpriseId": enterprise_id,
+            "pickupPointType": "warehouse",
+            "pickupPointInfo": { "name": "中心仓", "address": "唐山配送中心" },
+            "deliveryPoints": [
+                { "stationId": "guard-terminal", "name": "终端A", "address": "终端A地址", "status": "pending" }
+            ],
+            "cargoInfo": { "type": "鲜奶", "quantity": 80, "businessMode": "enterprise_terminal" },
+            "timeWindow": { "start": "08:00", "end": "10:00" },
+            "vehicleSource": "internal"
+        }),
+    )
+    .await;
+    assert_eq!(create_status, StatusCode::OK);
+    let demand_id = create_body["data"]["id"].as_str().unwrap().to_string();
+
+    let (pending_point_status, pending_point_body) = put_json(
+        &context.app,
+        &format!("/api/demand/{demand_id}/delivery-points"),
+        json!({ "action": "update_status", "stationId": "guard-terminal", "status": "completed" }),
+    )
+    .await;
+    assert_eq!(pending_point_status, StatusCode::OK);
+    assert_eq!(pending_point_body["code"], 500);
+    assert_eq!(
+        pending_point_body["message"],
+        "只有进行中的配送需求才能更新配送点状态"
+    );
+
+    let pending_demand: Value = sqlx::query_scalar(
+        "SELECT row_to_json(enterprise_demands) FROM enterprise_demands WHERE id = $1",
+    )
+    .bind(&demand_id)
+    .fetch_one(&context.pool)
+    .await
+    .expect("demand should fetch");
+    assert_eq!(pending_demand["status"], "pending");
+    assert_eq!(
+        pending_demand["delivery_points"][0]["status"],
+        "pending"
+    );
+
+    let (allocate_status, _) = put_json(
+        &context.app,
+        &format!("/api/demand/{demand_id}/allocate"),
+        json!({ "vehicle_allocation": { "vehicle_ids": ["guard-v1"] } }),
+    )
+    .await;
+    assert_eq!(allocate_status, StatusCode::OK);
+
+    let (invalid_status, invalid_body) = put_json(
+        &context.app,
+        &format!("/api/demand/{demand_id}/delivery-points"),
+        json!({ "action": "update_status", "stationId": "guard-terminal", "status": "delayed" }),
+    )
+    .await;
+    assert_eq!(invalid_status, StatusCode::OK);
+    assert_eq!(invalid_body["code"], 500);
+    assert_eq!(invalid_body["message"], "配送点状态不合法");
+
+    let (terminal_update_status, terminal_update_body) = put_json(
+        &context.app,
+        &format!("/api/demand/{demand_id}"),
+        json!({ "status": "completed" }),
+    )
+    .await;
+    assert_eq!(terminal_update_status, StatusCode::OK);
+    assert_eq!(terminal_update_body["code"], 500);
+    assert_eq!(
+        terminal_update_body["message"],
+        "不能通过通用接口修改为终态，请使用配送点完成或取消接口"
+    );
+
+    let guarded_demand: Value = sqlx::query_scalar(
+        "SELECT row_to_json(enterprise_demands) FROM enterprise_demands WHERE id = $1",
+    )
+    .bind(&demand_id)
+    .fetch_one(&context.pool)
+    .await
+    .expect("guarded demand should fetch");
+    assert_eq!(guarded_demand["status"], "in_transit");
+    assert_eq!(
+        guarded_demand["delivery_points"][0]["status"],
+        "pending"
+    );
+
+    let vehicle_status: String =
+        sqlx::query_scalar("SELECT trip_status FROM vehicles WHERE id = 'guard-v1'")
+            .fetch_one(&context.pool)
+            .await
+            .expect("vehicle status should fetch");
+    assert_eq!(vehicle_status, "in_transit");
+
+    let (cancel_status, cancel_body) = put_json(
+        &context.app,
+        &format!("/api/demand/{demand_id}/cancel"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(cancel_status, StatusCode::OK);
+    assert_eq!(cancel_body["data"]["success"], true);
+
+    let cancelled_vehicle_status: String =
+        sqlx::query_scalar("SELECT trip_status FROM vehicles WHERE id = 'guard-v1'")
+            .fetch_one(&context.pool)
+            .await
+            .expect("vehicle status should fetch");
+    assert_eq!(cancelled_vehicle_status, "idle");
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
+async fn enterprise_accepted_external_demand_completion_releases_external_vehicle() {
+    let Some(context) = TestContext::new().await else {
+        return;
+    };
+    let admin_id = insert_user(&context.pool, "13950000006", "enterprise", "企业管理员六").await;
+    let enterprise_id: String = sqlx::query_scalar(
+        r#"
+        INSERT INTO enterprises (name, type, admin_id, status)
+        VALUES ('唐山外部运力配送', 'dairy', $1, 'active')
+        RETURNING id
+        "#,
+    )
+    .bind(&admin_id)
+    .fetch_one(&context.pool)
+    .await
+    .expect("enterprise should be inserted");
+
+    let (create_status, create_body) = post_json(
+        &context.app,
+        "/api/demand",
+        json!({
+            "enterpriseId": enterprise_id,
+            "pickupPointType": "warehouse",
+            "pickupPointInfo": { "name": "团购仓", "address": "唐山团购仓", "latitude": 39.63, "longitude": 118.18 },
+            "deliveryPoints": [
+                { "stationId": "leader-release", "name": "社区团长A", "address": "社区A", "latitude": 39.64, "longitude": 118.19, "businessMode": "community_group_buy", "pointType": "community_leader", "status": "pending" }
+            ],
+            "cargoInfo": { "type": "团购生鲜", "quantity": 60, "businessMode": "community_group_buy" },
+            "timeWindow": { "start": "14:00", "end": "16:00" },
+            "vehicleSource": "external"
+        }),
+    )
+    .await;
+    assert_eq!(create_status, StatusCode::OK);
+    let public_demand_id = create_body["data"]["external_demand_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    sqlx::query(
+        r#"
+        INSERT INTO vehicles (
+            id, owner_id, enterprise_id, vehicle_code, vehicle_type,
+            load_capacity, volume, status, trip_status, usage_mode
+        )
+        VALUES ('external-release-v1', $1, $2, 'EXT-RELEASE-V1', '无人配送车', 500, 10, 'active', 'idle', 'external')
+        "#,
+    )
+    .bind(&admin_id)
+    .bind(&enterprise_id)
+    .execute(&context.pool)
+    .await
+    .expect("external vehicle should be inserted");
+
+    let (accept_status, accept_body) = post_json(
+        &context.app,
+        &format!("/api/demand/external/{public_demand_id}/accept"),
+        json!({ "enterprise_id": enterprise_id, "vehicle_ids": ["external-release-v1"] }),
+    )
+    .await;
+    assert_eq!(accept_status, StatusCode::OK);
+    let accepted_enterprise_demand_id = accept_body["data"]["id"].as_str().unwrap().to_string();
+
+    let in_transit_vehicle_status: String =
+        sqlx::query_scalar("SELECT trip_status FROM vehicles WHERE id = 'external-release-v1'")
+            .fetch_one(&context.pool)
+            .await
+            .expect("vehicle status should fetch");
+    assert_eq!(in_transit_vehicle_status, "in_transit");
+
+    let (complete_status, complete_body) = put_json(
+        &context.app,
+        &format!("/api/demand/{accepted_enterprise_demand_id}/delivery-points"),
+        json!({ "action": "update_status", "stationId": "leader-release", "status": "completed" }),
+    )
+    .await;
+    assert_eq!(complete_status, StatusCode::OK);
+    assert_eq!(complete_body["data"]["status"], "completed");
+
+    let idle_vehicle_status: String =
+        sqlx::query_scalar("SELECT trip_status FROM vehicles WHERE id = 'external-release-v1'")
+            .fetch_one(&context.pool)
+            .await
+            .expect("vehicle status should fetch");
+    assert_eq!(idle_vehicle_status, "idle");
 
     context.cleanup().await;
 }

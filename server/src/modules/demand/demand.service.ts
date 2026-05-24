@@ -222,6 +222,10 @@ export class DemandService {
     optimizedRoutes: any;
     status: string;
   }>) {
+    if (data.status && ['completed', 'cancelled'].includes(data.status)) {
+      throw new Error('不能通过通用接口修改为终态，请使用配送点完成或取消接口');
+    }
+
     const supabase = getSupabaseClient();
     const { data: demand, error } = await supabase
       .from('enterprise_demands')
@@ -517,7 +521,6 @@ export class DemandService {
       throw new Error('配送需求不存在');
     }
 
-    // 检查需求状态，只有待调度才能修改配送点
     if (demand.status !== 'pending' && body.action === 'remove') {
       throw new Error('只有待调度的配送需求才能移除配送点');
     }
@@ -541,9 +544,17 @@ export class DemandService {
         throw new Error('不能移除所有配送点');
       }
     } else if (body.action === 'update_status') {
+      if (demand.status !== 'in_transit') {
+        throw new Error('只有进行中的配送需求才能更新配送点状态');
+      }
+
       // 更新配送点状态
       if (!body.stationId || !body.status) {
         throw new Error('stationId 和 status 不能为空');
+      }
+
+      if (!['pending', 'in_transit', 'completed'].includes(body.status)) {
+        throw new Error('配送点状态不合法');
       }
 
       const pointExists = deliveryPoints.some((p: any) => p.stationId === body.stationId);
@@ -572,6 +583,8 @@ export class DemandService {
         if (updateError) throw updateError;
         await this.releaseAllocatedVehicles(demand.vehicle_allocation);
       }
+    } else {
+      throw new Error('操作失败');
     }
 
     // 更新配送点列表
