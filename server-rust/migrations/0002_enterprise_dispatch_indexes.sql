@@ -1,3 +1,6 @@
+ALTER TABLE enterprise_demands
+  ADD COLUMN IF NOT EXISTS external_demand_id text;
+
 CREATE INDEX IF NOT EXISTS enterprise_demands_external_demand_id_idx
   ON enterprise_demands(external_demand_id);
 
