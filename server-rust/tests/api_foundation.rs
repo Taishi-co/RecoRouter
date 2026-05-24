@@ -438,6 +438,208 @@ async fn migrations_create_core_tables_and_default_platform_settings() {
     }
 }
 
+#[tokio::test]
+async fn enterprise_dispatch_legacy_migration_backfills_contract_data() {
+    let Ok(database_url) = env::var("TEST_DATABASE_URL") else {
+        eprintln!(
+            "skipping enterprise migration backfill test because TEST_DATABASE_URL is not set"
+        );
+        return;
+    };
+
+    let admin_database_url = rewrite_database_url(&database_url, "postgres");
+    let admin_pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&admin_database_url)
+        .await
+        .expect("admin test database should be reachable");
+    let test_database = format!(
+        "recorouter_migration_test_{}",
+        uuid::Uuid::new_v4().simple()
+    );
+    let anon_existed: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon')")
+            .fetch_one(&admin_pool)
+            .await
+            .expect("anon role existence query should run");
+    let service_role_existed: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role')")
+            .fetch_one(&admin_pool)
+            .await
+            .expect("service_role existence query should run");
+
+    sqlx::query(&format!(r#"CREATE DATABASE "{test_database}""#))
+        .execute(&admin_pool)
+        .await
+        .expect("disposable migration test database should be created");
+    let test_database_url = rewrite_database_url(&database_url, &test_database);
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&test_database_url)
+        .await
+        .expect("disposable migration test database should be reachable");
+
+    recorouter_api::db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+
+    let admin_id: String = sqlx::query_scalar(
+        r#"
+        INSERT INTO users (phone, password, role, name, username, status)
+        VALUES ('13900000999', 'hashed-secret', 'merchant', '迁移测试管理员', '迁移测试管理员', 'active')
+        RETURNING id
+        "#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("admin user should insert");
+
+    sqlx::query(
+        "INSERT INTO enterprises (id, name, type, admin_id, status) VALUES ('legacy-enterprise', '旧企业', 'logistics', $1, 'active')",
+    )
+    .bind(&admin_id)
+    .execute(&pool)
+    .await
+    .expect("enterprise should insert");
+
+    sqlx::query(
+        r#"
+        INSERT INTO enterprise_demands (
+            id, enterprise_id, vehicle_source, vehicle_allocation, status, created_at
+        )
+        VALUES (
+            'legacy-own-demand',
+            'legacy-enterprise',
+            'own',
+            $1::jsonb,
+            'in_transit',
+            '2026-05-24T00:00:00Z'
+        )
+        "#,
+    )
+    .bind(serde_json::json!({
+        "vehicle_ids": ["kept-v1"],
+        "ownVehicleIds": ["own-v1", "kept-v1"],
+        "externalVehicleIds": ["external-v1"]
+    }))
+    .execute(&pool)
+    .await
+    .expect("legacy own enterprise demand should insert");
+
+    sqlx::query(
+        r#"
+        INSERT INTO enterprise_demands (
+            id, enterprise_id, vehicle_source, status, created_at
+        )
+        VALUES (
+            'legacy-external-demand',
+            'legacy-enterprise',
+            'external',
+            'pending',
+            '2026-05-24T01:00:00Z'
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await
+    .expect("legacy external enterprise demand should insert");
+
+    sqlx::query(
+        r#"
+        INSERT INTO demands (id, merchant_id, remarks, status, created_at)
+        VALUES ('legacy-public-demand', $1, '企业外部需求', 'pending', '2026-05-24T01:00:05Z')
+        "#,
+    )
+    .bind(&admin_id)
+    .execute(&pool)
+    .await
+    .expect("legacy public demand should insert");
+
+    sqlx::raw_sql(include_str!(
+        "../migrations/0003_enterprise_legacy_dispatch_contract.sql"
+    ))
+    .execute(&pool)
+    .await
+    .expect("legacy enterprise migration should rerun safely");
+
+    let normalized_source: String = sqlx::query_scalar(
+        "SELECT vehicle_source FROM enterprise_demands WHERE id = 'legacy-own-demand'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("normalized source should load");
+    assert_eq!(normalized_source, "internal");
+
+    let allocation: Value = sqlx::query_scalar(
+        "SELECT vehicle_allocation FROM enterprise_demands WHERE id = 'legacy-own-demand'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("normalized allocation should load");
+    let mut vehicle_ids = allocation["vehicle_ids"]
+        .as_array()
+        .expect("vehicle_ids should be array")
+        .iter()
+        .map(|value| value.as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    vehicle_ids.sort();
+    assert_eq!(vehicle_ids, vec!["external-v1", "kept-v1", "own-v1"]);
+    assert!(allocation.get("ownVehicleIds").is_none());
+    assert!(allocation.get("externalVehicleIds").is_none());
+
+    let linked_external_demand_id: Option<String> = sqlx::query_scalar(
+        "SELECT external_demand_id FROM enterprise_demands WHERE id = 'legacy-external-demand'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("linked external demand id should load");
+    assert_eq!(
+        linked_external_demand_id,
+        Some("legacy-public-demand".to_string())
+    );
+
+    for index_name in [
+        "enterprise_demands_external_demand_id_idx",
+        "enterprise_demands_status_idx",
+        "vehicles_enterprise_dispatch_idx",
+        "dairy_stations_enterprise_id_idx",
+    ] {
+        let exists: bool = sqlx::query_scalar("SELECT to_regclass($1) IS NOT NULL")
+            .bind(format!("public.{index_name}"))
+            .fetch_one(&pool)
+            .await
+            .expect("index existence query should run");
+        assert!(exists, "expected index {index_name} to exist");
+    }
+
+    pool.close().await;
+    sqlx::query(&format!(
+        r#"
+        SELECT pg_terminate_backend(pid)
+        FROM pg_stat_activity
+        WHERE datname = '{test_database}'
+          AND pid <> pg_backend_pid()
+        "#
+    ))
+    .execute(&admin_pool)
+    .await
+    .expect("test database connections should terminate");
+    sqlx::query(&format!(r#"DROP DATABASE "{test_database}""#))
+        .execute(&admin_pool)
+        .await
+        .expect("disposable migration test database should be dropped");
+    if !anon_existed {
+        let _ = sqlx::query("DROP ROLE IF EXISTS anon")
+            .execute(&admin_pool)
+            .await;
+    }
+    if !service_role_existed {
+        let _ = sqlx::query("DROP ROLE IF EXISTS service_role")
+            .execute(&admin_pool)
+            .await;
+    }
+}
+
 fn rewrite_database_url(database_url: &str, database: &str) -> String {
     let (without_query, query) = match database_url.split_once('?') {
         Some((base, query)) => (base, Some(query)),

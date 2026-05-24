@@ -1,10 +1,38 @@
 -- Backfill links between enterprise external-capacity demands and public hall demands.
--- Safe to run multiple times. It only fills missing links and normalizes legacy vehicle_source values.
+-- Safe to run multiple times. It fills missing links and normalizes legacy vehicle_source/allocation values.
 
 UPDATE enterprise_demands
 SET vehicle_source = 'internal',
     updated_at = now()
 WHERE vehicle_source = 'own';
+
+UPDATE enterprise_demands
+SET vehicle_allocation = (
+  jsonb_set(
+    COALESCE(vehicle_allocation, '{}'::jsonb),
+    '{vehicle_ids}',
+    COALESCE(
+      (
+        SELECT jsonb_agg(DISTINCT vehicle_id)
+        FROM jsonb_array_elements(
+          COALESCE(vehicle_allocation->'vehicle_ids', '[]'::jsonb)
+          || COALESCE(vehicle_allocation->'ownVehicleIds', '[]'::jsonb)
+          || COALESCE(vehicle_allocation->'externalVehicleIds', '[]'::jsonb)
+        ) AS legacy_ids(vehicle_id)
+        WHERE jsonb_typeof(vehicle_id) = 'string'
+          AND vehicle_id #>> '{}' <> ''
+      ),
+      '[]'::jsonb
+    )
+  ) - 'ownVehicleIds' - 'externalVehicleIds'
+),
+updated_at = now()
+WHERE vehicle_allocation IS NOT NULL
+  AND jsonb_typeof(vehicle_allocation) = 'object'
+  AND (
+    vehicle_allocation ? 'ownVehicleIds'
+    OR vehicle_allocation ? 'externalVehicleIds'
+  );
 
 WITH candidates AS (
   SELECT
