@@ -226,6 +226,25 @@ const EnterpriseDispatchPage: FC = () => {
     })
   }
 
+  const getBusinessModeLabel = (demand: Demand) => {
+    const mode = demand.cargo_info?.businessMode || demand.delivery_points?.[0]?.businessMode
+    if (mode === 'community_group_buy') return '社区团长'
+    return '终端点'
+  }
+
+  const formatTimeWindowValue = (value?: string) => {
+    if (!value) return '-'
+    if (value.includes(' ')) return value.split(' ')[1]?.slice(0, 5) || value
+    if (value.includes('T')) return value.split('T')[1]?.slice(0, 5) || value
+    return value.slice(0, 5)
+  }
+
+  const formatTimeWindow = (timeWindow: any) => {
+    const start = formatTimeWindowValue(timeWindow?.start)
+    const end = formatTimeWindowValue(timeWindow?.end)
+    return `${start} - ${end}`
+  }
+
   const handleCancelDemand = async (demandId: string) => {
     Taro.showModal({
       title: '确认取消',
@@ -293,7 +312,7 @@ const EnterpriseDispatchPage: FC = () => {
       <CardHeader>
         <View className="flex justify-between items-center">
           <CardTitle className="text-base flex-1">
-            {demand.cargo_info.type || '配送订单'} - {demand.cargo_info.quantity}箱
+            {demand.cargo_info?.type || '配送订单'} - {demand.cargo_info?.quantity || 0}{demand.cargo_info?.unit || '箱'}
           </CardTitle>
           <Text className={`text-xs px-2 py-1 rounded ${getStatusColor(demand.status)}`}>
             {getStatusText(demand.status)}
@@ -308,7 +327,7 @@ const EnterpriseDispatchPage: FC = () => {
           {demand.delivery_points && demand.delivery_points.length > 0 && (
             <View className="mb-2">
               <Text className="block mb-1 font-medium">
-                📦 配送点：{demand.delivery_points.length}个奶站
+                📦 配送点：{demand.delivery_points.length}个{getBusinessModeLabel(demand)}
               </Text>
               <View className="ml-4">
                 {demand.delivery_points.map((point: any, idx: number) => (
@@ -339,10 +358,10 @@ const EnterpriseDispatchPage: FC = () => {
             </View>
           )}
           <Text className="block">
-            ⏰ 配送时间：{demand.time_window?.start?.split(' ')[1]} - {demand.time_window?.end?.split(' ')[1]}
+            ⏰ 配送时间：{formatTimeWindow(demand.time_window)}
           </Text>
           <Text className="block">
-            🚚 运力来源：{demand.vehicle_source === 'external' ? '外部运力' : '自有车辆'}
+            🚚 运力来源：{demand.vehicle_source === 'external' ? '外部运力' : '自有车辆'} · {demand.cargo_info?.businessModeLabel || (getBusinessModeLabel(demand) === '社区团长' ? '社区团购' : '终端配送')}
           </Text>
           {demand.status !== 'pending' && demand.vehicle_allocation && (
             <Text className="block mt-1">

@@ -17,6 +17,8 @@ interface DeliveryPoint {
   stationId: string
   name: string
   address: string
+  businessMode?: 'enterprise_terminal' | 'community_group_buy'
+  pointType?: 'terminal' | 'community_leader'
   status?: 'pending' | 'in_transit' | 'completed'
 }
 
@@ -139,8 +141,33 @@ const DemandDetailPage: FC = () => {
     return colorMap[status] || ''
   }
 
+  const getBusinessModeText = () => {
+    const mode = demand?.cargo_info?.businessMode || demand?.delivery_points?.[0]?.businessMode
+    if (mode === 'community_group_buy') return '社区团购'
+    return demand?.cargo_info?.businessModeLabel || '终端配送'
+  }
+
+  const getDeliveryPointLabel = () => {
+    const mode = demand?.cargo_info?.businessMode || demand?.delivery_points?.[0]?.businessMode
+    return mode === 'community_group_buy' ? '社区团长' : '终端点'
+  }
+
+  const formatTimeWindowValue = (value?: string) => {
+    if (!value) return '-'
+    if (value.includes(' ')) return value.split(' ')[1]?.slice(0, 5) || value
+    if (value.includes('T')) return value.split('T')[1]?.slice(0, 5) || value
+    return value.slice(0, 5)
+  }
+
+  const formatTimeWindow = (timeWindow: any) => {
+    const start = formatTimeWindowValue(timeWindow?.start)
+    const end = formatTimeWindowValue(timeWindow?.end)
+    return `${start} - ${end}`
+  }
+
   const calculateProgress = () => {
     if (!demand || !demand.delivery_points) return 0
+    if (demand.delivery_points.length === 0) return 0
     const completedCount = demand.delivery_points.filter(p => p.status === 'completed').length
     return (completedCount / demand.delivery_points.length) * 100
   }
@@ -174,7 +201,7 @@ const DemandDetailPage: FC = () => {
             <CardHeader>
               <View className="flex justify-between items-center">
                 <CardTitle className="text-base flex-1">
-                  {demand.cargo_info.type || '配送订单'}
+                  {demand.cargo_info?.type || '配送订单'}
                 </CardTitle>
                 <Badge className="ml-2">
                   {getStatusText(demand.status)}
@@ -184,13 +211,17 @@ const DemandDetailPage: FC = () => {
             <CardContent>
               <View className="text-sm space-y-2">
                 <View className="flex justify-between">
+                  <Text className="text-gray-600">业务模式</Text>
+                  <Text className="font-medium">{getBusinessModeText()}</Text>
+                </View>
+                <View className="flex justify-between">
                   <Text className="text-gray-600">货物数量</Text>
-                  <Text className="font-medium">{demand.cargo_info.quantity}箱</Text>
+                  <Text className="font-medium">{demand.cargo_info?.quantity || 0}{demand.cargo_info?.unit || '箱'}</Text>
                 </View>
                 <View className="flex justify-between">
                   <Text className="text-gray-600">配送时间</Text>
                   <Text className="font-medium">
-                    {demand.time_window?.start?.split(' ')[1]} - {demand.time_window?.end?.split(' ')[1]}
+                    {formatTimeWindow(demand.time_window)}
                   </Text>
                 </View>
                 {demand.vehicle_allocation && (
@@ -229,7 +260,7 @@ const DemandDetailPage: FC = () => {
           {/* 配送点列表 */}
           <Card className="mb-4">
             <CardHeader>
-              <CardTitle className="text-base">配送点列表 ({totalCount}个)</CardTitle>
+              <CardTitle className="text-base">{getDeliveryPointLabel()}列表 ({totalCount}个)</CardTitle>
             </CardHeader>
             <CardContent>
               <View className="space-y-3">

@@ -17,13 +17,17 @@ interface Station {
   name: string
   address: string
   phone: string
+  customer_type?: 'owned' | 'external'
 }
+
+type BusinessMode = 'enterprise_terminal' | 'community_group_buy'
 
 const EnterprisePublishPage: FC = () => {
   const [enterpriseId, setEnterpriseId] = useState('')
   const [stations, setStations] = useState<Station[]>([])
   const [selectedStations, setSelectedStations] = useState<string[]>([])
 
+  const [businessMode, setBusinessMode] = useState<BusinessMode>('enterprise_terminal')
   const [cargoType, setCargoType] = useState('')
   const [cargoQuantity, setCargoQuantity] = useState('')
   const [startHourIndex, setStartHourIndex] = useState(8)
@@ -32,6 +36,24 @@ const EnterprisePublishPage: FC = () => {
 
   // 时间选择器数据
   const hours = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'))
+  const businessModeOptions: Array<{
+    value: BusinessMode
+    label: string
+    description: string
+  }> = [
+    {
+      value: 'enterprise_terminal',
+      label: '终端配送',
+      description: '企业到门店、网点、客户终端',
+    },
+    {
+      value: 'community_group_buy',
+      label: '社区团购',
+      description: '企业到社区团长、自提点',
+    },
+  ]
+  const currentMode = businessModeOptions.find(option => option.value === businessMode)
+  const deliveryPointLabel = businessMode === 'community_group_buy' ? '社区团长' : '终端点'
 
   useEffect(() => {
     loadEnterpriseInfo()
@@ -97,7 +119,15 @@ const EnterprisePublishPage: FC = () => {
 
     if (selectedStations.length === 0) {
       Taro.showToast({
-        title: '请选择至少一个配送点',
+        title: `请选择至少一个${deliveryPointLabel}`,
+        icon: 'none',
+      })
+      return
+    }
+
+    if (endHourIndex <= startHourIndex) {
+      Taro.showToast({
+        title: '结束时间必须晚于开始时间',
         icon: 'none',
       })
       return
@@ -111,6 +141,9 @@ const EnterprisePublishPage: FC = () => {
         address: s.address,
         contact: s.name,
         phone: s.phone,
+        pointType: businessMode === 'community_group_buy' ? 'community_leader' : 'terminal',
+        businessMode,
+        status: 'pending',
       }))
 
       const requestData = {
@@ -127,6 +160,8 @@ const EnterprisePublishPage: FC = () => {
           type: cargoType,
           quantity: parseInt(cargoQuantity),
           unit: '箱',
+          businessMode,
+          businessModeLabel: currentMode?.label,
         },
         timeWindow: {
           start: `${hours[startHourIndex]}:00`,
@@ -172,6 +207,33 @@ const EnterprisePublishPage: FC = () => {
     <View className="enterprise-publish min-h-screen bg-gray-50 pb-20">
       <View className="p-4">
         <Text className="text-2xl font-bold block mb-4">发布配送</Text>
+
+        {/* 业务模式 */}
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle className="text-base">业务模式</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <View className="flex gap-2">
+              {businessModeOptions.map(option => (
+                <Button
+                  key={option.value}
+                  className="flex-1"
+                  variant={businessMode === option.value ? 'default' : 'outline'}
+                  onClick={() => {
+                    setBusinessMode(option.value)
+                    setSelectedStations([])
+                  }}
+                >
+                  <View>
+                    <Text className="block text-sm">{option.label}</Text>
+                    <Text className="block text-xs opacity-80 mt-1">{option.description}</Text>
+                  </View>
+                </Button>
+              ))}
+            </View>
+          </CardContent>
+        </Card>
 
         {/* 货物信息 */}
         <Card className="mb-4">
@@ -234,11 +296,11 @@ const EnterprisePublishPage: FC = () => {
         {/* 配送点选择 */}
         <Card className="mb-4">
           <CardHeader>
-            <CardTitle className="text-base">配送点选择</CardTitle>
+            <CardTitle className="text-base">{deliveryPointLabel}选择</CardTitle>
           </CardHeader>
           <CardContent>
             {stations.length === 0 ? (
-              <Text className="text-sm text-gray-500 text-center block">暂无奶站，请先添加奶站</Text>
+              <Text className="text-sm text-gray-500 text-center block">暂无可选{deliveryPointLabel}，请先添加点位</Text>
             ) : (
               <View className="space-y-2">
                 {stations.map((station) => (
