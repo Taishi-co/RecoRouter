@@ -83,6 +83,6 @@ jobs:
             scp -P "$SERVER_PORT" -i ~/.ssh/recorouter_deploy_key /tmp/recorouter-miniapp-source.tar.gz "$remote:/tmp/recorouter-miniapp-source.tar.gz"
             ssh -p "$SERVER_PORT" -i ~/.ssh/recorouter_deploy_key "$remote" "mkdir -p /tmp/recorouter-miniapp-install && rm -rf /tmp/recorouter-miniapp-install/* && tar -xzf /tmp/recorouter-miniapp-source.tar.gz -C /tmp/recorouter-miniapp-install && $remote_cmd"
           else
-            SSHPASS="$SERVER_PASSWORD" sshpass -eSSHPASS scp -P "$SERVER_PORT" /tmp/recorouter-miniapp-source.tar.gz "$remote:/tmp/recorouter-miniapp-source.tar.gz"
-            SSHPASS="$SERVER_PASSWORD" sshpass -eSSHPASS ssh -p "$SERVER_PORT" "$remote" "mkdir -p /tmp/recorouter-miniapp-install && rm -rf /tmp/recorouter-miniapp-install/* && tar -xzf /tmp/recorouter-miniapp-source.tar.gz -C /tmp/recorouter-miniapp-install && $remote_cmd"
+            sshpass -p "$SERVER_PASSWORD" scp -P "$SERVER_PORT" /tmp/recorouter-miniapp-source.tar.gz "$remote:/tmp/recorouter-miniapp-source.tar.gz"
+            sshpass -p "$SERVER_PASSWORD" ssh -p "$SERVER_PORT" "$remote" "mkdir -p /tmp/recorouter-miniapp-install && rm -rf /tmp/recorouter-miniapp-install/* && tar -xzf /tmp/recorouter-miniapp-source.tar.gz -C /tmp/recorouter-miniapp-install && $remote_cmd"
           fi
