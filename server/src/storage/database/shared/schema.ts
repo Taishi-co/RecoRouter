@@ -226,8 +226,8 @@ export const enterpriseDemands = pgTable(
     delivery_points: jsonb("delivery_points").notNull(), // [{type, name, address, contact, phone, location, cargo}]
     cargo_info: jsonb("cargo_info").notNull(), // {totalWeight, totalVolume}
     time_window: jsonb("time_window").notNull(), // {expectedTime, startTime, endTime}
-    vehicle_source: varchar("vehicle_source", { length: 20 }).notNull(), // own, external, mixed
-    vehicle_allocation: jsonb("vehicle_allocation"), // {ownVehicleIds, externalVehicleIds}
+    vehicle_source: varchar("vehicle_source", { length: 20 }).notNull(), // internal, external, mixed
+    vehicle_allocation: jsonb("vehicle_allocation"), // {vehicle_ids, allocated_at}
     optimized_routes: jsonb("optimized_routes"), // [{vehicleId, route, points}]
     external_demand_id: varchar("external_demand_id", { length: 36 }),
     remark: text("remark"),
