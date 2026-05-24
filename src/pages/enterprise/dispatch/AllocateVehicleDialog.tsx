@@ -9,6 +9,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Badge } from '@/components/ui/badge'
 
 interface Vehicle {
   id: string
@@ -16,7 +17,7 @@ interface Vehicle {
   vehicle_type: string
   load_capacity: number
   current_location: string
-  usage_mode: string
+  usage_mode: 'internal' | 'external'
   trip_status: string
 }
 
@@ -27,6 +28,7 @@ interface AllocateVehicleDialogProps {
   selectedVehicles: string[]
   onToggleVehicle: (vehicleId: string) => void
   onConfirm: () => void
+  confirming?: boolean
 }
 
 const AllocateVehicleDialog: FC<AllocateVehicleDialogProps> = ({
@@ -36,7 +38,13 @@ const AllocateVehicleDialog: FC<AllocateVehicleDialogProps> = ({
   selectedVehicles,
   onToggleVehicle,
   onConfirm,
+  confirming = false,
 }) => {
+  const getUsageModeText = (usageMode: string) => {
+    if (usageMode === 'external') return '外部'
+    return '自有'
+  }
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md">
@@ -47,7 +55,7 @@ const AllocateVehicleDialog: FC<AllocateVehicleDialogProps> = ({
         <ScrollView scrollY className="max-h-80 my-4">
           {vehicles.length === 0 ? (
             <View className="text-center py-8">
-              <Text className="text-gray-500 text-sm">暂无可用车辆</Text>
+              <Text className="block text-gray-500 text-sm">暂无可用车辆</Text>
             </View>
           ) : (
             <View className="space-y-2">
@@ -70,9 +78,14 @@ const AllocateVehicleDialog: FC<AllocateVehicleDialogProps> = ({
                         <Text className="text-sm font-medium block">
                           {vehicle.vehicle_code} {vehicle.vehicle_type}
                         </Text>
-                        <Text className="text-xs text-gray-500 block">
-                          {vehicle.load_capacity}公斤 · {vehicle.current_location}
-                        </Text>
+                        <View className="flex items-center gap-2 mt-1">
+                          <Badge variant="outline">
+                            <Text className="text-xs">{getUsageModeText(vehicle.usage_mode)}</Text>
+                          </Badge>
+                          <Text className="text-xs text-gray-500">
+                            {vehicle.load_capacity}公斤 · {vehicle.current_location}
+                          </Text>
+                        </View>
                       </View>
                     </View>
                     {!isAvailable && (
@@ -89,8 +102,8 @@ const AllocateVehicleDialog: FC<AllocateVehicleDialogProps> = ({
           <Button variant="outline" onClick={onClose}>
             <Text>取消</Text>
           </Button>
-          <Button onClick={onConfirm} disabled={selectedVehicles.length === 0}>
-            <Text>确认分配</Text>
+          <Button onClick={onConfirm} disabled={selectedVehicles.length === 0 || confirming}>
+            <Text>{confirming ? '分配中...' : '确认分配'}</Text>
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -22,6 +22,7 @@ interface Station {
 }
 
 type BusinessMode = 'enterprise_terminal' | 'community_group_buy'
+type VehicleSource = 'internal' | 'external' | 'mixed'
 
 const EnterprisePublishPage: FC = () => {
   const [enterpriseId, setEnterpriseId] = useState('')
@@ -36,7 +37,7 @@ const EnterprisePublishPage: FC = () => {
   const [cargoQuantity, setCargoQuantity] = useState('')
   const [startHourIndex, setStartHourIndex] = useState(8)
   const [endHourIndex, setEndHourIndex] = useState(10)
-  const [vehicleSource, setVehicleSource] = useState<'internal' | 'external'>('internal')
+  const [vehicleSource, setVehicleSource] = useState<VehicleSource>('internal')
 
   // 时间选择器数据
   const hours = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'))
@@ -55,6 +56,14 @@ const EnterprisePublishPage: FC = () => {
       label: '社区团购',
       description: '企业到社区团长、自提点',
     },
+  ]
+  const vehicleSourceOptions: Array<{
+    value: VehicleSource
+    label: string
+  }> = [
+    { value: 'internal', label: '自有车辆' },
+    { value: 'external', label: '外部运力' },
+    { value: 'mixed', label: '混合运力' },
   ]
   const currentMode = businessModeOptions.find(option => option.value === businessMode)
   const deliveryPointLabel = businessMode === 'community_group_buy' ? '社区团长' : '终端点'
@@ -288,26 +297,29 @@ const EnterprisePublishPage: FC = () => {
             <CardTitle className="text-base">运力来源</CardTitle>
           </CardHeader>
           <CardContent>
-            <View className="flex gap-2">
-              <Button
-                className="flex-1"
-                variant={vehicleSource === 'internal' ? 'default' : 'outline'}
-                onClick={() => setVehicleSource('internal')}
-              >
-                <Text>自有车辆</Text>
-              </Button>
-              <Button
-                className="flex-1"
-                variant={vehicleSource === 'external' ? 'default' : 'outline'}
-                onClick={() => setVehicleSource('external')}
-              >
-                <Text>外部运力</Text>
-              </Button>
+            <View className="grid grid-cols-3 gap-2">
+              {vehicleSourceOptions.map(option => (
+                <Button
+                  key={option.value}
+                  className="w-full"
+                  variant={vehicleSource === option.value ? 'default' : 'outline'}
+                  onClick={() => setVehicleSource(option.value)}
+                >
+                  <Text className="text-sm">{option.label}</Text>
+                </Button>
+              ))}
             </View>
             {vehicleSource === 'external' && (
               <View className="mt-3 p-3 bg-yellow-50 rounded-lg">
                 <Text className="text-xs text-yellow-800 block">
                   注意：选择外部运力后，需求将发布到接单大厅，由外部运力方接单配送。
+                </Text>
+              </View>
+            )}
+            {vehicleSource === 'mixed' && (
+              <View className="mt-3 p-3 bg-blue-50 rounded-lg">
+                <Text className="text-xs text-blue-800 block">
+                  混合运力需求进入调度中心后，可同时选择自有车辆和企业外部车辆。
                 </Text>
               </View>
             )}

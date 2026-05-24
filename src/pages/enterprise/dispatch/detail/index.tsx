@@ -151,6 +151,15 @@ const DemandDetailPage: FC = () => {
     return mode === 'community_group_buy' ? '社区团长' : '终端点'
   }
 
+  const getVehicleSourceLabel = (source?: string) => {
+    const sourceMap: Record<string, string> = {
+      internal: '自有车辆',
+      external: '外部运力',
+      mixed: '混合运力',
+    }
+    return source ? sourceMap[source] || source : '-'
+  }
+
   const formatTimeWindowValue = (value?: string) => {
     if (!value) return '-'
     if (value.includes(' ')) return value.split(' ')[1]?.slice(0, 5) || value
@@ -212,6 +221,10 @@ const DemandDetailPage: FC = () => {
                 <View className="flex justify-between">
                   <Text className="text-gray-600">业务模式</Text>
                   <Text className="font-medium">{getBusinessModeText()}</Text>
+                </View>
+                <View className="flex justify-between">
+                  <Text className="text-gray-600">运力来源</Text>
+                  <Text className="font-medium">{getVehicleSourceLabel(demand.vehicle_source)}</Text>
                 </View>
                 <View className="flex justify-between">
                   <Text className="text-gray-600">货物数量</Text>
