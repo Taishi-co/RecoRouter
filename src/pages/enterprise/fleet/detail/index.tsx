@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { getApiData, getApiMessage, isApiSuccess } from '@/lib/api-response'
 import { Network } from '@/network'
 import Taro from '@tarojs/taro'
 
@@ -22,7 +23,7 @@ interface Vehicle {
   width?: number
   height?: number
   current_location: string
-  usage_mode: 'internal' | 'external' | 'both'
+  usage_mode: 'internal' | 'external' | 'mixed'
   trip_status: 'idle' | 'in_transit' | 'maintenance'
   today_internal_orders: number
   today_external_orders: number
@@ -48,17 +49,25 @@ const VehicleDetailPage: FC = () => {
         url: `/api/enterprise-vehicles/${vehicleId}`,
       })
 
-      if (res.data.code === 200) {
-        setVehicle(res.data.data)
+      if (isApiSuccess(res)) {
+        const vehicleData = getApiData<Vehicle | null>(res, null)
+        if (vehicleData) {
+          setVehicle(vehicleData)
+        } else {
+          Taro.showToast({
+            title: '车辆信息缺失',
+            icon: 'none',
+          })
+          Taro.navigateBack()
+        }
       } else {
         Taro.showToast({
-          title: res.data.message || '加载失败',
+          title: getApiMessage(res, '加载失败'),
           icon: 'none',
         })
         Taro.navigateBack()
       }
-    } catch (error) {
-      console.error('加载详情失败:', error)
+    } catch {
       Taro.showToast({
         title: '加载失败',
         icon: 'none',
@@ -90,7 +99,7 @@ const VehicleDetailPage: FC = () => {
   if (loading) {
     return (
       <View className="min-h-screen bg-gray-50 p-4">
-        <Text className="text-center text-gray-500">加载中...</Text>
+        <Text className="block text-center text-gray-500">加载中...</Text>
       </View>
     )
   }
@@ -98,7 +107,7 @@ const VehicleDetailPage: FC = () => {
   if (!vehicle) {
     return (
       <View className="min-h-screen bg-gray-50 p-4">
-        <Text className="text-center text-gray-500">未找到车辆信息</Text>
+        <Text className="block text-center text-gray-500">未找到车辆信息</Text>
       </View>
     )
   }

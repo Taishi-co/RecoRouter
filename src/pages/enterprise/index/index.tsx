@@ -6,6 +6,7 @@ import {
   Card,
   CardContent,
 } from '@/components/ui/card'
+import { getApiData, isApiSuccess } from '@/lib/api-response'
 import { Network } from '@/network'
 import Taro from '@tarojs/taro'
 import './index.css'
@@ -21,6 +22,7 @@ interface DemandStats {
 const EnterpriseHomePage: FC = () => {
   const [stats, setStats] = useState<DemandStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [errorText, setErrorText] = useState('')
 
   useEffect(() => {
     loadDashboardData()
@@ -39,21 +41,31 @@ const EnterpriseHomePage: FC = () => {
         url: `/api/enterprise/admin/${userInfo.id}`,
       })
 
-      if (enterpriseRes.data.code === 200) {
-        const entId = enterpriseRes.data.data.id
-
-        // 加载统计数据
-        const statsRes = await Network.request({
-          url: '/api/demand/stats/enterprise',
-          data: { enterprise_id: entId },
-        })
-
-        if (statsRes.data.code === 200) {
-          setStats(statsRes.data.data)
-        }
+      if (!isApiSuccess(enterpriseRes)) {
+        setErrorText('获取企业信息失败')
+        return
       }
-    } catch (error) {
-      console.error('加载仪表盘数据失败:', error)
+
+      const entId = getApiData<{ id?: string } | null>(enterpriseRes, null)?.id
+      if (!entId) {
+        setErrorText('企业信息缺失')
+        return
+      }
+
+      // 加载统计数据
+      const statsRes = await Network.request({
+        url: '/api/demand/stats/enterprise',
+        data: { enterprise_id: entId },
+      })
+
+      if (isApiSuccess(statsRes)) {
+        setStats(getApiData<DemandStats | null>(statsRes, null))
+        setErrorText('')
+      } else {
+        setErrorText('加载仪表盘数据失败')
+      }
+    } catch {
+      setErrorText('加载仪表盘数据失败')
     } finally {
       setLoading(false)
     }
@@ -72,16 +84,9 @@ const EnterpriseHomePage: FC = () => {
   }
 
   const navigateToStations = () => {
-    console.log('点击奶站管理 - 开始跳转')
-
-    // 直接使用 Taro.navigateTo
     Taro.navigateTo({
       url: '/pages/enterprise/stations/index',
-      success: () => {
-        console.log('跳转成功')
-      },
-      fail: (err) => {
-        console.error('跳转失败:', err)
+      fail: () => {
         Taro.showToast({
           title: '跳转失败',
           icon: 'none',
@@ -91,14 +96,9 @@ const EnterpriseHomePage: FC = () => {
   }
 
   const navigateToStats = () => {
-    console.log('点击数据统计 - 开始跳转')
     Taro.navigateTo({
       url: '/pages/enterprise/stats/index',
-      success: () => {
-        console.log('跳转成功')
-      },
-      fail: (err) => {
-        console.error('跳转失败:', err)
+      fail: () => {
         Taro.showToast({
           title: '跳转失败',
           icon: 'none',
@@ -108,14 +108,9 @@ const EnterpriseHomePage: FC = () => {
   }
 
   const navigateToOrderHall = () => {
-    console.log('点击接单大厅 - 开始跳转')
     Taro.navigateTo({
       url: '/pages/enterprise/order-hall/index',
-      success: () => {
-        console.log('跳转成功')
-      },
-      fail: (err) => {
-        console.error('跳转失败:', err)
+      fail: () => {
         Taro.showToast({
           title: '跳转失败',
           icon: 'none',
@@ -135,10 +130,18 @@ const EnterpriseHomePage: FC = () => {
       <View className="p-4">
         <Text className="text-base font-bold text-gray-900 mb-3 block">今日概览</Text>
 
+        {errorText && (
+          <Card className="mb-3 border-red-100 bg-red-50">
+            <CardContent className="p-3">
+              <Text className="block text-sm text-red-600">{errorText}</Text>
+            </CardContent>
+          </Card>
+        )}
+
         {loading ? (
           <Card>
             <CardContent className="p-8 text-center">
-              <Text className="text-gray-500 text-sm">加载中...</Text>
+              <Text className="block text-gray-500 text-sm">加载中...</Text>
             </CardContent>
           </Card>
         ) : (

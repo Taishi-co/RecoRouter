@@ -7,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { getApiData, getApiMessage, isApiSuccess } from '@/lib/api-response'
 import { Network } from '@/network'
 import Taro from '@tarojs/taro'
 
@@ -27,6 +28,7 @@ interface StatsData {
 const EnterpriseStatsPage: FC = () => {
   const [stats, setStats] = useState<StatsData | null>(null)
   const [loading, setLoading] = useState(false)
+  const [errorText, setErrorText] = useState('')
 
   useEffect(() => {
     loadStats()
@@ -44,20 +46,32 @@ const EnterpriseStatsPage: FC = () => {
         url: `/api/enterprise/admin/${userInfo.id}`,
       })
 
-      if (enterpriseRes.data.code === 200) {
-        const entId = enterpriseRes.data.data.id
-
-        const res = await Network.request({
-          url: '/api/enterprise/stats',
-          data: { enterprise_id: entId },
-        })
-
-        if (res.data.code === 200) {
-          setStats(res.data.data)
-        }
+      if (!isApiSuccess(enterpriseRes)) {
+        setErrorText(getApiMessage(enterpriseRes, '获取企业信息失败'))
+        return
       }
-    } catch (error) {
-      console.error('加载统计失败:', error)
+
+      const entId = getApiData<{ id?: string } | null>(enterpriseRes, null)?.id
+      if (!entId) {
+        setErrorText('企业信息缺失')
+        return
+      }
+
+      const res = await Network.request({
+        url: '/api/enterprise/stats',
+        data: { enterprise_id: entId },
+      })
+
+      if (isApiSuccess(res)) {
+        setStats(getApiData<StatsData | null>(res, null))
+        setErrorText('')
+      } else {
+        setStats(null)
+        setErrorText(getApiMessage(res, '加载统计失败'))
+      }
+    } catch {
+      setStats(null)
+      setErrorText('加载统计失败')
     } finally {
       setLoading(false)
     }
@@ -67,10 +81,18 @@ const EnterpriseStatsPage: FC = () => {
     <View className="enterprise-stats min-h-screen bg-gray-50 p-4 pb-20">
       <Text className="text-2xl font-bold block mb-4">数据统计</Text>
 
+      {errorText && (
+        <Card className="mb-4 border-red-100 bg-red-50">
+          <CardContent className="p-3">
+            <Text className="block text-sm text-red-600">{errorText}</Text>
+          </CardContent>
+        </Card>
+      )}
+
       {loading ? (
         <Card>
           <CardContent className="p-8 text-center">
-            <Text className="text-gray-500 text-sm">加载中...</Text>
+            <Text className="block text-gray-500 text-sm">加载中...</Text>
           </CardContent>
         </Card>
       ) : stats ? (
@@ -191,7 +213,7 @@ const EnterpriseStatsPage: FC = () => {
       ) : (
         <Card>
           <CardContent className="p-8 text-center">
-            <Text className="text-gray-500 text-sm">暂无统计数据</Text>
+            <Text className="block text-gray-500 text-sm">暂无统计数据</Text>
           </CardContent>
         </Card>
       )}
