@@ -8,6 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { getApiData, getApiMessage, isApiSuccess } from '@/lib/api-response'
 import { Network } from '@/network'
 import Taro from '@tarojs/taro'
 import AllocateVehicleDialog from './AllocateVehicleDialog'
@@ -54,6 +55,8 @@ const EnterpriseDispatchPage: FC = () => {
   const [availableVehicles, setAvailableVehicles] = useState<Vehicle[]>([])
   const [selectedVehicleIds, setSelectedVehicleIds] = useState<string[]>([])
   const [enterpriseId, setEnterpriseId] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [errorText, setErrorText] = useState('')
 
   useEffect(() => {
     loadEnterpriseInfo()
@@ -71,16 +74,24 @@ const EnterpriseDispatchPage: FC = () => {
         url: `/api/enterprise/admin/${userInfo.id}`,
       })
 
-      if (enterpriseRes.data.code === 200) {
-        const entId = enterpriseRes.data.data.id
+      if (isApiSuccess(enterpriseRes)) {
+        const entId = getApiData<{ id: string } | null>(enterpriseRes, null)?.id
+        if (!entId) {
+          setErrorText('企业信息缺失')
+          return
+        }
         setEnterpriseId(entId)
         loadStats(entId)
         loadPendingDemands(entId)
         loadInTransitDemands(entId)
         loadCompletedDemands(entId)
+      } else {
+        setErrorText(getApiMessage(enterpriseRes, '加载企业信息失败'))
       }
-    } catch (error) {
-      console.error('加载企业信息失败:', error)
+    } catch {
+      setErrorText('加载企业信息失败')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -91,11 +102,13 @@ const EnterpriseDispatchPage: FC = () => {
         data: { enterprise_id: entId },
       })
 
-      if (res.data.code === 200) {
-        setStats(res.data.data)
+      if (isApiSuccess(res)) {
+        setStats(getApiData<DemandStats | null>(res, null))
+      } else {
+        setErrorText(getApiMessage(res, '加载统计失败'))
       }
-    } catch (error) {
-      console.error('加载统计失败:', error)
+    } catch {
+      setErrorText('加载统计失败')
     }
   }
 
@@ -105,11 +118,13 @@ const EnterpriseDispatchPage: FC = () => {
         url: `/api/demand/pending/${entId}`,
       })
 
-      if (res.data.code === 200) {
-        setPendingDemands(res.data.data || [])
+      if (isApiSuccess(res)) {
+        setPendingDemands(getApiData<Demand[]>(res, []))
+      } else {
+        setErrorText(getApiMessage(res, '加载待调度订单失败'))
       }
-    } catch (error) {
-      console.error('加载待调度订单失败:', error)
+    } catch {
+      setErrorText('加载待调度订单失败')
     }
   }
 
@@ -120,11 +135,14 @@ const EnterpriseDispatchPage: FC = () => {
         data: { enterpriseId: entId, status: 'in_transit' },
       })
 
-      if (res.data.code === 200) {
-        setInTransitDemands(res.data.data.list || [])
+      if (isApiSuccess(res)) {
+        const data = getApiData<{ list?: Demand[] }>(res, {})
+        setInTransitDemands(data.list || [])
+      } else {
+        setErrorText(getApiMessage(res, '加载进行中订单失败'))
       }
-    } catch (error) {
-      console.error('加载进行中订单失败:', error)
+    } catch {
+      setErrorText('加载进行中订单失败')
     }
   }
 
@@ -135,11 +153,14 @@ const EnterpriseDispatchPage: FC = () => {
         data: { enterpriseId: entId, status: 'completed' },
       })
 
-      if (res.data.code === 200) {
-        setCompletedDemands(res.data.data.list || [])
+      if (isApiSuccess(res)) {
+        const data = getApiData<{ list?: Demand[] }>(res, {})
+        setCompletedDemands(data.list || [])
+      } else {
+        setErrorText(getApiMessage(res, '加载已完成订单失败'))
       }
-    } catch (error) {
-      console.error('加载已完成订单失败:', error)
+    } catch {
+      setErrorText('加载已完成订单失败')
     }
   }
 
@@ -151,16 +172,15 @@ const EnterpriseDispatchPage: FC = () => {
         data: { enterprise_id: enterpriseId, usage_mode: 'internal' },
       })
 
-      if (res.data.code === 200) {
-        const vehicles = res.data.data || []
+      if (isApiSuccess(res)) {
+        const vehicles = getApiData<Vehicle[]>(res, [])
         // 只显示空闲车辆
         setAvailableVehicles(vehicles.filter((v: Vehicle) => v.trip_status === 'idle'))
         setSelectedVehicleIds([])
         setAllocatingDemand(demand)
         setAllocateDialogOpen(true)
       }
-    } catch (error) {
-      console.error('获取车辆列表失败:', error)
+    } catch {
       Taro.showToast({
         title: '获取车辆列表失败',
         icon: 'none',
@@ -195,7 +215,7 @@ const EnterpriseDispatchPage: FC = () => {
         },
       })
 
-      if (res.data.code === 200) {
+      if (isApiSuccess(res)) {
         Taro.showToast({
           title: '分配成功',
           icon: 'success',
@@ -207,12 +227,11 @@ const EnterpriseDispatchPage: FC = () => {
         loadStats(enterpriseId)
       } else {
         Taro.showToast({
-          title: res.data.message || '分配失败',
+          title: getApiMessage(res, '分配失败'),
           icon: 'none',
         })
       }
-    } catch (error) {
-      console.error('分配车辆失败:', error)
+    } catch {
       Taro.showToast({
         title: '分配失败',
         icon: 'none',
@@ -257,7 +276,7 @@ const EnterpriseDispatchPage: FC = () => {
               method: 'PUT',
             })
 
-            if (res.data.code === 200) {
+            if (isApiSuccess(res)) {
               Taro.showToast({
                 title: '取消成功',
                 icon: 'success',
@@ -271,12 +290,11 @@ const EnterpriseDispatchPage: FC = () => {
               }
             } else {
               Taro.showToast({
-                title: res.data.message || '取消失败',
+                title: getApiMessage(res, '取消失败'),
                 icon: 'none',
               })
             }
-          } catch (error) {
-            console.error('取消需求失败:', error)
+          } catch {
             Taro.showToast({
               title: '取消失败',
               icon: 'none',
@@ -413,6 +431,14 @@ const EnterpriseDispatchPage: FC = () => {
     <View className="enterprise-dispatch min-h-screen bg-gray-50 pb-20">
       <ScrollView scrollY className="h-full">
         <View className="p-4">
+          {errorText && (
+            <Card className="mb-4 border-red-200 bg-red-50">
+              <CardContent className="p-3">
+                <Text className="block text-sm text-red-600">{errorText}</Text>
+              </CardContent>
+            </Card>
+          )}
+
           {/* 统计信息 */}
           {stats && (
             <Card className="mb-4">
@@ -449,32 +475,41 @@ const EnterpriseDispatchPage: FC = () => {
 
           {/* 订单列表 */}
           <View className="flex gap-2 mb-4">
-            <View
-              className={`flex-1 py-2 px-3 rounded-lg text-center ${activeTab === 'pending' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-600'}`}
+            <Button
+              className="flex-1"
+              variant={activeTab === 'pending' ? 'default' : 'outline'}
               onClick={() => setActiveTab('pending')}
             >
               <Text className="text-sm">待调度</Text>
-            </View>
-            <View
-              className={`flex-1 py-2 px-3 rounded-lg text-center ${activeTab === 'in_transit' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-600'}`}
+            </Button>
+            <Button
+              className="flex-1"
+              variant={activeTab === 'in_transit' ? 'default' : 'outline'}
               onClick={() => setActiveTab('in_transit')}
             >
               <Text className="text-sm">进行中</Text>
-            </View>
-            <View
-              className={`flex-1 py-2 px-3 rounded-lg text-center ${activeTab === 'completed' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-600'}`}
+            </Button>
+            <Button
+              className="flex-1"
+              variant={activeTab === 'completed' ? 'default' : 'outline'}
               onClick={() => setActiveTab('completed')}
             >
               <Text className="text-sm">已完成</Text>
-            </View>
+            </Button>
           </View>
 
-          {activeTab === 'pending' && (
+          {loading ? (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <Text className="text-gray-500 text-sm block">加载中...</Text>
+              </CardContent>
+            </Card>
+          ) : activeTab === 'pending' && (
             <View>
               {pendingDemands.length === 0 ? (
                 <Card>
                   <CardContent className="p-8 text-center">
-                    <Text className="text-gray-500 text-sm">暂无待调度订单</Text>
+                    <Text className="text-gray-500 text-sm block">暂无待调度订单</Text>
                   </CardContent>
                 </Card>
               ) : (
@@ -483,12 +518,12 @@ const EnterpriseDispatchPage: FC = () => {
             </View>
           )}
 
-          {activeTab === 'in_transit' && (
+          {!loading && activeTab === 'in_transit' && (
             <View>
               {inTransitDemands.length === 0 ? (
                 <Card>
                   <CardContent className="p-8 text-center">
-                    <Text className="text-gray-500 text-sm">暂无进行中订单</Text>
+                    <Text className="text-gray-500 text-sm block">暂无进行中订单</Text>
                   </CardContent>
                 </Card>
               ) : (
@@ -497,12 +532,12 @@ const EnterpriseDispatchPage: FC = () => {
             </View>
           )}
 
-          {activeTab === 'completed' && (
+          {!loading && activeTab === 'completed' && (
             <View>
               {completedDemands.length === 0 ? (
                 <Card>
                   <CardContent className="p-8 text-center">
-                    <Text className="text-gray-500 text-sm">暂无已完成订单</Text>
+                    <Text className="text-gray-500 text-sm block">暂无已完成订单</Text>
                   </CardContent>
                 </Card>
               ) : (

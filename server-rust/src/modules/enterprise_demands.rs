@@ -112,6 +112,23 @@ where
     S: Storage,
 {
     let demand_id = format!("demand-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
+    let vehicle_source = normalize_vehicle_source(&body.vehicle_source)?;
+    let business_mode = normalize_business_mode(
+        body.cargo_info
+            .get("businessMode")
+            .and_then(Value::as_str)
+            .unwrap_or("enterprise_terminal"),
+    )?;
+    let cargo_info = normalize_create_cargo_info(&body.cargo_info, &business_mode)?;
+    let delivery_points = normalize_create_delivery_points(&body.delivery_points, &business_mode)?;
+    let time_window = normalize_time_window(&body.time_window)?;
+
+    if body.enterprise_id.trim().is_empty() {
+        return Err(crate::error::ApiError::BadRequest(
+            "enterpriseId 不能为空".to_string(),
+        ));
+    }
+
     let mut demand = sqlx::query_scalar::<_, Value>(
         r#"
         INSERT INTO enterprise_demands (
@@ -127,16 +144,23 @@ where
     .bind(&body.enterprise_id)
     .bind(&body.pickup_point_type)
     .bind(&body.pickup_point_info)
-    .bind(&body.delivery_points)
-    .bind(&body.cargo_info)
-    .bind(&body.time_window)
-    .bind(&body.vehicle_source)
+    .bind(&delivery_points)
+    .bind(&cargo_info)
+    .bind(&time_window)
+    .bind(&vehicle_source)
     .bind(&body.remark)
     .fetch_one(&state.db)
     .await?;
 
-    if body.vehicle_source == "external" {
-        let external_demand_id = publish_external_demand(&state.db, &body).await?;
+    if vehicle_source == "external" {
+        let external_demand_id = publish_external_demand(
+            &state.db,
+            &body,
+            &delivery_points,
+            &cargo_info,
+            &time_window,
+        )
+        .await?;
         demand = sqlx::query_scalar::<_, Value>(
             r#"
             UPDATE enterprise_demands
@@ -296,6 +320,44 @@ async fn allocate<S>(
 where
     S: Storage,
 {
+    let existing = fetch_enterprise_demand(&state.db, &id)
+        .await?
+        .ok_or_else(|| crate::error::ApiError::BadRequest("配送需求不存在".to_string()))?;
+    if existing.get("status").and_then(Value::as_str) != Some("pending") {
+        return Err(crate::error::ApiError::BadRequest(
+            "只有待调度状态的需求可以分配车辆".to_string(),
+        ));
+    }
+
+    let vehicle_source = normalize_vehicle_source(
+        existing
+            .get("vehicle_source")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+    )?;
+    if vehicle_source == "external" {
+        return Err(crate::error::ApiError::BadRequest(
+            "外部运力需求无需分配自有车辆".to_string(),
+        ));
+    }
+
+    let vehicle_ids = vehicle_ids_from_allocation(&body.vehicle_allocation);
+    if vehicle_ids.is_empty() {
+        return Err(crate::error::ApiError::BadRequest("请选择车辆".to_string()));
+    }
+    let enterprise_id = existing
+        .get("enterprise_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| crate::error::ApiError::BadRequest("企业ID缺失".to_string()))?;
+    let usage_modes = if vehicle_source == "mixed" {
+        vec!["internal".to_string(), "external".to_string()]
+    } else {
+        vec!["internal".to_string()]
+    };
+    validate_enterprise_vehicle_ids(&state.db, enterprise_id, &vehicle_ids, &usage_modes).await?;
+
+    let vehicle_allocation = normalized_vehicle_allocation(body.vehicle_allocation, &vehicle_ids);
+    let mut tx = state.db.begin().await?;
     let demand = sqlx::query_scalar::<_, Value>(
         r#"
         UPDATE enterprise_demands
@@ -304,10 +366,19 @@ where
         RETURNING row_to_json(enterprise_demands)
         "#,
     )
-    .bind(id)
-    .bind(body.vehicle_allocation)
-    .fetch_one(&state.db)
+    .bind(&id)
+    .bind(&vehicle_allocation)
+    .fetch_one(&mut *tx)
     .await?;
+
+    sqlx::query(
+        "UPDATE vehicles SET trip_status = 'in_transit', updated_at = now() WHERE id = ANY($1)",
+    )
+    .bind(&vehicle_ids)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
     Ok(success(demand))
 }
 
@@ -357,7 +428,9 @@ where
         ));
     }
 
-    validate_external_vehicle_ids(&state.db, &body.enterprise_id, &vehicle_ids).await?;
+    let usage_modes = vec!["external".to_string()];
+    validate_enterprise_vehicle_ids(&state.db, &body.enterprise_id, &vehicle_ids, &usage_modes)
+        .await?;
 
     let enterprise_admin_id: Option<String> =
         sqlx::query_scalar("SELECT admin_id FROM enterprises WHERE id = $1")
@@ -619,6 +692,7 @@ where
                     .bind(&id)
                     .execute(&state.db)
                     .await?;
+                release_allocated_vehicles(&state.db, &demand).await?;
             }
         }
         _ => return Ok(envelope(500, "操作失败", Value::Null)),
@@ -649,8 +723,15 @@ where
     let demand = fetch_enterprise_demand(&state.db, &id)
         .await?
         .ok_or_else(|| crate::error::ApiError::BadRequest("配送需求不存在".to_string()))?;
-    if demand.get("status").and_then(Value::as_str) != Some("pending") {
-        return Ok(envelope(500, "只能取消待调度状态的需求", Value::Null));
+    if !matches!(
+        demand.get("status").and_then(Value::as_str),
+        Some("pending") | Some("in_transit")
+    ) {
+        return Ok(envelope(
+            500,
+            "只能取消待调度或进行中状态的需求",
+            Value::Null,
+        ));
     }
     sqlx::query(
         "UPDATE enterprise_demands SET status = 'cancelled', updated_at = now() WHERE id = $1",
@@ -658,6 +739,8 @@ where
     .bind(&id)
     .execute(&state.db)
     .await?;
+
+    release_allocated_vehicles(&state.db, &demand).await?;
 
     if demand.get("vehicle_source").and_then(Value::as_str) == Some("external") {
         let external_demand_ids = linked_external_demand_ids(&state.db, &demand).await?;
@@ -677,6 +760,9 @@ where
 async fn publish_external_demand(
     pool: &sqlx::PgPool,
     body: &CreateDemandBody,
+    delivery_points: &Value,
+    cargo_info: &Value,
+    time_window: &Value,
 ) -> ApiResult<String> {
     let merchant_id: Option<String> =
         sqlx::query_scalar("SELECT admin_id FROM enterprises WHERE id = $1")
@@ -685,19 +771,16 @@ async fn publish_external_demand(
             .await?
             .flatten();
     let merchant_id = merchant_id.unwrap_or_else(|| body.enterprise_id.clone());
-    let first_delivery = body
-        .delivery_points
+    let first_delivery = delivery_points
         .as_array()
         .and_then(|points| points.first())
         .cloned()
         .unwrap_or_else(|| json!({}));
-    let cargo_name = body
-        .cargo_info
+    let cargo_name = cargo_info
         .get("type")
         .and_then(Value::as_str)
         .unwrap_or("货物");
-    let total_weight = body
-        .cargo_info
+    let total_weight = cargo_info
         .get("quantity")
         .and_then(Value::as_f64)
         .unwrap_or(0.0);
@@ -751,9 +834,9 @@ async fn publish_external_demand(
     )
     .bind(first_delivery.get("latitude").and_then(Value::as_f64))
     .bind(first_delivery.get("longitude").and_then(Value::as_f64))
-    .bind(&body.time_window)
-    .bind(&body.delivery_points)
-    .bind(&body.cargo_info)
+    .bind(time_window)
+    .bind(delivery_points)
+    .bind(cargo_info)
     .fetch_one(pool)
     .await?;
     Ok(public_id)
@@ -773,10 +856,154 @@ fn normalize_unique_ids(ids: &[String]) -> Vec<String> {
         .collect()
 }
 
-async fn validate_external_vehicle_ids(
+fn normalize_vehicle_source(source: &str) -> ApiResult<String> {
+    match source {
+        "own" | "internal" => Ok("internal".to_string()),
+        "external" => Ok("external".to_string()),
+        "mixed" => Ok("mixed".to_string()),
+        _ => Err(crate::error::ApiError::BadRequest(
+            "vehicleSource 不合法".to_string(),
+        )),
+    }
+}
+
+fn normalize_business_mode(mode: &str) -> ApiResult<String> {
+    match mode {
+        "enterprise_terminal" | "community_group_buy" => Ok(mode.to_string()),
+        _ => Err(crate::error::ApiError::BadRequest(
+            "businessMode 不合法".to_string(),
+        )),
+    }
+}
+
+fn normalize_time_window(time_window: &Value) -> ApiResult<Value> {
+    let has_start = time_window
+        .get("start")
+        .and_then(Value::as_str)
+        .is_some_and(|value| !value.trim().is_empty());
+    let has_end = time_window
+        .get("end")
+        .and_then(Value::as_str)
+        .is_some_and(|value| !value.trim().is_empty());
+    if !has_start || !has_end {
+        return Err(crate::error::ApiError::BadRequest(
+            "timeWindow.start 和 timeWindow.end 不能为空".to_string(),
+        ));
+    }
+    Ok(time_window.clone())
+}
+
+fn normalize_create_cargo_info(cargo_info: &Value, business_mode: &str) -> ApiResult<Value> {
+    let mut object = cargo_info
+        .as_object()
+        .cloned()
+        .ok_or_else(|| crate::error::ApiError::BadRequest("cargoInfo 必须是对象".to_string()))?;
+    let cargo_type = object
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    if cargo_type.is_empty() {
+        return Err(crate::error::ApiError::BadRequest(
+            "cargoInfo.type 不能为空".to_string(),
+        ));
+    }
+    object.insert("businessMode".to_string(), json!(business_mode));
+    object.insert(
+        "businessModeLabel".to_string(),
+        json!(if business_mode == "community_group_buy" {
+            "社区团购"
+        } else {
+            "终端配送"
+        }),
+    );
+    Ok(Value::Object(object))
+}
+
+fn normalize_create_delivery_points(points: &Value, business_mode: &str) -> ApiResult<Value> {
+    let point_type = if business_mode == "community_group_buy" {
+        "community_leader"
+    } else {
+        "terminal"
+    };
+    let points = points.as_array().ok_or_else(|| {
+        crate::error::ApiError::BadRequest("deliveryPoints 必须是数组".to_string())
+    })?;
+
+    let normalized = points
+        .iter()
+        .enumerate()
+        .filter_map(|(index, point)| {
+            let mut object = point.as_object().cloned().unwrap_or_default();
+            let has_identity = object
+                .get("stationId")
+                .or_else(|| object.get("id"))
+                .or_else(|| object.get("address"))
+                .or_else(|| object.get("name"))
+                .is_some();
+            if !has_identity {
+                return None;
+            }
+            object
+                .entry("stationId".to_string())
+                .or_insert_with(|| json!(format!("point-{}", index + 1)));
+            object
+                .entry("pointType".to_string())
+                .or_insert_with(|| json!(point_type));
+            object
+                .entry("businessMode".to_string())
+                .or_insert_with(|| json!(business_mode));
+            object
+                .entry("status".to_string())
+                .or_insert_with(|| json!("pending"));
+            Some(Value::Object(object))
+        })
+        .collect::<Vec<_>>();
+
+    if normalized.is_empty() {
+        return Err(crate::error::ApiError::BadRequest(
+            "至少需要一个配送点".to_string(),
+        ));
+    }
+
+    Ok(Value::Array(normalized))
+}
+
+fn vehicle_ids_from_allocation(allocation: &Value) -> Vec<String> {
+    allocation
+        .get("vehicle_ids")
+        .and_then(Value::as_array)
+        .map(|values| {
+            let ids = values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(ToString::to_string)
+                .collect::<Vec<_>>();
+            normalize_unique_ids(&ids)
+        })
+        .unwrap_or_default()
+}
+
+fn normalized_vehicle_allocation(mut allocation: Value, vehicle_ids: &[String]) -> Value {
+    if let Some(object) = allocation.as_object_mut() {
+        object.insert("vehicle_ids".to_string(), json!(vehicle_ids));
+        object
+            .entry("allocated_at".to_string())
+            .or_insert_with(|| json!(UtcIso::now()));
+        allocation
+    } else {
+        json!({
+            "vehicle_ids": vehicle_ids,
+            "allocated_at": UtcIso::now()
+        })
+    }
+}
+
+async fn validate_enterprise_vehicle_ids(
     pool: &sqlx::PgPool,
     enterprise_id: &str,
     vehicle_ids: &[String],
+    usage_modes: &[String],
 ) -> ApiResult<()> {
     let valid_count: i64 = sqlx::query_scalar(
         r#"
@@ -784,13 +1011,14 @@ async fn validate_external_vehicle_ids(
         FROM vehicles
         WHERE enterprise_id = $1
           AND id = ANY($2)
-          AND usage_mode = 'external'
+          AND usage_mode = ANY($3)
           AND status = 'active'
           AND COALESCE(trip_status, 'idle') = 'idle'
         "#,
     )
     .bind(enterprise_id)
     .bind(vehicle_ids)
+    .bind(usage_modes)
     .fetch_one(pool)
     .await?;
 
@@ -799,6 +1027,25 @@ async fn validate_external_vehicle_ids(
             "所选车辆不可用或不属于该企业".to_string(),
         ));
     }
+
+    Ok(())
+}
+
+async fn release_allocated_vehicles(pool: &sqlx::PgPool, demand: &Value) -> ApiResult<()> {
+    let vehicle_ids = demand
+        .get("vehicle_allocation")
+        .map(vehicle_ids_from_allocation)
+        .unwrap_or_default();
+    if vehicle_ids.is_empty() {
+        return Ok(());
+    }
+
+    sqlx::query(
+        "UPDATE vehicles SET trip_status = 'idle', updated_at = now() WHERE id = ANY($1) AND trip_status = 'in_transit'",
+    )
+    .bind(&vehicle_ids)
+    .execute(pool)
+    .await?;
 
     Ok(())
 }

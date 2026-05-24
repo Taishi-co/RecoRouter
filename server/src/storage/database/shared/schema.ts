@@ -86,6 +86,7 @@ export const vehicles = pgTable(
   (table) => [
     index("vehicles_owner_id_idx").on(table.owner_id),
     index("vehicles_status_idx").on(table.status),
+    index("vehicles_enterprise_dispatch_idx").on(table.enterprise_id, table.usage_mode, table.status, table.trip_status),
   ]
 );
 
@@ -238,5 +239,6 @@ export const enterpriseDemands = pgTable(
     index("enterprise_demands_enterprise_id_idx").on(table.enterprise_id),
     index("enterprise_demands_status_idx").on(table.status),
     index("enterprise_demands_created_at_idx").on(table.created_at),
+    index("enterprise_demands_external_demand_id_idx").on(table.external_demand_id),
   ]
 );
