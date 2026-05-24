@@ -11,16 +11,21 @@ import { Network } from '@/network'
 import Taro from '@tarojs/taro'
 import './index.css'
 
-interface DemandStats {
+interface DashboardStats {
   pending: number
   in_transit: number
   completed: number
   cancelled: number
   total: number
+  availableVehicles: number
+  activeVehicles: number
+  totalVehicles: number
+  externalOpportunities: number
 }
 
 const EnterpriseHomePage: FC = () => {
-  const [stats, setStats] = useState<DemandStats | null>(null)
+  const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [enterpriseName, setEnterpriseName] = useState('企业配送中心')
   const [loading, setLoading] = useState(true)
   const [errorText, setErrorText] = useState('')
 
@@ -46,20 +51,21 @@ const EnterpriseHomePage: FC = () => {
         return
       }
 
-      const entId = getApiData<{ id?: string } | null>(enterpriseRes, null)?.id
+      const enterprise = getApiData<{ id?: string; name?: string } | null>(enterpriseRes, null)
+      const entId = enterprise?.id
       if (!entId) {
         setErrorText('企业信息缺失')
         return
       }
+      setEnterpriseName(enterprise?.name || '企业配送中心')
 
-      // 加载统计数据
       const statsRes = await Network.request({
-        url: '/api/demand/stats/enterprise',
+        url: '/api/enterprise/stats',
         data: { enterprise_id: entId },
       })
 
       if (isApiSuccess(statsRes)) {
-        setStats(getApiData<DemandStats | null>(statsRes, null))
+        setStats(getApiData<DashboardStats | null>(statsRes, null))
         setErrorText('')
       } else {
         setErrorText('加载仪表盘数据失败')
@@ -119,11 +125,20 @@ const EnterpriseHomePage: FC = () => {
     })
   }
 
+  const hasPendingItems = Boolean(
+    stats && (
+      stats.pending > 0 ||
+      stats.in_transit > 0 ||
+      stats.externalOpportunities > 0 ||
+      stats.availableVehicles === 0
+    )
+  )
+
   return (
     <View className="enterprise-home min-h-screen bg-gray-50 pb-20">
       {/* 顶部信息栏 */}
       <View className="bg-blue-500 px-4 py-6">
-        <Text className="text-white text-xl font-bold">蒙牛奶制品唐山配送中心</Text>
+        <Text className="text-white text-xl font-bold block">{enterpriseName}</Text>
       </View>
 
       {/* 今日概览 */}
@@ -146,14 +161,13 @@ const EnterpriseHomePage: FC = () => {
           </Card>
         ) : (
           <View>
-            {/* 订单状态 */}
             <View className="grid grid-cols-3 gap-2 mb-3">
               <Card>
                 <CardContent className="p-3 text-center">
                   <Text className="text-xl font-bold text-gray-900 block">
                     {stats?.pending || 0}
                   </Text>
-                  <Text className="text-xs text-gray-500 block">待发</Text>
+                  <Text className="text-xs text-gray-500 block">待调度</Text>
                 </CardContent>
               </Card>
               <Card>
@@ -161,7 +175,7 @@ const EnterpriseHomePage: FC = () => {
                   <Text className="text-xl font-bold text-blue-600 block">
                     {stats?.in_transit || 0}
                   </Text>
-                  <Text className="text-xs text-gray-500 block">进行</Text>
+                  <Text className="text-xs text-gray-500 block">运输中</Text>
                 </CardContent>
               </Card>
               <Card>
@@ -169,7 +183,31 @@ const EnterpriseHomePage: FC = () => {
                   <Text className="text-xl font-bold text-green-600 block">
                     {stats?.completed || 0}
                   </Text>
-                  <Text className="text-xs text-gray-500 block">已达</Text>
+                  <Text className="text-xs text-gray-500 block">已完成</Text>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <Text className="text-xl font-bold text-red-600 block">
+                    {stats?.cancelled || 0}
+                  </Text>
+                  <Text className="text-xs text-gray-500 block">异常/取消</Text>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <Text className="text-xl font-bold text-teal-600 block">
+                    {stats?.availableVehicles || 0}
+                  </Text>
+                  <Text className="text-xs text-gray-500 block">可用车辆</Text>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <Text className="text-xl font-bold text-orange-600 block">
+                    {stats?.externalOpportunities || 0}
+                  </Text>
+                  <Text className="text-xs text-gray-500 block">外部机会</Text>
                 </CardContent>
               </Card>
             </View>
@@ -180,12 +218,12 @@ const EnterpriseHomePage: FC = () => {
         <Text className="text-base font-bold text-gray-900 mb-3 block">待处理事项</Text>
         {loading ? null : (
           <View>
-            {stats?.pending && stats.pending > 0 && (
+            {stats?.pending !== undefined && stats.pending > 0 && (
               <Card className="mb-3">
                 <CardContent className="p-3">
                   <View className="flex justify-between items-center mb-2">
                     <Text className="text-sm text-gray-900 font-medium block">
-                      📋 {stats.pending}个待调度订单
+                      {stats.pending} 个配送需求待调度
                     </Text>
                   </View>
                   <Button size="sm" className="w-full" onClick={navigateToDispatch}>
@@ -194,17 +232,54 @@ const EnterpriseHomePage: FC = () => {
                 </CardContent>
               </Card>
             )}
-            {stats?.completed && stats.completed > 0 && (
+            {stats?.in_transit !== undefined && stats.in_transit > 0 && (
               <Card className="mb-4">
                 <CardContent className="p-3">
                   <View className="flex justify-between items-center mb-2">
                     <Text className="text-sm text-gray-900 font-medium block">
-                      🔔 {stats.completed}个订单已送达
+                      {stats.in_transit} 个配送需求运输中
                     </Text>
                   </View>
-                  <Button size="sm" variant="outline" className="w-full" onClick={navigateToStats}>
-                    查看统计
+                  <Button size="sm" variant="outline" className="w-full" onClick={navigateToDispatch}>
+                    查看进度
                   </Button>
+                </CardContent>
+              </Card>
+            )}
+            {stats?.externalOpportunities !== undefined && stats.externalOpportunities > 0 && (
+              <Card className="mb-4">
+                <CardContent className="p-3">
+                  <View className="flex justify-between items-center mb-2">
+                    <Text className="text-sm text-gray-900 font-medium block">
+                      {stats.externalOpportunities} 个外部订单可接
+                    </Text>
+                  </View>
+                  <Button size="sm" variant="outline" className="w-full" onClick={navigateToOrderHall}>
+                    去接单
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+            {stats && stats.availableVehicles === 0 && (
+              <Card className="mb-4">
+                <CardContent className="p-3">
+                  <View className="flex justify-between items-center mb-2">
+                    <Text className="text-sm text-gray-900 font-medium block">
+                      当前没有空闲可用车辆
+                    </Text>
+                  </View>
+                  <Button size="sm" variant="outline" className="w-full" onClick={navigateToFleet}>
+                    查看车辆
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+            {!hasPendingItems && (
+              <Card className="mb-4">
+                <CardContent className="p-3">
+                  <Text className="text-sm text-gray-500 text-center block">
+                    暂无待处理事项
+                  </Text>
                 </CardContent>
               </Card>
             )}

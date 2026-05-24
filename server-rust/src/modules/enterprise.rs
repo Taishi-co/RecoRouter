@@ -171,6 +171,22 @@ async fn enterprise_stats(pool: &sqlx::PgPool, enterprise_id: &str) -> ApiResult
         .with_day(1)
         .expect("current month should have a first day");
 
+    let (pending, in_transit, completed, cancelled, total): (i64, i64, i64, i64, i64) =
+        sqlx::query_as(
+            r#"
+            SELECT
+              COUNT(*) FILTER (WHERE status = 'pending'),
+              COUNT(*) FILTER (WHERE status = 'in_transit'),
+              COUNT(*) FILTER (WHERE status = 'completed'),
+              COUNT(*) FILTER (WHERE status = 'cancelled'),
+              COUNT(*)
+            FROM enterprise_demands
+            WHERE enterprise_id = $1
+            "#,
+        )
+        .bind(enterprise_id)
+        .fetch_one(pool)
+        .await?;
     let today_orders: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM enterprise_demands WHERE enterprise_id = $1 AND created_at >= $2",
     )
@@ -185,15 +201,38 @@ async fn enterprise_stats(pool: &sqlx::PgPool, enterprise_id: &str) -> ApiResult
     .bind(month_start)
     .fetch_one(pool)
     .await?;
-    let total_vehicles: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM vehicles WHERE enterprise_id = $1")
-            .bind(enterprise_id)
-            .fetch_one(pool)
-            .await?;
-    let active_vehicles: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM vehicles WHERE enterprise_id = $1 AND trip_status = 'in_transit'",
+    let (total_vehicles, active_vehicles, available_vehicles): (i64, i64, i64) = sqlx::query_as(
+        r#"
+            SELECT
+              COUNT(*),
+              COUNT(*) FILTER (WHERE trip_status = 'in_transit'),
+              COUNT(*) FILTER (WHERE status = 'active' AND COALESCE(trip_status, 'idle') = 'idle')
+            FROM vehicles
+            WHERE enterprise_id = $1
+            "#,
     )
     .bind(enterprise_id)
+    .fetch_one(pool)
+    .await?;
+    let external_opportunities: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM demands WHERE status = 'pending'")
+            .fetch_one(pool)
+            .await?;
+    let avg_delivery_time: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COALESCE(
+          ROUND(AVG(GREATEST(EXTRACT(EPOCH FROM (updated_at - created_at)) / 60.0, 0)))::bigint,
+          0
+        )
+        FROM enterprise_demands
+        WHERE enterprise_id = $1
+          AND status = 'completed'
+          AND created_at >= $2
+          AND updated_at IS NOT NULL
+        "#,
+    )
+    .bind(enterprise_id)
+    .bind(month_start)
     .fetch_one(pool)
     .await?;
     let total_distance: Option<f64> = sqlx::query_scalar(
@@ -207,13 +246,22 @@ async fn enterprise_stats(pool: &sqlx::PgPool, enterprise_id: &str) -> ApiResult
         SELECT COALESCE(jsonb_agg(
             jsonb_build_object(
                 'stationName', station.name,
+                'pointType', COALESCE(station.point_type, 'terminal'),
+                'pointTypeLabel', CASE
+                    WHEN COALESCE(station.point_type, 'terminal') = 'community_leader' THEN '社区团长'
+                    ELSE '终端点'
+                END,
                 'orderCount', (
                     SELECT COUNT(*)
                     FROM enterprise_demands demand
                     CROSS JOIN LATERAL jsonb_array_elements(COALESCE(demand.delivery_points, '[]'::jsonb)) point
                     WHERE demand.enterprise_id = $1
                       AND demand.created_at >= $2
-                      AND point->>'name' = station.name
+                      AND (
+                        point->>'stationId' = station.id
+                        OR point->>'id' = station.id
+                        OR point->>'name' = station.name
+                      )
                 )
             )
             ORDER BY station.created_at DESC
@@ -226,6 +274,34 @@ async fn enterprise_stats(pool: &sqlx::PgPool, enterprise_id: &str) -> ApiResult
     .bind(today)
     .fetch_one(pool)
     .await?;
+    let (terminal_points, community_leader_points): (i64, i64) = sqlx::query_as(
+        r#"
+        SELECT
+          COUNT(*) FILTER (WHERE COALESCE(point_type, 'terminal') = 'terminal'),
+          COUNT(*) FILTER (WHERE COALESCE(point_type, 'terminal') = 'community_leader')
+        FROM dairy_stations
+        WHERE enterprise_id = $1
+        "#,
+    )
+    .bind(enterprise_id)
+    .fetch_one(pool)
+    .await?;
+    let (terminal_orders, community_group_buy_orders): (i64, i64) = sqlx::query_as(
+        r#"
+        SELECT
+          COUNT(*) FILTER (
+            WHERE COALESCE(cargo_info->>'businessMode', delivery_points->0->>'businessMode', 'enterprise_terminal') = 'enterprise_terminal'
+          ),
+          COUNT(*) FILTER (
+            WHERE COALESCE(cargo_info->>'businessMode', delivery_points->0->>'businessMode', 'enterprise_terminal') = 'community_group_buy'
+          )
+        FROM enterprise_demands
+        WHERE enterprise_id = $1
+        "#,
+    )
+    .bind(enterprise_id)
+    .fetch_one(pool)
+    .await?;
     let usage_rate = if total_vehicles > 0 {
         ((active_vehicles as f64 / total_vehicles as f64) * 100.0).round() as i64
     } else {
@@ -233,13 +309,24 @@ async fn enterprise_stats(pool: &sqlx::PgPool, enterprise_id: &str) -> ApiResult
     };
 
     Ok(json!({
+        "pending": pending,
+        "in_transit": in_transit,
+        "completed": completed,
+        "cancelled": cancelled,
+        "total": total,
         "todayOrders": today_orders,
         "monthOrders": month_orders,
         "totalDistance": total_distance.unwrap_or(0.0),
-        "avgDeliveryTime": 45,
+        "avgDeliveryTime": avg_delivery_time,
         "vehicleUsageRate": usage_rate,
         "activeVehicles": active_vehicles,
+        "availableVehicles": available_vehicles,
         "totalVehicles": total_vehicles,
+        "externalOpportunities": external_opportunities,
+        "terminalPoints": terminal_points,
+        "communityLeaderPoints": community_leader_points,
+        "terminalOrders": terminal_orders,
+        "communityGroupBuyOrders": community_group_buy_orders,
         "stationStats": station_rows
     }))
 }
