@@ -35,6 +35,7 @@ struct CreateStationBody {
     location: Option<Value>,
     phone: Option<String>,
     customer_type: Option<String>,
+    point_type: Option<String>,
     status: Option<String>,
 }
 
@@ -44,6 +45,7 @@ struct UpdateStationBody {
     address: Option<String>,
     location: Option<Value>,
     phone: Option<String>,
+    point_type: Option<String>,
     status: Option<String>,
 }
 
@@ -55,6 +57,7 @@ struct StationQuery {
     #[serde(rename = "pageSize")]
     page_size: Option<i64>,
     keyword: Option<String>,
+    point_type: Option<String>,
 }
 
 async fn create_station<S>(
@@ -64,6 +67,10 @@ async fn create_station<S>(
 where
     S: Storage,
 {
+    let point_type = match normalize_optional_point_type(body.point_type.as_deref()) {
+        Ok(point_type) => point_type.unwrap_or_else(|| "terminal".to_string()),
+        Err(message) => return Ok(envelope(500, message, Value::Null)),
+    };
     let station_id = format!(
         "station-{}",
         &uuid::Uuid::new_v4().simple().to_string()[..8]
@@ -71,9 +78,9 @@ where
     let station = sqlx::query_scalar::<_, Value>(
         r#"
         INSERT INTO dairy_stations (
-            id, enterprise_id, name, address, location, phone, customer_type, status
+            id, enterprise_id, name, address, location, phone, customer_type, point_type, status
         )
-        VALUES ($1, $2, $3, $4, $5::jsonb, $6, COALESCE($7, 'owned'), COALESCE($8, 'active'))
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6, COALESCE($7, 'owned'), $8, COALESCE($9, 'active'))
         RETURNING row_to_json(dairy_stations)
         "#,
     )
@@ -84,6 +91,7 @@ where
     .bind(body.location)
     .bind(body.phone)
     .bind(body.customer_type)
+    .bind(point_type)
     .bind(body.status)
     .fetch_one(&state.db)
     .await?;
@@ -105,31 +113,38 @@ where
         .keyword
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
-
-    let total = if let Some(keyword) = keyword.as_deref() {
-        sqlx::query_scalar::<_, i64>(
-            r#"
-            SELECT COUNT(*)
-            FROM dairy_stations
-            WHERE enterprise_id = $1
-              AND (name ILIKE $2 OR address ILIKE $2)
-            "#,
-        )
-        .bind(&query.enterprise_id)
-        .bind(format!("%{keyword}%"))
-        .fetch_one(&state.db)
-        .await?
-    } else {
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM dairy_stations WHERE enterprise_id = $1")
-            .bind(&query.enterprise_id)
-            .fetch_one(&state.db)
-            .await?
+    let point_type = match normalize_optional_point_type(query.point_type.as_deref()) {
+        Ok(point_type) => point_type,
+        Err(message) => return Ok(envelope(500, message, Value::Null)),
     };
+
+    let mut count_builder =
+        QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM dairy_stations WHERE enterprise_id = ");
+    count_builder.push_bind(&query.enterprise_id);
+    if let Some(point_type) = point_type.as_deref() {
+        count_builder.push(" AND point_type = ");
+        count_builder.push_bind(point_type);
+    }
+    if let Some(keyword) = keyword.as_deref() {
+        count_builder.push(" AND (name ILIKE ");
+        count_builder.push_bind(format!("%{keyword}%"));
+        count_builder.push(" OR address ILIKE ");
+        count_builder.push_bind(format!("%{keyword}%"));
+        count_builder.push(")");
+    }
+    let total = count_builder
+        .build_query_scalar::<i64>()
+        .fetch_one(&state.db)
+        .await?;
 
     let mut builder = QueryBuilder::<Postgres>::new(
         "SELECT row_to_json(dairy_stations) FROM dairy_stations WHERE enterprise_id = ",
     );
     builder.push_bind(&query.enterprise_id);
+    if let Some(point_type) = point_type {
+        builder.push(" AND point_type = ");
+        builder.push_bind(point_type);
+    }
     if let Some(keyword) = keyword {
         builder.push(" AND (name ILIKE ");
         builder.push_bind(format!("%{keyword}%"));
@@ -170,7 +185,7 @@ where
 
     Ok(match station {
         Some(station) => success(station),
-        None => envelope(404, "奶站不存在", Value::Null),
+        None => envelope(404, "配送点不存在", Value::Null),
     })
 }
 
@@ -182,6 +197,10 @@ async fn update_station<S>(
 where
     S: Storage,
 {
+    let point_type = match normalize_optional_point_type(body.point_type.as_deref()) {
+        Ok(point_type) => point_type,
+        Err(message) => return Ok(envelope(500, message, Value::Null)),
+    };
     let station = sqlx::query_scalar::<_, Value>(
         r#"
         UPDATE dairy_stations
@@ -189,7 +208,8 @@ where
             address = COALESCE($3, address),
             location = COALESCE($4::jsonb, location),
             phone = COALESCE($5, phone),
-            status = COALESCE($6, status),
+            point_type = COALESCE($6, point_type),
+            status = COALESCE($7, status),
             updated_at = now()
         WHERE id = $1
         RETURNING row_to_json(dairy_stations)
@@ -200,13 +220,14 @@ where
     .bind(body.address)
     .bind(body.location)
     .bind(body.phone)
+    .bind(point_type)
     .bind(body.status)
     .fetch_optional(&state.db)
     .await?;
 
     Ok(match station {
         Some(station) => success(station),
-        None => envelope(404, "奶站不存在", Value::Null),
+        None => envelope(404, "配送点不存在", Value::Null),
     })
 }
 
@@ -238,4 +259,15 @@ fn envelope(code: u16, message: &str, data: Value) -> Json<ApiEnvelope<Value>> {
         message: message.to_string(),
         data,
     })
+}
+
+fn normalize_optional_point_type(point_type: Option<&str>) -> Result<Option<String>, &'static str> {
+    point_type.map(normalize_point_type).transpose()
+}
+
+fn normalize_point_type(point_type: &str) -> Result<String, &'static str> {
+    match point_type {
+        "terminal" | "community_leader" => Ok(point_type.to_string()),
+        _ => Err("point_type 不合法"),
+    }
 }

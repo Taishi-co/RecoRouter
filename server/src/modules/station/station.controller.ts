@@ -6,7 +6,7 @@ export class StationController {
   constructor(private readonly stationService: StationService) {}
 
   /**
-   * 创建奶站
+   * 创建配送点
    */
   @Post()
   async createStation(@Body() body: {
@@ -16,17 +16,26 @@ export class StationController {
     location?: { lat: number; lng: number };
     phone?: string;
     customer_type?: 'owned' | 'external';
+    point_type?: string;
     status?: string;
   }) {
-    return {
-      code: 200,
-      message: 'success',
-      data: await this.stationService.createStation(body),
-    };
+    try {
+      return {
+        code: 200,
+        message: 'success',
+        data: await this.stationService.createStation(body),
+      };
+    } catch (error) {
+      return {
+        code: 500,
+        message: error.message || '创建失败',
+        data: null,
+      };
+    }
   }
 
   /**
-   * 获取奶站列表
+   * 获取配送点列表
    */
   @Get()
   async getStations(@Query() query: {
@@ -34,22 +43,32 @@ export class StationController {
     page?: string;
     pageSize?: string;
     keyword?: string;
+    point_type?: string;
   }) {
-    const { enterpriseId, page, pageSize, keyword } = query;
-    return {
-      code: 200,
-      message: 'success',
-      data: await this.stationService.getStations({
-        enterpriseId,
-        page: page ? parseInt(page) : 1,
-        pageSize: pageSize ? parseInt(pageSize) : 20,
-        keyword,
-      }),
-    };
+    const { enterpriseId, page, pageSize, keyword, point_type } = query;
+    try {
+      return {
+        code: 200,
+        message: 'success',
+        data: await this.stationService.getStations({
+          enterpriseId,
+          page: page ? parseInt(page) : 1,
+          pageSize: pageSize ? parseInt(pageSize) : 20,
+          keyword,
+          point_type,
+        }),
+      };
+    } catch (error) {
+      return {
+        code: 500,
+        message: error.message || '查询失败',
+        data: null,
+      };
+    }
   }
 
   /**
-   * 获取奶站详情
+   * 获取配送点详情
    */
   @Get(':id')
   async getStation(@Param('id') id: string) {
@@ -61,8 +80,9 @@ export class StationController {
         data: station,
       };
     } catch (error) {
+      const code = error.status === 404 ? 404 : 500;
       return {
-        code: 404,
+        code,
         message: error.message,
         data: null,
       };
@@ -70,7 +90,7 @@ export class StationController {
   }
 
   /**
-   * 更新奶站信息
+   * 更新配送点信息
    */
   @Put(':id')
   async updateStation(
@@ -80,6 +100,7 @@ export class StationController {
       address: string;
       location: { lat: number; lng: number };
       phone: string;
+      point_type: string;
       status: string;
     }>,
   ) {
@@ -90,8 +111,9 @@ export class StationController {
         data: await this.stationService.updateStation(id, body),
       };
     } catch (error) {
+      const code = error.status === 404 ? 404 : 500;
       return {
-        code: 404,
+        code,
         message: error.message,
         data: null,
       };
@@ -99,7 +121,7 @@ export class StationController {
   }
 
   /**
-   * 删除奶站
+   * 删除配送点
    */
   @Delete(':id')
   async deleteStation(@Param('id') id: string) {

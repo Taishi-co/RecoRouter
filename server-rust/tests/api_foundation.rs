@@ -603,6 +603,7 @@ async fn enterprise_dispatch_legacy_migration_backfills_contract_data() {
         "enterprise_demands_status_idx",
         "vehicles_enterprise_dispatch_idx",
         "dairy_stations_enterprise_id_idx",
+        "dairy_stations_point_type_idx",
     ] {
         let exists: bool = sqlx::query_scalar("SELECT to_regclass($1) IS NOT NULL")
             .bind(format!("public.{index_name}"))

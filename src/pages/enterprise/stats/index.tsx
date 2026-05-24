@@ -173,11 +173,11 @@ const EnterpriseStatsPage: FC = () => {
             </CardContent>
           </Card>
 
-          {/* 奶站配送统计 */}
+          {/* 点位配送统计 */}
           {stats.stationStats && stats.stationStats.length > 0 && (
             <Card className="mb-4">
               <CardHeader>
-                <CardTitle className="text-base">奶站配送统计</CardTitle>
+                <CardTitle className="text-base">点位配送统计</CardTitle>
               </CardHeader>
               <CardContent>
                 <View className="space-y-3">
@@ -196,15 +196,15 @@ const EnterpriseStatsPage: FC = () => {
             </Card>
           )}
 
-          {/* 没有奶站时显示提示 */}
+          {/* 没有点位时显示提示 */}
           {stats.stationStats && stats.stationStats.length === 0 && (
             <Card className="mb-4">
               <CardHeader>
-                <CardTitle className="text-base">奶站配送统计</CardTitle>
+                <CardTitle className="text-base">点位配送统计</CardTitle>
               </CardHeader>
               <CardContent>
                 <Text className="text-sm text-gray-500 text-center block">
-                  暂无奶站数据
+                  暂无点位数据
                 </Text>
               </CardContent>
             </Card>

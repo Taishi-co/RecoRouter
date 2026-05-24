@@ -205,6 +205,7 @@ export const dairyStations = pgTable(
     location: jsonb("location"), // {lat, lng}
     phone: varchar("phone", { length: 20 }),
     customer_type: varchar("customer_type", { length: 20 }).default("owned"),
+    point_type: varchar("point_type", { length: 20 }).default("terminal"),
     status: varchar("status", { length: 20 }).notNull().default("active"), // active/disabled
     created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updated_at: timestamp("updated_at", { withTimezone: true }),
@@ -212,6 +213,8 @@ export const dairyStations = pgTable(
   (table) => [
     index("dairy_stations_enterprise_id_idx").on(table.enterprise_id),
     index("dairy_stations_status_idx").on(table.status),
+    index("dairy_stations_point_type_idx").on(table.point_type),
+    index("dairy_stations_enterprise_point_type_idx").on(table.enterprise_id, table.point_type, table.status),
   ]
 );
 

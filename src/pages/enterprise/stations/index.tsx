@@ -20,24 +20,35 @@ interface Station {
   location?: { lat: number; lng: number }
   status: string
   customer_type?: 'owned' | 'external'
+  point_type?: PointType
   created_at: string
 }
+
+type PointType = 'terminal' | 'community_leader'
 
 const EnterpriseStationsPage: FC = () => {
   const [stations, setStations] = useState<Station[]>([])
   const [loading, setLoading] = useState(true)
   const [keyword, setKeyword] = useState('')
+  const [activePointType, setActivePointType] = useState<PointType>('terminal')
   const [enterpriseId, setEnterpriseId] = useState('')
   const [errorText, setErrorText] = useState('')
   const [submitting, setSubmitting] = useState(false)
   
-  // 新增奶站弹窗状态
+  // 新增配送点弹窗状态
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [newStationName, setNewStationName] = useState('')
   const [newStationAddress, setNewStationAddress] = useState('')
   const [newStationPhone, setNewStationPhone] = useState('')
   const [newStationLocation, setNewStationLocation] = useState<{ lat: number; lng: number } | null>(null)
-  const [newCustomerType, setNewCustomerType] = useState<'owned' | 'external'>('owned')
+  const [newPointType, setNewPointType] = useState<PointType>('terminal')
+
+  const pointTypeOptions: Array<{ value: PointType; label: string; nameLabel: string }> = [
+    { value: 'terminal', label: '终端点', nameLabel: '终端点名称' },
+    { value: 'community_leader', label: '社区团长', nameLabel: '团长名称' },
+  ]
+  const activePointTypeLabel = pointTypeOptions.find(option => option.value === activePointType)?.label || '配送点'
+  const newPointTypeConfig = pointTypeOptions.find(option => option.value === newPointType) || pointTypeOptions[0]
 
   useEffect(() => {
     loadEnterpriseInfo()
@@ -60,25 +71,29 @@ const EnterpriseStationsPage: FC = () => {
         const entId = getApiData<{ id: string } | null>(enterpriseRes, null)?.id
         if (!entId) {
           setErrorText('企业信息缺失')
+          setLoading(false)
           return
         }
         setEnterpriseId(entId)
-        loadStations(entId)
+        loadStations(entId, activePointType)
       } else {
         setErrorText(getApiMessage(enterpriseRes, '加载企业信息失败'))
+        setLoading(false)
       }
     } catch {
       setErrorText('加载企业信息失败')
+      setLoading(false)
     }
   }
 
-  const loadStations = async (entId: string) => {
+  const loadStations = async (entId: string, pointType: PointType = activePointType) => {
     try {
       setLoading(true)
       
       // 构建请求参数，只传递有值的参数
       const params: any = {
         enterpriseId: entId,
+        point_type: pointType,
       }
       if (keyword && keyword.trim()) {
         params.keyword = keyword.trim()
@@ -109,7 +124,14 @@ const EnterpriseStationsPage: FC = () => {
 
   const handleSearch = () => {
     if (enterpriseId) {
-      loadStations(enterpriseId)
+      loadStations(enterpriseId, activePointType)
+    }
+  }
+
+  const handleChangePointType = (pointType: PointType) => {
+    setActivePointType(pointType)
+    if (enterpriseId) {
+      loadStations(enterpriseId, pointType)
     }
   }
 
@@ -131,7 +153,7 @@ const EnterpriseStationsPage: FC = () => {
             title: '删除成功',
             icon: 'success',
           })
-          loadStations(enterpriseId)
+          loadStations(enterpriseId, activePointType)
         } else {
           Taro.showToast({
             title: getApiMessage(delRes, '删除失败'),
@@ -166,6 +188,7 @@ const EnterpriseStationsPage: FC = () => {
 
     try {
       setSubmitting(true)
+      const pointTypeToCreate = newPointType
       const res = await Network.request({
         url: '/api/station',
         method: 'POST',
@@ -175,7 +198,7 @@ const EnterpriseStationsPage: FC = () => {
           address: newStationAddress,
           phone: newStationPhone,
           location: newStationLocation,
-          customer_type: newCustomerType,
+          point_type: pointTypeToCreate,
           status: 'active',
         },
       })
@@ -191,9 +214,10 @@ const EnterpriseStationsPage: FC = () => {
         setNewStationAddress('')
         setNewStationPhone('')
         setNewStationLocation(null)
-        setNewCustomerType('owned')
+        setActivePointType(pointTypeToCreate)
+        setNewPointType(pointTypeToCreate)
         // 刷新列表
-        loadStations(enterpriseId)
+        loadStations(enterpriseId, pointTypeToCreate)
       } else {
         Taro.showToast({
           title: getApiMessage(res, '添加失败'),
@@ -250,7 +274,7 @@ const EnterpriseStationsPage: FC = () => {
   return (
     <View className="enterprise-stations min-h-screen bg-gray-50 pb-20">
       <View className="p-4">
-        <Text className="text-2xl font-bold block mb-4">奶站管理</Text>
+        <Text className="text-2xl font-bold block mb-4">配送点管理</Text>
 
         {errorText && (
           <Card className="mb-4 border-red-200 bg-red-50">
@@ -260,10 +284,22 @@ const EnterpriseStationsPage: FC = () => {
           </Card>
         )}
 
+        <View className="grid grid-cols-2 gap-2 mb-4">
+          {pointTypeOptions.map(option => (
+            <Button
+              key={option.value}
+              variant={activePointType === option.value ? 'default' : 'outline'}
+              onClick={() => handleChangePointType(option.value)}
+            >
+              <Text className="text-sm">{option.label}</Text>
+            </Button>
+          ))}
+        </View>
+
         {/* 搜索框和新增按钮 */}
         <View className="flex gap-2 mb-4">
           <Input
-            placeholder="搜索奶站名称或地址"
+            placeholder={`搜索${activePointTypeLabel}名称或地址`}
             value={keyword}
             onInput={(e) => setKeyword(e.detail.value)}
           />
@@ -274,13 +310,16 @@ const EnterpriseStationsPage: FC = () => {
         <View className="mb-4">
           <Button 
             className="w-full" 
-            onClick={() => setShowAddDialog(true)}
+            onClick={() => {
+              setNewPointType(activePointType)
+              setShowAddDialog(true)
+            }}
           >
-            <Text>新增奶站</Text>
+            <Text>新增{activePointTypeLabel}</Text>
           </Button>
         </View>
 
-        {/* 奶站列表 */}
+        {/* 配送点列表 */}
         {loading ? (
           <Card>
             <CardContent className="p-8 text-center">
@@ -290,7 +329,7 @@ const EnterpriseStationsPage: FC = () => {
         ) : stations.length === 0 ? (
           <Card>
             <CardContent className="p-8 text-center">
-              <Text className="text-gray-500 text-sm">暂无奶站数据</Text>
+              <Text className="text-gray-500 text-sm">暂无{activePointTypeLabel}数据</Text>
             </CardContent>
           </Card>
         ) : (
@@ -310,7 +349,7 @@ const EnterpriseStationsPage: FC = () => {
                         电话: {station.phone || '未设置'}
                       </Text>
                       <Text className="text-sm text-gray-500 block mb-1">
-                        类型: {station.customer_type === 'owned' ? '自营奶站' : '商超/代理'}
+                        类型: {station.point_type === 'community_leader' ? '社区团长' : '终端点'}
                       </Text>
                       {station.location && (
                         <Text className="text-xs text-blue-500 block">
@@ -334,20 +373,20 @@ const EnterpriseStationsPage: FC = () => {
           </View>
         )}
 
-        {/* 新增奶站弹窗 */}
+        {/* 新增配送点弹窗 */}
         {showAddDialog && (
           <View
             className="bg-black bg-opacity-50 z-50"
             style={{ position: 'fixed', top: 0, right: 0, bottom: 0, left: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
             <View className="bg-white rounded-lg p-6 w-11/12 max-w-md max-h-[80vh] overflow-y-auto">
-              <Text className="text-xl font-bold block mb-4">新增奶站</Text>
+              <Text className="text-xl font-bold block mb-4">新增配送点</Text>
 
               <View className="space-y-4">
                 <View>
-                  <Text className="text-sm text-gray-600 block mb-2">奶站名称</Text>
+                  <Text className="text-sm text-gray-600 block mb-2">{newPointTypeConfig.nameLabel}</Text>
                   <Input
-                    placeholder="请输入奶站名称"
+                    placeholder={`请输入${newPointTypeConfig.label}名称`}
                     value={newStationName}
                     onInput={(e) => setNewStationName(e.detail.value)}
                   />
@@ -363,27 +402,23 @@ const EnterpriseStationsPage: FC = () => {
                 </View>
 
                 <View>
-                  <Text className="text-sm text-gray-600 block mb-2">客户类型</Text>
+                  <Text className="text-sm text-gray-600 block mb-2">点位类型</Text>
                   <View className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant={newCustomerType === 'owned' ? 'default' : 'outline'}
-                      onClick={() => setNewCustomerType('owned')}
-                    >
-                      <Text className="text-xs">自营奶站</Text>
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={newCustomerType === 'external' ? 'default' : 'outline'}
-                      onClick={() => setNewCustomerType('external')}
-                    >
-                      <Text className="text-xs">商超/代理</Text>
-                    </Button>
+                    {pointTypeOptions.map(option => (
+                      <Button
+                        key={option.value}
+                        size="sm"
+                        variant={newPointType === option.value ? 'default' : 'outline'}
+                        onClick={() => setNewPointType(option.value)}
+                      >
+                        <Text className="text-xs">{option.label}</Text>
+                      </Button>
+                    ))}
                   </View>
                 </View>
 
                 <View>
-                  <Text className="text-sm text-gray-600 block mb-2">奶站地址</Text>
+                  <Text className="text-sm text-gray-600 block mb-2">{newPointTypeConfig.label}地址</Text>
                   <View className="flex gap-2">
                     <View className="flex-1">
                       <Input
@@ -413,6 +448,7 @@ const EnterpriseStationsPage: FC = () => {
                       setNewStationAddress('')
                       setNewStationPhone('')
                       setNewStationLocation(null)
+                      setNewPointType(activePointType)
                     }}
                   >
                     <Text>取消</Text>
