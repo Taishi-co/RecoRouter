@@ -50,14 +50,36 @@ export const vehicles = pgTable(
   {
     id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
     owner_id: varchar("owner_id", { length: 36 }).notNull().references(() => users.id, { onDelete: "cascade" }),
+    enterprise_id: varchar("enterprise_id", { length: 36 }),
+    vehicle_code: varchar("vehicle_code", { length: 50 }),
     vehicle_type: varchar("vehicle_type", { length: 50 }).notNull(), // 车型
     load_capacity: numeric("load_capacity", { precision: 10, scale: 2 }).notNull(), // 载重（公斤）
     volume: numeric("volume", { precision: 10, scale: 2 }).notNull(), // 体积（立方米）
+    length: numeric("length", { precision: 10, scale: 2 }),
+    width: numeric("width", { precision: 10, scale: 2 }),
+    height: numeric("height", { precision: 10, scale: 2 }),
     battery_life: numeric("battery_life", { precision: 10, scale: 2 }).notNull(), // 续航（公里）
     operation_area: jsonb("operation_area"), // 运营区域（多边形坐标）
     available_hours: jsonb("available_hours"), // 可接单时段
     status: varchar("status", { length: 20 }).notNull().default("pending"), // pending（待审核）/active（可用）/inactive（不可用）
     photos: jsonb("photos"), // 车辆照片（TOS key数组）
+    current_location: varchar("current_location", { length: 255 }),
+    usage_mode: varchar("usage_mode", { length: 20 }),
+    rental_status: varchar("rental_status", { length: 20 }),
+    trip_status: varchar("trip_status", { length: 20 }).default("idle"),
+    price_updated_at: timestamp("price_updated_at", { withTimezone: true }),
+    rent_monthly_price: numeric("rent_monthly_price", { precision: 10, scale: 2 }),
+    rent_yearly_price: numeric("rent_yearly_price", { precision: 10, scale: 2 }),
+    rent_deposit: numeric("rent_deposit", { precision: 10, scale: 2 }),
+    contact_phone: varchar("contact_phone", { length: 20 }),
+    contact_wechat: varchar("contact_wechat", { length: 100 }),
+    today_internal_orders: numeric("today_internal_orders", { precision: 10, scale: 0 }).default("0"),
+    today_external_orders: numeric("today_external_orders", { precision: 10, scale: 0 }).default("0"),
+    today_distance: numeric("today_distance", { precision: 10, scale: 2 }).default("0"),
+    rent_start_date: timestamp("rent_start_date", { withTimezone: true }),
+    rent_end_date: timestamp("rent_end_date", { withTimezone: true }),
+    rent_type: varchar("rent_type", { length: 20 }),
+    rental_notes: text("rental_notes"),
     created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updated_at: timestamp("updated_at", { withTimezone: true }),
   },
@@ -80,8 +102,21 @@ export const demands = pgTable(
     pickup_time: timestamp("pickup_time", { withTimezone: true }).notNull(), // 取货时间
     pickup_address: varchar("pickup_address", { length: 255 }).notNull(), // 取货地址
     pickup_location: jsonb("pickup_location"), // 取货位置坐标 {lat, lng}
+    pickup_lat: numeric("pickup_lat", { precision: 10, scale: 6 }),
+    pickup_lng: numeric("pickup_lng", { precision: 10, scale: 6 }),
     delivery_address: varchar("delivery_address", { length: 255 }).notNull(), // 送货地址
     delivery_location: jsonb("delivery_location"), // 送货位置坐标 {lat, lng}
+    delivery_lat: numeric("delivery_lat", { precision: 10, scale: 6 }),
+    delivery_lng: numeric("delivery_lng", { precision: 10, scale: 6 }),
+    estimated_distance: numeric("estimated_distance", { precision: 10, scale: 2 }),
+    estimated_fare: numeric("estimated_fare", { precision: 10, scale: 2 }),
+    route_type: varchar("route_type", { length: 20 }),
+    time_window: jsonb("time_window"),
+    pickup_point: jsonb("pickup_point"),
+    delivery_points: jsonb("delivery_points"),
+    cargo_info: jsonb("cargo_info"),
+    pickup_time_start: varchar("pickup_time_start", { length: 50 }),
+    pickup_time_end: varchar("pickup_time_end", { length: 50 }),
     remarks: text("remarks"), // 备注
     status: varchar("status", { length: 20 }).notNull().default("pending"), // pending/accepted/in_transit/completed/cancelled
     created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -111,6 +146,21 @@ export const orders = pgTable(
     cancel_time: timestamp("cancel_time", { withTimezone: true }), // 取消时间
     accept_time: timestamp("accept_time", { withTimezone: true }), // 接单时间
     complete_time: timestamp("complete_time", { withTimezone: true }), // 完成时间
+    pickup_time: timestamp("pickup_time", { withTimezone: true }),
+    pickup_address: text("pickup_address"),
+    delivery_address: text("delivery_address"),
+    remarks: text("remarks"),
+    fare_price: numeric("fare_price", { precision: 10, scale: 2 }).default("0"),
+    calculated_fare: numeric("calculated_fare", { precision: 10, scale: 2 }),
+    fare_calculation_detail: jsonb("fare_calculation_detail"),
+    is_custom_fare: boolean("is_custom_fare").default(true),
+    merchant_confirmed: boolean("merchant_confirmed").default(false),
+    confirm_time: timestamp("confirm_time", { withTimezone: true }),
+    payment_status: varchar("payment_status", { length: 20 }).default("unpaid"),
+    commission_amount: numeric("commission_amount", { precision: 10, scale: 2 }).default("0"),
+    commission_payment_status: varchar("commission_payment_status", { length: 20 }).default("pending"),
+    transport_completed_time: timestamp("transport_completed_time", { withTimezone: true }),
+    payment_time: timestamp("payment_time", { withTimezone: true }),
     created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updated_at: timestamp("updated_at", { withTimezone: true }),
   },
@@ -153,6 +203,7 @@ export const dairyStations = pgTable(
     address: varchar("address", { length: 255 }).notNull(),
     location: jsonb("location"), // {lat, lng}
     phone: varchar("phone", { length: 20 }),
+    customer_type: varchar("customer_type", { length: 20 }).default("owned"),
     status: varchar("status", { length: 20 }).notNull().default("active"), // active/disabled
     created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updated_at: timestamp("updated_at", { withTimezone: true }),
@@ -177,6 +228,8 @@ export const enterpriseDemands = pgTable(
     vehicle_source: varchar("vehicle_source", { length: 20 }).notNull(), // own, external, mixed
     vehicle_allocation: jsonb("vehicle_allocation"), // {ownVehicleIds, externalVehicleIds}
     optimized_routes: jsonb("optimized_routes"), // [{vehicleId, route, points}]
+    external_demand_id: varchar("external_demand_id", { length: 36 }),
+    remark: text("remark"),
     status: varchar("status", { length: 20 }).notNull().default("pending"), // pending, dispatched, in_transit, completed, cancelled
     created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updated_at: timestamp("updated_at", { withTimezone: true }),

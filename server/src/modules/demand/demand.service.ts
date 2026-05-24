@@ -38,6 +38,8 @@ export class DemandService {
 
     if (error) throw error;
 
+    let linkedExternalDemandId: string | null = null;
+
     // 如果是外部运力，同时发布到demands表供接单大厅使用
     if (data.vehicleSource === 'external') {
       const publicDemandId = `pub-${uuidv4().split('-')[0]}`;
@@ -74,7 +76,7 @@ export class DemandService {
       // 检查是否有重复的需求（相同的企业和创建时间窗口）
       const { data: existingDemands } = await supabase
         .from('demands')
-        .select('*')
+        .select('id')
         .eq('merchant_id', merchantId)
         .eq('remarks', '企业外部需求')
         .gte('created_at', demand.created_at)
@@ -82,7 +84,7 @@ export class DemandService {
 
       // 如果不存在，则创建新的公共需求记录
       if (!existingDemands || existingDemands.length === 0) {
-        const { error: pubError } = await supabase
+        const { data: publicDemand, error: pubError } = await supabase
           .from('demands')
           .insert({
             id: publicDemandId,
@@ -98,20 +100,45 @@ export class DemandService {
             delivery_address: deliveryAddress,
             delivery_lat: firstDeliveryPoint.latitude,
             delivery_lng: firstDeliveryPoint.longitude,
+            pickup_point: data.pickupPointInfo,
+            delivery_points: data.deliveryPoints,
+            cargo_info: data.cargoInfo,
             time_window: data.timeWindow, // 存储时间窗信息
             status: 'pending',
             remarks: '企业外部需求',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-          });
+          })
+          .select('id')
+          .single();
 
         if (pubError) {
           console.error('发布到接单大厅失败:', pubError);
         } else {
-          console.log('成功发布到接单大厅，需求ID:', publicDemandId);
+          linkedExternalDemandId = publicDemand?.id || publicDemandId;
+          console.log('成功发布到接单大厅，需求ID:', linkedExternalDemandId);
         }
       } else {
+        linkedExternalDemandId = existingDemands[0].id;
         console.log('需求已存在于接单大厅，跳过创建');
+      }
+
+      if (linkedExternalDemandId) {
+        const { data: linkedDemand, error: linkError } = await supabase
+          .from('enterprise_demands')
+          .update({
+            external_demand_id: linkedExternalDemandId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', demand.id)
+          .select()
+          .single();
+
+        if (linkError) {
+          console.error('关联接单大厅需求失败:', linkError);
+        } else {
+          return linkedDemand;
+        }
       }
     }
 
@@ -295,6 +322,26 @@ export class DemandService {
       throw new Error('只有待接单的外部需求可以接单');
     }
 
+    const uniqueVehicleIds = Array.from(new Set(vehicleIds.filter(Boolean)));
+    if (uniqueVehicleIds.length === 0) {
+      throw new Error('请选择车辆');
+    }
+
+    const { data: availableVehicles, error: vehicleError } = await supabase
+      .from('vehicles')
+      .select('id')
+      .eq('enterprise_id', enterpriseId)
+      .eq('usage_mode', 'external')
+      .eq('status', 'active')
+      .eq('trip_status', 'idle')
+      .in('id', uniqueVehicleIds);
+
+    if (vehicleError) throw vehicleError;
+
+    if ((availableVehicles || []).length !== uniqueVehicleIds.length) {
+      throw new Error('所选车辆不可用或不属于该企业');
+    }
+
     const { data: enterprise } = await supabase
       .from('enterprises')
       .select('admin_id')
@@ -365,7 +412,7 @@ export class DemandService {
         vehicle_source: 'internal',
         status: 'in_transit',
         vehicle_allocation: {
-          vehicle_ids: vehicleIds,
+          vehicle_ids: uniqueVehicleIds,
           allocated_at: new Date().toISOString(),
         },
         external_demand_id: demandId,
@@ -392,7 +439,7 @@ export class DemandService {
         trip_status: 'in_transit',
         updated_at: new Date().toISOString(),
       })
-      .in('id', vehicleIds);
+      .in('id', uniqueVehicleIds);
 
     return enterpriseDemand;
   }
@@ -523,17 +570,33 @@ export class DemandService {
 
     // 如果是外部运力需求，同时取消demands表中的记录
     if (demand.vehicle_source === 'external') {
-      // 查找对应的外部需求记录（通过企业ID和创建时间匹配）
-      const { data: externalDemands } = await supabase
-        .from('demands')
-        .select('*')
-        .eq('merchant_id', demand.enterprise_id)
-        .eq('remarks', '企业外部需求')
-        .gte('created_at', demand.created_at)
-        .lt('created_at', new Date(new Date(demand.created_at).getTime() + 10000)) // 10秒内创建的
-        .eq('status', 'pending');
+      let externalDemandIds: string[] = demand.external_demand_id ? [demand.external_demand_id] : [];
 
-      if (externalDemands && externalDemands.length > 0) {
+      if (externalDemandIds.length === 0) {
+        const { data: enterprise } = await supabase
+          .from('enterprises')
+          .select('admin_id')
+          .eq('id', demand.enterprise_id)
+          .single();
+
+        const merchantIds = Array.from(
+          new Set([enterprise?.admin_id, demand.enterprise_id].filter(Boolean))
+        );
+
+        // 兼容旧数据：早期没有 external_demand_id，只能通过商户与创建时间窗口回溯。
+        const { data: externalDemands } = await supabase
+          .from('demands')
+          .select('id')
+          .in('merchant_id', merchantIds)
+          .eq('remarks', '企业外部需求')
+          .gte('created_at', demand.created_at)
+          .lt('created_at', new Date(new Date(demand.created_at).getTime() + 10000)) // 10秒内创建的
+          .eq('status', 'pending');
+
+        externalDemandIds = (externalDemands || []).map((item: any) => item.id);
+      }
+
+      if (externalDemandIds.length > 0) {
         // 取消找到的外部需求
         const { error: cancelExternalError } = await supabase
           .from('demands')
@@ -541,7 +604,8 @@ export class DemandService {
             status: 'cancelled',
             updated_at: new Date().toISOString(),
           })
-          .in('id', externalDemands.map((d: any) => d.id));
+          .eq('status', 'pending')
+          .in('id', externalDemandIds);
 
         if (cancelExternalError) {
           console.error('取消外部需求失败:', cancelExternalError);

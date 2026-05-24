@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use axum::{
     extract::{Path, Query, State},
     routing::{get, post, put},
@@ -110,7 +112,7 @@ where
     S: Storage,
 {
     let demand_id = format!("demand-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
-    let demand = sqlx::query_scalar::<_, Value>(
+    let mut demand = sqlx::query_scalar::<_, Value>(
         r#"
         INSERT INTO enterprise_demands (
             id, enterprise_id, pickup_point_type, pickup_point_info,
@@ -134,7 +136,19 @@ where
     .await?;
 
     if body.vehicle_source == "external" {
-        publish_external_demand(&state.db, &body).await?;
+        let external_demand_id = publish_external_demand(&state.db, &body).await?;
+        demand = sqlx::query_scalar::<_, Value>(
+            r#"
+            UPDATE enterprise_demands
+            SET external_demand_id = $2, updated_at = now()
+            WHERE id = $1
+            RETURNING row_to_json(enterprise_demands)
+            "#,
+        )
+        .bind(&demand_id)
+        .bind(external_demand_id)
+        .fetch_one(&state.db)
+        .await?;
     }
 
     Ok(success(demand))
@@ -325,7 +339,8 @@ async fn accept_external<S>(
 where
     S: Storage,
 {
-    if body.vehicle_ids.is_empty() {
+    let vehicle_ids = normalize_unique_ids(&body.vehicle_ids);
+    if vehicle_ids.is_empty() {
         return Err(crate::error::ApiError::BadRequest("请选择车辆".to_string()));
     }
 
@@ -342,6 +357,8 @@ where
         ));
     }
 
+    validate_external_vehicle_ids(&state.db, &body.enterprise_id, &vehicle_ids).await?;
+
     let enterprise_admin_id: Option<String> =
         sqlx::query_scalar("SELECT admin_id FROM enterprises WHERE id = $1")
             .bind(&body.enterprise_id)
@@ -353,7 +370,7 @@ where
     let cargo_info = cargo_info_from_external(&external);
     let time_window = time_window_from_external(&external);
     let vehicle_allocation = json!({
-        "vehicle_ids": body.vehicle_ids,
+        "vehicle_ids": vehicle_ids.clone(),
         "allocated_at": UtcIso::now()
     });
 
@@ -390,17 +407,6 @@ where
     .execute(&mut *tx)
     .await?;
 
-    let vehicle_ids = vehicle_allocation
-        .get("vehicle_ids")
-        .and_then(Value::as_array)
-        .map(|values| {
-            values
-                .iter()
-                .filter_map(Value::as_str)
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
     sqlx::query(
         "UPDATE vehicles SET trip_status = 'in_transit', updated_at = now() WHERE id = ANY($1)",
     )
@@ -649,13 +655,29 @@ where
     sqlx::query(
         "UPDATE enterprise_demands SET status = 'cancelled', updated_at = now() WHERE id = $1",
     )
-    .bind(id)
+    .bind(&id)
     .execute(&state.db)
     .await?;
+
+    if demand.get("vehicle_source").and_then(Value::as_str) == Some("external") {
+        let external_demand_ids = linked_external_demand_ids(&state.db, &demand).await?;
+        if !external_demand_ids.is_empty() {
+            sqlx::query(
+                "UPDATE demands SET status = 'cancelled', updated_at = now() WHERE id = ANY($1) AND status = 'pending'",
+            )
+            .bind(&external_demand_ids)
+            .execute(&state.db)
+            .await?;
+        }
+    }
+
     Ok(success(json!({ "success": true })))
 }
 
-async fn publish_external_demand(pool: &sqlx::PgPool, body: &CreateDemandBody) -> ApiResult<()> {
+async fn publish_external_demand(
+    pool: &sqlx::PgPool,
+    body: &CreateDemandBody,
+) -> ApiResult<String> {
     let merchant_id: Option<String> =
         sqlx::query_scalar("SELECT admin_id FROM enterprises WHERE id = $1")
             .bind(&body.enterprise_id)
@@ -681,7 +703,7 @@ async fn publish_external_demand(pool: &sqlx::PgPool, body: &CreateDemandBody) -
         .unwrap_or(0.0);
     let total_volume = total_weight * 0.001;
     let public_demand_id = format!("pub-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
-    sqlx::query(
+    let public_id = sqlx::query_scalar::<_, String>(
         r#"
         INSERT INTO demands (
             id, merchant_id, cargo_name, cargo_type, weight, volume,
@@ -697,9 +719,10 @@ async fn publish_external_demand(pool: &sqlx::PgPool, body: &CreateDemandBody) -
             $12::jsonb, $13::jsonb, $14::jsonb, 'pending', '企业外部需求',
             now(), now()
         )
+        RETURNING id
         "#,
     )
-    .bind(public_demand_id)
+    .bind(&public_demand_id)
     .bind(merchant_id)
     .bind(cargo_name)
     .bind(total_weight)
@@ -731,9 +754,101 @@ async fn publish_external_demand(pool: &sqlx::PgPool, body: &CreateDemandBody) -
     .bind(&body.time_window)
     .bind(&body.delivery_points)
     .bind(&body.cargo_info)
-    .execute(pool)
+    .fetch_one(pool)
     .await?;
+    Ok(public_id)
+}
+
+fn normalize_unique_ids(ids: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    ids.iter()
+        .filter_map(|id| {
+            let id = id.trim();
+            if id.is_empty() || !seen.insert(id.to_string()) {
+                None
+            } else {
+                Some(id.to_string())
+            }
+        })
+        .collect()
+}
+
+async fn validate_external_vehicle_ids(
+    pool: &sqlx::PgPool,
+    enterprise_id: &str,
+    vehicle_ids: &[String],
+) -> ApiResult<()> {
+    let valid_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM vehicles
+        WHERE enterprise_id = $1
+          AND id = ANY($2)
+          AND usage_mode = 'external'
+          AND status = 'active'
+          AND COALESCE(trip_status, 'idle') = 'idle'
+        "#,
+    )
+    .bind(enterprise_id)
+    .bind(vehicle_ids)
+    .fetch_one(pool)
+    .await?;
+
+    if valid_count != vehicle_ids.len() as i64 {
+        return Err(crate::error::ApiError::BadRequest(
+            "所选车辆不可用或不属于该企业".to_string(),
+        ));
+    }
+
     Ok(())
+}
+
+async fn linked_external_demand_ids(pool: &sqlx::PgPool, demand: &Value) -> ApiResult<Vec<String>> {
+    if let Some(external_demand_id) = demand
+        .get("external_demand_id")
+        .and_then(Value::as_str)
+        .filter(|external_demand_id| !external_demand_id.is_empty())
+    {
+        return Ok(vec![external_demand_id.to_string()]);
+    }
+
+    let Some(enterprise_id) = demand.get("enterprise_id").and_then(Value::as_str) else {
+        return Ok(Vec::new());
+    };
+    let Some(created_at) = demand.get("created_at").and_then(Value::as_str) else {
+        return Ok(Vec::new());
+    };
+
+    let admin_id: Option<String> =
+        sqlx::query_scalar("SELECT admin_id FROM enterprises WHERE id = $1")
+            .bind(enterprise_id)
+            .fetch_optional(pool)
+            .await?
+            .flatten();
+    let mut merchant_ids = Vec::new();
+    if let Some(admin_id) = admin_id {
+        merchant_ids.push(admin_id);
+    }
+    merchant_ids.push(enterprise_id.to_string());
+    merchant_ids = normalize_unique_ids(&merchant_ids);
+
+    let external_demand_ids = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT id
+        FROM demands
+        WHERE merchant_id = ANY($1)
+          AND remarks = '企业外部需求'
+          AND created_at >= $2::timestamptz
+          AND created_at < ($2::timestamptz + interval '10 seconds')
+          AND status = 'pending'
+        "#,
+    )
+    .bind(&merchant_ids)
+    .bind(created_at)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(external_demand_ids)
 }
 
 async fn fetch_enterprise_demand(pool: &sqlx::PgPool, id: &str) -> ApiResult<Option<Value>> {
