@@ -85,11 +85,18 @@ where
     let Some(enterprise_id) = query.enterprise_id else {
         return Ok(envelope(400, "缺少企业ID", Value::Null));
     };
+    let usage_mode = match query.usage_mode {
+        Some(usage_mode) => match normalize_usage_mode(&usage_mode) {
+            Some(usage_mode) => Some(usage_mode),
+            None => return Ok(envelope(500, "usage_mode 不合法", Value::Null)),
+        },
+        None => None,
+    };
     let mut builder = QueryBuilder::<Postgres>::new(
         "SELECT row_to_json(vehicles) FROM vehicles WHERE enterprise_id = ",
     );
     builder.push_bind(enterprise_id);
-    if let Some(usage_mode) = query.usage_mode {
+    if let Some(usage_mode) = usage_mode {
         builder.push(" AND usage_mode = ");
         builder.push_bind(usage_mode);
     }
@@ -120,6 +127,10 @@ where
     if admin_id.trim().is_empty() {
         return Ok(envelope(500, "企业管理员未设置", Value::Null));
     }
+    let Some(usage_mode) = normalize_usage_mode(body.usage_mode.as_deref().unwrap_or("internal"))
+    else {
+        return Ok(envelope(500, "usage_mode 不合法", Value::Null));
+    };
 
     let vehicle = sqlx::query_scalar::<_, Value>(
         r#"
@@ -150,7 +161,7 @@ where
     .bind(body.width)
     .bind(body.height)
     .bind(body.has_cold_chain)
-    .bind(body.usage_mode)
+    .bind(usage_mode)
     .fetch_one(&state.db)
     .await
     .map_err(|err| crate::error::ApiError::BadRequest(format!("创建车辆失败: {err}")))?;
@@ -209,7 +220,10 @@ async fn update_usage_mode<S>(
 where
     S: Storage,
 {
-    update_vehicle_field(&state.db, &id, "usage_mode", &body.usage_mode).await
+    let Some(usage_mode) = normalize_usage_mode(&body.usage_mode) else {
+        return Ok(envelope(500, "usage_mode 不合法", Value::Null));
+    };
+    update_vehicle_field(&state.db, &id, "usage_mode", &usage_mode).await
 }
 
 async fn update_status<S>(
@@ -220,6 +234,9 @@ async fn update_status<S>(
 where
     S: Storage,
 {
+    let Some(trip_status) = normalize_trip_status(&body.trip_status) else {
+        return Ok(envelope(500, "trip_status 不合法", Value::Null));
+    };
     let vehicle = sqlx::query_scalar::<_, Value>(
         r#"
         UPDATE vehicles
@@ -229,7 +246,7 @@ where
         "#,
     )
     .bind(id)
-    .bind(body.trip_status)
+    .bind(trip_status)
     .fetch_optional(&state.db)
     .await?;
     Ok(match vehicle {
@@ -298,6 +315,20 @@ async fn update_vehicle_field(
         .fetch_one(pool)
         .await?;
     Ok(success(vehicle))
+}
+
+fn normalize_usage_mode(usage_mode: &str) -> Option<String> {
+    if matches!(usage_mode, "internal" | "external") {
+        return Some(usage_mode.to_string());
+    }
+    None
+}
+
+fn normalize_trip_status(trip_status: &str) -> Option<String> {
+    if matches!(trip_status, "idle" | "in_transit" | "maintenance") {
+        return Some(trip_status.to_string());
+    }
+    None
 }
 
 fn success<T: serde::Serialize>(data: T) -> Json<ApiEnvelope<T>> {

@@ -11,7 +11,7 @@ export class EnterpriseVehiclesController {
   @Get()
   async getVehicles(
     @Query('enterprise_id') enterpriseId: string,
-    @Query('usage_mode') usageMode?: 'internal' | 'external',
+    @Query('usage_mode') usageMode?: string,
   ) {
     if (!enterpriseId) {
       return {
@@ -21,11 +21,19 @@ export class EnterpriseVehiclesController {
       };
     }
 
-    return {
-      code: 200,
-      message: 'success',
-      data: await this.enterpriseVehiclesService.getEnterpriseVehicles(enterpriseId, usageMode),
-    };
+    try {
+      return {
+        code: 200,
+        message: 'success',
+        data: await this.enterpriseVehiclesService.getEnterpriseVehicles(enterpriseId, usageMode),
+      };
+    } catch (error) {
+      return {
+        code: 500,
+        message: error.message || '查询失败',
+        data: null,
+      };
+    }
   }
 
   /**
@@ -63,7 +71,7 @@ export class EnterpriseVehiclesController {
     width?: number;
     height?: number;
     has_cold_chain: boolean;
-    usage_mode?: 'internal' | 'external';
+    usage_mode?: string;
   }) {
     try {
       const vehicle = await this.enterpriseVehiclesService.createEnterpriseVehicle(
@@ -103,13 +111,21 @@ export class EnterpriseVehiclesController {
   @Put(':id/usage-mode')
   async updateUsageMode(
     @Param('id') id: string,
-    @Body('usage_mode') usageMode: 'internal' | 'external',
+    @Body('usage_mode') usageMode: string,
   ) {
-    return {
-      code: 200,
-      message: 'success',
-      data: await this.enterpriseVehiclesService.updateVehicleUsageMode(id, usageMode),
-    };
+    try {
+      return {
+        code: 200,
+        message: 'success',
+        data: await this.enterpriseVehiclesService.updateVehicleUsageMode(id, usageMode),
+      };
+    } catch (error) {
+      return {
+        code: 500,
+        message: error.message || '更新失败',
+        data: null,
+      };
+    }
   }
 
   /**
@@ -157,21 +173,29 @@ export class EnterpriseVehiclesController {
   @Put(':id/status')
   async updateVehicleStatus(
     @Param('id') id: string,
-    @Body('trip_status') tripStatus: 'idle' | 'in_transit' | 'maintenance',
+    @Body('trip_status') tripStatus: string,
   ) {
-    const vehicle = await this.enterpriseVehiclesService.updateVehicleStatus(id, tripStatus);
-    if (!vehicle) {
+    try {
+      const vehicle = await this.enterpriseVehiclesService.updateVehicleStatus(id, tripStatus);
+      if (!vehicle) {
+        return {
+          code: 404,
+          message: '车辆不存在',
+          data: null,
+        };
+      }
       return {
-        code: 404,
-        message: '车辆不存在',
+        code: 200,
+        message: 'success',
+        data: vehicle,
+      };
+    } catch (error) {
+      return {
+        code: 500,
+        message: error.message || '更新失败',
         data: null,
       };
     }
-    return {
-      code: 200,
-      message: 'success',
-      data: vehicle,
-    };
   }
 
   /**

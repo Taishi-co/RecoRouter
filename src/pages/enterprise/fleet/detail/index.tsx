@@ -23,7 +23,7 @@ interface Vehicle {
   width?: number
   height?: number
   current_location: string
-  usage_mode: 'internal' | 'external' | 'mixed'
+  usage_mode: 'internal' | 'external'
   trip_status: 'idle' | 'in_transit' | 'maintenance'
   today_internal_orders: number
   today_external_orders: number

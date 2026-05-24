@@ -284,6 +284,34 @@ async fn enterprise_station_and_enterprise_vehicle_routes_match_legacy_shapes() 
     assert_eq!(vehicle_list_status, StatusCode::OK);
     assert_eq!(vehicle_list_body["data"].as_array().unwrap().len(), 1);
 
+    let (invalid_list_status, invalid_list_body) = get_json(
+        &context.app,
+        &format!("/api/enterprise-vehicles?enterprise_id={enterprise_id}&usage_mode=own"),
+    )
+    .await;
+    assert_eq!(invalid_list_status, StatusCode::OK);
+    assert_eq!(invalid_list_body["code"], 500);
+    assert_eq!(invalid_list_body["message"], "usage_mode 不合法");
+
+    let (invalid_create_status, invalid_create_body) = post_json(
+        &context.app,
+        "/api/enterprise-vehicles",
+        json!({
+            "enterprise_id": enterprise_id,
+            "vehicle_id": "ent-vehicle-invalid",
+            "vehicle_code": "ENT-BAD",
+            "vehicle_type": "无人配送车",
+            "load_capacity": 500,
+            "volume": 10,
+            "has_cold_chain": true,
+            "usage_mode": "mixed"
+        }),
+    )
+    .await;
+    assert_eq!(invalid_create_status, StatusCode::OK);
+    assert_eq!(invalid_create_body["code"], 500);
+    assert_eq!(invalid_create_body["message"], "usage_mode 不合法");
+
     let (stats_status, stats_body) = get_json(
         &context.app,
         &format!("/api/enterprise-vehicles/stats?enterprise_id={enterprise_id}"),
@@ -302,6 +330,26 @@ async fn enterprise_station_and_enterprise_vehicle_routes_match_legacy_shapes() 
     .await;
     assert_eq!(usage_status, StatusCode::OK);
     assert_eq!(usage_body["data"]["usage_mode"], "external");
+
+    let (invalid_usage_status, invalid_usage_body) = put_json(
+        &context.app,
+        "/api/enterprise-vehicles/ent-vehicle-001/usage-mode",
+        json!({ "usage_mode": "mixed" }),
+    )
+    .await;
+    assert_eq!(invalid_usage_status, StatusCode::OK);
+    assert_eq!(invalid_usage_body["code"], 500);
+    assert_eq!(invalid_usage_body["message"], "usage_mode 不合法");
+
+    let (invalid_trip_status, invalid_trip_body) = put_json(
+        &context.app,
+        "/api/enterprise-vehicles/ent-vehicle-001/status",
+        json!({ "trip_status": "delayed" }),
+    )
+    .await;
+    assert_eq!(invalid_trip_status, StatusCode::OK);
+    assert_eq!(invalid_trip_body["code"], 500);
+    assert_eq!(invalid_trip_body["message"], "trip_status 不合法");
 
     let (today_status, today_body) = put_json(
         &context.app,

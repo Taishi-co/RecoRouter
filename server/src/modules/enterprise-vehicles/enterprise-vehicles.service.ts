@@ -1,13 +1,20 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 
+type VehicleUsageMode = 'internal' | 'external';
+type VehicleTripStatus = 'idle' | 'in_transit' | 'maintenance';
+
+const VEHICLE_USAGE_MODES: VehicleUsageMode[] = ['internal', 'external'];
+const VEHICLE_TRIP_STATUSES: VehicleTripStatus[] = ['idle', 'in_transit', 'maintenance'];
+
 @Injectable()
 export class EnterpriseVehiclesService {
   /**
    * 获取企业车辆列表
    */
-  async getEnterpriseVehicles(enterpriseId: string, usageMode?: 'internal' | 'external') {
+  async getEnterpriseVehicles(enterpriseId: string, usageMode?: string) {
     const client = getSupabaseClient();
+    const normalizedUsageMode = usageMode ? this.normalizeUsageMode(usageMode) : undefined;
 
     let query = client
       .from('vehicles')
@@ -15,8 +22,8 @@ export class EnterpriseVehiclesService {
       .eq('enterprise_id', enterpriseId);
 
     // 如果指定了usage_mode，则过滤
-    if (usageMode) {
-      query = query.eq('usage_mode', usageMode);
+    if (normalizedUsageMode) {
+      query = query.eq('usage_mode', normalizedUsageMode);
     }
 
     const { data: vehicles, error } = await query.order('created_at', { ascending: false });
@@ -43,11 +50,12 @@ export class EnterpriseVehiclesService {
       width?: number;
       height?: number;
       has_cold_chain: boolean;
-      usage_mode: 'internal' | 'external';
+      usage_mode: string;
     },
     vehicleId?: string,
   ) {
     const client = getSupabaseClient();
+    const usageMode = this.normalizeUsageMode(vehicleData.usage_mode);
 
     // 验证企业是否存在并获取管理员ID
     const { data: enterprise, error: enterpriseError } = await client
@@ -82,7 +90,7 @@ export class EnterpriseVehiclesService {
         height: vehicleData.height || null,
         has_cold_chain: vehicleData.has_cold_chain,
         current_location: '唐山配送中心', // 默认位置
-        usage_mode: vehicleData.usage_mode,
+        usage_mode: usageMode,
         trip_status: 'idle',
         status: 'active', // 企业车辆直接激活，无需审核
         battery_life: 100,
@@ -106,12 +114,13 @@ export class EnterpriseVehiclesService {
   /**
    * 更新车辆使用模式
    */
-  async updateVehicleUsageMode(vehicleId: string, usageMode: 'internal' | 'external') {
+  async updateVehicleUsageMode(vehicleId: string, usageMode: string) {
     const client = getSupabaseClient();
+    const normalizedUsageMode = this.normalizeUsageMode(usageMode);
 
     const { data: vehicle, error } = await client
       .from('vehicles')
-      .update({ usage_mode: usageMode })
+      .update({ usage_mode: normalizedUsageMode })
       .eq('id', vehicleId)
       .select()
       .single();
@@ -202,13 +211,14 @@ export class EnterpriseVehiclesService {
    */
   async updateVehicleStatus(
     vehicleId: string,
-    tripStatus: 'idle' | 'in_transit' | 'maintenance',
+    tripStatus: string,
   ) {
     const client = getSupabaseClient();
+    const normalizedTripStatus = this.normalizeTripStatus(tripStatus);
 
     const { data: vehicle, error } = await client
       .from('vehicles')
-      .update({ trip_status: tripStatus })
+      .update({ trip_status: normalizedTripStatus })
       .eq('id', vehicleId)
       .select()
       .maybeSingle();
@@ -236,5 +246,19 @@ export class EnterpriseVehiclesService {
     }
 
     return true;
+  }
+
+  private normalizeUsageMode(usageMode?: string): VehicleUsageMode {
+    if (VEHICLE_USAGE_MODES.includes(usageMode as VehicleUsageMode)) {
+      return usageMode as VehicleUsageMode;
+    }
+    throw new BadRequestException('usage_mode 不合法');
+  }
+
+  private normalizeTripStatus(tripStatus?: string): VehicleTripStatus {
+    if (VEHICLE_TRIP_STATUSES.includes(tripStatus as VehicleTripStatus)) {
+      return tripStatus as VehicleTripStatus;
+    }
+    throw new BadRequestException('trip_status 不合法');
   }
 }
