@@ -32,10 +32,12 @@ jobs:
           node-version: '20'
           cache: pnpm
 
+      - uses: dtolnay/rust-toolchain@stable
+
       - run: pnpm install --frozen-lockfile
 
       - name: Build server release
-        run: BUILD_DOCKER_IMAGE=1 deploy/make-docker-release.sh
+        run: BUILD_RUST_BINARY=1 deploy/make-docker-release.sh
 
       - name: Configure SSH
         run: |

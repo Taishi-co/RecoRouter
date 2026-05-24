@@ -53,6 +53,26 @@ if [[ -f "$RELEASE_DIR/recorouter-api-image.tar" ]]; then
   docker load -i "$RELEASE_DIR/recorouter-api-image.tar"
   docker tag "recorouter-api:release" "recorouter-api:$RELEASE_ID"
   docker tag "recorouter-api:release" "recorouter-api:latest"
+elif [[ -f "$RELEASE_DIR/recorouter-api" ]]; then
+  chmod +x "$RELEASE_DIR/recorouter-api"
+  cat >"$RELEASE_DIR/Dockerfile.runtime" <<'EOF'
+FROM debian:bookworm-slim
+
+WORKDIR /app
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY recorouter-api /usr/local/bin/recorouter-api
+COPY migrations ./migrations
+
+ENV SERVER_PORT=34533
+ENV LOCAL_UPLOAD_DIR=/app/uploads
+EXPOSE 34533
+
+CMD ["recorouter-api"]
+EOF
+  docker build -t "recorouter-api:$RELEASE_ID" -t "recorouter-api:latest" -f "$RELEASE_DIR/Dockerfile.runtime" "$RELEASE_DIR"
 else
   docker build -t "recorouter-api:$RELEASE_ID" -t "recorouter-api:latest" "$RELEASE_DIR/server-rust"
 fi
