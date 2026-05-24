@@ -14,6 +14,8 @@ import Taro from '@tarojs/taro'
 import AllocateVehicleDialog from './AllocateVehicleDialog'
 import './index.css'
 
+type VehicleSource = 'internal' | 'external' | 'mixed'
+
 interface Demand {
   id: string
   status: string
@@ -21,7 +23,7 @@ interface Demand {
   delivery_points: any[]
   cargo_info: any
   time_window: any
-  vehicle_source: string
+  vehicle_source: VehicleSource
   created_at: string
   vehicle_allocation?: any
 }
@@ -40,7 +42,7 @@ interface Vehicle {
   vehicle_type: string
   load_capacity: number
   current_location: string
-  usage_mode: string
+  usage_mode: 'internal' | 'external'
   trip_status: string
 }
 
@@ -57,6 +59,7 @@ const EnterpriseDispatchPage: FC = () => {
   const [enterpriseId, setEnterpriseId] = useState('')
   const [loading, setLoading] = useState(true)
   const [errorText, setErrorText] = useState('')
+  const [allocating, setAllocating] = useState(false)
 
   useEffect(() => {
     loadEnterpriseInfo()
@@ -166,16 +169,25 @@ const EnterpriseDispatchPage: FC = () => {
 
   const handleAllocateVehicle = async (demand: Demand) => {
     try {
-      // 获取可用车辆（只显示内部运力车辆）
+      const vehicleParams: { enterprise_id: string; usage_mode?: 'internal' } = {
+        enterprise_id: enterpriseId,
+      }
+
+      if (demand.vehicle_source === 'internal') {
+        vehicleParams.usage_mode = 'internal'
+      }
+
       const res = await Network.request({
         url: '/api/enterprise-vehicles',
-        data: { enterprise_id: enterpriseId, usage_mode: 'internal' },
+        data: vehicleParams,
       })
 
       if (isApiSuccess(res)) {
         const vehicles = getApiData<Vehicle[]>(res, [])
-        // 只显示空闲车辆
-        setAvailableVehicles(vehicles.filter((v: Vehicle) => v.trip_status === 'idle'))
+        const usableVehicles = demand.vehicle_source === 'mixed'
+          ? vehicles.filter((v: Vehicle) => ['internal', 'external'].includes(v.usage_mode))
+          : vehicles
+        setAvailableVehicles(usableVehicles.filter((v: Vehicle) => v.trip_status === 'idle'))
         setSelectedVehicleIds([])
         setAllocatingDemand(demand)
         setAllocateDialogOpen(true)
@@ -204,6 +216,7 @@ const EnterpriseDispatchPage: FC = () => {
     }
 
     try {
+      setAllocating(true)
       const res = await Network.request({
         url: `/api/demand/${allocatingDemand.id}/allocate`,
         method: 'PUT',
@@ -236,6 +249,8 @@ const EnterpriseDispatchPage: FC = () => {
         title: '分配失败',
         icon: 'none',
       })
+    } finally {
+      setAllocating(false)
     }
   }
 
@@ -249,6 +264,15 @@ const EnterpriseDispatchPage: FC = () => {
     const mode = demand.cargo_info?.businessMode || demand.delivery_points?.[0]?.businessMode
     if (mode === 'community_group_buy') return '社区团长'
     return '终端点'
+  }
+
+  const getVehicleSourceLabel = (source: string) => {
+    const sourceMap: Record<string, string> = {
+      internal: '自有车辆',
+      external: '外部运力',
+      mixed: '混合运力',
+    }
+    return sourceMap[source] || source
   }
 
   const formatTimeWindowValue = (value?: string) => {
@@ -379,7 +403,7 @@ const EnterpriseDispatchPage: FC = () => {
             ⏰ 配送时间：{formatTimeWindow(demand.time_window)}
           </Text>
           <Text className="block">
-            🚚 运力来源：{demand.vehicle_source === 'external' ? '外部运力' : '自有车辆'} · {demand.cargo_info?.businessModeLabel || (getBusinessModeLabel(demand) === '社区团长' ? '社区团购' : '终端配送')}
+            🚚 运力来源：{getVehicleSourceLabel(demand.vehicle_source)} · {demand.cargo_info?.businessModeLabel || (getBusinessModeLabel(demand) === '社区团长' ? '社区团购' : '终端配送')}
           </Text>
           {demand.status !== 'pending' && demand.vehicle_allocation && (
             <Text className="block mt-1">
@@ -401,11 +425,11 @@ const EnterpriseDispatchPage: FC = () => {
                   <Text className="text-xs">分配车辆</Text>
                 </Button>
               )}
-              {/* 外部运力需求只显示"取消"按钮，自有运力需求显示两个按钮 */}
+              {/* 外部运力需求只显示"取消"按钮，自有/混合运力需求显示两个按钮 */}
               <Button
                 size="sm"
                 variant="outline"
-                className={demand.vehicle_source === 'external' ? 'flex-1' : 'flex-1'}
+                className="flex-1"
                 onClick={() => handleCancelDemand(demand.id)}
               >
                 <Text className="text-xs">取消</Text>
@@ -556,6 +580,7 @@ const EnterpriseDispatchPage: FC = () => {
         selectedVehicles={selectedVehicleIds}
         onToggleVehicle={handleToggleVehicle}
         onConfirm={handleConfirmAllocate}
+        confirming={allocating}
       />
     </View>
   )
