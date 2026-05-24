@@ -63,10 +63,10 @@ jobs:
           set -euo pipefail
           remote="$SERVER_USER@$SERVER_HOST"
           if [ -n "${SERVER_SSH_KEY:-}" ]; then
-            scp -P "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -i ~/.ssh/recorouter_deploy_key /tmp/recorouter-docker-release.tar.gz "$remote:/tmp/recorouter-docker-release.tar.gz"
+            scp -O -P "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -i ~/.ssh/recorouter_deploy_key /tmp/recorouter-docker-release.tar.gz "$remote:/tmp/recorouter-docker-release.tar.gz"
             ssh -p "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -i ~/.ssh/recorouter_deploy_key "$remote" 'mkdir -p /tmp/recorouter-install && rm -rf /tmp/recorouter-install/* && tar -xzf /tmp/recorouter-docker-release.tar.gz -C /tmp/recorouter-install && bash /tmp/recorouter-install/deploy/install-docker-release.sh /tmp/recorouter-docker-release.tar.gz'
           else
-            sshpass -p "$SERVER_PASSWORD" scp -P "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 /tmp/recorouter-docker-release.tar.gz "$remote:/tmp/recorouter-docker-release.tar.gz"
+            sshpass -p "$SERVER_PASSWORD" scp -O -P "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 /tmp/recorouter-docker-release.tar.gz "$remote:/tmp/recorouter-docker-release.tar.gz"
             sshpass -p "$SERVER_PASSWORD" ssh -p "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 "$remote" 'mkdir -p /tmp/recorouter-install && rm -rf /tmp/recorouter-install/* && tar -xzf /tmp/recorouter-docker-release.tar.gz -C /tmp/recorouter-install && bash /tmp/recorouter-install/deploy/install-docker-release.sh /tmp/recorouter-docker-release.tar.gz'
           fi
 

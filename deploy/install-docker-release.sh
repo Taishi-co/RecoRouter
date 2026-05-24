@@ -4,6 +4,7 @@ set -euo pipefail
 DOMAIN="${DOMAIN:-car.shcxyz.site}"
 APP_ROOT="${APP_ROOT:-/opt/recorouter}"
 API_PORT="${API_PORT:-34533}"
+CANDIDATE_API_PORT="${CANDIDATE_API_PORT:-34534}"
 CONTAINER_NAME="${CONTAINER_NAME:-recorouter-api}"
 DOCKER_NETWORK="${DOCKER_NETWORK:-server_default}"
 UPLOAD_VOLUME="${UPLOAD_VOLUME:-server_recocar-uploads}"
@@ -49,10 +50,10 @@ tar -xzf "$RELEASE_TAR" -C "$RELEASE_DIR"
 ln -sfn "$RELEASE_DIR" "$APP_ROOT/current"
 
 docker network inspect "$DOCKER_NETWORK" >/dev/null
+IMAGE_REF="recorouter-api:$RELEASE_ID"
 if [[ -f "$RELEASE_DIR/recorouter-api-image.tar" ]]; then
   docker load -i "$RELEASE_DIR/recorouter-api-image.tar"
-  docker tag "recorouter-api:release" "recorouter-api:$RELEASE_ID"
-  docker tag "recorouter-api:release" "recorouter-api:latest"
+  docker tag "recorouter-api:release" "$IMAGE_REF"
 elif [[ -f "$RELEASE_DIR/recorouter-api" ]]; then
   chmod +x "$RELEASE_DIR/recorouter-api"
   cat >"$RELEASE_DIR/Dockerfile.runtime" <<'EOF'
@@ -72,11 +73,38 @@ EXPOSE 34533
 
 CMD ["recorouter-api"]
 EOF
-  docker build -t "recorouter-api:$RELEASE_ID" -t "recorouter-api:latest" -f "$RELEASE_DIR/Dockerfile.runtime" "$RELEASE_DIR"
+  docker build -t "$IMAGE_REF" -f "$RELEASE_DIR/Dockerfile.runtime" "$RELEASE_DIR"
 else
-  docker build -t "recorouter-api:$RELEASE_ID" -t "recorouter-api:latest" "$RELEASE_DIR/server-rust"
+  docker build -t "$IMAGE_REF" "$RELEASE_DIR/server-rust"
 fi
 
+CANDIDATE_NAME="${CONTAINER_NAME}-candidate-$RELEASE_ID"
+docker rm -f "$CANDIDATE_NAME" >/dev/null 2>&1 || true
+docker run -d \
+  --name "$CANDIDATE_NAME" \
+  --restart no \
+  --network "$DOCKER_NETWORK" \
+  --env-file "$ENV_FILE" \
+  -p "127.0.0.1:$CANDIDATE_API_PORT:$API_PORT" \
+  -v "$UPLOAD_VOLUME:/app/uploads" \
+  "$IMAGE_REF"
+
+for _ in $(seq 1 30); do
+  if curl -fsS "http://127.0.0.1:$CANDIDATE_API_PORT/api/health" >/dev/null; then
+    CANDIDATE_HEALTHY=1
+    break
+  fi
+  sleep 1
+done
+
+if [[ "${CANDIDATE_HEALTHY:-0}" != "1" ]]; then
+  docker logs --tail 100 "$CANDIDATE_NAME" >&2 || true
+  docker rm -f "$CANDIDATE_NAME" >/dev/null 2>&1 || true
+  echo "Candidate API failed health check; keeping existing $CONTAINER_NAME container." >&2
+  exit 1
+fi
+
+docker rm -f "$CANDIDATE_NAME" >/dev/null 2>&1 || true
 docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 docker run -d \
   --name "$CONTAINER_NAME" \
@@ -85,7 +113,8 @@ docker run -d \
   --env-file "$ENV_FILE" \
   -p "127.0.0.1:$API_PORT:$API_PORT" \
   -v "$UPLOAD_VOLUME:/app/uploads" \
-  "recorouter-api:latest"
+  "$IMAGE_REF"
+docker tag "$IMAGE_REF" "recorouter-api:latest"
 
 if [[ -d /www/server/panel/vhost/nginx ]]; then
   install -m 0644 "$RELEASE_DIR/deploy/nginx-car.shcxyz.site.conf" /www/server/panel/vhost/nginx/car.shcxyz.site.conf

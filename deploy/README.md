@@ -39,7 +39,7 @@ The repository has two production workflows:
   - Builds `/tmp/recorouter-docker-release.tar.gz`.
   - Builds the Rust API binary on the GitHub Linux runner.
   - Uploads it to the server.
-  - Runs `deploy/install-docker-release.sh`; the server builds only the lightweight runtime Docker image and restarts the container.
+  - Runs `deploy/install-docker-release.sh`; the server builds only the lightweight runtime Docker image, health-checks a candidate container, then restarts production.
   - Verifies `https://car.shcxyz.site/` and `/api/health`.
 - `.github/workflows/publish-miniapp.yml`
   - Trigger: manual `workflow_dispatch`, or push to `main` when repository variable `WEAPP_UPLOAD_ON_MAIN=true`.

@@ -381,8 +381,6 @@ CREATE INDEX IF NOT EXISTS users_role_idx ON users(role);
 CREATE INDEX IF NOT EXISTS orders_status_idx ON orders(status);
 CREATE INDEX IF NOT EXISTS demands_status_idx ON demands(status);
 CREATE INDEX IF NOT EXISTS vehicles_status_idx ON vehicles(status);
-CREATE INDEX IF NOT EXISTS enterprise_demands_external_demand_id_idx ON enterprise_demands(external_demand_id);
-CREATE INDEX IF NOT EXISTS vehicles_enterprise_dispatch_idx ON vehicles(enterprise_id, usage_mode, status, trip_status);
 
 DO $$
 DECLARE

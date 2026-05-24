@@ -80,9 +80,9 @@ jobs:
           remote="$SERVER_USER@$SERVER_HOST"
           remote_cmd="TARO_APP_WEAPP_APPID='$TARO_APP_WEAPP_APPID' MINIAPP_PLATFORM='$MINIAPP_PLATFORM' PROJECT_DOMAIN='$PROJECT_DOMAIN' GITHUB_RUN_NUMBER='$GITHUB_RUN_NUMBER' bash /tmp/recorouter-miniapp-install/deploy/upload-miniapp.sh /tmp/recorouter-miniapp-source.tar.gz"
           if [ -n "${SERVER_SSH_KEY:-}" ]; then
-            scp -P "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -i ~/.ssh/recorouter_deploy_key /tmp/recorouter-miniapp-source.tar.gz "$remote:/tmp/recorouter-miniapp-source.tar.gz"
+            scp -O -P "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -i ~/.ssh/recorouter_deploy_key /tmp/recorouter-miniapp-source.tar.gz "$remote:/tmp/recorouter-miniapp-source.tar.gz"
             ssh -p "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -i ~/.ssh/recorouter_deploy_key "$remote" "mkdir -p /tmp/recorouter-miniapp-install && rm -rf /tmp/recorouter-miniapp-install/* && tar -xzf /tmp/recorouter-miniapp-source.tar.gz -C /tmp/recorouter-miniapp-install && $remote_cmd"
           else
-            sshpass -p "$SERVER_PASSWORD" scp -P "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 /tmp/recorouter-miniapp-source.tar.gz "$remote:/tmp/recorouter-miniapp-source.tar.gz"
+            sshpass -p "$SERVER_PASSWORD" scp -O -P "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 /tmp/recorouter-miniapp-source.tar.gz "$remote:/tmp/recorouter-miniapp-source.tar.gz"
             sshpass -p "$SERVER_PASSWORD" ssh -p "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 "$remote" "mkdir -p /tmp/recorouter-miniapp-install && rm -rf /tmp/recorouter-miniapp-install/* && tar -xzf /tmp/recorouter-miniapp-source.tar.gz -C /tmp/recorouter-miniapp-install && $remote_cmd"
           fi
