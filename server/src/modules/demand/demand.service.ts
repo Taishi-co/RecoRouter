@@ -276,6 +276,10 @@ export class DemandService {
   async acceptExternalDemand(demandId: string, enterpriseId: string, vehicleIds: string[]) {
     const supabase = getSupabaseClient();
 
+    if (!vehicleIds || vehicleIds.length === 0) {
+      throw new Error('请选择车辆');
+    }
+
     // 获取外部订单
     const { data: externalDemand, error: fetchError } = await supabase
       .from('demands')
@@ -287,22 +291,77 @@ export class DemandService {
       throw new Error('外部需求不存在');
     }
 
+    if (externalDemand.status !== 'pending') {
+      throw new Error('只有待接单的外部需求可以接单');
+    }
+
+    const { data: enterprise } = await supabase
+      .from('enterprises')
+      .select('admin_id')
+      .eq('id', enterpriseId)
+      .single();
+
+    const businessMode = externalDemand.cargo_info?.businessMode || 'enterprise_terminal';
+    const pointType = businessMode === 'community_group_buy' ? 'community_leader' : 'terminal';
+    const existingDeliveryPoints = Array.isArray(externalDemand.delivery_points)
+      ? externalDemand.delivery_points
+      : [];
+    const deliveryPoints = existingDeliveryPoints.length > 0
+      ? existingDeliveryPoints.map((point: any, index: number) => ({
+          stationId: point.stationId || point.id || `external-${demandId}-${index + 1}`,
+          name: point.name || point.stationName || point.address || externalDemand.delivery_address || '收货点',
+          address: point.address || externalDemand.delivery_address || '',
+          contact: point.contact,
+          phone: point.phone,
+          latitude: point.latitude ?? point.lat ?? externalDemand.delivery_lat,
+          longitude: point.longitude ?? point.lng ?? externalDemand.delivery_lng,
+          pointType: point.pointType || pointType,
+          businessMode: point.businessMode || businessMode,
+          status: point.status || 'pending',
+        }))
+      : [{
+          stationId: `external-${demandId}`,
+          name: externalDemand.delivery_address || '收货点',
+          address: externalDemand.delivery_address || '',
+          latitude: externalDemand.delivery_lat,
+          longitude: externalDemand.delivery_lng,
+          pointType,
+          businessMode,
+          status: 'pending',
+        }];
+
+    const cargoInfo = {
+      ...(externalDemand.cargo_info || {}),
+      type: externalDemand.cargo_info?.type || externalDemand.cargo_name || '货物',
+      cargoType: externalDemand.cargo_info?.cargoType || externalDemand.cargo_type,
+      weight: externalDemand.cargo_info?.weight ?? externalDemand.weight,
+      volume: externalDemand.cargo_info?.volume ?? externalDemand.volume,
+      businessMode,
+      businessModeLabel: businessMode === 'community_group_buy' ? '社区团购' : '终端配送',
+    };
+
+    const timeWindow = externalDemand.time_window || {
+      start: externalDemand.pickup_time_start || externalDemand.pickup_time,
+      end: externalDemand.pickup_time_end || externalDemand.pickup_time,
+    };
+
+    const pickupPointInfo = externalDemand.pickup_point || {
+      name: '起点',
+      address: externalDemand.pickup_address || '',
+      latitude: externalDemand.pickup_lat,
+      longitude: externalDemand.pickup_lng,
+    };
+
     // 创建企业需求
     const { data: enterpriseDemand, error: insertError } = await supabase
       .from('enterprise_demands')
       .insert({
         enterprise_id: enterpriseId,
         pickup_point_type: 'warehouse',
-        pickup_point_info: {
-          name: externalDemand.pickup_point?.name || '起点',
-          address: externalDemand.pickup_point?.address || '',
-        },
-        delivery_points: externalDemand.delivery_points || [],
-        cargo_info: externalDemand.cargo_info || {},
-        time_window: {
-          start: externalDemand.pickup_time_start,
-          end: externalDemand.pickup_time_end,
-        },
+        pickup_point_info: pickupPointInfo,
+        delivery_points: deliveryPoints,
+        cargo_info: cargoInfo,
+        time_window: timeWindow,
         vehicle_source: 'internal',
         status: 'in_transit',
         vehicle_allocation: {
@@ -322,9 +381,18 @@ export class DemandService {
       .from('demands')
       .update({
         status: 'accepted',
+        owner_id: enterprise?.admin_id || null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', demandId);
+
+    await supabase
+      .from('vehicles')
+      .update({
+        trip_status: 'in_transit',
+        updated_at: new Date().toISOString(),
+      })
+      .in('id', vehicleIds);
 
     return enterpriseDemand;
   }

@@ -4,7 +4,7 @@ use axum::{
     Json, Router,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use sqlx::{Postgres, QueryBuilder};
 
 use crate::{app::AppState, error::ApiResult, response::ApiEnvelope, storage::Storage};
@@ -325,6 +325,10 @@ async fn accept_external<S>(
 where
     S: Storage,
 {
+    if body.vehicle_ids.is_empty() {
+        return Err(crate::error::ApiError::BadRequest("请选择车辆".to_string()));
+    }
+
     let external =
         sqlx::query_scalar::<_, Value>("SELECT row_to_json(demands) FROM demands WHERE id = $1")
             .bind(&id)
@@ -332,6 +336,28 @@ where
             .await?
             .ok_or_else(|| crate::error::ApiError::BadRequest("外部需求不存在".to_string()))?;
 
+    if external.get("status").and_then(Value::as_str) != Some("pending") {
+        return Err(crate::error::ApiError::BadRequest(
+            "只有待接单的外部需求可以接单".to_string(),
+        ));
+    }
+
+    let enterprise_admin_id: Option<String> =
+        sqlx::query_scalar("SELECT admin_id FROM enterprises WHERE id = $1")
+            .bind(&body.enterprise_id)
+            .fetch_optional(&state.db)
+            .await?
+            .flatten();
+    let pickup_point_info = pickup_point_from_external(&external);
+    let delivery_points = delivery_points_from_external(&external, &id);
+    let cargo_info = cargo_info_from_external(&external);
+    let time_window = time_window_from_external(&external);
+    let vehicle_allocation = json!({
+        "vehicle_ids": body.vehicle_ids,
+        "allocated_at": UtcIso::now()
+    });
+
+    let mut tx = state.db.begin().await?;
     let enterprise_demand = sqlx::query_scalar::<_, Value>(
         r#"
         INSERT INTO enterprise_demands (
@@ -347,37 +373,182 @@ where
         "#,
     )
     .bind(&body.enterprise_id)
-    .bind(json!({
-        "name": external.pointer("/pickup_point/name").and_then(Value::as_str).unwrap_or("起点"),
-        "address": external.get("pickup_address").and_then(Value::as_str).unwrap_or("")
-    }))
-    .bind(
-        external
-            .get("delivery_points")
-            .cloned()
-            .unwrap_or_else(|| json!([])),
-    )
-    .bind(
-        external
-            .get("cargo_info")
-            .cloned()
-            .unwrap_or_else(|| json!({})),
-    )
-    .bind(json!({
-        "start": external.get("pickup_time_start").cloned().unwrap_or(Value::Null),
-        "end": external.get("pickup_time_end").cloned().unwrap_or(Value::Null)
-    }))
-    .bind(json!({ "vehicle_ids": body.vehicle_ids, "allocated_at": UtcIso::now() }))
+    .bind(pickup_point_info)
+    .bind(delivery_points)
+    .bind(cargo_info)
+    .bind(time_window)
+    .bind(&vehicle_allocation)
     .bind(&id)
-    .fetch_one(&state.db)
+    .fetch_one(&mut *tx)
     .await?;
 
-    sqlx::query("UPDATE demands SET status = 'accepted', updated_at = now() WHERE id = $1")
-        .bind(id)
-        .execute(&state.db)
-        .await?;
+    sqlx::query(
+        "UPDATE demands SET status = 'accepted', owner_id = $2, updated_at = now() WHERE id = $1",
+    )
+    .bind(&id)
+    .bind(enterprise_admin_id)
+    .execute(&mut *tx)
+    .await?;
+
+    let vehicle_ids = vehicle_allocation
+        .get("vehicle_ids")
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    sqlx::query(
+        "UPDATE vehicles SET trip_status = 'in_transit', updated_at = now() WHERE id = ANY($1)",
+    )
+    .bind(&vehicle_ids)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
 
     Ok(success(enterprise_demand))
+}
+
+fn pickup_point_from_external(external: &Value) -> Value {
+    if external
+        .get("pickup_point")
+        .and_then(Value::as_object)
+        .is_some_and(|point| !point.is_empty())
+    {
+        return external.get("pickup_point").cloned().unwrap_or(Value::Null);
+    }
+
+    json!({
+        "name": "起点",
+        "address": external.get("pickup_address").and_then(Value::as_str).unwrap_or(""),
+        "latitude": external.get("pickup_lat").cloned().unwrap_or(Value::Null),
+        "longitude": external.get("pickup_lng").cloned().unwrap_or(Value::Null)
+    })
+}
+
+fn delivery_points_from_external(external: &Value, demand_id: &str) -> Value {
+    let business_mode = business_mode_from_external(external);
+    let point_type = if business_mode == "community_group_buy" {
+        "community_leader"
+    } else {
+        "terminal"
+    };
+
+    if let Some(points) = external.get("delivery_points").and_then(Value::as_array) {
+        if !points.is_empty() {
+            let normalized = points
+                .iter()
+                .enumerate()
+                .map(|(index, point)| {
+                    let mut object = point.as_object().cloned().unwrap_or_default();
+                    let default_name = object
+                        .get("address")
+                        .cloned()
+                        .unwrap_or_else(|| json!("收货点"));
+                    object
+                        .entry("stationId".to_string())
+                        .or_insert_with(|| json!(format!("external-{demand_id}-{}", index + 1)));
+                    object.entry("name".to_string()).or_insert(default_name);
+                    object
+                        .entry("pointType".to_string())
+                        .or_insert_with(|| json!(point_type));
+                    object
+                        .entry("businessMode".to_string())
+                        .or_insert_with(|| json!(business_mode.clone()));
+                    object
+                        .entry("status".to_string())
+                        .or_insert_with(|| json!("pending"));
+                    Value::Object(object)
+                })
+                .collect::<Vec<_>>();
+            return Value::Array(normalized);
+        }
+    }
+
+    json!([{
+        "stationId": format!("external-{demand_id}"),
+        "name": external.get("delivery_address").and_then(Value::as_str).unwrap_or("收货点"),
+        "address": external.get("delivery_address").and_then(Value::as_str).unwrap_or(""),
+        "latitude": external.get("delivery_lat").cloned().unwrap_or(Value::Null),
+        "longitude": external.get("delivery_lng").cloned().unwrap_or(Value::Null),
+        "pointType": point_type,
+        "businessMode": business_mode,
+        "status": "pending"
+    }])
+}
+
+fn cargo_info_from_external(external: &Value) -> Value {
+    let mut cargo_info = external
+        .get("cargo_info")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_else(Map::new);
+    let business_mode = business_mode_from_external(external);
+
+    cargo_info.entry("type".to_string()).or_insert_with(|| {
+        external
+            .get("cargo_name")
+            .cloned()
+            .unwrap_or_else(|| json!("货物"))
+    });
+    cargo_info
+        .entry("cargoType".to_string())
+        .or_insert_with(|| external.get("cargo_type").cloned().unwrap_or(Value::Null));
+    cargo_info
+        .entry("weight".to_string())
+        .or_insert_with(|| external.get("weight").cloned().unwrap_or(Value::Null));
+    cargo_info
+        .entry("volume".to_string())
+        .or_insert_with(|| external.get("volume").cloned().unwrap_or(Value::Null));
+    cargo_info
+        .entry("businessMode".to_string())
+        .or_insert_with(|| json!(business_mode.clone()));
+    cargo_info
+        .entry("businessModeLabel".to_string())
+        .or_insert_with(|| {
+            if business_mode == "community_group_buy" {
+                json!("社区团购")
+            } else {
+                json!("终端配送")
+            }
+        });
+
+    Value::Object(cargo_info)
+}
+
+fn time_window_from_external(external: &Value) -> Value {
+    if external
+        .get("time_window")
+        .and_then(Value::as_object)
+        .is_some_and(|time_window| !time_window.is_empty())
+    {
+        return external.get("time_window").cloned().unwrap_or(Value::Null);
+    }
+
+    json!({
+        "start": external
+            .get("pickup_time_start")
+            .or_else(|| external.get("pickup_time"))
+            .cloned()
+            .unwrap_or(Value::Null),
+        "end": external
+            .get("pickup_time_end")
+            .or_else(|| external.get("pickup_time"))
+            .cloned()
+            .unwrap_or(Value::Null)
+    })
+}
+
+fn business_mode_from_external(external: &Value) -> String {
+    external
+        .pointer("/cargo_info/businessMode")
+        .and_then(Value::as_str)
+        .unwrap_or("enterprise_terminal")
+        .to_string()
 }
 
 async fn update_delivery_points<S>(

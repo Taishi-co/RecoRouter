@@ -113,17 +113,15 @@ const EnterpriseOrderHallPage: FC = () => {
   }
 
   const handleConfirmAccept = async (vehicleId: string) => {
-    if (!selectedOrderId || !adminId) return
+    if (!selectedOrderId || !enterpriseId || !adminId) return
 
     try {
       const res = await Network.request({
-        url: `/api/demands/${selectedOrderId}/accept`,
+        url: `/api/demand/external/${selectedOrderId}/accept`,
         method: 'POST',
         data: {
-          ownerId: adminId,
-          vehicleId: vehicleId,
-          farePrice: 0, // 企业接单时费用可以为0或根据实际计算
-          note: '企业接单',
+          enterprise_id: enterpriseId,
+          vehicle_ids: [vehicleId],
         },
       })
 
@@ -157,6 +155,7 @@ const EnterpriseOrderHallPage: FC = () => {
       pending: '待接单',
       accepted: '已接单',
       in_progress: '进行中',
+      in_transit: '进行中',
       completed: '已完成',
       cancelled: '已取消',
     }
@@ -168,6 +167,7 @@ const EnterpriseOrderHallPage: FC = () => {
       pending: 'bg-yellow-500',
       accepted: 'bg-blue-500',
       in_progress: 'bg-green-500',
+      in_transit: 'bg-green-500',
       completed: 'bg-gray-500',
       cancelled: 'bg-red-500',
     }
