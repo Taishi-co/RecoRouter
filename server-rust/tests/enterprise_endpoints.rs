@@ -230,7 +230,8 @@ async fn enterprise_station_and_enterprise_vehicle_routes_match_legacy_shapes() 
             "address": "唐山市路北区",
             "location": { "lat": 39.63, "lng": 118.18 },
             "phone": "0315000000",
-            "customer_type": "external"
+            "customer_type": "external",
+            "point_type": "community_leader"
         }),
     )
     .await;
@@ -241,16 +242,60 @@ async fn enterprise_station_and_enterprise_vehicle_routes_match_legacy_shapes() 
         .unwrap()
         .starts_with("station-"));
     assert_eq!(station_body["data"]["customer_type"], "external");
+    assert_eq!(station_body["data"]["point_type"], "community_leader");
     let station_id = station_body["data"]["id"].as_str().unwrap().to_string();
 
     let (station_list_status, station_list_body) = get_json(
         &context.app,
-        &format!("/api/station?enterpriseId={enterprise_id}&keyword=路北&page=1&pageSize=10"),
+        &format!("/api/station?enterpriseId={enterprise_id}&keyword=路北&point_type=community_leader&page=1&pageSize=10"),
     )
     .await;
     assert_eq!(station_list_status, StatusCode::OK);
     assert_eq!(station_list_body["data"]["total"], 1);
     assert_eq!(station_list_body["data"]["list"][0]["id"], station_id);
+
+    let (terminal_list_status, terminal_list_body) = get_json(
+        &context.app,
+        &format!(
+            "/api/station?enterpriseId={enterprise_id}&point_type=terminal&page=1&pageSize=10"
+        ),
+    )
+    .await;
+    assert_eq!(terminal_list_status, StatusCode::OK);
+    assert_eq!(terminal_list_body["data"]["total"], 0);
+
+    let (invalid_station_list_status, invalid_station_list_body) = get_json(
+        &context.app,
+        &format!("/api/station?enterpriseId={enterprise_id}&point_type=milk_station"),
+    )
+    .await;
+    assert_eq!(invalid_station_list_status, StatusCode::OK);
+    assert_eq!(invalid_station_list_body["code"], 500);
+    assert_eq!(invalid_station_list_body["message"], "point_type 不合法");
+
+    let (invalid_station_status, invalid_station_body) = post_json(
+        &context.app,
+        "/api/station",
+        json!({
+            "enterpriseId": enterprise_id,
+            "name": "错误点位",
+            "address": "唐山市",
+            "point_type": "milk_station"
+        }),
+    )
+    .await;
+    assert_eq!(invalid_station_status, StatusCode::OK);
+    assert_eq!(invalid_station_body["code"], 500);
+    assert_eq!(invalid_station_body["message"], "point_type 不合法");
+
+    let (update_station_status, update_station_body) = put_json(
+        &context.app,
+        &format!("/api/station/{station_id}"),
+        json!({ "point_type": "terminal" }),
+    )
+    .await;
+    assert_eq!(update_station_status, StatusCode::OK);
+    assert_eq!(update_station_body["data"]["point_type"], "terminal");
 
     let (vehicle_status, vehicle_body) = post_json(
         &context.app,
@@ -793,10 +838,7 @@ async fn enterprise_delivery_point_state_guards_reject_invalid_transitions() {
     .await
     .expect("demand should fetch");
     assert_eq!(pending_demand["status"], "pending");
-    assert_eq!(
-        pending_demand["delivery_points"][0]["status"],
-        "pending"
-    );
+    assert_eq!(pending_demand["delivery_points"][0]["status"], "pending");
 
     let (allocate_status, _) = put_json(
         &context.app,
@@ -837,10 +879,7 @@ async fn enterprise_delivery_point_state_guards_reject_invalid_transitions() {
     .await
     .expect("guarded demand should fetch");
     assert_eq!(guarded_demand["status"], "in_transit");
-    assert_eq!(
-        guarded_demand["delivery_points"][0]["status"],
-        "pending"
-    );
+    assert_eq!(guarded_demand["delivery_points"][0]["status"], "pending");
 
     let vehicle_status: String =
         sqlx::query_scalar("SELECT trip_status FROM vehicles WHERE id = 'guard-v1'")

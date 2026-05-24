@@ -343,6 +343,7 @@ CREATE TABLE IF NOT EXISTS dairy_stations (
   location jsonb,
   phone text,
   customer_type text DEFAULT 'owned',
+  point_type text DEFAULT 'terminal',
   status text DEFAULT 'active',
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz
@@ -386,8 +387,6 @@ CREATE INDEX IF NOT EXISTS dairy_stations_status_idx ON dairy_stations(status);
 CREATE INDEX IF NOT EXISTS enterprise_demands_enterprise_id_idx ON enterprise_demands(enterprise_id);
 CREATE INDEX IF NOT EXISTS enterprise_demands_status_idx ON enterprise_demands(status);
 CREATE INDEX IF NOT EXISTS enterprise_demands_created_at_idx ON enterprise_demands(created_at);
-CREATE INDEX IF NOT EXISTS enterprise_demands_external_demand_id_idx ON enterprise_demands(external_demand_id);
-CREATE INDEX IF NOT EXISTS vehicles_enterprise_dispatch_idx ON vehicles(enterprise_id, usage_mode, status, trip_status);
 
 ALTER TABLE IF EXISTS demands ADD COLUMN IF NOT EXISTS route_type text;
 ALTER TABLE IF EXISTS demands ADD COLUMN IF NOT EXISTS time_window jsonb;
@@ -419,14 +418,28 @@ ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS rent_end_date timestampt
 ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS rent_type text;
 ALTER TABLE IF EXISTS vehicles ADD COLUMN IF NOT EXISTS rental_notes text;
 
+CREATE INDEX IF NOT EXISTS vehicles_enterprise_dispatch_idx ON vehicles(enterprise_id, usage_mode, status, trip_status);
+
 ALTER TABLE IF EXISTS orders ADD COLUMN IF NOT EXISTS calculated_fare numeric;
 ALTER TABLE IF EXISTS orders ADD COLUMN IF NOT EXISTS fare_calculation_detail jsonb;
 ALTER TABLE IF EXISTS orders ADD COLUMN IF NOT EXISTS is_custom_fare boolean DEFAULT true;
 
 ALTER TABLE IF EXISTS dairy_stations ADD COLUMN IF NOT EXISTS customer_type text DEFAULT 'owned';
+ALTER TABLE IF EXISTS dairy_stations ADD COLUMN IF NOT EXISTS point_type text DEFAULT 'terminal';
 
 ALTER TABLE IF EXISTS enterprise_demands ADD COLUMN IF NOT EXISTS external_demand_id text;
 ALTER TABLE IF EXISTS enterprise_demands ADD COLUMN IF NOT EXISTS remark text;
+
+CREATE INDEX IF NOT EXISTS enterprise_demands_external_demand_id_idx ON enterprise_demands(external_demand_id);
+
+UPDATE dairy_stations
+SET point_type = 'terminal',
+    updated_at = now()
+WHERE point_type IS NULL
+   OR point_type NOT IN ('terminal', 'community_leader');
+
+CREATE INDEX IF NOT EXISTS dairy_stations_point_type_idx ON dairy_stations(point_type);
+CREATE INDEX IF NOT EXISTS dairy_stations_enterprise_point_type_idx ON dairy_stations(enterprise_id, point_type, status);
 
 UPDATE enterprise_demands
 SET vehicle_source = 'internal',

@@ -19,10 +19,12 @@ interface Station {
   address: string
   phone: string
   customer_type?: 'owned' | 'external'
+  point_type?: PointType
 }
 
 type BusinessMode = 'enterprise_terminal' | 'community_group_buy'
 type VehicleSource = 'internal' | 'external' | 'mixed'
+type PointType = 'terminal' | 'community_leader'
 
 const EnterprisePublishPage: FC = () => {
   const [enterpriseId, setEnterpriseId] = useState('')
@@ -67,6 +69,8 @@ const EnterprisePublishPage: FC = () => {
   ]
   const currentMode = businessModeOptions.find(option => option.value === businessMode)
   const deliveryPointLabel = businessMode === 'community_group_buy' ? '社区团长' : '终端点'
+  const pointTypeForMode = (mode: BusinessMode): PointType =>
+    mode === 'community_group_buy' ? 'community_leader' : 'terminal'
 
   useEffect(() => {
     loadEnterpriseInfo()
@@ -91,7 +95,7 @@ const EnterprisePublishPage: FC = () => {
           return
         }
         setEnterpriseId(entId)
-        loadStations(entId)
+        loadStations(entId, businessMode)
       } else {
         setErrorText(getApiMessage(enterpriseRes, '加载企业信息失败'))
       }
@@ -102,17 +106,18 @@ const EnterprisePublishPage: FC = () => {
     }
   }
 
-  const loadStations = async (entId: string) => {
+  const loadStations = async (entId: string, mode: BusinessMode = businessMode) => {
     try {
+      const expectedPointType = pointTypeForMode(mode)
       const res = await Network.request({
         url: '/api/station',
-        data: { enterpriseId: entId },
+        data: { enterpriseId: entId, point_type: expectedPointType },
       })
 
       if (isApiSuccess(res)) {
         // 后端返回格式为 { list: [], total: 0, page, pageSize }
         const data = getApiData<{ list?: Station[] }>(res, {})
-        setStations(data.list || [])
+        setStations((data.list || []).filter(station => !station.point_type || station.point_type === expectedPointType))
         setErrorText('')
       } else {
         setErrorText(getApiMessage(res, '加载点位失败'))
@@ -160,13 +165,14 @@ const EnterprisePublishPage: FC = () => {
     try {
       setSubmitting(true)
       const selectedStationObjs = stations.filter(s => selectedStations.includes(s.id))
+      const expectedPointType = pointTypeForMode(businessMode)
       const deliveryPoints = selectedStationObjs.map(s => ({
         stationId: s.id,
         name: s.name,
         address: s.address,
         contact: s.name,
         phone: s.phone,
-        pointType: businessMode === 'community_group_buy' ? 'community_leader' : 'terminal',
+        pointType: s.point_type || expectedPointType,
         businessMode,
         status: 'pending',
       }))
@@ -253,6 +259,9 @@ const EnterprisePublishPage: FC = () => {
                   onClick={() => {
                     setBusinessMode(option.value)
                     setSelectedStations([])
+                    if (enterpriseId) {
+                      loadStations(enterpriseId, option.value)
+                    }
                   }}
                 >
                   <View>

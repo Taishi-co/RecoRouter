@@ -343,6 +343,7 @@ CREATE TABLE IF NOT EXISTS dairy_stations (
   location jsonb,
   phone text,
   customer_type text DEFAULT 'owned',
+  point_type text DEFAULT 'terminal',
   status text DEFAULT 'active',
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz

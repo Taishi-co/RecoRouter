@@ -231,7 +231,7 @@ const EnterpriseHomePage: FC = () => {
           </View>
           <View className="h-16" onClick={navigateToStations}>
             <Button className="w-full h-full" variant="outline">
-              <Text className="text-gray-900 text-sm">奶站管理</Text>
+              <Text className="text-gray-900 text-sm">配送点</Text>
             </Button>
           </View>
           <View className="h-16" onClick={navigateToDispatch}>
