@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { View, Text, ScrollView } from '@tarojs/components'
+import { useState, useEffect, useCallback } from 'react'
+import { View, Text, ScrollView, Image } from '@tarojs/components'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -99,11 +99,12 @@ export default function Index() {
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [verificationCode, setVerificationCode] = useState('')
+  const [captchaId, setCaptchaId] = useState('')
+  const [captchaCode, setCaptchaCode] = useState('')
+  const [captchaImage, setCaptchaImage] = useState('')
   const [name, setName] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
-  const [smsLoading, setSmsLoading] = useState(false)
-  const [smsCountdown, setSmsCountdown] = useState(0)
+  const [captchaLoading, setCaptchaLoading] = useState(false)
 
   useEffect(() => {
     setCurrentUser(getStoredAuthUser())
@@ -154,67 +155,41 @@ export default function Index() {
     }
   }
 
-  const handleSendRegisterCode = async () => {
-    if (!/^1[3-9]\d{9}$/.test(phone)) {
-      Taro.showToast({
-        title: '手机号格式不正确',
-        icon: 'none'
-      })
-      return
-    }
-
-    setSmsLoading(true)
+  const loadRegisterCaptcha = useCallback(async () => {
+    setCaptchaLoading(true)
 
     try {
       const res = await Network.request({
-        url: '/api/account-settings/send-sms-code',
-        method: 'POST',
-        data: {
-          phone,
-          type: 'register'
-        }
+        url: '/api/auth/captcha',
+        method: 'GET'
       })
 
-      if (res.data.code === 200) {
-        Taro.showToast({
-          title: '验证码已发送',
-          icon: 'success'
-        })
-
-        if (res.data.data?.code) {
-          Taro.showModal({
-            title: '测试验证码',
-            content: `验证码：${res.data.data.code}`,
-            showCancel: false
-          })
-        }
-
-        setSmsCountdown(60)
-        const timer = setInterval(() => {
-          setSmsCountdown((prev) => {
-            if (prev <= 1) {
-              clearInterval(timer)
-              return 0
-            }
-            return prev - 1
-          })
-        }, 1000)
+      if (res.data.code === 200 && res.data.data?.captchaId && res.data.data?.image) {
+        setCaptchaId(res.data.data.captchaId)
+        setCaptchaImage(res.data.data.image)
+        setCaptchaCode('')
       } else {
         Taro.showToast({
-          title: res.data.message || '验证码发送失败',
+          title: res.data.message || '验证码加载失败',
           icon: 'none'
         })
       }
     } catch (error) {
-      console.error('发送验证码失败:', error)
+      console.error('加载图形验证码失败:', error)
       Taro.showToast({
-        title: '验证码发送失败',
+        title: '验证码加载失败',
         icon: 'none'
       })
     } finally {
-      setSmsLoading(false)
+      setCaptchaLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    if (showAuthDialog && mode === 'register' && step === 'form') {
+      void loadRegisterCaptcha()
+    }
+  }, [loadRegisterCaptcha, mode, showAuthDialog, step])
 
   const handleSubmit = async () => {
     if (!phone || !password) {
@@ -234,9 +209,9 @@ export default function Index() {
         return
       }
 
-      if (!verificationCode) {
+      if (!captchaId || !captchaCode) {
         Taro.showToast({
-          title: '请输入验证码',
+          title: '请输入图形验证码',
           icon: 'none'
         })
         return
@@ -291,7 +266,7 @@ export default function Index() {
         const res = await Network.request({
           url: '/api/auth/register',
           method: 'POST',
-          data: { phone, password, confirmPassword, verificationCode, name, role }
+          data: { phone, password, confirmPassword, captchaId, captchaCode, name, role }
         })
 
         if (res.data.code === 200) {
@@ -311,6 +286,7 @@ export default function Index() {
             title: res.data.message || '注册失败',
             icon: 'none'
           })
+          void loadRegisterCaptcha()
         }
       }
     } catch (error) {
@@ -675,29 +651,40 @@ export default function Index() {
               {mode === 'register' && (
                 <View className="mb-4">
                   <Label className="block text-sm font-medium mb-2">
-                    <Text className="text-red-500">*</Text>验证码
+                    <Text className="text-red-500">*</Text>图形验证码
                   </Label>
-                  <View className="flex gap-2">
+                  <View className="flex gap-2 items-center">
                     <Input
                       className="flex-1 bg-gray-50"
-                      placeholder="请输入验证码"
-                      type="number"
-                      value={verificationCode}
-                      onInput={(e) => setVerificationCode(e.detail.value)}
+                      placeholder="请输入图形验证码"
+                      value={captchaCode}
+                      onInput={(e) => setCaptchaCode(e.detail.value.toUpperCase())}
                       maxlength={6}
                     />
                     <Button
                       size="sm"
-                      className="px-4"
-                      variant={smsCountdown > 0 ? 'outline' : 'default'}
-                      disabled={smsCountdown > 0 || smsLoading}
-                      onClick={handleSendRegisterCode}
+                      className="h-10 px-2"
+                      variant="outline"
+                      disabled={captchaLoading}
+                      onClick={loadRegisterCaptcha}
                     >
-                      <Text className="text-sm">
-                        {smsCountdown > 0 ? `${smsCountdown}秒` : '获取验证码'}
-                      </Text>
+                      {captchaImage ? (
+                        <Image
+                          src={captchaImage}
+                          mode="aspectFit"
+                          className="w-28 h-8"
+                        />
+                      ) : (
+                        <Text className="text-xs">加载中</Text>
+                      )}
                     </Button>
                   </View>
+                  <Text
+                    className="block text-xs text-blue-500 mt-2"
+                    onClick={loadRegisterCaptcha}
+                  >
+                    刷新验证码
+                  </Text>
                 </View>
               )}
 

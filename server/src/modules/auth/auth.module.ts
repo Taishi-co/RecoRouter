@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common'
 import { MulterModule } from '@nestjs/platform-express'
 import { AuthService } from './auth.service'
 import { AuthController } from './auth.controller'
+import { CaptchaService } from './captcha.service'
 
 @Module({
   imports: [
@@ -12,7 +13,7 @@ import { AuthController } from './auth.controller'
     })
   ],
   controllers: [AuthController],
-  providers: [AuthService],
+  providers: [AuthService, CaptchaService],
   exports: [AuthService]
 })
 export class AuthModule {}
