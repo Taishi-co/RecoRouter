@@ -21,7 +21,23 @@ interface UserInfo {
   phone: string
   name: string
   role: string
+  token?: string
   avatar_url?: string
+  switchTime?: string
+}
+
+const persistSwitchedUserInfo = (nextUserInfo: UserInfo, currentUser: UserInfo) => {
+  const token = nextUserInfo.token || currentUser.token || Taro.getStorageSync('token') || currentUser.id
+  const normalizedUserInfo = {
+    ...currentUser,
+    ...nextUserInfo,
+    token: token
+  }
+
+  Taro.setStorageSync('userInfo', normalizedUserInfo)
+  Taro.setStorageSync('token', token)
+
+  return normalizedUserInfo
 }
 
 export default function RoleSwitch() {
@@ -113,8 +129,7 @@ export default function RoleSwitch() {
 
       if (res.data && res.data.code === 200) {
         // ✅ 强制更新 storage 中的完整用户信息
-        const updatedUserInfo = res.data.data
-        Taro.setStorageSync('userInfo', updatedUserInfo)
+        const updatedUserInfo = persistSwitchedUserInfo(res.data.data, currentUser)
 
         // ✅ 记录角色切换时间（用于调试）
         Taro.setStorageSync('lastRoleSwitchTime', new Date().toISOString())

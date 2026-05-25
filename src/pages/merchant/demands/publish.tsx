@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Route, BookOpen, MapPin, Check } from 'lucide-react-taro'
-import Taro from '@tarojs/taro'
+import Taro, { useDidShow } from '@tarojs/taro'
 import { Network } from '@/network'
 
 interface FormData {
@@ -49,6 +49,7 @@ interface FavoriteRoute {
 
 export default function PublishDemand() {
   const [loading, setLoading] = useState(false)
+  const [uploadingPhotos, setUploadingPhotos] = useState(false)
   const [formData, setFormData] = useState<FormData>({
     cargo_name: '',
     cargo_type: 'normal',
@@ -191,6 +192,10 @@ export default function PublishDemand() {
   useEffect(() => {
     loadAddressData()
   }, [])
+
+  useDidShow(() => {
+    loadAddressData()
+  })
 
   const loadAddressData = async () => {
     try {
@@ -371,6 +376,12 @@ export default function PublishDemand() {
 
   // 选择货品照片（拍照或从相册选择）
   const handleChoosePhotos = async () => {
+    if (uploadingPhotos) {
+      return
+    }
+
+    let uploadStarted = false
+
     try {
       // 计算剩余可上传数量
       const remainingCount = 1 - formData.cargo_photos.length
@@ -390,6 +401,16 @@ export default function PublishDemand() {
       })
 
       console.log('[PublishDemand] 选择图片:', res.tempFilePaths)
+
+      if (res.tempFilePaths.length === 0) {
+        return
+      }
+
+      uploadStarted = true
+      setUploadingPhotos(true)
+      Taro.showLoading({
+        title: '上传中...'
+      })
 
       // 上传所有选中的图片
       const uploadPromises = res.tempFilePaths.map(async (tempFilePath) => {
@@ -433,10 +454,10 @@ export default function PublishDemand() {
       const successfulUploads = uploadResults.filter((url): url is string => url !== null)
 
       if (successfulUploads.length > 0) {
-        setFormData({
-          ...formData,
-          cargo_photos: [...formData.cargo_photos, ...successfulUploads]
-        })
+        setFormData((prev) => ({
+          ...prev,
+          cargo_photos: [...prev.cargo_photos, ...successfulUploads]
+        }))
 
         Taro.showToast({
           title: `成功上传 ${successfulUploads.length} 张图片`,
@@ -454,6 +475,11 @@ export default function PublishDemand() {
         title: '选择图片失败',
         icon: 'none'
       })
+    } finally {
+      if (uploadStarted) {
+        Taro.hideLoading()
+        setUploadingPhotos(false)
+      }
     }
   }
 
@@ -630,17 +656,17 @@ export default function PublishDemand() {
                   size="sm"
                   className="flex-1 bg-blue-500"
                   onClick={handleChoosePhotos}
-                  disabled={formData.cargo_photos.length >= 1}
+                  disabled={formData.cargo_photos.length >= 1 || uploadingPhotos}
                 >
                   <Text className="text-xs">
-                    {formData.cargo_photos.length >= 1 ? '已满' : '📷 拍照'}
+                    {uploadingPhotos ? '上传中...' : formData.cargo_photos.length >= 1 ? '已满' : '📷 拍照'}
                   </Text>
                 </Button>
                 <Button
                   size="sm"
                   className="flex-1 bg-purple-500"
                   onClick={handleAIAnalyze}
-                  disabled={formData.cargo_photos.length === 0 || loading}
+                  disabled={formData.cargo_photos.length === 0 || loading || uploadingPhotos}
                 >
                   <Text className="text-xs">🤖 AI分析</Text>
                 </Button>
