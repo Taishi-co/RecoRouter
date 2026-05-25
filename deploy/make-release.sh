@@ -15,14 +15,13 @@ if [[ "$TARGET_UNAME" != "Linux" && "${ALLOW_NON_LINUX_RELEASE:-}" != "1" ]]; th
 fi
 
 pnpm validate
-pnpm build:web
-(cd server-rust && cargo build --release)
+cargo build --manifest-path server/Cargo.toml --release --locked
 
 rm -rf "$OUT_DIR" "$OUT_TAR"
 mkdir -p "$OUT_DIR"
 
-cp server-rust/target/release/recorouter-api "$OUT_DIR/recorouter-api"
-cp -R dist-web "$OUT_DIR/dist-web"
+cp server/target/release/recorouter-api "$OUT_DIR/recorouter-api"
+cp -R server/migrations "$OUT_DIR/migrations"
 cp -R deploy "$OUT_DIR/deploy"
 
 tar -C "$OUT_DIR" -czf "$OUT_TAR" .

@@ -9,24 +9,22 @@ IMAGE_TAG="${IMAGE_TAG:-recorouter-api:release}"
 cd "$ROOT_DIR"
 
 pnpm validate
-pnpm build:web
 
 rm -rf "$OUT_DIR" "$OUT_TAR"
 mkdir -p "$OUT_DIR"
 
-cp -R dist-web "$OUT_DIR/dist-web"
 cp -R deploy "$OUT_DIR/deploy"
 
 if [[ "${BUILD_DOCKER_IMAGE:-0}" == "1" ]]; then
-  docker build -t "$IMAGE_TAG" server-rust
+  docker build -t "$IMAGE_TAG" server
   docker save "$IMAGE_TAG" -o "$OUT_DIR/recorouter-api-image.tar"
 elif [[ "${BUILD_RUST_BINARY:-0}" == "1" ]]; then
-  (cd server-rust && cargo build --release --locked)
-  cp server-rust/target/release/recorouter-api "$OUT_DIR/recorouter-api"
-  cp -R server-rust/migrations "$OUT_DIR/migrations"
+  cargo build --manifest-path server/Cargo.toml --release --locked
+  cp server/target/release/recorouter-api "$OUT_DIR/recorouter-api"
+  cp -R server/migrations "$OUT_DIR/migrations"
 else
-  cp -R server-rust "$OUT_DIR/server-rust"
-  rm -rf "$OUT_DIR/server-rust/target"
+  cp -R server "$OUT_DIR/server"
+  rm -rf "$OUT_DIR/server/target"
 fi
 
 tar -C "$OUT_DIR" -czf "$OUT_TAR" .

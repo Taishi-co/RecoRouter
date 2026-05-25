@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { View, Text, ScrollView } from '@tarojs/components'
+import { View, Text } from '@tarojs/components'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import Taro from '@tarojs/taro'
 import { Network } from '@/network'
 import { DollarSign, TrendingUp, CircleAlert } from 'lucide-react-taro'
@@ -96,48 +98,12 @@ export default function OwnerStats() {
   }
 
   return (
-    <View className="min-h-screen bg-background">
-      {/* 导航菜单 */}
-      <View className="bg-white shadow-sm sticky top-0 z-10">
-        <View className="px-4 py-3">
-          <View className="flex gap-2 overflow-x-auto">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/owner/demands/index' })}
-            >
-              <Text className="text-xs">接单大厅</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/owner/orders/index' })}
-            >
-              <Text className="text-xs">订单管理</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/owner/vehicles/index' })}
-            >
-              <Text className="text-xs">车辆管理</Text>
-            </Button>
-            <Button size="sm" className="bg-primary">
-              <Text className="text-xs">收益统计</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/owner/profile/index' })}
-            >
-              <Text className="text-xs">我的</Text>
-            </Button>
-          </View>
-        </View>
-      </View>
-
-      <ScrollView scrollY className="pb-4">
-        <View className="px-4 py-4">
+    <AppPageShell
+      title="运营统计"
+      subtitle="RecoRouter 运力端"
+      contentClassName="space-y-4"
+      bottom={<BottomNav type="owner" active="revenue" />}
+    >
           <Card className="bg-white rounded-lg shadow-sm mb-4">
             <CardHeader>
               <View className="flex justify-between items-center">
@@ -159,15 +125,15 @@ export default function OwnerStats() {
               ) : (
                 <View className="space-y-4">
                   {/* 收益统计 */}
-                  <Card className="bg-gradient-to-br from-accent to-indigo-100 rounded-lg border-primary">
+                  <Card className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border-blue-200">
                     <CardContent className="p-4">
                       <Text className="block text-sm font-semibold text-gray-700 mb-3">收入统计</Text>
                       <View className="grid grid-cols-3 gap-4">
                         <View className="text-center">
                           <View className="flex items-center justify-center mb-1">
-                            <DollarSign size={16} color="#0062ff" />
+                            <DollarSign size={16} color="#3b82f6" />
                           </View>
-                          <Text className="block text-lg font-bold text-primary">
+                          <Text className="block text-lg font-bold text-blue-600">
                             ¥{(revenueData.summary.totalFare || 0).toFixed(2)}
                           </Text>
                           <Text className="block text-xs text-gray-600">总运费</Text>
@@ -185,7 +151,7 @@ export default function OwnerStats() {
                           <View className="flex items-center justify-center mb-1">
                             <TrendingUp size={16} color="#10b981" />
                           </View>
-                          <Text className="block text-lg font-bold text-emerald-600">
+                          <Text className="block text-lg font-bold text-green-600">
                             ¥{(revenueData.summary.netRevenue || 0).toFixed(2)}
                           </Text>
                           <Text className="block text-xs text-gray-600">净收益</Text>
@@ -195,24 +161,24 @@ export default function OwnerStats() {
                   </Card>
 
                   {/* 订单统计 */}
-                  <Card className="bg-emerald-50 rounded-lg border-green-200">
+                  <Card className="bg-green-50 rounded-lg border-green-200">
                     <CardContent className="p-4">
                       <Text className="block text-sm font-semibold text-gray-700 mb-3">订单统计</Text>
                       <View className="grid grid-cols-3 gap-4">
                         <View className="text-center">
-                          <Text className="block text-2xl font-bold text-emerald-600 mb-1">
+                          <Text className="block text-2xl font-bold text-green-600 mb-1">
                             {revenueData.summary.totalOrders}
                           </Text>
                           <Text className="block text-xs text-gray-600">完成订单</Text>
                         </View>
                         <View className="text-center">
-                          <Text className="block text-2xl font-bold text-primary mb-1">
+                          <Text className="block text-2xl font-bold text-blue-600 mb-1">
                             {revenueData.summary.paidOrders}
                           </Text>
                           <Text className="block text-xs text-gray-600">已收款</Text>
                         </View>
                         <View className="text-center">
-                          <Text className="block text-2xl font-bold text-amber-600 mb-1">
+                          <Text className="block text-2xl font-bold text-orange-600 mb-1">
                             {revenueData.summary.pendingPaymentOrders}
                           </Text>
                           <Text className="block text-xs text-gray-600">待收款</Text>
@@ -246,7 +212,7 @@ export default function OwnerStats() {
               <CardContent>
                 <View className="space-y-3">
                   {revenueData.revenueList.map((item) => (
-                    <Card key={item.id} className="bg-muted rounded-lg border border-border">
+                    <Card key={item.id} className="bg-gray-50 rounded-lg border border-gray-200">
                       <CardContent className="p-3">
                         <View className="flex justify-between items-start mb-2">
                           <View className="flex-1">
@@ -261,14 +227,14 @@ export default function OwnerStats() {
                           <View className="text-right">
                             <Text
                               className={`block text-sm font-bold ${
-                                item.paymentStatus === 'paid' ? 'text-emerald-600' : 'text-amber-600'
+                                item.paymentStatus === 'paid' ? 'text-green-600' : 'text-orange-600'
                               }`}
                             >
                               ¥{item.netIncome.toFixed(2)}
                             </Text>
                             <Text
                               className={`text-xs ${
-                                item.paymentStatus === 'paid' ? 'text-emerald-500' : 'text-amber-500'
+                                item.paymentStatus === 'paid' ? 'text-green-500' : 'text-orange-500'
                               }`}
                             >
                               {getPaymentStatusText(item.paymentStatus)}
@@ -287,8 +253,6 @@ export default function OwnerStats() {
               </CardContent>
             </Card>
           )}
-        </View>
-      </ScrollView>
-    </View>
+    </AppPageShell>
   )
 }

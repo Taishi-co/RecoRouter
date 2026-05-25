@@ -4,6 +4,8 @@ import Taro, { useDidShow } from '@tarojs/taro'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import { Network } from '@/network'
 
 // 平台检测：判断是否在小程序环境
@@ -22,6 +24,33 @@ interface VehicleLocation {
   mileage: number
   timestamp: string
 }
+
+const demoVehicleLocations: VehicleLocation[] = [
+  {
+    id: '沪A·D2688',
+    manufacturer: 'neolix',
+    latitude: 31.4053,
+    longitude: 121.4890,
+    speed: 32.5,
+    heading: 86,
+    status: 'online',
+    battery: 78,
+    mileage: 126.4,
+    timestamp: '2026-05-26T08:30:00+10:00',
+  },
+  {
+    id: '苏E·A9156',
+    manufacturer: 'ninebot',
+    latitude: 31.2989,
+    longitude: 120.5853,
+    speed: 0,
+    heading: 12,
+    status: 'idle',
+    battery: 91,
+    mileage: 88.2,
+    timestamp: '2026-05-26T08:35:00+10:00',
+  },
+]
 
 export default function VehicleMap() {
   const [vehicles, setVehicles] = useState<VehicleLocation[]>([])
@@ -120,14 +149,14 @@ export default function VehicleMap() {
   // 获取状态对应的颜色
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      idle: 'bg-primary',
-      running: 'bg-emerald-500',
-      delivering: 'bg-emerald-500',
-      charging: 'bg-amber-500',
-      maintenance: 'bg-amber-500',
+      idle: 'bg-blue-500',
+      running: 'bg-green-500',
+      delivering: 'bg-green-500',
+      charging: 'bg-yellow-500',
+      maintenance: 'bg-orange-500',
       error: 'bg-red-500',
     }
-    return colors[status] || 'bg-slate-500'
+    return colors[status] || 'bg-gray-500'
   }
 
   // 获取状态文本
@@ -152,8 +181,10 @@ export default function VehicleMap() {
     return names[manufacturer] || manufacturer
   }
 
+  const mapVehicles = vehicles.length > 0 ? vehicles : demoVehicleLocations
+
   // 生成地图标记点
-  const markers = vehicles.map((vehicle, index) => ({
+  const markers = mapVehicles.map((vehicle, index) => ({
     id: index, // 使用数字索引作为id
     latitude: vehicle.latitude,
     longitude: vehicle.longitude,
@@ -179,7 +210,7 @@ export default function VehicleMap() {
   }))
 
   // 生成车辆轨迹线
-  const polylines = vehicles
+  const polylines = mapVehicles
     .map((vehicle) => {
       const trajectory = trajectories[vehicle.id]
       if (!trajectory || trajectory.length < 2) return null
@@ -200,7 +231,7 @@ export default function VehicleMap() {
   // 点击标记点
   const handleMarkerTap = (e: any) => {
     const markerIndex = e.detail.markerId
-    const vehicle = vehicles[markerIndex]
+    const vehicle = mapVehicles[markerIndex]
     if (vehicle) {
       setSelectedVehicle(vehicle)
     }
@@ -225,9 +256,14 @@ export default function VehicleMap() {
   }
 
   return (
-    <View className="min-h-screen bg-background">
+    <AppPageShell
+      title="车辆地图"
+      subtitle="RecoRouter 运力端"
+      contentClassName="space-y-3"
+      bottom={<BottomNav type="owner" active="map" />}
+    >
       {/* 地图区域 */}
-      <View className="relative w-full" style={{ height: '60vh' }}>
+      <View className="relative w-full h-72 rounded-2xl overflow-hidden bg-gray-200">
         {isMiniApp ? (
           // 小程序端：显示地图
           <Map
@@ -246,7 +282,7 @@ export default function VehicleMap() {
           />
         ) : (
           // H5端：显示降级提示
-          <View className="w-full h-full bg-muted flex items-center justify-center">
+          <View className="w-full h-full bg-gray-200 flex items-center justify-center">
             <View className="text-center px-4">
               <Text className="block text-lg font-semibold text-gray-700 mb-2">
                 地图功能仅在小程序中可用
@@ -255,7 +291,7 @@ export default function VehicleMap() {
                 H5 端暂不支持地图显示，请使用微信小程序或抖音小程序查看车辆实时位置
               </Text>
               <Button
-                className="bg-primary"
+                className="bg-blue-500"
                 onClick={loadVehicleLocations}
                 disabled={loading}
               >
@@ -289,13 +325,13 @@ export default function VehicleMap() {
         {/* 车辆数量提示 */}
         <View className="absolute top-4 left-4 bg-white bg-opacity-90 px-3 py-2 rounded-lg shadow">
           <Text className="text-xs text-gray-700">
-            {vehicles.length} 台车辆
+            {mapVehicles.length} 台车辆
           </Text>
         </View>
       </View>
 
       {/* 车辆列表区域 */}
-      <View className="px-4 py-4" style={{ height: '40vh', overflowY: 'auto' }}>
+      <View>
         <Card className="bg-white">
           <CardHeader>
             <CardTitle className="text-base font-semibold">
@@ -307,22 +343,25 @@ export default function VehicleMap() {
               <View className="text-center py-4">
                 <Text className="text-sm text-gray-500">加载中...</Text>
               </View>
-            ) : vehicles.length === 0 ? (
-              <View className="text-center py-4">
-                <Text className="text-sm text-gray-500">暂无车辆数据</Text>
-              </View>
             ) : (
               <View className="space-y-3">
-                {vehicles.map((vehicle) => (
+                {vehicles.length === 0 && (
+                  <View className="bg-blue-50 rounded-lg p-3">
+                    <Text className="block text-xs text-blue-700">
+                      暂无实时定位，以下为演示车辆热区
+                    </Text>
+                  </View>
+                )}
+                {mapVehicles.map((vehicle) => (
                   <View
                     key={vehicle.id}
-                    className="bg-muted rounded-lg p-3"
+                    className="bg-gray-50 rounded-lg p-3"
                     onClick={() => handleVehicleCardTap(vehicle)}
                   >
                     <View className="flex justify-between items-start mb-2">
                       <View className="flex-1">
                         <View className="flex items-center gap-2 mb-1">
-                          <Badge className={vehicle.manufacturer === 'neolix' ? 'bg-indigo-500' : 'bg-cyan-500'}>
+                          <Badge className={vehicle.manufacturer === 'neolix' ? 'bg-purple-500' : 'bg-cyan-500'}>
                             <Text className="text-white text-xs">
                               {getManufacturerName(vehicle.manufacturer)}
                             </Text>
@@ -373,11 +412,11 @@ export default function VehicleMap() {
 
       {/* 选中车辆详情弹窗 */}
       {selectedVehicle && (
-        <View className="fixed bottom-0 left-0 right-0 bg-white border-t border-border rounded-t-2xl shadow-lg p-4 z-50">
+        <View className="fixed bottom-24 left-0 right-0 bg-white border-t border-gray-200 rounded-t-2xl shadow-lg p-4 z-40">
           <View className="flex justify-between items-start mb-3">
             <View className="flex-1">
               <View className="flex items-center gap-2 mb-2">
-                <Badge className={selectedVehicle.manufacturer === 'neolix' ? 'bg-indigo-500' : 'bg-cyan-500'}>
+                <Badge className={selectedVehicle.manufacturer === 'neolix' ? 'bg-purple-500' : 'bg-cyan-500'}>
                   <Text className="text-white text-xs">
                     {getManufacturerName(selectedVehicle.manufacturer)}
                   </Text>
@@ -435,6 +474,6 @@ export default function VehicleMap() {
           </View>
         </View>
       )}
-    </View>
+    </AppPageShell>
   )
 }

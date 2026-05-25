@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { MapPin, Plus, Trash2, Building2, Star, House } from 'lucide-react-taro'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 
 interface Address {
   id: string
@@ -16,6 +18,36 @@ interface Address {
   address_type: string
   is_default: boolean
 }
+
+const demoAddresses: Address[] = [
+  {
+    id: 'demo-address-1',
+    address_name: '宝山钢贸园',
+    address: '上海市宝山区铁山路 588 号 3 号门',
+    latitude: 31.405221,
+    longitude: 121.489102,
+    address_type: 'work',
+    is_default: true,
+  },
+  {
+    id: 'demo-address-2',
+    address_name: '萧山中心仓',
+    address: '杭州市萧山区建设四路 1688 号 B 区',
+    latitude: 30.176124,
+    longitude: 120.26432,
+    address_type: 'other',
+    is_default: false,
+  },
+  {
+    id: 'demo-address-3',
+    address_name: '宁波北仑码头',
+    address: '宁波市北仑区港东大道 99 号',
+    latitude: 29.899118,
+    longitude: 121.844011,
+    address_type: 'other',
+    is_default: false,
+  },
+]
 
 export default function AddressBooks() {
   const [addresses, setAddresses] = useState<Address[]>([])
@@ -31,6 +63,8 @@ export default function AddressBooks() {
     showLocationInput: false
   })
   const [isMiniApp, setIsMiniApp] = useState(false)
+  const visibleAddresses = addresses.length > 0 ? addresses : demoAddresses
+  const isUsingDemoAddresses = addresses.length === 0
 
   useEffect(() => {
     const env = Taro.getEnv()
@@ -247,7 +281,7 @@ export default function AddressBooks() {
   const getAddressTypeIcon = (type: string) => {
     switch (type) {
       case 'home':
-        return <Building2 size={16} color="#0062ff" />
+        return <Building2 size={16} color="#3b82f6" />
       case 'work':
         return <Building2 size={16} color="#f59e0b" />
       default:
@@ -267,32 +301,20 @@ export default function AddressBooks() {
   }
 
   return (
-    <View className="min-h-screen bg-background pb-4">
-      {/* 顶部标题栏 */}
-      <View className="bg-white p-4 border-b">
-        <Text className="text-lg font-semibold text-center">地址簿</Text>
-      </View>
-
-      {/* 添加地址按钮 */}
-      {!showAddForm && (
-        <View className="p-4">
-          <Button
-            className="w-full bg-primary text-white"
-            onClick={() => setShowAddForm(true)}
-          >
-            <Plus size={20} color="#ffffff" className="mr-2" />
-            <Text>添加地址</Text>
-          </Button>
-        </View>
-      )}
-
+    <AppPageShell
+      title="地址簿"
+      subtitle="RecoRouter 商户小程序"
+      icon={MapPin}
+      contentClassName="space-y-3"
+      bottom={<BottomNav type="merchant" active="profile" />}
+    >
       {/* 添加地址表单 */}
       {showAddForm && (
-        <Card className="m-4">
+        <Card>
           <CardContent className="p-4 space-y-3">
             <View>
               <Text className="block text-sm font-medium mb-1">地址名称</Text>
-              <View className="bg-muted rounded px-3 py-2">
+              <View className="bg-gray-50 rounded px-3 py-2">
                 <Input
                   className="w-full bg-transparent"
                   placeholder="如：公司、家"
@@ -305,7 +327,7 @@ export default function AddressBooks() {
             <View>
               <Text className="block text-sm font-medium mb-1">详细地址</Text>
               <View className="flex gap-2">
-                <View className="flex-1 bg-muted rounded px-3 py-2">
+                <View className="flex-1 bg-gray-50 rounded px-3 py-2">
                   <Input
                     className="w-full bg-transparent"
                     placeholder="请输入详细地址"
@@ -315,7 +337,7 @@ export default function AddressBooks() {
                 </View>
                 <Button
                   size="sm"
-                  className="bg-primary px-3"
+                  className="bg-blue-500 px-3"
                   onClick={handleChooseLocation}
                 >
                   <Text className="text-xs">定位</Text>
@@ -330,9 +352,9 @@ export default function AddressBooks() {
             )}
 
             {formData.showLocationInput && (
-              <Card className="bg-accent border-primary">
+              <Card className="bg-blue-50 border-blue-200">
                 <CardContent className="p-3">
-                  <Text className="block text-sm font-medium text-primary mb-2">手动输入坐标（H5环境）</Text>
+                  <Text className="block text-sm font-medium text-blue-900 mb-2">手动输入坐标（H5环境）</Text>
                   <View className="flex gap-2 mb-2">
                     <View className="flex-1">
                       <Text className="block text-xs text-gray-600 mb-1">纬度</Text>
@@ -362,7 +384,7 @@ export default function AddressBooks() {
                   <View className="flex gap-2">
                     <Button
                       size="sm"
-                      className="flex-1 bg-emerald-500"
+                      className="flex-1 bg-green-500"
                       onClick={() => setFormData({ ...formData, showLocationInput: false })}
                     >
                       <Text className="text-xs">确认</Text>
@@ -385,21 +407,21 @@ export default function AddressBooks() {
               <View className="flex gap-2">
                 <Button
                   size="sm"
-                  className={`flex-1 ${formData.address_type === 'home' ? 'bg-primary text-white' : 'bg-muted'}`}
+                  className={`flex-1 ${formData.address_type === 'home' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
                   onClick={() => setFormData({ ...formData, address_type: 'home' })}
                 >
                   <House size={16} color={formData.address_type === 'home' ? '#ffffff' : '#6b7280'} />
                 </Button>
                 <Button
                   size="sm"
-                  className={`flex-1 ${formData.address_type === 'work' ? 'bg-amber-500 text-white' : 'bg-muted'}`}
+                  className={`flex-1 ${formData.address_type === 'work' ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}
                   onClick={() => setFormData({ ...formData, address_type: 'work' })}
                 >
                   <Building2 size={16} color={formData.address_type === 'work' ? '#ffffff' : '#6b7280'} />
                 </Button>
                 <Button
                   size="sm"
-                  className={`flex-1 ${formData.address_type === 'other' ? 'bg-slate-500 text-white' : 'bg-muted'}`}
+                  className={`flex-1 ${formData.address_type === 'other' ? 'bg-gray-500 text-white' : 'bg-gray-200'}`}
                   onClick={() => setFormData({ ...formData, address_type: 'other' })}
                 >
                   <MapPin size={16} color={formData.address_type === 'other' ? '#ffffff' : '#6b7280'} />
@@ -410,7 +432,7 @@ export default function AddressBooks() {
             <View className="flex items-center gap-2">
               <Button
                 size="sm"
-                className={`flex-1 ${formData.is_default ? 'bg-amber-500 text-white' : 'bg-muted'}`}
+                className={`flex-1 ${formData.is_default ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}
                 onClick={() => setFormData({ ...formData, is_default: !formData.is_default })}
               >
                 <Star size={16} color={formData.is_default ? '#ffffff' : '#6b7280'} />
@@ -440,7 +462,7 @@ export default function AddressBooks() {
               </Button>
               <Button
                 size="sm"
-                className="flex-1 bg-emerald-500"
+                className="flex-1 bg-green-500"
                 onClick={handleAddAddress}
                 disabled={loading}
               >
@@ -452,8 +474,8 @@ export default function AddressBooks() {
       )}
 
       {/* 地址列表 */}
-      <View className="px-4 space-y-3">
-        {addresses.map((address) => (
+      <View className="space-y-3">
+        {visibleAddresses.map((address) => (
           <Card key={address.id} className="border-2">
             <CardContent className="p-4">
               <View className="flex items-start justify-between mb-2">
@@ -465,7 +487,7 @@ export default function AddressBooks() {
                   )}
                 </View>
                 <View className="flex gap-1">
-                  {!address.is_default && (
+                  {!isUsingDemoAddresses && !address.is_default && (
                     <Button
                       size="sm"
                       className="bg-amber-500 px-2"
@@ -474,13 +496,15 @@ export default function AddressBooks() {
                       <Text className="text-xs">设为默认</Text>
                     </Button>
                   )}
-                  <Button
-                    size="sm"
-                    className="bg-red-500 px-2"
-                    onClick={() => handleDelete(address.id)}
-                  >
-                    <Trash2 size={14} color="#ffffff" />
-                  </Button>
+                  {!isUsingDemoAddresses && (
+                    <Button
+                      size="sm"
+                      className="bg-red-500 px-2"
+                      onClick={() => handleDelete(address.id)}
+                    >
+                      <Trash2 size={14} color="#ffffff" />
+                    </Button>
+                  )}
                 </View>
               </View>
 
@@ -495,14 +519,24 @@ export default function AddressBooks() {
           </Card>
         ))}
 
-        {addresses.length === 0 && !showAddForm && (
+        {visibleAddresses.length === 0 && !showAddForm && (
           <View className="flex flex-col items-center justify-center py-12">
             <MapPin size={48} color="#d1d5db" />
             <Text className="text-gray-400 mt-4">暂无地址</Text>
-            <Text className="text-gray-400 text-sm mt-1">点击上方按钮添加地址</Text>
+            <Text className="text-gray-400 text-sm mt-1">点击底部按钮添加地址</Text>
           </View>
         )}
       </View>
-    </View>
+
+      {!showAddForm && (
+        <Button
+          className="w-full bg-blue-500 text-white"
+          onClick={() => setShowAddForm(true)}
+        >
+          <Plus size={20} color="#FFFFFF" className="mr-2" />
+          <Text className="text-white">新增地址</Text>
+        </Button>
+      )}
+    </AppPageShell>
   )
 }

@@ -7,7 +7,9 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Car, Calendar, DollarSign, Info, ArrowLeft } from 'lucide-react-taro'
+import { Car, Calendar, DollarSign, Info, BadgeDollarSign } from 'lucide-react-taro'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import { Network } from '@/network'
 
 interface VehicleOwner {
@@ -50,6 +52,28 @@ interface CreateRentalRequest {
   renter_id: string
 }
 
+const demoRentalVehicle: Vehicle = {
+  id: 'demo-rental-1',
+  license_plate: '沪A·R8821',
+  vehicle_type: 'large_truck',
+  load_capacity: 32000,
+  volume: 62,
+  battery_life: 420,
+  has_cold_chain: false,
+  photos: [],
+  owners: {
+    id: 'demo-owner-1',
+    name: '上海锐驰车队',
+    phone: '13800001234',
+  },
+  is_available_for_rent: true,
+  rent_monthly_price: 22800,
+  rent_yearly_price: 246000,
+  rent_deposit: 5000,
+  contact_phone: '13800001234',
+  contact_wechat: 'recocar-demo',
+}
+
 export default function VehicleRentalsDetail() {
   const router = useRouter()
   const { vehicleId } = router.params
@@ -71,6 +95,8 @@ export default function VehicleRentalsDetail() {
 
     if (vehicleId) {
       loadVehicleDetail()
+    } else {
+      setVehicle(demoRentalVehicle)
     }
   }, [vehicleId])
 
@@ -92,6 +118,7 @@ export default function VehicleRentalsDetail() {
       if (res.data.code === 200) {
         setVehicle(res.data.data)
       } else {
+        setVehicle(demoRentalVehicle)
         Taro.showToast({
           title: res.data.message || '加载失败',
           icon: 'none'
@@ -99,6 +126,7 @@ export default function VehicleRentalsDetail() {
       }
     } catch (error) {
       console.error('加载车辆详情失败:', error)
+      setVehicle(demoRentalVehicle)
       Taro.showToast({
         title: '加载失败，请重试',
         icon: 'none'
@@ -291,46 +319,53 @@ export default function VehicleRentalsDetail() {
 
   if (loading && !vehicle) {
     return (
-      <View className="min-h-screen bg-background flex items-center justify-center">
-        <Text className="block text-gray-500">加载中...</Text>
-      </View>
+      <AppPageShell
+        title="租赁详情"
+        subtitle="RecoRouter 商户小程序"
+        icon={BadgeDollarSign}
+        bottom={<BottomNav type="merchant" active="profile" />}
+      >
+        <View className="flex items-center justify-center py-12">
+          <Text className="block text-gray-500">加载中...</Text>
+        </View>
+      </AppPageShell>
     )
   }
 
   if (!vehicle) {
     return (
-      <View className="min-h-screen bg-background flex items-center justify-center">
-        <Text className="block text-gray-500">车辆不存在</Text>
-      </View>
+      <AppPageShell
+        title="租赁详情"
+        subtitle="RecoRouter 商户小程序"
+        icon={BadgeDollarSign}
+        bottom={<BottomNav type="merchant" active="profile" />}
+      >
+        <View className="flex items-center justify-center py-12">
+          <Text className="block text-gray-500">车辆不存在</Text>
+        </View>
+      </AppPageShell>
     )
   }
 
   return (
-    <View className="min-h-screen bg-background pb-4">
-      {/* 头部 */}
-      <View className="bg-white p-4 border-b border-border">
-        <View className="flex items-center">
-          <ArrowLeft
-            size={20}
-            color="#0062ff"
-            className="mr-3 cursor-pointer"
-            onClick={() => Taro.navigateBack()}
-          />
-          <Text className="text-lg font-bold text-gray-900">车辆详情</Text>
-        </View>
-      </View>
-
+    <AppPageShell
+      title="租赁详情"
+      subtitle="RecoRouter 商户小程序"
+      icon={BadgeDollarSign}
+      contentClassName="space-y-3"
+      bottom={<BottomNav type="merchant" active="profile" />}
+    >
       {/* 提示信息 */}
-      <View className="mx-4 mt-4 p-3 bg-accent rounded-lg">
+      <View className="p-3 bg-blue-50 rounded-lg">
         <View className="flex items-start">
-          <Info size={16} color="#0062ff" className="mr-2 flex-shrink-0 mt-1" />
-          <Text className="block text-sm text-primary">
+          <Info size={16} color="#1890ff" className="mr-2 flex-shrink-0 mt-1" />
+          <Text className="block text-sm text-blue-700">
             确认租赁前，请先与车主线下联系，商谈租赁细节并签订合同。
           </Text>
         </View>
       </View>
 
-      <View className="mx-4 mt-4 space-y-4">
+      <View className="space-y-4">
         {/* 车辆基本信息 */}
         <Card>
           <CardHeader className="pb-3">
@@ -353,7 +388,7 @@ export default function VehicleRentalsDetail() {
             </View>
             {vehicle.has_cold_chain && (
               <View className="mt-2">
-                <Badge className="bg-primary">冷链</Badge>
+                <Badge className="bg-blue-500">冷链</Badge>
               </View>
             )}
           </CardContent>
@@ -427,7 +462,7 @@ export default function VehicleRentalsDetail() {
           </Button>
         </View>
         {hasApplied && (
-          <View className="mt-3 p-3 bg-amber-50 rounded-lg">
+          <View className="mt-3 p-3 bg-orange-50 rounded-lg">
             <Text className="block text-sm text-orange-700">
               {applicationStatus === 'pending'
                 ? '您已申请该车辆，请等待车主确认'
@@ -449,13 +484,13 @@ export default function VehicleRentalsDetail() {
               <View className="flex gap-4 mt-2">
                 <View
                   className={`flex-1 p-3 border rounded-lg ${
-                    rentalType === 'monthly' ? 'border-primary bg-accent' : 'border-border'
+                    rentalType === 'monthly' ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
                   }`}
                   onClick={() => setRentalType('monthly')}
                 >
                   <Text
                     className={`block text-sm font-medium ${
-                      rentalType === 'monthly' ? 'text-primary' : 'text-gray-700'
+                      rentalType === 'monthly' ? 'text-blue-600' : 'text-gray-700'
                     }`}
                   >
                     月租
@@ -466,13 +501,13 @@ export default function VehicleRentalsDetail() {
                 </View>
                 <View
                   className={`flex-1 p-3 border rounded-lg ${
-                    rentalType === 'yearly' ? 'border-primary bg-accent' : 'border-border'
+                    rentalType === 'yearly' ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
                   }`}
                   onClick={() => setRentalType('yearly')}
                 >
                   <Text
                     className={`block text-sm font-medium ${
-                      rentalType === 'yearly' ? 'text-primary' : 'text-gray-700'
+                      rentalType === 'yearly' ? 'text-blue-600' : 'text-gray-700'
                     }`}
                   >
                     年租
@@ -490,7 +525,7 @@ export default function VehicleRentalsDetail() {
                 value={rentStartDate}
                 onChange={handleStartDateChange}
               >
-                <View className="mt-2 bg-muted rounded-lg px-4 py-3 border border-border flex items-center justify-between">
+                <View className="mt-2 bg-gray-50 rounded-lg px-4 py-3 border border-gray-200 flex items-center justify-between">
                   <Text className="block text-sm text-gray-900">
                     {rentStartDate || '请选择开始日期'}
                   </Text>
@@ -505,7 +540,7 @@ export default function VehicleRentalsDetail() {
                 value={rentEndDate}
                 onChange={handleEndDateChange}
               >
-                <View className="mt-2 bg-muted rounded-lg px-4 py-3 border border-border flex items-center justify-between">
+                <View className="mt-2 bg-gray-50 rounded-lg px-4 py-3 border border-gray-200 flex items-center justify-between">
                   <Text className="block text-sm text-gray-900">
                     {rentEndDate || '请选择结束日期'}
                   </Text>
@@ -523,7 +558,7 @@ export default function VehicleRentalsDetail() {
                 maxlength={200}
               />
             </View>
-            <View className="p-3 bg-muted rounded-lg">
+            <View className="p-3 bg-gray-50 rounded-lg">
               <Text className="block text-xs text-gray-600">
                 确认租赁前，请确保已与车主线下联系，商谈租赁细节并签订合同。
               </Text>
@@ -542,6 +577,6 @@ export default function VehicleRentalsDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </View>
+    </AppPageShell>
   )
 }

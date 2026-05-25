@@ -3,7 +3,9 @@ import Taro from '@tarojs/taro'
 import { View, Text, Image } from '@tarojs/components'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, User, Phone, Lock, LogOut } from 'lucide-react-taro'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
+import { User, Phone, Lock, LogOut } from 'lucide-react-taro'
 import { Network } from '@/network'
 
 interface UserInfo {
@@ -44,10 +46,6 @@ export default function AccountSettings() {
     } finally {
       setLoading(false)
     }
-  }
-
-  const handleBack = () => {
-    Taro.navigateBack()
   }
 
   const handleNavigate = (url: string) => {
@@ -100,36 +98,35 @@ export default function AccountSettings() {
 
   if (loading) {
     return (
-      <View className="min-h-screen bg-background flex items-center justify-center">
+      <AppPageShell
+        title="账户设置"
+        subtitle="RecoRouter 运力端"
+        bottom={<BottomNav type="owner" active="profile" />}
+      >
         <Text className="text-gray-500">加载中...</Text>
-      </View>
+      </AppPageShell>
     )
   }
 
   return (
-    <View className="min-h-screen bg-background">
-      {/* 顶部导航栏 */}
-      <View className="bg-white p-4 border-b flex items-center">
-        <View onClick={handleBack} className="flex items-center gap-2">
-          <ArrowLeft size={24} color="#6b7280" />
-          <Text className="text-base font-medium">返回</Text>
-        </View>
-        <Text className="flex-1 text-center text-base font-semibold">账号设置</Text>
-        <View style={{ width: 60 }} />
-      </View>
-
+    <AppPageShell
+      title="账户设置"
+      subtitle="RecoRouter 运力端"
+      contentClassName="space-y-4"
+      bottom={<BottomNav type="owner" active="profile" />}
+    >
       {/* 用户信息卡片 */}
-      <Card className="m-4">
+      <Card>
         <CardContent className="p-4">
           <View className="flex items-center gap-4">
-            <View className="w-16 h-16 rounded-full bg-accent flex items-center justify-center">
+            <View className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center">
               {userInfo?.avatar_url ? (
                 <Image
                   src={userInfo.avatar_url}
                   className="w-16 h-16 rounded-full"
                 />
               ) : (
-                <User size={32} color="#0062ff" />
+                <User size={32} color="#3b82f6" />
               )}
             </View>
             <View className="flex-1">
@@ -146,15 +143,15 @@ export default function AccountSettings() {
       </Card>
 
       {/* 设置选项 */}
-      <Card className="m-4">
+      <Card>
         <CardContent className="p-0">
           {/* 手机号管理 */}
           <View
-            className="flex items-center justify-between px-4 py-4 border-b border-border active:bg-muted"
+            className="flex items-center justify-between px-4 py-4 border-b border-gray-100 active:bg-gray-50"
             onClick={() => handleNavigate('/pages/owner/change-phone/index')}
           >
             <View className="flex items-center gap-3">
-              <Phone size={20} color="#0062ff" />
+              <Phone size={20} color="#3b82f6" />
               <View>
                 <Text className="block text-sm">手机号管理</Text>
                 <Text className="block text-xs text-gray-400 mt-1">
@@ -167,11 +164,11 @@ export default function AccountSettings() {
 
           {/* 密码修改 */}
           <View
-            className="flex items-center justify-between px-4 py-4 border-b border-border active:bg-muted"
+            className="flex items-center justify-between px-4 py-4 border-b border-gray-100 active:bg-gray-50"
             onClick={() => handleNavigate('/pages/owner/change-password/index')}
           >
             <View className="flex items-center gap-3">
-              <Lock size={20} color="#0062ff" />
+              <Lock size={20} color="#3b82f6" />
               <Text className="block text-sm">密码修改</Text>
             </View>
             <Text className="text-gray-400 text-sm">›</Text>
@@ -179,11 +176,11 @@ export default function AccountSettings() {
 
           {/* 个人信息 */}
           <View
-            className="flex items-center justify-between px-4 py-4 active:bg-muted"
+            className="flex items-center justify-between px-4 py-4 active:bg-gray-50"
             onClick={() => handleNavigate('/pages/owner/profile-edit/index')}
           >
             <View className="flex items-center gap-3">
-              <User size={20} color="#0062ff" />
+              <User size={20} color="#3b82f6" />
               <Text className="block text-sm">个人信息</Text>
             </View>
             <Text className="text-gray-400 text-sm">›</Text>
@@ -192,7 +189,7 @@ export default function AccountSettings() {
       </Card>
 
       {/* 退出登录 */}
-      <View className="m-4">
+      <View>
         <Button
           className="w-full bg-red-500 text-white"
           onClick={handleLogout}
@@ -201,6 +198,6 @@ export default function AccountSettings() {
           <Text>退出登录</Text>
         </Button>
       </View>
-    </View>
+    </AppPageShell>
   )
 }

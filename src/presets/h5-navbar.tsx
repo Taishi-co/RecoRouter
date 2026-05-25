@@ -125,7 +125,7 @@ export const H5NavBar = () => {
         globalConfig.navigationBarTextStyle ||
         'black',
       navStyle:
-        pageConfig.navigationStyle || globalConfig.navigationStyle || 'default',
+        pageConfig.navigationStyle || globalConfig.navigationStyle || 'custom',
       transparent:
         pageConfig.transparentTitle || globalConfig.transparentTitle || 'none',
       leftIcon: shouldHideNav

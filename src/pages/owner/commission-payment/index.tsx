@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { View, Text, Image } from '@tarojs/components'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import Taro from '@tarojs/taro'
 import { Network } from '@/network'
 
@@ -116,26 +118,23 @@ export default function CommissionPayment() {
 
   if (loading) {
     return (
-      <View className="min-h-screen bg-background flex items-center justify-center">
+      <AppPageShell
+        title="佣金账单"
+        subtitle="RecoRouter 运力端"
+        bottom={<BottomNav type="owner" active="revenue" />}
+      >
         <Text className="text-gray-500">加载中...</Text>
-      </View>
+      </AppPageShell>
     )
   }
 
   return (
-    <View className="min-h-screen bg-background">
-      {/* 头部 */}
-      <View className="bg-primary pt-12 pb-6 px-4">
-        <Text className="block text-xl font-bold text-white">
-          佣金支付
-        </Text>
-        <Text className="block text-sm text-white mt-1">
-          向平台支付撮合佣金
-        </Text>
-      </View>
-
-      {/* 内容区域 */}
-      <View className="px-4 -mt-4">
+    <AppPageShell
+      title="佣金账单"
+      subtitle="RecoRouter 运力端"
+      contentClassName="space-y-4"
+      bottom={<BottomNav type="owner" active="revenue" />}
+    >
         {/* 金额信息卡片 */}
         <Card className="bg-white rounded-lg shadow-sm mb-4">
           <CardHeader>
@@ -145,7 +144,7 @@ export default function CommissionPayment() {
           </CardHeader>
           <CardContent>
             <View className="space-y-3">
-              <View className="flex justify-between items-center py-2 border-b border-border">
+              <View className="flex justify-between items-center py-2 border-b border-gray-100">
                 <Text className="text-sm text-gray-600">运费金额</Text>
                 <Text className="text-sm font-semibold">¥{commissionInfo?.farePrice || 0}</Text>
               </View>
@@ -169,18 +168,18 @@ export default function CommissionPayment() {
             </CardHeader>
             <CardContent>
               <View className="flex flex-col items-center">
-                <View className="w-48 h-48 bg-background rounded-lg overflow-hidden mb-3">
+                <View className="w-48 h-48 bg-gray-100 rounded-lg overflow-hidden mb-3">
                   <Image
                     src={commissionInfo.platformPaymentQr}
                     className="w-full h-full"
                     mode="aspectFit"
                   />
                 </View>
-                <View className="bg-accent rounded-lg p-3 w-full mb-3">
-                  <Text className="block text-xs text-primary mb-1">
+                <View className="bg-blue-50 rounded-lg p-3 w-full mb-3">
+                  <Text className="block text-xs text-blue-800 mb-1">
                     转账备注：
                   </Text>
-                  <Text className="block text-sm font-mono text-primary break-all">
+                  <Text className="block text-sm font-mono text-blue-900 break-all">
                     订单号：{commissionInfo.orderId}
                   </Text>
                 </View>
@@ -197,7 +196,7 @@ export default function CommissionPayment() {
           <Card className="bg-white rounded-lg shadow-sm mb-4">
             <CardContent className="p-4">
               <Button
-                className="w-full bg-primary"
+                className="w-full bg-blue-500"
                 onClick={handleMarkCommissionPayment}
                 disabled={marking}
               >
@@ -223,7 +222,7 @@ export default function CommissionPayment() {
         )}
 
         {/* 提示信息 */}
-        <View className="bg-amber-50 rounded-lg p-4 mb-4">
+        <View className="bg-yellow-50 rounded-lg p-4 mb-4">
           <Text className="block text-xs font-semibold text-yellow-800 mb-2">
             重要提示
           </Text>
@@ -249,7 +248,6 @@ export default function CommissionPayment() {
             如有疑问，请联系客服
           </Text>
         </View>
-      </View>
-    </View>
+    </AppPageShell>
   )
 }

@@ -3,7 +3,10 @@ import { View, Text } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import { Car, Calendar, DollarSign, User, Clock, Check, X } from 'lucide-react-taro'
 import { Network } from '@/network'
 
@@ -240,15 +243,13 @@ export default function PendingRentals() {
   }
 
   return (
-    <View className="min-h-screen bg-background pb-4">
-      {/* 头部 */}
-      <View className="bg-white p-4 border-b border-border">
-        <Text className="text-xl font-bold text-gray-900 block">待确认租赁申请</Text>
-        <Text className="block text-sm text-gray-500 mt-1">查看并处理租户的租赁申请</Text>
-      </View>
-
+    <AppPageShell
+      title="出租申请"
+      subtitle="RecoRouter 运力端"
+      contentClassName="space-y-4"
+      bottom={<BottomNav type="owner" active="vehicles" />}
+    >
       {/* 待确认列表 */}
-      <View className="mx-4 mt-4 space-y-4">
         {loading ? (
           <View className="text-center py-8">
             <Text className="block text-gray-500">加载中...</Text>
@@ -266,7 +267,7 @@ export default function PendingRentals() {
                   <CardTitle className="text-base font-semibold">
                     租赁申请 - {request.vehicles.license_plate}
                   </CardTitle>
-                  <Badge className="bg-amber-500">待确认</Badge>
+                  <Badge className="bg-yellow-500">待确认</Badge>
                 </View>
               </CardHeader>
 
@@ -295,7 +296,7 @@ export default function PendingRentals() {
                 <Separator />
 
                 {/* 租赁信息 */}
-                <View className="bg-accent p-3 rounded-lg">
+                <View className="bg-blue-50 p-3 rounded-lg">
                   <View className="flex items-center text-sm text-gray-700 mb-2">
                     <Calendar size={14} className="mr-2" color="#6b7280" />
                     <Text className="block font-medium">租赁信息</Text>
@@ -325,34 +326,27 @@ export default function PendingRentals() {
 
                 {/* 操作按钮 */}
                 <View className="flex gap-3 pt-2">
-                  <View className="flex-1">
-                    <View
-                      className="bg-red-50 text-red-600 rounded-lg py-2 px-4 text-center"
-                      onClick={() => handleReject(request)}
-                    >
-                      <View className="flex items-center justify-center">
-                        <X size={16} color="#ef4444" className="mr-1" />
-                        <Text className="text-sm font-medium">拒绝</Text>
-                      </View>
-                    </View>
-                  </View>
-                  <View className="flex-1">
-                    <View
-                      className="bg-emerald-50 text-emerald-600 rounded-lg py-2 px-4 text-center"
-                      onClick={() => handleConfirm(request)}
-                    >
-                      <View className="flex items-center justify-center">
-                        <Check size={16} color="#10b981" className="mr-1" />
-                        <Text className="text-sm font-medium">接受</Text>
-                      </View>
-                    </View>
-                  </View>
+                  <Button
+                    className="flex-1 bg-red-50"
+                    variant="outline"
+                    onClick={() => handleReject(request)}
+                  >
+                    <X size={16} color="#ef4444" className="mr-1" />
+                    <Text className="text-sm font-medium text-red-600">拒绝</Text>
+                  </Button>
+                  <Button
+                    className="flex-1 bg-green-50"
+                    variant="outline"
+                    onClick={() => handleConfirm(request)}
+                  >
+                    <Check size={16} color="#10b981" className="mr-1" />
+                    <Text className="text-sm font-medium text-green-600">同意出租</Text>
+                  </Button>
                 </View>
               </CardContent>
             </Card>
           ))
         )}
-      </View>
-    </View>
+    </AppPageShell>
   )
 }

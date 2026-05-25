@@ -18,7 +18,7 @@ tar \
   --exclude='./.pnpm-store' \
   --exclude='./dist' \
   --exclude='./dist-*' \
-  --exclude='./server-rust/target' \
+  --exclude='./server/target' \
   --exclude='./key' \
   --exclude='./project.private.config.json' \
   --exclude='./*.key' \

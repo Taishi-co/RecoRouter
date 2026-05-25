@@ -49,16 +49,6 @@ git commit -m "fix: 修复列表加载问题"
 git commit -m "style: 优化首页样式"
 ```
 
-## Git 分支与 PR 流程
-
-每次新功能改动必须走独立分支和 Pull Request：
-
-1. **新建分支**：开始新功能或较大改动前，从最新主分支新建语义清晰的分支，避免直接在 `main` 上开发。
-2. **提交改动**：按上方 Commitlint 规范提交，提交前完成必要校验，例如 `pnpm validate`、相关构建或后端测试。
-3. **上传分支**：将改动 push 到对应的新分支。
-4. **生成 PR 内容**：PR 描述必须详细说明改动背景、核心实现、影响范围、验证结果、风险点与后续事项。
-5. **创建 PR**：推送后创建目标分支为 `main` 的 Pull Request，确保评审者能直接根据 PR 内容理解本次改动。
-
 ## 命名规范
 
 **命名规范**：
@@ -257,18 +247,18 @@ npx taro-lucide-find arrow-up user settings arw --json
 
 ### 1. 全局路由前缀
 
-项目后端入口 `main.ts` 中已配置 `app.setGlobalPrefix('api')`，所有路由会自动加上 `/api` 前缀。
+项目后端入口为 Rust/Axum，`server/src/app.rs` 中的路由统一暴露在 `/api` 前缀下。
 
 **严格约束**：
 
-后端响应状态码：在编写 NestJS 后端接口时，我会显式处理 HTTP 状态码，确保所有成功的请求（包括通常默认返回 201 的 POST 请求）统一返回 HTTP 200 OK。
+后端响应状态码：在编写 Rust 后端接口时，我会显式处理 HTTP 状态码，确保成功请求返回约定的 HTTP 200 OK。
 
-在编写 NestJS Controller 代码时，**绝对禁止**在 `@Controller()` 或 `@Get()`/`@Post()` 等路由装饰器的路径中手动添加 `api` 字样。
+在编写 Axum 路由时，**避免重复添加 `api` 字样**；如果模块已挂载在 `/api/...` 下，子路由只写业务路径。
 
 **示例**：
 
-- ✅ 正确：`@Controller('users')` (实际路由: `/api/users`)
-- ❌ 错误：`@Controller('api/users')` (实际路由: `/api/api/users`)
+- ✅ 正确：在 `app.rs` 挂载 `/api/users`，模块内部使用 `/` 或业务子路径
+- ❌ 错误：外层和模块内部都写 `/api/users`，导致 `/api/api/users`
 
 ### 2. 发送请求
 
@@ -337,7 +327,7 @@ await Taro.uploadFile({ url: '/api/upload', filePath, name: 'file' })
 
 ```typescript
 // ❌ 错误：硬编码 localhost 地址
-await fetch('http://localhost:3000/api/knowledge/chat', {
+await fetch('http://localhost:34532/api/knowledge/chat', {
   method: 'POST',
   body: JSON.stringify({ message })
 })
@@ -371,7 +361,7 @@ if (isExternalUrl) {
 
 **工作原理**：
 
-1. **开发环境（H5）**：使用 `/api/xxx` 相对路径，Vite 的 proxy 会自动将其代理到 `http://localhost:3000/api/xxx`
+1. **开发环境（H5）**：使用 `/api/xxx` 相对路径，Vite 的 proxy 会自动将其代理到 Rust 后端默认地址 `http://localhost:34532/api/xxx`
 2. **生产环境**：如果配置了 `PROJECT_DOMAIN` 环境变量，Network 会自动拼接为 `${PROJECT_DOMAIN}/api/xxx`
 3. **小程序端**：同样会根据 `PROJECT_DOMAIN` 配置使用正确的域名
 
@@ -383,7 +373,7 @@ export default {
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:34532',
         changeOrigin: true
       }
     }
@@ -396,7 +386,7 @@ export default {
 - ✅ 始终使用 `/api/xxx` 形式的相对路径
 - ✅ 让 Network 自动处理域名拼接
 - ✅ 在 H5 开发环境中依赖 Vite proxy
-- ❌ 禁止硬编码 `http://localhost:3000`
+- ❌ 禁止硬编码 `http://localhost:34532`
 - ❌ 禁止在业务代码中使用 `fetch` 直接调用 API
 
 ### 4. 接口数据解包与防御性编程 (API Response Handling & Unwrapping)
@@ -405,7 +395,7 @@ export default {
 在处理前后端交互时，必须敏锐识别数据结构的嵌套层级：
 
 1. **第一层 (`res.data`)**：`Taro.request` 返回的对象包含 `statusCode`, `header`, `data`。这里的 `data` 是 HTTP 响应体。
-2. **第二层 (`res.data.data`)**：现代后端（NestJS）通常遵循 "Envelope Pattern"（信封模式），将业务数据再次封装在 JSON 的 `data` 字段中（如 `{ code: 200, msg: "success", data: { ... } }`）。
+2. **第二层 (`res.data.data`)**：现代后端通常遵循 "Envelope Pattern"（信封模式），将业务数据再次封装在 JSON 的 `data` 字段中（如 `{ code: 200, msg: "success", data: { ... } }`）。
 
 **严格执行以下约束：**
 - **先打印，后访问**：在编写数据处理逻辑前，必须先 `console.log(res.data)` 确认后端返回的 JSON 结构。

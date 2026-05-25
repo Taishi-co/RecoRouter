@@ -4,7 +4,9 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Plus, Pencil, Trash2, Clock, Play, Pause, Zap } from 'lucide-react-taro'
+import { Plus, Pencil, Trash2, Clock, Play, Pause, Zap, CalendarDays } from 'lucide-react-taro'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import Taro from '@tarojs/taro'
 import { Network } from '@/network'
 
@@ -41,6 +43,61 @@ interface FormData {
   end_time: string
 }
 
+const demoSchedules: DemandSchedule[] = [
+  {
+    id: 'demo-schedule-1',
+    user_id: 'demo',
+    template_id: 'demo-template-1',
+    template_name: '宝山钢贸园 → 萧山仓',
+    schedule_name: '08:00 宝山装货 2车',
+    schedule_type: 'day',
+    base_date: '2026-05-26',
+    base_time: '08:00:00',
+    end_time: null,
+    status: 'active',
+    next_publish_time: '2026-05-27 08:00:00',
+    last_published_at: '2026-05-26 08:00:00',
+    published_count: 18,
+    created_at: '2026-05-10T09:00:00+10:00',
+    updated_at: '2026-05-25T09:00:00+10:00',
+  },
+  {
+    id: 'demo-schedule-2',
+    user_id: 'demo',
+    template_id: 'demo-template-2',
+    template_name: '张家港补货',
+    schedule_name: '14:30 张家港补货 1车',
+    schedule_type: 'week',
+    base_date: '2026-05-25',
+    base_time: '14:30:00',
+    end_time: null,
+    status: 'active',
+    next_publish_time: '2026-05-27 14:30:00',
+    last_published_at: '2026-05-20 14:30:00',
+    published_count: 9,
+    created_at: '2026-05-08T09:00:00+10:00',
+    updated_at: '2026-05-24T09:00:00+10:00',
+  },
+  {
+    id: 'demo-schedule-3',
+    user_id: 'demo',
+    template_id: 'demo-template-3',
+    template_name: '夜间专线',
+    schedule_name: '20:00 夜间专线 3车',
+    schedule_type: 'interval',
+    interval_days: 2,
+    base_date: '2026-05-24',
+    base_time: '20:00:00',
+    end_time: null,
+    status: 'paused',
+    next_publish_time: '2026-05-28 20:00:00',
+    last_published_at: '2026-05-24 20:00:00',
+    published_count: 6,
+    created_at: '2026-05-05T09:00:00+10:00',
+    updated_at: '2026-05-23T09:00:00+10:00',
+  },
+]
+
 export default function DemandSchedules() {
   const [schedules, setSchedules] = useState<DemandSchedule[]>([])
   const [templates, setTemplates] = useState<DemandTemplate[]>([])
@@ -60,6 +117,8 @@ export default function DemandSchedules() {
   const [submitting, setSubmitting] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [deletingSchedule, setDeletingSchedule] = useState<DemandSchedule | null>(null)
+  const visibleSchedules = schedules.length > 0 ? schedules : demoSchedules
+  const isUsingDemoSchedules = schedules.length === 0
 
   useEffect(() => {
     loadSchedules()
@@ -385,78 +444,31 @@ export default function DemandSchedules() {
   }
 
   return (
-    <View className="min-h-screen bg-background">
-      {/* 导航菜单 */}
-      <View className="bg-white shadow-sm">
-        <View className="px-4 py-3">
-          <View className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateBack()}
-            >
-              <Text className="text-xs">返回</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/merchant/demands/list' })}
-            >
-              <Text className="text-xs">我的需求</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/merchant/orders/index' })}
-            >
-              <Text className="text-xs">订单管理</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/merchant/profile/index' })}
-            >
-              <Text className="text-xs">我的</Text>
-            </Button>
-          </View>
-        </View>
-      </View>
-
-      {/* 标题栏 */}
-      <View className="bg-white px-4 py-3 mb-2">
-        <View className="flex items-center justify-between">
-          <Text className="block text-lg font-semibold text-gray-900">
-            定时计划
-          </Text>
-          <Button
-            size="sm"
-            className="bg-primary"
-            onClick={handleCreateSchedule}
-          >
-            <Plus size={16} color="#ffffff" />
-            <Text className="ml-1 text-xs text-white">新建计划</Text>
-          </Button>
-        </View>
-      </View>
-
+    <AppPageShell
+      title="排班日历"
+      subtitle="RecoRouter 商户小程序"
+      icon={CalendarDays}
+      contentClassName="space-y-3"
+      bottom={<BottomNav type="merchant" active="publish" />}
+    >
       {/* 计划列表 */}
       {loading ? (
         <View className="flex items-center justify-center py-8">
           <Text className="block text-gray-500 text-sm">加载中...</Text>
         </View>
-      ) : schedules.length === 0 ? (
+      ) : visibleSchedules.length === 0 ? (
         <View className="flex flex-col items-center justify-center py-16 px-4">
           <Clock size={64} color="#d1d5db" />
           <Text className="block text-gray-500 text-sm mt-4 text-center">
             暂无定时计划
           </Text>
           <Text className="block text-gray-400 text-xs mt-2 text-center">
-            点击&quot;新建计划&quot;创建您的第一个定时发布计划
+            点击底部按钮创建您的第一个定时发布计划
           </Text>
         </View>
       ) : (
-        <View className="px-4 space-y-3 pb-4">
-          {schedules.map((schedule) => (
+        <View className="space-y-3">
+          {visibleSchedules.map((schedule) => (
             <Card key={schedule.id} className="bg-white rounded-lg shadow-sm">
               <CardContent className="p-4">
                 <View className="flex items-start gap-3">
@@ -466,7 +478,7 @@ export default function DemandSchedules() {
                         {schedule.schedule_name}
                       </Text>
                       {schedule.status === 'active' ? (
-                        <Text className="text-xs text-emerald-500">运行中</Text>
+                        <Text className="text-xs text-green-500">运行中</Text>
                       ) : (
                         <Text className="text-xs text-gray-500">已暂停</Text>
                       )}
@@ -485,7 +497,7 @@ export default function DemandSchedules() {
                         </Text>
                       )}
                       {schedule.next_publish_time && (
-                        <Text className="block text-sm text-primary">
+                        <Text className="block text-sm text-blue-600">
                           下次发布：{schedule.next_publish_time}
                         </Text>
                       )}
@@ -500,6 +512,7 @@ export default function DemandSchedules() {
                       size="sm"
                       variant="outline"
                       onClick={() => handleToggleActive(schedule)}
+                      disabled={isUsingDemoSchedules}
                     >
                       {schedule.status === 'active' ? (
                         <Pause size={14} color="#6b7280" />
@@ -511,6 +524,7 @@ export default function DemandSchedules() {
                       size="sm"
                       variant="outline"
                       onClick={() => handleEditSchedule(schedule)}
+                      disabled={isUsingDemoSchedules}
                     >
                       <Pencil size={14} color="#6b7280" />
                     </Button>
@@ -518,7 +532,7 @@ export default function DemandSchedules() {
                       size="sm"
                       variant="outline"
                       onClick={() => handlePublishNow(schedule)}
-                      disabled={isPublishing && publishingScheduleId === schedule.id}
+                      disabled={isUsingDemoSchedules || (isPublishing && publishingScheduleId === schedule.id)}
                     >
                       <Zap size={14} color="#f59e0b" />
                     </Button>
@@ -527,6 +541,7 @@ export default function DemandSchedules() {
                       variant="outline"
                       className="border-red-500 text-red-500"
                       onClick={() => handleDeleteSchedule(schedule)}
+                      disabled={isUsingDemoSchedules}
                     >
                       <Trash2 size={14} color="#ef4444" />
                     </Button>
@@ -537,6 +552,14 @@ export default function DemandSchedules() {
           ))}
         </View>
       )}
+
+      <Button
+        className="w-full bg-blue-500"
+        onClick={handleCreateSchedule}
+      >
+        <Plus size={16} color="#FFFFFF" />
+        <Text className="ml-1 text-white">新增固定班次</Text>
+      </Button>
 
       {/* 创建/编辑计划对话框 */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
@@ -550,7 +573,7 @@ export default function DemandSchedules() {
           <View className="space-y-4">
             <View>
               <Text className="block text-sm font-medium mb-1">计划名称 *</Text>
-              <View className="bg-muted rounded-lg px-4 py-3">
+              <View className="bg-gray-50 rounded-lg px-4 py-3">
                 <Input
                   className="w-full bg-transparent"
                   placeholder="如：每日定时发布"
@@ -576,7 +599,7 @@ export default function DemandSchedules() {
                     setFormData({ ...formData, template_id: template.id })
                   }}
                 >
-                  <View className="bg-muted rounded-lg px-4 py-3 flex items-center justify-between">
+                  <View className="bg-gray-50 rounded-lg px-4 py-3 flex items-center justify-between">
                     <Text className={`text-sm ${formData.template_id ? 'text-gray-900' : 'text-gray-400'}`}>
                       {templates.find(t => t.id === formData.template_id)?.template_name || '请选择模板'}
                     </Text>
@@ -597,7 +620,7 @@ export default function DemandSchedules() {
                   setFormData({ ...formData, schedule_type: types[e.detail.value] })
                 }}
               >
-                <View className="bg-muted rounded-lg px-4 py-3 flex items-center justify-between">
+                <View className="bg-gray-50 rounded-lg px-4 py-3 flex items-center justify-between">
                   <Text className="text-sm text-gray-900">
                     {['每半天', '每天', '每周', '每月', '每隔几天'][['half_day', 'day', 'week', 'month', 'interval'].indexOf(formData.schedule_type)]}
                   </Text>
@@ -628,7 +651,7 @@ export default function DemandSchedules() {
                   setFormData({ ...formData, start_time: `${e.detail.value} ${time}` })
                 }}
               >
-                <View className="bg-muted rounded-lg px-4 py-3 flex items-center justify-between">
+                <View className="bg-gray-50 rounded-lg px-4 py-3 flex items-center justify-between">
                   <Text className={`text-sm ${formData.start_time ? 'text-gray-900' : 'text-gray-400'}`}>
                     {formData.start_time && formData.start_time.includes(' ') ? formData.start_time.split(' ')[0] : '请选择日期'}
                   </Text>
@@ -643,7 +666,7 @@ export default function DemandSchedules() {
                   setFormData({ ...formData, start_time: `${date} ${e.detail.value}:00` })
                 }}
               >
-                <View className="bg-muted rounded-lg px-4 py-3 flex items-center justify-between">
+                <View className="bg-gray-50 rounded-lg px-4 py-3 flex items-center justify-between">
                   <Text className={`text-sm ${formData.start_time ? 'text-gray-900' : 'text-gray-400'}`}>
                     {formData.start_time && formData.start_time.includes(' ') ? formData.start_time.split(' ')[1].slice(0, 5) : '请选择时间'}
                   </Text>
@@ -666,7 +689,7 @@ export default function DemandSchedules() {
                   }
                 }}
               >
-                <View className="bg-muted rounded-lg px-4 py-3 flex items-center justify-between">
+                <View className="bg-gray-50 rounded-lg px-4 py-3 flex items-center justify-between">
                   <Text className={`text-sm ${formData.end_time ? 'text-gray-900' : 'text-gray-400'}`}>
                     {formData.end_time && formData.end_time.includes(' ') ? formData.end_time.split(' ')[0] : '请选择日期'}
                   </Text>
@@ -684,7 +707,7 @@ export default function DemandSchedules() {
               <Text className="text-xs">取消</Text>
             </Button>
             <Button
-              className="bg-primary"
+              className="bg-blue-500"
               onClick={handleSubmit}
               disabled={submitting}
             >
@@ -723,6 +746,6 @@ export default function DemandSchedules() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </View>
+    </AppPageShell>
   )
 }

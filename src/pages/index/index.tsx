@@ -1,22 +1,15 @@
-import { useState, useEffect, useCallback } from 'react'
-import { View, Text, ScrollView, Image } from '@tarojs/components'
+import { useState, useEffect } from 'react'
+import { Image, View, Text } from '@tarojs/components'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import { Network } from '@/network'
 import Taro from '@tarojs/taro'
-import {
-  Building2,
-  ChevronRight,
-  Clock,
-  Package,
-  Shield,
-  Smartphone,
-  Truck,
-  UserPlus
-} from 'lucide-react-taro'
+import { Truck, Package, Check, Clock, Shield, User } from 'lucide-react-taro'
 
 interface Statistics {
   orders: {
@@ -68,6 +61,62 @@ interface AuthUserInfo {
   token?: string
 }
 
+const demoStatistics: Statistics = {
+  orders: {
+    total: 128,
+    completed: 96,
+    in_transit: 18,
+  },
+  vehicles: {
+    total: 73,
+    active: 58,
+  },
+  demands: {
+    total: 42,
+    pending: 12,
+  },
+  recentOrders: [],
+}
+
+const demoLatestInfo: LatestInfo = {
+  latestDemands: [
+    {
+      id: 'demo-demand-1',
+      cargoName: '冷链奶品配送',
+      cargoType: 'perishable',
+      pickupAddress: '武汉东西湖中心仓',
+      deliveryAddress: '江汉区前进四路门店',
+      merchantPhone: '138****2651',
+      createdAt: '2026-05-26T08:20:00+10:00',
+    },
+    {
+      id: 'demo-demand-2',
+      cargoName: '商超日配补货',
+      cargoType: 'normal',
+      pickupAddress: '汉阳四新配送站',
+      deliveryAddress: '武昌徐东商圈',
+      merchantPhone: '156****7098',
+      createdAt: '2026-05-26T09:10:00+10:00',
+    },
+  ],
+  completedOrders: [
+    {
+      id: 'demo-order-1',
+      cargoName: '社区团购晨配',
+      ownerPhone: '鄂A·7K21',
+      farePrice: 286,
+      completedTime: '2026-05-26T07:50:00+10:00',
+    },
+    {
+      id: 'demo-order-2',
+      cargoName: '校园餐饮补给',
+      ownerPhone: '鄂A·9M32',
+      farePrice: 338,
+      completedTime: '2026-05-26T08:35:00+10:00',
+    },
+  ],
+}
+
 const persistAuthSession = (userInfo: AuthUserInfo) => {
   const token = userInfo.token || Taro.getStorageSync('token') || userInfo.id
   const normalizedUserInfo = {
@@ -108,18 +157,24 @@ export default function Index() {
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [verificationCode, setVerificationCode] = useState('')
   const [captchaId, setCaptchaId] = useState('')
-  const [captchaCode, setCaptchaCode] = useState('')
   const [captchaImage, setCaptchaImage] = useState('')
+  const [captchaLoading, setCaptchaLoading] = useState(false)
   const [name, setName] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
-  const [captchaLoading, setCaptchaLoading] = useState(false)
 
   useEffect(() => {
     setCurrentUser(getStoredAuthUser())
     loadStatistics()
     loadLatestInfo()
   }, [])
+
+  useEffect(() => {
+    if (showAuthDialog && mode === 'register' && step === 'form') {
+      loadRegisterCaptcha(true)
+    }
+  }, [showAuthDialog, mode, step])
 
   const loadStatistics = async () => {
     try {
@@ -164,7 +219,7 @@ export default function Index() {
     }
   }
 
-  const loadRegisterCaptcha = useCallback(async () => {
+  const loadRegisterCaptcha = async (silent = false) => {
     setCaptchaLoading(true)
 
     try {
@@ -176,29 +231,29 @@ export default function Index() {
       if (res.data.code === 200 && res.data.data?.captchaId && res.data.data?.image) {
         setCaptchaId(res.data.data.captchaId)
         setCaptchaImage(res.data.data.image)
-        setCaptchaCode('')
+        setVerificationCode('')
       } else {
+        setCaptchaId('')
+        setCaptchaImage('')
         Taro.showToast({
-          title: res.data.message || '验证码加载失败',
+          title: res.data.message || '图形验证码获取失败',
           icon: 'none'
         })
       }
     } catch (error) {
-      console.error('加载图形验证码失败:', error)
-      Taro.showToast({
-        title: '验证码加载失败',
-        icon: 'none'
-      })
+      console.error('获取图形验证码失败:', error)
+      setCaptchaId('')
+      setCaptchaImage('')
+      if (!silent) {
+        Taro.showToast({
+          title: '图形验证码获取失败',
+          icon: 'none'
+        })
+      }
     } finally {
       setCaptchaLoading(false)
     }
-  }, [])
-
-  useEffect(() => {
-    if (showAuthDialog && mode === 'register' && step === 'form') {
-      void loadRegisterCaptcha()
-    }
-  }, [loadRegisterCaptcha, mode, showAuthDialog, step])
+  }
 
   const handleSubmit = async () => {
     if (!phone || !password) {
@@ -218,9 +273,17 @@ export default function Index() {
         return
       }
 
-      if (!captchaId || !captchaCode) {
+      if (!verificationCode) {
         Taro.showToast({
           title: '请输入图形验证码',
+          icon: 'none'
+        })
+        return
+      }
+
+      if (!captchaId) {
+        Taro.showToast({
+          title: '请刷新图形验证码',
           icon: 'none'
         })
         return
@@ -275,7 +338,7 @@ export default function Index() {
         const res = await Network.request({
           url: '/api/auth/register',
           method: 'POST',
-          data: { phone, password, confirmPassword, captchaId, captchaCode, name, role }
+          data: { phone, password, confirmPassword, verificationCode, captchaId, name, role }
         })
 
         if (res.data.code === 200) {
@@ -295,7 +358,7 @@ export default function Index() {
             title: res.data.message || '注册失败',
             icon: 'none'
           })
-          void loadRegisterCaptcha()
+          loadRegisterCaptcha(true)
         }
       }
     } catch (error) {
@@ -304,6 +367,9 @@ export default function Index() {
         title: '网络错误，请重试',
         icon: 'none'
       })
+      if (mode === 'register') {
+        loadRegisterCaptcha(true)
+      }
     } finally {
       setAuthLoading(false)
     }
@@ -325,247 +391,224 @@ export default function Index() {
   const openAuthDialog = (authMode: 'login' | 'register') => {
     setMode(authMode)
     setStep('role')
+    setVerificationCode('')
+    setCaptchaId('')
+    setCaptchaImage('')
     setShowAuthDialog(true)
   }
 
-  const handleRoleEntry = (selectedRole: 'owner' | 'merchant' | 'enterprise') => {
-    setRole(selectedRole)
-    if (currentUser) {
-      switchTabByRole(currentUser.role)
-      return
-    }
-    openAuthDialog('login')
-  }
-
-  const latestDemand = latestInfo?.latestDemands?.[0]
-  const completedOrder = latestInfo?.completedOrders?.[0]
+  const displayStatistics = statistics || demoStatistics
+  const displayLatestInfo = latestInfo || demoLatestInfo
 
   return (
-    <View className="min-h-screen bg-background">
-      <ScrollView scrollY className="h-full">
-        <View className="bg-gradient-to-br from-primary to-indigo-600 px-5 pt-12 pb-10">
-          <View className="mb-8 flex items-center justify-between">
-            <View className="flex items-center gap-3">
-              <View className="h-11 w-11 items-center justify-center rounded-2xl bg-white">
-                <Package size={24} color="#0062ff" />
-              </View>
-              <Text className="text-xl font-bold text-white">RecoRouter</Text>
-            </View>
-            <View className="flex gap-2">
-              {currentUser ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 border-white bg-white bg-opacity-20"
-                  onClick={() => switchTabByRole(currentUser.role)}
-                >
-                  <Text className="text-xs text-white font-medium">进入</Text>
-                </Button>
-              ) : (
-                <>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 border-white bg-white bg-opacity-20"
-                    onClick={() => openAuthDialog('login')}
-                  >
-                    <Text className="text-xs text-white font-medium">登录</Text>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 border-white bg-white bg-opacity-20"
-                    onClick={() => openAuthDialog('register')}
-                  >
-                    <Text className="text-xs text-white font-medium">注册</Text>
-                  </Button>
-                </>
-              )}
-            </View>
-          </View>
-
-          <Text className="block text-3xl font-bold leading-tight text-white">
-            无人车取送货调度平台
-          </Text>
-          <Text className="mt-3 block text-sm leading-5 text-white">
-            发布需求、智能接单、企业调度和车辆租赁在一个小程序内闭环
-          </Text>
-
-          <View className="mt-6 grid grid-cols-3 gap-3">
-            <View className="rounded-2xl bg-white px-3 py-4 text-center">
-              <Text className="block text-2xl font-bold text-primary">
-                {statistics?.orders.total || 0}
-              </Text>
-              <Text className="mt-1 block text-xs text-muted-foreground">今日订单</Text>
-            </View>
-            <View className="rounded-2xl bg-white px-3 py-4 text-center">
-              <Text className="block text-2xl font-bold text-primary">
-                {statistics?.vehicles.active || statistics?.vehicles.total || 0}
-              </Text>
-              <Text className="mt-1 block text-xs text-muted-foreground">在线车辆</Text>
-            </View>
-            <View className="rounded-2xl bg-white px-3 py-4 text-center">
-              <Text className="block text-2xl font-bold text-primary">
-                {statistics?.orders.total
-                  ? `${Math.round((statistics.orders.completed / statistics.orders.total) * 100)}%`
-                  : '0%'}
-              </Text>
-              <Text className="mt-1 block text-xs text-muted-foreground">准时率</Text>
-            </View>
-          </View>
-        </View>
-
-        <View className="px-5 pb-8 -mt-5">
-          <Card className="mb-5 shadow-sm">
-            <CardContent className="p-5">
-              <View className="mb-4 flex items-center justify-between">
-                <Text className="text-xl font-bold text-foreground">选择身份进入</Text>
-                <View className="rounded-full bg-emerald-50 px-3 py-1">
-                  <Text className="text-xs font-semibold text-emerald-600">三端共用账号</Text>
+    <>
+      <AppPageShell
+        title="RecoRouter 首页"
+        subtitle="智能运力撮合 · 共享运营平台"
+        bottom={<BottomNav type="common" active="home" />}
+        scroll={false}
+        contentClassName="space-y-3"
+        right={
+          currentUser ? (
+            <Button
+              size="icon"
+              className="h-10 w-10 rounded-2xl bg-primary shadow-none"
+              onClick={() => switchTabByRole(currentUser.role)}
+            >
+              <User size={18} color="#FFFFFF" />
+            </Button>
+          ) : (
+            <Button
+              size="icon"
+              className="h-10 w-10 rounded-2xl bg-primary shadow-none"
+              onClick={() => openAuthDialog('login')}
+            >
+              <User size={18} color="#FFFFFF" />
+            </Button>
+          )
+        }
+      >
+        {/* 数据统计卡片 */}
+        <View>
+          <Card className="bg-white rounded-lg shadow-md mb-4">
+            <CardContent className="p-4">
+              <View className="flex justify-between items-center" style={{ display: 'flex', alignItems: 'center' }}>
+                <View className="text-center flex-1" style={{ flex: '1 1 0', minWidth: 0 }}>
+                  <Text className="block text-2xl font-bold text-blue-500">
+                    {displayStatistics.orders.total}
+                  </Text>
+                  <Text className="block text-xs text-gray-500 mt-1">总订单数</Text>
                 </View>
-              </View>
-
-              <View className="space-y-3">
-                <Button
-                  variant="ghost"
-                  className="h-auto w-full justify-between bg-muted px-4 py-3"
-                  onClick={() => handleRoleEntry('owner')}
-                >
-                  <View className="flex items-center gap-3">
-                    <View className="h-12 w-12 items-center justify-center rounded-2xl bg-white">
-                      <Truck size={24} color="#0062ff" />
-                    </View>
-                    <View>
-                      <Text className="block text-base font-bold text-foreground">
-                        运力方（车主）
-                      </Text>
-                      <Text className="mt-1 block text-xs text-muted-foreground">
-                        注册车辆、接单、查看收益
-                      </Text>
-                    </View>
-                  </View>
-                  <ChevronRight size={20} color="#8b95a7" />
-                </Button>
-
-                <Button
-                  variant="ghost"
-                  className="h-auto w-full justify-between bg-muted px-4 py-3"
-                  onClick={() => handleRoleEntry('merchant')}
-                >
-                  <View className="flex items-center gap-3">
-                    <View className="h-12 w-12 items-center justify-center rounded-2xl bg-white">
-                      <Package size={24} color="#10b981" />
-                    </View>
-                    <View>
-                      <Text className="block text-base font-bold text-foreground">需求方</Text>
-                      <Text className="mt-1 block text-xs text-muted-foreground">
-                        发布需求、追踪订单、复用模板
-                      </Text>
-                    </View>
-                  </View>
-                  <ChevronRight size={20} color="#8b95a7" />
-                </Button>
-
-                <Button
-                  variant="ghost"
-                  className="h-auto w-full justify-between bg-muted px-4 py-3"
-                  onClick={() => handleRoleEntry('enterprise')}
-                >
-                  <View className="flex items-center gap-3">
-                    <View className="h-12 w-12 items-center justify-center rounded-2xl bg-white">
-                      <Building2 size={24} color="#f59e0b" />
-                    </View>
-                    <View>
-                      <Text className="block text-base font-bold text-foreground">企业端</Text>
-                      <Text className="mt-1 block text-xs text-muted-foreground">
-                        批量配送、车队与奶站调度
-                      </Text>
-                    </View>
-                  </View>
-                  <ChevronRight size={20} color="#8b95a7" />
-                </Button>
+                <View className="text-center flex-1" style={{ flex: '1 1 0', minWidth: 0 }}>
+                  <Text className="block text-2xl font-bold text-green-500">
+                    {displayStatistics.vehicles.total}
+                  </Text>
+                  <Text className="block text-xs text-gray-500 mt-1">车辆数</Text>
+                </View>
+                <View className="text-center flex-1" style={{ flex: '1 1 0', minWidth: 0 }}>
+                  <Text className="block text-2xl font-bold text-orange-500">
+                    {displayStatistics.demands.total}
+                  </Text>
+                  <Text className="block text-xs text-gray-500 mt-1">需求数</Text>
+                </View>
               </View>
             </CardContent>
           </Card>
+        </View>
 
-          <View className="mb-5 grid grid-cols-2 gap-3">
-            <Button className="h-14 rounded-2xl" onClick={() => openAuthDialog('login')}>
-              <Smartphone size={20} color="#fff" />
-              <Text className="text-base font-bold text-white">手机号登录</Text>
-            </Button>
-            <Button
-              variant="outline"
-              className="h-14 rounded-2xl"
-              onClick={() => openAuthDialog('register')}
-            >
-              <UserPlus size={20} color="#0062ff" />
-              <Text className="text-base font-bold text-foreground">创建账号</Text>
-            </Button>
-          </View>
-
-          <View className="grid grid-cols-2 gap-3">
-            <Card>
-              <CardContent className="p-4">
-                <View className="mb-3 inline-flex rounded-full bg-red-50 px-3 py-1">
-                  <Text className="text-xs font-semibold text-red-500">最新需求</Text>
+        {/* 最新信息 */}
+        <View>
+          <View className="grid grid-cols-1 gap-3">
+            {/* 最新需求 */}
+            <Card className="bg-white rounded-lg shadow-sm overflow-hidden">
+              <CardContent className="p-3">
+                <View className="flex items-center justify-between mb-2">
+                  <View className="flex items-center">
+                    <Package size={16} color="#ef4444" />
+                    <Text className="block text-sm font-semibold text-red-500 ml-2">
+                      最新需求
+                    </Text>
+                  </View>
+                  <Text className="text-xs text-gray-400">
+                    共 {displayLatestInfo.latestDemands.length} 条
+                  </Text>
                 </View>
-                <Text className="block text-lg font-bold text-foreground">
-                  {latestDemand?.cargoName || '暂无需求'}
-                </Text>
-                <Text className="mt-2 block text-xs leading-5 text-muted-foreground">
-                  {latestDemand
-                    ? `${latestDemand.pickupAddress} → ${latestDemand.deliveryAddress}`
-                    : '后端暂无最新需求'}
-                </Text>
+                <View className="space-y-2">
+                  {displayLatestInfo.latestDemands.slice(0, 5).map(item => (
+                    <View key={item.id} className="py-2 border-b border-gray-50 last:border-0">
+                      <View className="flex justify-between items-start mb-1">
+                        <Text className="text-xs font-medium text-gray-800 flex-1">
+                          {item.cargoName}
+                        </Text>
+                        <Text className="text-xs text-gray-400 ml-2">
+                          {item.cargoType === 'perishable' ? '易腐' : '普通'}
+                        </Text>
+                      </View>
+                      <View className="flex items-start mb-1">
+                        <Text className="text-xs text-gray-500 w-12 flex-shrink-0">取货:</Text>
+                        <Text className="text-xs text-gray-700 flex-1">
+                          {item.pickupAddress}
+                        </Text>
+                      </View>
+                      <View className="flex items-start mb-1">
+                        <Text className="text-xs text-gray-500 w-12 flex-shrink-0">送货:</Text>
+                        <Text className="text-xs text-gray-700 flex-1">
+                          {item.deliveryAddress}
+                        </Text>
+                      </View>
+                      <View className="flex items-center justify-between">
+                        <Text className="text-xs text-gray-400">
+                          {item.merchantPhone}
+                        </Text>
+                        <Text className="max-w-32 truncate text-right text-xs text-gray-400">
+                          {new Date(item.createdAt).toLocaleString()}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                  {displayLatestInfo.latestDemands.length === 0 && (
+                    <Text className="text-xs text-gray-400 text-center py-4">
+                      暂无需求
+                    </Text>
+                  )}
+                </View>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardContent className="p-4">
-                <View className="mb-3 inline-flex rounded-full bg-emerald-50 px-3 py-1">
-                  <Text className="text-xs font-semibold text-emerald-600">完单信息</Text>
+            {/* 完单信息 */}
+            <Card className="bg-white rounded-lg shadow-sm overflow-hidden">
+              <CardContent className="p-3">
+                <View className="flex items-center justify-between mb-2">
+                  <View className="flex items-center">
+                    <Check size={16} color="#10b981" />
+                    <Text className="block text-sm font-semibold text-green-500 ml-2">
+                      完单信息
+                    </Text>
+                  </View>
+                  <Text className="text-xs text-gray-400">
+                    共 {displayLatestInfo.completedOrders.length} 条
+                  </Text>
                 </View>
-                <Text className="block text-lg font-bold text-foreground">
-                  {completedOrder ? `¥${completedOrder.farePrice}` : '暂无完单'}
-                </Text>
-                <Text className="mt-2 block text-xs leading-5 text-muted-foreground">
-                  {completedOrder
-                    ? `${completedOrder.cargoName} 已送达`
-                    : '后端暂无完单信息'}
-                </Text>
+                <View className="space-y-2">
+                  {displayLatestInfo.completedOrders.map(item => (
+                    <View key={item.id} className="py-2 border-b border-gray-50 last:border-0">
+                      <View className="flex justify-between items-start mb-1">
+                        <Text className="text-xs font-medium text-gray-800 flex-1">
+                          {item.cargoName}
+                        </Text>
+                        <Text className="text-xs font-bold text-green-500 ml-2">
+                          ¥{item.farePrice}
+                        </Text>
+                      </View>
+                      <Text className="text-xs text-gray-500 block">
+                        运力方: {item.ownerPhone}
+                      </Text>
+                    </View>
+                  ))}
+                  {displayLatestInfo.completedOrders.length === 0 && (
+                    <Text className="text-xs text-gray-400 text-center py-4">
+                      暂无完单信息
+                    </Text>
+                  )}
+                </View>
               </CardContent>
             </Card>
-          </View>
-
-          <View className="mt-6">
-            <Text className="mb-3 block text-lg font-bold text-foreground">平台特色</Text>
-            <View className="grid grid-cols-2 gap-3">
-              <Card>
-                <CardContent className="p-4">
-                  <View className="mb-2 flex items-center">
-                    <Clock size={20} color="#0062ff" />
-                    <Text className="ml-2 text-sm font-semibold text-foreground">快速匹配</Text>
-                  </View>
-                  <Text className="block text-xs text-muted-foreground">
-                    智能算法快速匹配车辆
-                  </Text>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4">
-                  <View className="mb-2 flex items-center">
-                    <Shield size={20} color="#10b981" />
-                    <Text className="ml-2 text-sm font-semibold text-foreground">安全保障</Text>
-                  </View>
-                  <Text className="block text-xs text-muted-foreground">
-                    全程追踪，安全可靠
-                  </Text>
-                </CardContent>
-              </Card>
-            </View>
           </View>
         </View>
-      </ScrollView>
+
+        {/* 平台特色 */}
+        <View>
+          <Text className="block text-lg font-semibold text-gray-800 mb-3">
+            平台特色
+          </Text>
+          <View className="grid grid-cols-2 gap-3">
+            <Card className="bg-white rounded-lg shadow-sm p-4">
+              <View className="flex items-center mb-2">
+                <Clock size={20} color="#3b82f6" />
+                <Text className="block text-sm font-semibold text-gray-700 ml-2">
+                  快速匹配
+                </Text>
+              </View>
+              <Text className="block text-xs text-gray-500">
+                智能算法快速匹配车辆
+              </Text>
+            </Card>
+            <Card className="bg-white rounded-lg shadow-sm p-4">
+              <View className="flex items-center mb-2">
+                <Shield size={20} color="#10b981" />
+                <Text className="block text-sm font-semibold text-gray-700 ml-2">
+                  安全保障
+                </Text>
+              </View>
+              <Text className="block text-xs text-gray-500">
+                全程追踪，安全可靠
+              </Text>
+            </Card>
+            <Card className="bg-white rounded-lg shadow-sm p-4">
+              <View className="flex items-center mb-2">
+                <Truck size={20} color="#f59e0b" />
+                <Text className="block text-sm font-semibold text-gray-700 ml-2">
+                  运力充足
+                </Text>
+              </View>
+              <Text className="block text-xs text-gray-500">
+                多种车型，满足需求
+              </Text>
+            </Card>
+            <Card className="bg-white rounded-lg shadow-sm p-4">
+              <View className="flex items-center mb-2">
+                <Package size={20} color="#8b5cf6" />
+                <Text className="block text-sm font-semibold text-gray-700 ml-2">
+                便捷下单
+                </Text>
+              </View>
+              <Text className="block text-xs text-gray-500">
+                简单几步，轻松完成
+              </Text>
+            </Card>
+          </View>
+        </View>
+      </AppPageShell>
 
       {/* 登录/注册弹窗 */}
       <Dialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>
@@ -583,7 +626,7 @@ export default function Index() {
                 setMode('login')
                 setStep('role')
               }}
-              className={mode === 'login' ? 'bg-primary' : ''}
+              className={mode === 'login' ? 'bg-blue-500' : ''}
               size="sm"
             >
               <Text className="text-sm">登录</Text>
@@ -594,7 +637,7 @@ export default function Index() {
                 setMode('register')
                 setStep('role')
               }}
-              className={mode === 'register' ? 'bg-primary' : ''}
+              className={mode === 'register' ? 'bg-blue-500' : ''}
               size="sm"
             >
               <Text className="text-sm">注册</Text>
@@ -647,7 +690,7 @@ export default function Index() {
                     <Text className="text-red-500">*</Text>姓名
                   </Label>
                   <Input
-                    className="w-full bg-muted"
+                    className="w-full bg-gray-50"
                     placeholder="请输入您的姓名"
                     value={name}
                     onInput={(e) => setName(e.detail.value)}
@@ -660,7 +703,7 @@ export default function Index() {
                   <Text className="text-red-500">*</Text>手机号
                 </Label>
                 <Input
-                  className="w-full bg-muted"
+                  className="w-full bg-gray-50"
                   placeholder="请输入手机号"
                   type="number"
                   value={phone}
@@ -673,38 +716,34 @@ export default function Index() {
                   <Label className="block text-sm font-medium mb-2">
                     <Text className="text-red-500">*</Text>图形验证码
                   </Label>
-                  <View className="flex gap-2 items-center">
+                  <View className="flex gap-2">
                     <Input
-                      className="flex-1 bg-muted"
+                      className="flex-1 bg-gray-50"
                       placeholder="请输入图形验证码"
-                      value={captchaCode}
-                      onInput={(e) => setCaptchaCode(e.detail.value.toUpperCase())}
+                      value={verificationCode}
+                      onInput={(e) => setVerificationCode(e.detail.value.toUpperCase())}
                       maxlength={6}
                     />
                     <Button
                       size="sm"
-                      className="h-10 px-2"
+                      className="h-10 min-w-28 rounded-lg border-blue-100 bg-blue-50 px-2 shadow-none"
                       variant="outline"
                       disabled={captchaLoading}
-                      onClick={loadRegisterCaptcha}
+                      onClick={() => loadRegisterCaptcha()}
                     >
                       {captchaImage ? (
                         <Image
+                          className="h-8 w-24"
                           src={captchaImage}
                           mode="aspectFit"
-                          className="w-28 h-8"
                         />
                       ) : (
-                        <Text className="text-xs">加载中</Text>
+                        <Text className="text-xs font-semibold text-blue-600">
+                          {captchaLoading ? '加载中' : '刷新验证码'}
+                        </Text>
                       )}
                     </Button>
                   </View>
-                  <Text
-                    className="block text-xs text-primary mt-2"
-                    onClick={loadRegisterCaptcha}
-                  >
-                    刷新验证码
-                  </Text>
                 </View>
               )}
 
@@ -713,7 +752,7 @@ export default function Index() {
                   <Text className="text-red-500">*</Text>密码
                 </Label>
                 <Input
-                  className="w-full bg-muted"
+                  className="w-full bg-gray-50"
                   placeholder="请输入密码"
                   password
                   value={password}
@@ -727,7 +766,7 @@ export default function Index() {
                     <Text className="text-red-500">*</Text>再次确认密码
                   </Label>
                   <Input
-                    className="w-full bg-muted"
+                    className="w-full bg-gray-50"
                     placeholder="请再次输入密码"
                     password
                     value={confirmPassword}
@@ -737,7 +776,7 @@ export default function Index() {
               )}
 
               <Button
-                className="w-full bg-primary"
+                className="w-full bg-blue-500"
                 onClick={handleSubmit}
                 disabled={authLoading}
               >
@@ -755,6 +794,6 @@ export default function Index() {
           )}
         </DialogContent>
       </Dialog>
-    </View>
+    </>
   )
 }

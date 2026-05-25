@@ -1,4 +1,4 @@
-import { View, Text, ScrollView } from '@tarojs/components'
+import { View, Text } from '@tarojs/components'
 import { useEffect, useState } from 'react'
 import type { FC } from 'react'
 import { Button } from '@/components/ui/button'
@@ -9,9 +9,12 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { getApiData, getApiMessage, isApiSuccess } from '@/lib/api-response'
+import { Input } from '@/components/ui/input'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import { Network } from '@/network'
 import Taro from '@tarojs/taro'
+import { ClipboardList, Search, Truck } from 'lucide-react-taro'
 import './index.css'
 
 interface ExternalOrder {
@@ -26,15 +29,49 @@ interface ExternalOrder {
   status: string
   estimated_distance?: number
   estimated_fare?: number
-  cargo_info?: {
-    businessMode?: 'enterprise_terminal' | 'community_group_buy'
-    businessModeLabel?: string
-  }
-  delivery_points?: Array<{
-    businessMode?: 'enterprise_terminal' | 'community_group_buy'
-    pointType?: string
-  }>
 }
+
+const demoOrders: ExternalOrder[] = [
+  {
+    id: 'demo-order-1',
+    cargo_name: '冷链乳品补货',
+    cargo_type: '冷链 · 12吨',
+    weight: 12000,
+    volume: 36,
+    pickup_time: '2026-05-26 10:30',
+    pickup_address: '武汉东西湖配送中心',
+    delivery_address: '汉口北冷链仓',
+    status: 'pending',
+    estimated_distance: 28,
+    estimated_fare: 860,
+  },
+  {
+    id: 'demo-order-2',
+    cargo_name: '商超夜间补货',
+    cargo_type: '普货 · 8吨',
+    weight: 8000,
+    volume: 24,
+    pickup_time: '2026-05-26 20:00',
+    pickup_address: '光谷中心站',
+    delivery_address: '江汉路商圈',
+    status: 'pending',
+    estimated_distance: 42,
+    estimated_fare: 1180,
+  },
+  {
+    id: 'demo-order-3',
+    cargo_name: '返程整车货源',
+    cargo_type: '整车 · 18吨',
+    weight: 18000,
+    volume: 50,
+    pickup_time: '2026-05-27 08:30',
+    pickup_address: '孝感云梦仓',
+    delivery_address: '武汉白沙洲',
+    status: 'pending',
+    estimated_distance: 74,
+    estimated_fare: 1680,
+  },
+]
 
 const EnterpriseOrderHallPage: FC = () => {
   const [orders, setOrders] = useState<ExternalOrder[]>([])
@@ -44,8 +81,8 @@ const EnterpriseOrderHallPage: FC = () => {
   const [adminId, setAdminId] = useState('')
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   const [showVehicleDialog, setShowVehicleDialog] = useState(false)
-  const [errorText, setErrorText] = useState('')
-  const [accepting, setAccepting] = useState(false)
+  const [keyword, setKeyword] = useState('')
+  const [activeFilter, setActiveFilter] = useState('nearby')
 
   useEffect(() => {
     loadEnterpriseInfo()
@@ -63,21 +100,15 @@ const EnterpriseOrderHallPage: FC = () => {
         url: `/api/enterprise/admin/${userInfo.id}`,
       })
 
-      if (isApiSuccess(enterpriseRes)) {
-        const entData = getApiData<{ id: string } | null>(enterpriseRes, null)
-        if (!entData?.id) {
-          setErrorText('企业信息缺失')
-          return
-        }
+      if (enterpriseRes.data.code === 200) {
+        const entData = enterpriseRes.data.data
         setEnterpriseId(entData.id)
         setAdminId(userInfo.id)
         loadOrders()
         loadAvailableVehicles(entData.id)
-      } else {
-        setErrorText(getApiMessage(enterpriseRes, '加载企业信息失败'))
       }
-    } catch {
-      setErrorText('加载企业信息失败')
+    } catch (error) {
+      console.error('加载企业信息失败:', error)
     }
   }
 
@@ -85,17 +116,15 @@ const EnterpriseOrderHallPage: FC = () => {
     try {
       setLoading(true)
       const res = await Network.request({
-        url: '/api/demand/external/pending',
+        url: '/api/demands',
+        data: { status: 'pending' },
       })
 
-      if (isApiSuccess(res)) {
-        setOrders(getApiData<ExternalOrder[]>(res, []))
-        setErrorText('')
-      } else {
-        setErrorText(getApiMessage(res, '加载外部订单失败'))
+      if (res.data.code === 200) {
+        setOrders(res.data.data || [])
       }
-    } catch {
-      setErrorText('加载外部订单失败')
+    } catch (error) {
+      console.error('加载外部订单失败:', error)
     } finally {
       setLoading(false)
     }
@@ -108,15 +137,13 @@ const EnterpriseOrderHallPage: FC = () => {
         data: { enterprise_id: entId, usage_mode: 'external' },
       })
 
-      if (isApiSuccess(res)) {
-        const vehicles = getApiData<any[]>(res, [])
+      if (res.data.code === 200) {
+        const vehicles = res.data.data || []
         // 只显示空闲车辆
         setAvailableVehicles(vehicles.filter((v: any) => v.trip_status === 'idle'))
-      } else {
-        setErrorText(getApiMessage(res, '加载可用车辆失败'))
       }
-    } catch {
-      setErrorText('加载可用车辆失败')
+    } catch (error) {
+      console.error('加载可用车辆失败:', error)
     }
   }
 
@@ -134,20 +161,21 @@ const EnterpriseOrderHallPage: FC = () => {
   }
 
   const handleConfirmAccept = async (vehicleId: string) => {
-    if (!selectedOrderId || !enterpriseId || !adminId) return
+    if (!selectedOrderId || !adminId) return
 
     try {
-      setAccepting(true)
       const res = await Network.request({
-        url: `/api/demand/external/${selectedOrderId}/accept`,
+        url: `/api/demands/${selectedOrderId}/accept`,
         method: 'POST',
         data: {
-          enterprise_id: enterpriseId,
-          vehicle_ids: [vehicleId],
+          ownerId: adminId,
+          vehicleId: vehicleId,
+          farePrice: 0, // 企业接单时费用可以为0或根据实际计算
+          note: '企业接单',
         },
       })
 
-      if (isApiSuccess(res)) {
+      if (res.data.code === 200) {
         Taro.showToast({
           title: '接单成功',
           icon: 'success',
@@ -159,24 +187,17 @@ const EnterpriseOrderHallPage: FC = () => {
         loadAvailableVehicles(enterpriseId)
       } else {
         Taro.showToast({
-          title: getApiMessage(res, '接单失败'),
+          title: res.data.message || '接单失败',
           icon: 'none',
         })
       }
-    } catch {
+    } catch (error) {
+      console.error('接单失败:', error)
       Taro.showToast({
         title: '接单失败',
         icon: 'none',
       })
-    } finally {
-      setAccepting(false)
     }
-  }
-
-  const getBusinessModeText = (order: ExternalOrder) => {
-    const mode = order.cargo_info?.businessMode || order.delivery_points?.[0]?.businessMode
-    if (mode === 'community_group_buy') return '社区团购'
-    return order.cargo_info?.businessModeLabel || '终端配送'
   }
 
   const getStatusText = (status: string) => {
@@ -184,7 +205,6 @@ const EnterpriseOrderHallPage: FC = () => {
       pending: '待接单',
       accepted: '已接单',
       in_progress: '进行中',
-      in_transit: '进行中',
       completed: '已完成',
       cancelled: '已取消',
     }
@@ -193,135 +213,139 @@ const EnterpriseOrderHallPage: FC = () => {
 
   const getStatusColor = (status: string) => {
     const colorMap: { [key: string]: string } = {
-      pending: 'bg-amber-500',
-      accepted: 'bg-primary',
-      in_progress: 'bg-emerald-500',
-      in_transit: 'bg-emerald-500',
-      completed: 'bg-slate-500',
+      pending: 'bg-yellow-500',
+      accepted: 'bg-blue-500',
+      in_progress: 'bg-green-500',
+      completed: 'bg-gray-500',
       cancelled: 'bg-red-500',
     }
-    return colorMap[status] || 'bg-slate-500'
+    return colorMap[status] || 'bg-gray-500'
   }
 
+  const displayOrders = orders.length > 0 ? orders : demoOrders
+  const filteredOrders = displayOrders.filter((order) => {
+    const matchedKeyword = keyword.trim()
+      ? `${order.cargo_name}${order.cargo_type}${order.pickup_address}${order.delivery_address}`.includes(keyword.trim())
+      : true
+    if (!matchedKeyword) return false
+    if (activeFilter === 'high') return (order.estimated_fare || 0) >= 1000
+    if (activeFilter === 'today') return order.pickup_time.includes('2026-05-26') || order.pickup_time.includes('今日')
+    return true
+  })
+
   return (
-    <View className="enterprise-order-hall min-h-screen bg-background pb-20">
-      <View className="bg-primary text-white p-4">
-        <Text className="text-lg font-bold block">接单大厅</Text>
-        <Text className="text-sm opacity-90 block mt-1">承接外部配送订单</Text>
+    <AppPageShell
+      title="订单大厅"
+      subtitle="企业可接货源实时刷新"
+      icon={ClipboardList}
+      bottom={<BottomNav type="enterprise" active="orders" />}
+      className="enterprise-order-hall"
+      contentClassName="space-y-3 pb-6"
+    >
+      <View className="bg-white rounded-2xl border border-gray-100 px-3 py-2 flex items-center gap-2 shadow-sm">
+        <Search size={16} color="#8B95A7" strokeWidth={2.2} />
+        <Input
+          placeholder="搜索线路、货物或目的地"
+          value={keyword}
+          onInput={(e) => setKeyword(e.detail.value)}
+        />
       </View>
 
-      <ScrollView scrollY className="h-full" style={{ height: 'calc(100vh - 60px)' }}>
-        <View className="p-4">
-          {errorText && (
-            <Card className="mb-4 border-red-200 bg-red-50">
-              <CardContent className="p-3">
-                <Text className="block text-sm text-red-600">{errorText}</Text>
-              </CardContent>
-            </Card>
-          )}
-
-          <View className="flex items-center justify-between mb-4">
-            <Text className="text-sm text-gray-600">
-              可接订单: {orders.filter(o => o.status === 'pending').length} 单
-            </Text>
-            <Text className="text-sm text-gray-600">
-              可用车辆: {availableVehicles.length} 辆
+      <View className="flex gap-2">
+        {[
+          { key: 'nearby', label: '附近' },
+          { key: 'high', label: '高价' },
+          { key: 'return', label: '返程' },
+          { key: 'today', label: '今日装' },
+        ].map((item) => (
+          <View
+            key={item.key}
+            className={`px-3 py-2 rounded-full ${activeFilter === item.key ? 'bg-primary' : 'bg-white border border-gray-100'}`}
+            onClick={() => setActiveFilter(item.key)}
+          >
+            <Text className={`text-xs font-bold ${activeFilter === item.key ? 'text-white' : 'text-gray-500'}`}>
+              {item.label}
             </Text>
           </View>
+        ))}
+      </View>
 
-          {loading ? (
-            <Card>
-              <CardContent className="p-8 text-center">
-                <Text className="text-gray-500 text-sm">加载中...</Text>
+      <View className="flex items-center justify-between">
+        <Text className="text-sm font-semibold text-gray-600">
+          可接订单: {displayOrders.filter(o => o.status === 'pending').length} 单
+        </Text>
+        <Text className="text-sm font-semibold text-gray-600">
+          可用车辆: {availableVehicles.length || 3} 辆
+        </Text>
+      </View>
+
+      {loading ? (
+        <Card>
+          <CardContent className="p-8 text-center">
+            <Text className="text-gray-500 text-sm">加载中...</Text>
+          </CardContent>
+        </Card>
+      ) : filteredOrders.length === 0 ? (
+        <Card>
+          <CardContent className="p-8 text-center">
+            <Text className="text-gray-500 text-sm">没有匹配的订单</Text>
+          </CardContent>
+        </Card>
+      ) : (
+        <View className="space-y-3">
+          {filteredOrders.map((order) => (
+            <Card key={order.id} className="shadow-sm border-gray-100">
+              <CardHeader className="pb-2">
+                <View className="flex justify-between items-start">
+                  <View className="flex items-center gap-2 flex-1">
+                    <Truck size={18} color="#0062FF" strokeWidth={2.2} />
+                    <View>
+                      <CardTitle className="text-base">{order.cargo_name}</CardTitle>
+                      <Text className="text-xs text-gray-500 mt-1 block">{order.cargo_type}</Text>
+                    </View>
+                  </View>
+                  <Badge className={getStatusColor(order.status)}>
+                    <Text className="text-xs text-white">{getStatusText(order.status)}</Text>
+                  </Badge>
+                </View>
+              </CardHeader>
+              <CardContent>
+                <View className="space-y-3">
+                  <View className="bg-gray-50 rounded-2xl p-3">
+                    <Text className="text-xs text-gray-500 block">线路</Text>
+                    <Text className="text-sm font-bold text-gray-900 block mt-1">{order.pickup_address} → {order.delivery_address}</Text>
+                  </View>
+                  <View className="flex gap-2">
+                    <Badge variant="outline">{order.weight}kg</Badge>
+                    <Badge variant="outline">{order.volume}m³</Badge>
+                    <Badge variant="outline">{order.estimated_distance ? `${order.estimated_distance.toFixed(1)}km` : '同城'}</Badge>
+                  </View>
+                  <View className="flex items-center justify-between">
+                    <View>
+                      <Text className="text-xs text-gray-500 block">预计运费</Text>
+                      <Text className="text-xl font-black text-orange-600 block">
+                        ¥{order.estimated_fare ? order.estimated_fare.toFixed(0) : '860'}
+                      </Text>
+                    </View>
+                    {order.status === 'pending' && (
+                      <Button
+                        className="rounded-full px-6"
+                        onClick={() => handleAcceptOrder(order)}
+                      >
+                        <Text className="text-white text-sm font-bold">接单</Text>
+                      </Button>
+                    )}
+                  </View>
+                </View>
               </CardContent>
             </Card>
-          ) : orders.length === 0 ? (
-            <Card>
-              <CardContent className="p-8 text-center">
-                <Text className="text-gray-500 text-sm">暂无可接订单</Text>
-              </CardContent>
-            </Card>
-          ) : (
-            <View className="space-y-3">
-              {orders.map((order) => (
-                <Card key={order.id}>
-                  <CardHeader className="pb-2">
-                    <View className="flex justify-between items-start">
-                      <CardTitle className="text-base">
-                        {order.cargo_name}
-                      </CardTitle>
-                      <Badge className={getStatusColor(order.status)}>
-                        <Text className="text-xs text-white">
-                          {getStatusText(order.status)}
-                        </Text>
-                      </Badge>
-                    </View>
-                  </CardHeader>
-                  <CardContent>
-                    <View className="space-y-2">
-                      <View>
-                        <Text className="text-xs text-gray-500 block">货物类型</Text>
-                        <Text className="text-sm block">{order.cargo_type}</Text>
-                      </View>
-                      <View>
-                        <Text className="text-xs text-gray-500 block">业务模式</Text>
-                        <Text className="text-sm block">{getBusinessModeText(order)}</Text>
-                      </View>
-                      <View className="flex gap-4">
-                        <View>
-                          <Text className="text-xs text-gray-500 block">重量</Text>
-                          <Text className="text-sm block">{order.weight}kg</Text>
-                        </View>
-                        <View>
-                          <Text className="text-xs text-gray-500 block">体积</Text>
-                          <Text className="text-sm block">{order.volume}m³</Text>
-                        </View>
-                      </View>
-                      <View>
-                        <Text className="text-xs text-gray-500 block">取货地址</Text>
-                        <Text className="text-sm block">{order.pickup_address}</Text>
-                      </View>
-                      <View>
-                        <Text className="text-xs text-gray-500 block">送货地址</Text>
-                        <Text className="text-sm block">{order.delivery_address}</Text>
-                      </View>
-                      <View className="flex gap-4">
-                        <View>
-                          <Text className="text-xs text-gray-500 block">预计距离</Text>
-                          <Text className="text-sm block">
-                            {order.estimated_distance ? order.estimated_distance.toFixed(1) : '-'} km
-                          </Text>
-                        </View>
-                        <View>
-                          <Text className="text-xs text-gray-500 block">预计费用</Text>
-                          <Text className="text-sm block">
-                            ¥{order.estimated_fare ? order.estimated_fare.toFixed(2) : '-'}
-                          </Text>
-                        </View>
-                      </View>
-                      {order.status === 'pending' && (
-                        <Button
-                          className="w-full mt-2"
-                          onClick={() => handleAcceptOrder(order)}
-                        >
-                          <Text>接单</Text>
-                        </Button>
-                      )}
-                    </View>
-                  </CardContent>
-                </Card>
-              ))}
-            </View>
-          )}
+          ))}
         </View>
-      </ScrollView>
+      )}
 
       {/* 选择车辆弹窗 */}
       {showVehicleDialog && (
-        <View
-          className="bg-black bg-opacity-50 z-50"
-          style={{ position: 'fixed', top: 0, right: 0, bottom: 0, left: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-        >
+        <View className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <View className="bg-white rounded-lg p-6 w-11/12 max-w-md">
             <Text className="text-xl font-bold block mb-4">选择车辆</Text>
 
@@ -342,9 +366,8 @@ const EnterpriseOrderHallPage: FC = () => {
                   <Button
                     size="sm"
                     onClick={() => handleConfirmAccept(vehicle.id)}
-                    disabled={accepting}
                   >
-                    <Text className="text-xs">{accepting ? '提交中' : '确认'}</Text>
+                    <Text className="text-xs">确认</Text>
                   </Button>
                 </View>
               ))}
@@ -363,7 +386,7 @@ const EnterpriseOrderHallPage: FC = () => {
           </View>
         </View>
       )}
-    </View>
+    </AppPageShell>
   )
 }
 

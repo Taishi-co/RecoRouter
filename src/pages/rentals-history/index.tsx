@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import { Car, Calendar, DollarSign, User, FileText, Clock, Check, X } from 'lucide-react-taro'
 import { Network } from '@/network'
 
@@ -43,6 +45,69 @@ interface RentalRecord {
   renters?: UserInfo
   owners?: UserInfo
 }
+
+const demoRenterRecords: RentalRecord[] = [
+  {
+    id: 'demo-rental-renter-1',
+    vehicle_id: 'demo-vehicle-1',
+    owner_id: 'demo-owner-1',
+    renter_id: 'demo-renter-1',
+    rent_type: 'monthly',
+    rent_start_date: '2026-05-20',
+    rent_end_date: '2026-06-20',
+    deposit_amount: 5000,
+    contract_signed: true,
+    rent_paid: true,
+    deposit_paid: true,
+    status: 'active',
+    notes: '宝山服务站取车，GPS 已接入。',
+    created_at: '2026-05-18',
+    confirmed_by_owner: true,
+    confirmed_at: '2026-05-19',
+    vehicles: {
+      id: 'demo-vehicle-1',
+      license_plate: '沪A·R8821',
+      vehicle_type: 'large_truck',
+      load_capacity: 32000,
+    },
+    owners: {
+      id: 'demo-owner-1',
+      name: '张师傅',
+      phone: '138****6621',
+    },
+  },
+]
+
+const demoOwnerRecords: RentalRecord[] = [
+  {
+    id: 'demo-rental-owner-1',
+    vehicle_id: 'demo-vehicle-2',
+    owner_id: 'demo-owner-2',
+    renter_id: 'demo-renter-2',
+    rent_type: 'monthly',
+    rent_start_date: '2026-05-28',
+    rent_end_date: '2026-06-28',
+    deposit_amount: 3000,
+    contract_signed: false,
+    rent_paid: false,
+    deposit_paid: true,
+    status: 'pending',
+    notes: '待确认取车时间。',
+    created_at: '2026-05-26',
+    confirmed_by_owner: false,
+    vehicles: {
+      id: 'demo-vehicle-2',
+      license_plate: '鄂A·7K21',
+      vehicle_type: 'medium_truck',
+      load_capacity: 9600,
+    },
+    renters: {
+      id: 'demo-renter-2',
+      name: '上海某某贸易',
+      phone: '156****7098',
+    },
+  },
+]
 
 export default function RentalsHistory() {
   const [loading, setLoading] = useState(false)
@@ -141,12 +206,12 @@ export default function RentalsHistory() {
 
   const getStatusInfo = (status: string) => {
     const statusMap: Record<string, { label: string; color: string; icon: any }> = {
-      'pending': { label: '待确认', color: 'bg-amber-500', icon: Clock },
-      'active': { label: '进行中', color: 'bg-emerald-500', icon: Check },
+      'pending': { label: '待确认', color: 'bg-yellow-500', icon: Clock },
+      'active': { label: '进行中', color: 'bg-green-500', icon: Check },
       'terminated': { label: '已拒绝', color: 'bg-red-500', icon: X },
-      'expired': { label: '已到期', color: 'bg-slate-500', icon: Clock }
+      'expired': { label: '已到期', color: 'bg-gray-500', icon: Clock }
     }
-    return statusMap[status] || { label: status, color: 'bg-slate-500', icon: Clock }
+    return statusMap[status] || { label: status, color: 'bg-gray-500', icon: Clock }
   }
 
   const renderRentalCard = (record: RentalRecord, isRenter: boolean) => {
@@ -163,7 +228,7 @@ export default function RentalsHistory() {
             </CardTitle>
             <Badge className={statusInfo.color}>
               <View className="flex items-center">
-                <StatusIcon size={12} className="mr-1" />
+                <StatusIcon size={12} className="mr-1" color="#FFFFFF" />
                 <Text className="text-white text-xs">{statusInfo.label}</Text>
               </View>
             </Badge>
@@ -199,7 +264,7 @@ export default function RentalsHistory() {
           <Separator />
 
           {/* 租赁信息 */}
-          <View className="bg-accent p-3 rounded-lg">
+          <View className="bg-blue-50 p-3 rounded-lg">
             <View className="flex items-center text-sm text-gray-700 mb-2">
               <Calendar size={14} className="mr-2" color="#6b7280" />
               <Text className="block font-medium">租赁信息</Text>
@@ -222,17 +287,17 @@ export default function RentalsHistory() {
 
           {/* 支付状态 */}
           <View className="flex gap-2">
-            <Badge className={record.contract_signed ? 'bg-emerald-500' : 'bg-slate-500'}>
+            <Badge className={record.contract_signed ? 'bg-green-500' : 'bg-gray-500'}>
               <Text className="text-white text-xs">
                 {record.contract_signed ? '已签约' : '未签约'}
               </Text>
             </Badge>
-            <Badge className={record.rent_paid ? 'bg-emerald-500' : 'bg-slate-500'}>
+            <Badge className={record.rent_paid ? 'bg-green-500' : 'bg-gray-500'}>
               <Text className="text-white text-xs">
                 {record.rent_paid ? '已付租金' : '未付租金'}
               </Text>
             </Badge>
-            <Badge className={record.deposit_paid ? 'bg-emerald-500' : 'bg-slate-500'}>
+            <Badge className={record.deposit_paid ? 'bg-green-500' : 'bg-gray-500'}>
               <Text className="text-white text-xs">
                 {record.deposit_paid ? '已付押金' : '未付押金'}
               </Text>
@@ -241,7 +306,7 @@ export default function RentalsHistory() {
 
           {/* 备注 */}
           {record.notes && (
-            <View className="text-sm text-gray-600 bg-muted p-2 rounded">
+            <View className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
               <View className="flex items-start">
                 <FileText size={14} className="mr-2 flex-shrink-0 mt-1" color="#6b7280" />
                 <Text className="block">备注：{record.notes}</Text>
@@ -258,31 +323,39 @@ export default function RentalsHistory() {
     )
   }
 
+  const displayAsRenter = asRenter.length > 0 ? asRenter : demoRenterRecords
+  const displayAsOwner = asOwner.length > 0 ? asOwner : demoOwnerRecords
+
   return (
-    <View className="min-h-screen bg-background pb-4">
-      {/* 头部 */}
-      <View className="bg-white p-4 border-b border-border">
-        <Text className="text-xl font-bold text-gray-900 block">我的租赁记录</Text>
-        <Text className="block text-sm text-gray-500 mt-1">查看租赁历史和状态</Text>
-        {/* 当前用户信息提示 */}
-        {userInfo && (
-          <View className="mt-2 p-2 bg-accent rounded-lg">
-            <Text className="block text-xs text-primary">
-              当前用户：{userInfo.name} ({userInfo.phone})
-            </Text>
-          </View>
-        )}
-      </View>
+    <AppPageShell
+      title="租赁记录"
+      subtitle="RecoRouter 租赁记录"
+      right={
+        <View className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center">
+          <Car size={20} color="#0062FF" strokeWidth={2.3} />
+        </View>
+      }
+      bottom={<BottomNav type="common" active="profile" />}
+      scroll={false}
+      contentClassName="space-y-4"
+    >
+      {userInfo && (
+        <Card className="p-3 bg-blue-50 border-blue-100">
+          <Text className="block text-xs text-blue-700">
+            当前用户：{userInfo.name} ({userInfo.phone})
+          </Text>
+        </Card>
+      )}
 
       {/* 标签页 */}
-      <View className="mx-4 mt-4">
+      <View>
         <Tabs defaultValue="renter" value={activeTab} onValueChange={(v) => setActiveTab(v as 'renter' | 'owner')}>
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="renter">
-              <Text className="text-sm">我租的车 ({asRenter.length})</Text>
+              <Text className="text-sm">我租的车 ({displayAsRenter.length})</Text>
             </TabsTrigger>
             <TabsTrigger value="owner">
-              <Text className="text-sm">租出去的车 ({asOwner.length})</Text>
+              <Text className="text-sm">租出去的车 ({displayAsOwner.length})</Text>
             </TabsTrigger>
           </TabsList>
 
@@ -291,14 +364,14 @@ export default function RentalsHistory() {
               <View className="text-center py-8">
                 <Text className="block text-gray-500">加载中...</Text>
               </View>
-            ) : asRenter.length === 0 ? (
+            ) : displayAsRenter.length === 0 ? (
               <View className="text-center py-8">
                 <Car size={48} color="#d1d5db" className="mx-auto mb-3" />
                 <Text className="block text-gray-500">暂无租赁记录</Text>
               </View>
             ) : (
               <View className="space-y-4">
-                {asRenter.map((record) => renderRentalCard(record, true))}
+                {displayAsRenter.map((record) => renderRentalCard(record, true))}
               </View>
             )}
           </TabsContent>
@@ -308,19 +381,19 @@ export default function RentalsHistory() {
               <View className="text-center py-8">
                 <Text className="block text-gray-500">加载中...</Text>
               </View>
-            ) : asOwner.length === 0 ? (
+            ) : displayAsOwner.length === 0 ? (
               <View className="text-center py-8">
                 <Car size={48} color="#d1d5db" className="mx-auto mb-3" />
                 <Text className="block text-gray-500">暂无租赁记录</Text>
               </View>
             ) : (
               <View className="space-y-4">
-                {asOwner.map((record) => renderRentalCard(record, false))}
+                {displayAsOwner.map((record) => renderRentalCard(record, false))}
               </View>
             )}
           </TabsContent>
         </Tabs>
       </View>
-    </View>
+    </AppPageShell>
   )
 }

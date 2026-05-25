@@ -8,7 +8,9 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
-import { ArrowLeft, Info, Settings } from 'lucide-react-taro'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
+import { Info } from 'lucide-react-taro'
 import { Network } from '@/network'
 
 interface RentalSettings {
@@ -144,34 +146,28 @@ export default function VehicleRentalSettings() {
 
   if (loading) {
     return (
-      <View className="min-h-screen bg-background flex items-center justify-center">
+      <AppPageShell
+        title="出租设置"
+        subtitle="RecoRouter 运力端"
+        bottom={<BottomNav type="owner" active="vehicles" />}
+      >
         <Text className="block text-gray-500">加载中...</Text>
-      </View>
+      </AppPageShell>
     )
   }
 
   return (
-    <View className="min-h-screen bg-background pb-4">
-      {/* 头部 */}
-      <View className="bg-white p-4 border-b border-border">
-        <View className="flex items-center">
-          <ArrowLeft
-            size={20}
-            color="#0062ff"
-            className="mr-3 cursor-pointer"
-            onClick={() => Taro.navigateBack()}
-          />
-          <Settings size={20} color="#0062ff" className="mr-2" />
-          <Text className="text-lg font-bold text-gray-900">车辆租赁设置</Text>
-        </View>
-      </View>
-
-      <View className="mx-4 mt-4 space-y-4">
+    <AppPageShell
+      title="出租设置"
+      subtitle="RecoRouter 运力端"
+      contentClassName="space-y-4"
+      bottom={<BottomNav type="owner" active="vehicles" />}
+    >
         {/* 提示信息 */}
-        <View className="p-3 bg-accent rounded-lg">
+        <View className="p-3 bg-blue-50 rounded-lg">
           <View className="flex items-start">
-            <Info size={16} color="#0062ff" className="mr-2 flex-shrink-0 mt-1" />
-            <Text className="block text-sm text-primary">
+            <Info size={16} color="#1890ff" className="mr-2 flex-shrink-0 mt-1" />
+            <Text className="block text-sm text-blue-700">
               设置车辆为可租赁后，需求方可以在租车大厅看到您的车辆。
             </Text>
           </View>
@@ -270,7 +266,7 @@ export default function VehicleRentalSettings() {
                 <Separator />
 
                 {/* 租赁条款 */}
-                <View className="p-3 bg-muted rounded-lg">
+                <View className="p-3 bg-gray-50 rounded-lg">
                   <Text className="block text-sm font-medium text-gray-700 mb-2">租赁条款（仅供参考）</Text>
                   <View className="space-y-1">
                     <Text className="block text-xs text-gray-600">• 车辆维修：由车主负责</Text>
@@ -285,7 +281,7 @@ export default function VehicleRentalSettings() {
         </Card>
 
         {/* 保存按钮 */}
-        <View className="flex gap-3">
+        <View className="flex gap-3 pb-2">
           <Button
             className="flex-1"
             variant="outline"
@@ -298,10 +294,9 @@ export default function VehicleRentalSettings() {
             onClick={handleSaveSettings}
             disabled={saving}
           >
-            {saving ? '保存中...' : '保存'}
+            {saving ? '保存中...' : '保存设置'}
           </Button>
         </View>
-      </View>
-    </View>
+    </AppPageShell>
   )
 }

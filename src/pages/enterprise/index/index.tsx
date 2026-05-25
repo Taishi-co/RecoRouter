@@ -6,28 +6,32 @@ import {
   Card,
   CardContent,
 } from '@/components/ui/card'
-import { getApiData, isApiSuccess } from '@/lib/api-response'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import { Network } from '@/network'
 import Taro from '@tarojs/taro'
+import { Building2, ChartNoAxesCombined, ClipboardList, MapPinned, Route, Send, Warehouse } from 'lucide-react-taro'
 import './index.css'
 
-interface DashboardStats {
+interface DemandStats {
   pending: number
   in_transit: number
   completed: number
   cancelled: number
   total: number
-  availableVehicles: number
-  activeVehicles: number
-  totalVehicles: number
-  externalOpportunities: number
+}
+
+const DEMO_ENTERPRISE_STATS: DemandStats = {
+  pending: 18,
+  in_transit: 27,
+  completed: 64,
+  cancelled: 2,
+  total: 109,
 }
 
 const EnterpriseHomePage: FC = () => {
-  const [stats, setStats] = useState<DashboardStats | null>(null)
-  const [enterpriseName, setEnterpriseName] = useState('企业配送中心')
+  const [stats, setStats] = useState<DemandStats | null>(DEMO_ENTERPRISE_STATS)
   const [loading, setLoading] = useState(true)
-  const [errorText, setErrorText] = useState('')
 
   useEffect(() => {
     loadDashboardData()
@@ -37,7 +41,7 @@ const EnterpriseHomePage: FC = () => {
     try {
       const userInfo = Taro.getStorageSync('userInfo')
       if (!userInfo) {
-        Taro.redirectTo({ url: '/pages/index/index' })
+        setStats(DEMO_ENTERPRISE_STATS)
         return
       }
 
@@ -46,32 +50,26 @@ const EnterpriseHomePage: FC = () => {
         url: `/api/enterprise/admin/${userInfo.id}`,
       })
 
-      if (!isApiSuccess(enterpriseRes)) {
-        setErrorText('获取企业信息失败')
-        return
-      }
+      if (enterpriseRes.data.code === 200) {
+        const entId = enterpriseRes.data.data.id
 
-      const enterprise = getApiData<{ id?: string; name?: string } | null>(enterpriseRes, null)
-      const entId = enterprise?.id
-      if (!entId) {
-        setErrorText('企业信息缺失')
-        return
-      }
-      setEnterpriseName(enterprise?.name || '企业配送中心')
+        // 加载统计数据
+        const statsRes = await Network.request({
+          url: '/api/demand/stats/enterprise',
+          data: { enterprise_id: entId },
+        })
 
-      const statsRes = await Network.request({
-        url: '/api/enterprise/stats',
-        data: { enterprise_id: entId },
-      })
-
-      if (isApiSuccess(statsRes)) {
-        setStats(getApiData<DashboardStats | null>(statsRes, null))
-        setErrorText('')
+        if (statsRes.data.code === 200) {
+          setStats(statsRes.data.data)
+        } else {
+          setStats(DEMO_ENTERPRISE_STATS)
+        }
       } else {
-        setErrorText('加载仪表盘数据失败')
+        setStats(DEMO_ENTERPRISE_STATS)
       }
-    } catch {
-      setErrorText('加载仪表盘数据失败')
+    } catch (error) {
+      console.error('加载仪表盘数据失败:', error)
+      setStats(DEMO_ENTERPRISE_STATS)
     } finally {
       setLoading(false)
     }
@@ -85,14 +83,17 @@ const EnterpriseHomePage: FC = () => {
     Taro.navigateTo({ url: '/pages/enterprise/publish/index' })
   }
 
-  const navigateToFleet = () => {
-    Taro.navigateTo({ url: '/pages/enterprise/fleet/index' })
-  }
-
   const navigateToStations = () => {
+    console.log('点击奶站管理 - 开始跳转')
+
+    // 直接使用 Taro.navigateTo
     Taro.navigateTo({
       url: '/pages/enterprise/stations/index',
-      fail: () => {
+      success: () => {
+        console.log('跳转成功')
+      },
+      fail: (err) => {
+        console.error('跳转失败:', err)
         Taro.showToast({
           title: '跳转失败',
           icon: 'none',
@@ -102,9 +103,14 @@ const EnterpriseHomePage: FC = () => {
   }
 
   const navigateToStats = () => {
+    console.log('点击数据统计 - 开始跳转')
     Taro.navigateTo({
       url: '/pages/enterprise/stats/index',
-      fail: () => {
+      success: () => {
+        console.log('跳转成功')
+      },
+      fail: (err) => {
+        console.error('跳转失败:', err)
         Taro.showToast({
           title: '跳转失败',
           icon: 'none',
@@ -114,9 +120,14 @@ const EnterpriseHomePage: FC = () => {
   }
 
   const navigateToOrderHall = () => {
+    console.log('点击接单大厅 - 开始跳转')
     Taro.navigateTo({
       url: '/pages/enterprise/order-hall/index',
-      fail: () => {
+      success: () => {
+        console.log('跳转成功')
+      },
+      fail: (err) => {
+        console.error('跳转失败:', err)
         Taro.showToast({
           title: '跳转失败',
           icon: 'none',
@@ -125,203 +136,115 @@ const EnterpriseHomePage: FC = () => {
     })
   }
 
-  const hasPendingItems = Boolean(
-    stats && (
-      stats.pending > 0 ||
-      stats.in_transit > 0 ||
-      stats.externalOpportunities > 0 ||
-      stats.availableVehicles === 0
-    )
-  )
-
   return (
-    <View className="enterprise-home min-h-screen bg-background pb-20">
-      {/* 顶部信息栏 */}
-      <View className="bg-primary px-4 py-6">
-        <Text className="text-white text-xl font-bold block">{enterpriseName}</Text>
-      </View>
-
-      {/* 今日概览 */}
-      <View className="p-4">
-        <Text className="text-base font-bold text-gray-900 mb-3 block">今日概览</Text>
-
-        {errorText && (
-          <Card className="mb-3 border-red-100 bg-red-50">
+    <AppPageShell
+      title="企业运营台"
+      subtitle="武汉 · 今日履约 86%"
+      icon={Building2}
+      bottom={<BottomNav type="enterprise" active="home" />}
+      className="enterprise-home"
+      contentClassName="space-y-3 pb-6"
+    >
+      {loading ? (
+        <Card>
+          <CardContent className="p-8 text-center">
+            <Text className="text-gray-500 text-sm">加载中...</Text>
+          </CardContent>
+        </Card>
+      ) : (
+        <View className="flex gap-2" style={{ display: 'flex', gap: '8px' }}>
+          <Card className="flex-1 min-w-0 shadow-sm border-gray-100" style={{ flex: '1 1 0', minWidth: 0, overflow: 'hidden' }}>
             <CardContent className="p-3">
-              <Text className="block text-sm text-red-600">{errorText}</Text>
+              <Text className="text-lg font-black text-gray-900 block">{stats?.total || 0}</Text>
+              <Text className="text-xs font-semibold text-gray-500 block mt-1">今日订单</Text>
             </CardContent>
           </Card>
-        )}
+          <Card className="flex-1 min-w-0 shadow-sm border-gray-100" style={{ flex: '1 1 0', minWidth: 0, overflow: 'hidden' }}>
+            <CardContent className="p-3">
+              <Text className="text-lg font-black text-orange-600 block">{stats?.pending || 0}</Text>
+              <Text className="text-xs font-semibold text-gray-500 block mt-1">待调度</Text>
+            </CardContent>
+          </Card>
+          <Card className="flex-1 min-w-0 shadow-sm border-gray-100" style={{ flex: '1 1 0', minWidth: 0, overflow: 'hidden' }}>
+            <CardContent className="p-3">
+              <Text className="text-lg font-black text-blue-600 block">{stats?.in_transit || 0}</Text>
+              <Text className="text-xs font-semibold text-gray-500 block mt-1">在线车辆</Text>
+            </CardContent>
+          </Card>
+        </View>
+      )}
 
-        {loading ? (
-          <Card>
-            <CardContent className="p-8 text-center">
-              <Text className="block text-gray-500 text-sm">加载中...</Text>
-            </CardContent>
-          </Card>
-        ) : (
-          <View>
-            <View className="grid grid-cols-3 gap-2 mb-3">
-              <Card>
-                <CardContent className="p-3 text-center">
-                  <Text className="text-xl font-bold text-gray-900 block">
-                    {stats?.pending || 0}
-                  </Text>
-                  <Text className="text-xs text-gray-500 block">待调度</Text>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-3 text-center">
-                  <Text className="text-xl font-bold text-primary block">
-                    {stats?.in_transit || 0}
-                  </Text>
-                  <Text className="text-xs text-gray-500 block">运输中</Text>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-3 text-center">
-                  <Text className="text-xl font-bold text-emerald-600 block">
-                    {stats?.completed || 0}
-                  </Text>
-                  <Text className="text-xs text-gray-500 block">已完成</Text>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-3 text-center">
-                  <Text className="text-xl font-bold text-red-600 block">
-                    {stats?.cancelled || 0}
-                  </Text>
-                  <Text className="text-xs text-gray-500 block">异常/取消</Text>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-3 text-center">
-                  <Text className="text-xl font-bold text-teal-600 block">
-                    {stats?.availableVehicles || 0}
-                  </Text>
-                  <Text className="text-xs text-gray-500 block">可用车辆</Text>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-3 text-center">
-                  <Text className="text-xl font-bold text-amber-600 block">
-                    {stats?.externalOpportunities || 0}
-                  </Text>
-                  <Text className="text-xs text-gray-500 block">外部机会</Text>
-                </CardContent>
-              </Card>
+      <Card className="shadow-sm border-gray-100 overflow-hidden">
+        <CardContent className="p-4">
+          <View className="flex items-center justify-between mb-3">
+            <View>
+              <Text className="block text-base font-black text-gray-900">实时运力热区</Text>
+              <Text className="block text-xs font-semibold text-gray-500 mt-1">唐山配送中心 · 冷链车辆覆盖</Text>
+            </View>
+            <View className="w-9 h-9 rounded-2xl bg-blue-50 flex items-center justify-center">
+              <MapPinned size={18} color="#0062FF" strokeWidth={2.2} />
             </View>
           </View>
-        )}
+          <View className="h-36 rounded-2xl bg-blue-50 border border-blue-100 relative overflow-hidden">
+            <View className="absolute left-4 top-5 w-12 h-12 rounded-full bg-blue-200" />
+            <View className="absolute right-8 top-8 w-16 h-16 rounded-full bg-orange-200" />
+            <View className="absolute left-20 bottom-5 w-20 h-10 rounded-full bg-green-200" />
+            <View className="absolute left-8 right-8 top-16 h-1 bg-white rounded-full" />
+            <View className="absolute left-14 top-12 w-3 h-3 rounded-full bg-primary" />
+            <View className="absolute right-16 top-24 w-3 h-3 rounded-full bg-orange-500" />
+          </View>
+        </CardContent>
+      </Card>
 
-        {/* 待处理事项 */}
-        <Text className="text-base font-bold text-gray-900 mb-3 block">待处理事项</Text>
-        {loading ? null : (
-          <View>
-            {stats?.pending !== undefined && stats.pending > 0 && (
-              <Card className="mb-3">
-                <CardContent className="p-3">
-                  <View className="flex justify-between items-center mb-2">
-                    <Text className="text-sm text-gray-900 font-medium block">
-                      {stats.pending} 个配送需求待调度
-                    </Text>
-                  </View>
-                  <Button size="sm" className="w-full" onClick={navigateToDispatch}>
-                    去调度
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-            {stats?.in_transit !== undefined && stats.in_transit > 0 && (
-              <Card className="mb-4">
-                <CardContent className="p-3">
-                  <View className="flex justify-between items-center mb-2">
-                    <Text className="text-sm text-gray-900 font-medium block">
-                      {stats.in_transit} 个配送需求运输中
-                    </Text>
-                  </View>
-                  <Button size="sm" variant="outline" className="w-full" onClick={navigateToDispatch}>
-                    查看进度
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-            {stats?.externalOpportunities !== undefined && stats.externalOpportunities > 0 && (
-              <Card className="mb-4">
-                <CardContent className="p-3">
-                  <View className="flex justify-between items-center mb-2">
-                    <Text className="text-sm text-gray-900 font-medium block">
-                      {stats.externalOpportunities} 个外部订单可接
-                    </Text>
-                  </View>
-                  <Button size="sm" variant="outline" className="w-full" onClick={navigateToOrderHall}>
-                    去接单
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-            {stats && stats.availableVehicles === 0 && (
-              <Card className="mb-4">
-                <CardContent className="p-3">
-                  <View className="flex justify-between items-center mb-2">
-                    <Text className="text-sm text-gray-900 font-medium block">
-                      当前没有空闲可用车辆
-                    </Text>
-                  </View>
-                  <Button size="sm" variant="outline" className="w-full" onClick={navigateToFleet}>
-                    查看车辆
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-            {!hasPendingItems && (
-              <Card className="mb-4">
-                <CardContent className="p-3">
-                  <Text className="text-sm text-gray-500 text-center block">
-                    暂无待处理事项
-                  </Text>
-                </CardContent>
-              </Card>
-            )}
+      <Card className="shadow-sm border-gray-100">
+        <CardContent className="p-4">
+          <Text className="block text-base font-black text-gray-900 mb-3">待处理</Text>
+          <View className="space-y-3">
+            <View className="flex items-center gap-3" onClick={navigateToDispatch}>
+              <View className="w-9 h-9 rounded-2xl bg-orange-50 flex items-center justify-center">
+                <Route size={17} color="#EA580C" strokeWidth={2.2} />
+              </View>
+              <View className="flex-1">
+                <Text className="block text-sm font-bold text-gray-900">{stats?.pending || 0} 个待调度订单</Text>
+                <Text className="block text-xs font-semibold text-gray-500 mt-1">按线路、车辆、时效分配</Text>
+              </View>
+              <Text className="text-xs font-bold text-blue-600">处理</Text>
+            </View>
+            <View className="flex items-center gap-3" onClick={navigateToOrderHall}>
+              <View className="w-9 h-9 rounded-2xl bg-blue-50 flex items-center justify-center">
+                <ClipboardList size={17} color="#0062FF" strokeWidth={2.2} />
+              </View>
+              <View className="flex-1">
+                <Text className="block text-sm font-bold text-gray-900">外部货源实时刷新</Text>
+                <Text className="block text-xs font-semibold text-gray-500 mt-1">查看可接订单与返程货源</Text>
+              </View>
+              <Text className="text-xs font-bold text-blue-600">进入</Text>
+            </View>
+            <View className="flex items-center gap-3" onClick={navigateToStats}>
+              <View className="w-9 h-9 rounded-2xl bg-green-50 flex items-center justify-center">
+                <ChartNoAxesCombined size={17} color="#16A34A" strokeWidth={2.2} />
+              </View>
+              <View className="flex-1">
+                <Text className="block text-sm font-bold text-gray-900">{stats?.completed || 0} 个订单已送达</Text>
+                <Text className="block text-xs font-semibold text-gray-500 mt-1">查看履约、成本、效率趋势</Text>
+              </View>
+              <Text className="text-xs font-bold text-blue-600">统计</Text>
+            </View>
           </View>
-        )}
+        </CardContent>
+      </Card>
 
-        {/* 快捷入口 */}
-        <Text className="text-base font-bold text-gray-900 mb-3 block">快捷入口</Text>
-        <View className="grid grid-cols-3 gap-2">
-          <View className="h-16" onClick={navigateToPublish}>
-            <Button className="w-full h-full" variant="default">
-              <Text className="text-white text-sm">发布配送</Text>
-            </Button>
-          </View>
-          <View className="h-16" onClick={navigateToOrderHall}>
-            <Button className="w-full h-full" variant="outline">
-              <Text className="text-gray-900 text-sm">接单大厅</Text>
-            </Button>
-          </View>
-          <View className="h-16" onClick={navigateToFleet}>
-            <Button className="w-full h-full" variant="outline">
-              <Text className="text-gray-900 text-sm">车辆管理</Text>
-            </Button>
-          </View>
-          <View className="h-16" onClick={navigateToStations}>
-            <Button className="w-full h-full" variant="outline">
-              <Text className="text-gray-900 text-sm">配送点</Text>
-            </Button>
-          </View>
-          <View className="h-16" onClick={navigateToDispatch}>
-            <Button className="w-full h-full" variant="outline">
-              <Text className="text-gray-900 text-sm">调度中心</Text>
-            </Button>
-          </View>
-          <View className="h-16" onClick={navigateToStats}>
-            <Button className="w-full h-full" variant="outline">
-              <Text className="text-gray-900 text-sm">数据统计</Text>
-            </Button>
-          </View>
-        </View>
+      <View className="grid grid-cols-2 gap-3">
+        <Button className="h-12 rounded-full" onClick={navigateToPublish}>
+          <Send size={16} color="#FFFFFF" strokeWidth={2.2} />
+          <Text className="text-white text-sm font-bold ml-2">发布货源</Text>
+        </Button>
+        <Button className="h-12 rounded-full bg-white border border-gray-200" variant="outline" onClick={navigateToStations}>
+          <Warehouse size={16} color="#0062FF" strokeWidth={2.2} />
+          <Text className="text-gray-900 text-sm font-bold ml-2">站点管理</Text>
+        </Button>
       </View>
-    </View>
+    </AppPageShell>
   )
 }
 

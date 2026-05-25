@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+    paths:
+      - server/**
+      - deploy/**
+      - .github/workflows/deploy-prod.yml
   workflow_dispatch:
 
 concurrency:
@@ -11,7 +15,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  deploy-server:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -20,24 +24,31 @@ jobs:
       SERVER_PORT: ${{ vars.SERVER_PORT || '22' }}
       SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
       SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
+      PROJECT_DOMAIN: ${{ vars.PROJECT_DOMAIN || 'https://car.shcxyz.site' }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9.0.0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: pnpm
-
       - uses: dtolnay/rust-toolchain@stable
 
-      - run: pnpm install --frozen-lockfile
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
 
-      - name: Build server release
-        run: BUILD_RUST_BINARY=1 deploy/make-docker-release.sh
+      - name: Build Rust API
+        run: cargo build --manifest-path server/Cargo.toml --release --locked
+
+      - name: Package backend release
+        run: |
+          set -euo pipefail
+          out_dir=/tmp/recorouter-docker-release
+          out_tar=/tmp/recorouter-docker-release.tar.gz
+          rm -rf "$out_dir" "$out_tar"
+          mkdir -p "$out_dir"
+          cp server/target/release/recorouter-api "$out_dir/recorouter-api"
+          cp -R server/migrations "$out_dir/migrations"
+          cp -R deploy "$out_dir/deploy"
+          tar -C "$out_dir" -czf "$out_tar" .
+          ls -lh "$out_tar"
 
       - name: Configure SSH
         run: |
@@ -58,7 +69,7 @@ jobs:
             exit 1
           fi
 
-      - name: Upload and install release
+      - name: Upload and install backend release
         run: |
           set -euo pipefail
           remote="$SERVER_USER@$SERVER_HOST"
@@ -72,8 +83,5 @@ jobs:
             sshpass -p "$SERVER_PASSWORD" ssh -p "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 "$remote" "$install_cmd"
           fi
 
-      - name: Verify production
-        run: |
-          set -euo pipefail
-          curl -fsS https://car.shcxyz.site/api/health
-          curl -fsSI https://car.shcxyz.site/
+      - name: Verify production API
+        run: curl -fsS "$PROJECT_DOMAIN/api/health"

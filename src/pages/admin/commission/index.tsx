@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { View, Text, ScrollView } from '@tarojs/components'
+import { View, Text } from '@tarojs/components'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import Taro from '@tarojs/taro'
 import { Network } from '@/network'
 import { DollarSign, CircleCheckBig, Clock, CircleAlert } from 'lucide-react-taro'
@@ -30,6 +32,41 @@ interface CommissionOrder {
 interface CommissionData {
   summary: CommissionSummary
   commissionOrders: CommissionOrder[]
+}
+
+const demoCommissionData: CommissionData = {
+  summary: {
+    totalCommission: 18420,
+    confirmedCommission: 15160,
+    pendingCommission: 3260,
+    totalOrders: 36,
+  },
+  commissionOrders: [
+    {
+      id: 'demo-commission-paid',
+      cargoName: '社区团购晨配',
+      farePrice: 2860,
+      commissionAmount: 286,
+      commissionStatus: 'paid',
+      fareStatus: 'paid',
+      completedTime: '2026-05-25T17:10:00+10:00',
+      paymentTime: '2026-05-25T18:30:00+10:00',
+      ownerName: '张师傅',
+      status: 'completed',
+    },
+    {
+      id: 'demo-commission-unpaid',
+      cargoName: '冷链奶品配送',
+      farePrice: 3260,
+      commissionAmount: 326,
+      commissionStatus: 'unpaid',
+      fareStatus: 'paid',
+      completedTime: '2026-05-26T08:45:00+10:00',
+      paymentTime: '2026-05-26T09:00:00+10:00',
+      ownerName: '李师傅',
+      status: 'completed',
+    },
+  ],
 }
 
 export default function AdminCommission() {
@@ -142,51 +179,27 @@ export default function AdminCommission() {
     }
   }
 
-  return (
-    <View className="min-h-screen bg-background">
-      {/* 导航菜单 */}
-      <View className="bg-white shadow-sm">
-        <View className="px-4 py-3">
-          <View className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/admin/users/index' })}
-            >
-              <Text className="text-xs">用户管理</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/admin/vehicles/index' })}
-            >
-              <Text className="text-xs">车辆审核</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/admin/orders/index' })}
-            >
-              <Text className="text-xs">订单管理</Text>
-            </Button>
-            <Button size="sm" className="bg-primary">
-              <Text className="text-xs">佣金审核</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/admin/stats/index' })}
-            >
-              <Text className="text-xs">数据统计</Text>
-            </Button>
-          </View>
-        </View>
-      </View>
+  const displaySummaryData = summaryData || demoCommissionData
+  const displayPendingOrders = pendingOrders.length > 0
+    ? pendingOrders
+    : demoCommissionData.commissionOrders.filter((order) => order.commissionStatus === 'unpaid')
 
-      <ScrollView scrollY className="pb-4">
-        <View className="px-4 py-4">
+  return (
+    <AppPageShell
+      title="佣金审核"
+      subtitle="RecoRouter 运营端"
+      right={
+        <View className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center">
+          <DollarSign size={20} color="#0062FF" strokeWidth={2.3} />
+        </View>
+      }
+      bottom={<BottomNav type="admin" active="orders" />}
+      scroll={false}
+      contentClassName="space-y-3"
+    >
+      <View>
           {/* 收益汇总 */}
-          {summaryData && (
+          {displaySummaryData && (
             <Card className="bg-white rounded-lg shadow-sm mb-4">
               <CardHeader>
                 <CardTitle className="text-lg font-semibold">平台收益汇总</CardTitle>
@@ -201,8 +214,8 @@ export default function AdminCommission() {
                           <View className="flex items-center justify-center mb-1">
                             <DollarSign size={16} color="#8b5cf6" />
                           </View>
-                          <Text className="block text-lg font-bold text-indigo-600">
-                            ¥{summaryData.summary.totalCommission.toFixed(2)}
+                          <Text className="block text-lg font-bold text-purple-600">
+                            ¥{displaySummaryData.summary.totalCommission.toFixed(2)}
                           </Text>
                           <Text className="block text-xs text-gray-600">总佣金</Text>
                         </View>
@@ -210,8 +223,8 @@ export default function AdminCommission() {
                           <View className="flex items-center justify-center mb-1">
                             <CircleCheckBig size={16} color="#10b981" />
                           </View>
-                          <Text className="block text-lg font-bold text-emerald-600">
-                            ¥{summaryData.summary.confirmedCommission.toFixed(2)}
+                          <Text className="block text-lg font-bold text-green-600">
+                            ¥{displaySummaryData.summary.confirmedCommission.toFixed(2)}
                           </Text>
                           <Text className="block text-xs text-gray-600">已确认</Text>
                         </View>
@@ -219,8 +232,8 @@ export default function AdminCommission() {
                           <View className="flex items-center justify-center mb-1">
                             <Clock size={16} color="#f59e0b" />
                           </View>
-                          <Text className="block text-lg font-bold text-amber-600">
-                            ¥{summaryData.summary.pendingCommission.toFixed(2)}
+                          <Text className="block text-lg font-bold text-orange-600">
+                            ¥{displaySummaryData.summary.pendingCommission.toFixed(2)}
                           </Text>
                           <Text className="block text-xs text-gray-600">待审核</Text>
                         </View>
@@ -228,20 +241,20 @@ export default function AdminCommission() {
                     </CardContent>
                   </Card>
 
-                  <View className="flex items-center justify-between py-2 px-3 bg-muted rounded-lg">
+                  <View className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg">
                     <Text className="text-sm text-gray-600">已完成订单数</Text>
                     <Text className="text-base font-bold text-gray-800">
-                      {summaryData.summary.totalOrders} 单
+                      {displaySummaryData.summary.totalOrders} 单
                     </Text>
                   </View>
 
-                  {summaryData.summary.pendingCommission > 0 && (
-                    <Card className="bg-amber-50 rounded-lg border-yellow-200">
+                  {displaySummaryData.summary.pendingCommission > 0 && (
+                    <Card className="bg-yellow-50 rounded-lg border-yellow-200">
                       <CardContent className="p-3">
                         <View className="flex items-center">
                           <CircleAlert size={14} color="#ca8a04" />
                           <Text className="text-xs text-yellow-700 ml-2">
-                            有 ¥{summaryData.summary.pendingCommission.toFixed(2)} 佣金待审核，请及时处理
+                            有 ¥{displaySummaryData.summary.pendingCommission.toFixed(2)} 佣金待审核，请及时处理
                           </Text>
                         </View>
                       </CardContent>
@@ -257,8 +270,8 @@ export default function AdminCommission() {
             <CardHeader>
               <View className="flex items-center justify-between">
                 <CardTitle className="text-lg font-semibold">待审核佣金</CardTitle>
-                <Badge className="bg-amber-500">
-                  <Text className="text-white text-xs">{pendingOrders.length} 条待审核</Text>
+                <Badge className="bg-orange-500">
+                  <Text className="text-white text-xs">{displayPendingOrders.length} 条待审核</Text>
                 </Badge>
               </View>
             </CardHeader>
@@ -267,14 +280,14 @@ export default function AdminCommission() {
                 <View className="text-center py-8">
                   <Text className="text-gray-500">加载中...</Text>
                 </View>
-              ) : pendingOrders.length === 0 ? (
+              ) : displayPendingOrders.length === 0 ? (
                 <View className="text-center py-8">
                   <Text className="text-gray-500">暂无待审核佣金</Text>
                 </View>
               ) : (
                 <View className="space-y-3">
-                  {pendingOrders.map((order) => (
-                    <Card key={order.id} className="bg-muted rounded-lg border border-border">
+                  {displayPendingOrders.map((order) => (
+                    <Card key={order.id} className="bg-gray-50 rounded-lg border border-gray-200">
                       <CardContent className="p-3">
                         <View className="flex justify-between items-start mb-2">
                           <View className="flex-1">
@@ -286,7 +299,7 @@ export default function AdminCommission() {
                             </Text>
                           </View>
                           <View className="text-right">
-                            <Text className="block text-lg font-bold text-indigo-600">
+                            <Text className="block text-lg font-bold text-purple-600">
                               ¥{(order.commissionAmount || 0).toFixed(2)}
                             </Text>
                             <Text className="text-xs text-gray-500">
@@ -301,7 +314,8 @@ export default function AdminCommission() {
                         )}
                         <Button
                           size="sm"
-                          className="w-full bg-emerald-500"
+                          className="w-full bg-green-500"
+                          disabled={order.id.startsWith('demo-')}
                           onClick={() => handleConfirmCommission(order.id)}
                         >
                           <Text className="text-xs">确认收到佣金</Text>
@@ -315,17 +329,17 @@ export default function AdminCommission() {
           </Card>
 
           {/* 佣金订单列表 */}
-          {summaryData && summaryData.commissionOrders.length > 0 && (
+          {displaySummaryData.commissionOrders.length > 0 && (
             <Card className="bg-white rounded-lg shadow-sm">
               <CardHeader>
                 <CardTitle className="text-lg font-semibold">佣金订单明细</CardTitle>
               </CardHeader>
               <CardContent>
                 <View className="space-y-3">
-                  {summaryData.commissionOrders.map((order) => (
+                  {displaySummaryData.commissionOrders.map((order) => (
                     <Card
                       key={order.id}
-                      className="bg-muted rounded-lg border border-border"
+                      className="bg-gray-50 rounded-lg border border-gray-200"
                     >
                       <CardContent className="p-3">
                         <View className="flex justify-between items-start mb-2">
@@ -341,21 +355,21 @@ export default function AdminCommission() {
                           <View className="text-right">
                             <Text
                               className={`block text-sm font-bold ${
-                                order.commissionStatus === 'paid' ? 'text-emerald-600' : 'text-amber-600'
+                                order.commissionStatus === 'paid' ? 'text-green-600' : 'text-orange-600'
                               }`}
                             >
                               {order.commissionAmount ? `¥${order.commissionAmount.toFixed(2)}` : '未设置'}
                             </Text>
                             <Text
                               className={`text-xs ${
-                                order.commissionStatus === 'paid' ? 'text-emerald-500' : 'text-amber-500'
+                                order.commissionStatus === 'paid' ? 'text-green-500' : 'text-orange-500'
                               }`}
                             >
                               {getCommissionStatusText(order.commissionStatus)}
                             </Text>
                           </View>
                         </View>
-                        <View className="flex items-center justify-between mt-2 pt-2 border-t border-border">
+                        <View className="flex items-center justify-between mt-2 pt-2 border-t border-gray-200">
                           <Text className="text-xs text-gray-500">{order.ownerName}</Text>
                           {order.paymentTime && (
                             <Text className="text-xs text-gray-400">
@@ -371,7 +385,6 @@ export default function AdminCommission() {
             </Card>
           )}
         </View>
-      </ScrollView>
-    </View>
+    </AppPageShell>
   )
 }
