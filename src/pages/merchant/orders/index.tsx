@@ -197,21 +197,21 @@ export default function MerchantOrders() {
     // 特殊处理 transport_completed 状态，根据 payment_status 显示不同颜色
     if (status === 'transport_completed') {
       if (payment_status === 'paid') {
-        return 'bg-blue-500' // 已付款用蓝色
+        return 'bg-primary' // 已付款用蓝色
       }
-      return 'bg-yellow-500' // 待付款用黄色
+      return 'bg-amber-500' // 待付款用黄色
     }
 
     const colors: Record<string, string> = {
-      pending: 'bg-orange-500',
-      accepted: 'bg-blue-500',
+      pending: 'bg-amber-500',
+      accepted: 'bg-primary',
       in_transit: 'bg-cyan-500',
-      payment_confirmed: 'bg-purple-500',
+      payment_confirmed: 'bg-indigo-500',
       commission_pending: 'bg-pink-500',
-      completed: 'bg-green-500',
+      completed: 'bg-emerald-500',
       cancelled: 'bg-red-500'
     }
-    return colors[status] || 'bg-gray-500'
+    return colors[status] || 'bg-slate-500'
   }
 
   const handleConfirmFare = async (orderId: string) => {
@@ -417,17 +417,17 @@ export default function MerchantOrders() {
 
   const getCargoTypeColor = (type: string) => {
     const colors: Record<string, string> = {
-      normal: 'bg-blue-500',
-      fragile: 'bg-orange-500',
+      normal: 'bg-primary',
+      fragile: 'bg-amber-500',
       refrigerated: 'bg-cyan-500',
-      bulky: 'bg-purple-500',
+      bulky: 'bg-indigo-500',
       hazardous: 'bg-red-500'
     }
-    return colors[type] || 'bg-gray-500'
+    return colors[type] || 'bg-slate-500'
   }
 
   return (
-    <View className="min-h-screen bg-gray-100">
+    <View className="min-h-screen bg-background">
       {/* 导航菜单 */}
       <View className="bg-white shadow-sm">
         <View className="px-4 py-3">
@@ -441,7 +441,7 @@ export default function MerchantOrders() {
             </Button>
             <Button
               size="sm"
-              className="bg-blue-500"
+              className="bg-primary"
             >
               <Text className="text-xs">订单管理</Text>
             </Button>
@@ -486,7 +486,7 @@ export default function MerchantOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === '' ? 'default' : 'outline'}
-                className={filterStatus === '' ? 'bg-blue-500' : ''}
+                className={filterStatus === '' ? 'bg-primary' : ''}
                 onClick={() => setFilterStatus('')}
               >
                 <Text className="text-xs">全部</Text>
@@ -494,7 +494,7 @@ export default function MerchantOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === 'pending' ? 'default' : 'outline'}
-                className={filterStatus === 'pending' ? 'bg-blue-500' : ''}
+                className={filterStatus === 'pending' ? 'bg-primary' : ''}
                 onClick={() => setFilterStatus('pending')}
               >
                 <Text className="text-xs">待接单</Text>
@@ -502,7 +502,7 @@ export default function MerchantOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === 'accepted' ? 'default' : 'outline'}
-                className={filterStatus === 'accepted' ? 'bg-blue-500' : ''}
+                className={filterStatus === 'accepted' ? 'bg-primary' : ''}
                 onClick={() => setFilterStatus('accepted')}
               >
                 <Text className="text-xs">已接单</Text>
@@ -510,7 +510,7 @@ export default function MerchantOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === 'in_transit' ? 'default' : 'outline'}
-                className={filterStatus === 'in_transit' ? 'bg-blue-500' : ''}
+                className={filterStatus === 'in_transit' ? 'bg-primary' : ''}
                 onClick={() => setFilterStatus('in_transit')}
               >
                 <Text className="text-xs">运输中</Text>
@@ -518,7 +518,7 @@ export default function MerchantOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === 'completed' ? 'default' : 'outline'}
-                className={filterStatus === 'completed' ? 'bg-blue-500' : ''}
+                className={filterStatus === 'completed' ? 'bg-primary' : ''}
                 onClick={() => setFilterStatus('completed')}
               >
                 <Text className="text-xs">已完成</Text>
@@ -526,7 +526,7 @@ export default function MerchantOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === 'cancelled' ? 'default' : 'outline'}
-                className={filterStatus === 'cancelled' ? 'bg-blue-500' : ''}
+                className={filterStatus === 'cancelled' ? 'bg-primary' : ''}
                 onClick={() => setFilterStatus('cancelled')}
               >
                 <Text className="text-xs">已取消</Text>
@@ -541,7 +541,7 @@ export default function MerchantOrders() {
               <View className="text-center py-8">
                 <Text className="block text-gray-500 text-sm mb-4">暂无订单</Text>
                 <Button
-                  className="bg-blue-500"
+                  className="bg-primary"
                   onClick={() => Taro.navigateTo({ url: '/pages/merchant/demands/index' })}
                 >
                   <Text>发布需求</Text>
@@ -550,7 +550,7 @@ export default function MerchantOrders() {
             ) : (
               <View className="space-y-3">
                 {orders.map((order) => (
-                  <View key={order.id} className="bg-gray-50 rounded-lg p-4">
+                  <View key={order.id} className="bg-muted rounded-lg p-4">
                     <View className="flex justify-between items-start mb-3">
                       <View className="flex-1">
                         <Text className="block font-medium text-base mb-1">
@@ -571,21 +571,21 @@ export default function MerchantOrders() {
                           </Badge>
                           {/* 显示取消申请状态 */}
                           {order.cancellation_status === 'pending' && (
-                            <Badge className="bg-orange-500">
+                            <Badge className="bg-amber-500">
                               <Text className="text-white text-xs">
                                 等待运力方同意
                               </Text>
                             </Badge>
                           )}
                           {order.cancellation_status === 'approved' && (
-                            <Badge className="bg-green-500">
+                            <Badge className="bg-emerald-500">
                               <Text className="text-white text-xs">
                                 已同意取消
                               </Text>
                             </Badge>
                           )}
                           {order.cancellation_status === 'rejected' && (
-                            <Badge className="bg-gray-500">
+                            <Badge className="bg-slate-500">
                               <Text className="text-white text-xs">
                                 已拒绝取消
                               </Text>
@@ -597,7 +597,7 @@ export default function MerchantOrders() {
 
                     {/* 需求信息 */}
                     {order.demand && (
-                      <View className="space-y-2 mb-3 pb-3 border-b border-gray-200">
+                      <View className="space-y-2 mb-3 pb-3 border-b border-border">
                         <View className="flex items-start">
                           <Text className="text-xs text-gray-500 w-16 flex-shrink-0">取货:</Text>
                           <Text className="text-xs text-gray-700 flex-1">
@@ -635,7 +635,7 @@ export default function MerchantOrders() {
 
                     {/* 车辆和车主信息（仅已接单后显示） */}
                     {(order.vehicle || order.owner) && (
-                      <View className="space-y-2 mb-3 pb-3 border-b border-gray-200">
+                      <View className="space-y-2 mb-3 pb-3 border-b border-border">
                         {order.vehicle && (
                           <View className="flex items-start">
                             <Text className="text-xs text-gray-500 w-16 flex-shrink-0">车辆:</Text>
@@ -658,11 +658,11 @@ export default function MerchantOrders() {
 
                     {/* 运费信息（已接单后显示） */}
                     {(order.status === 'accepted' || order.status === 'transport_completed' || order.status === 'payment_confirmed') && order.fare_price && (
-                      <View className="bg-yellow-50 rounded-lg p-3 mb-3">
+                      <View className="bg-amber-50 rounded-lg p-3 mb-3">
                         <View className="flex justify-between items-center">
                           <View>
                             <Text className="block text-xs text-gray-600 mb-1">运费报价</Text>
-                            <Text className="block text-lg font-bold text-orange-600">
+                            <Text className="block text-lg font-bold text-amber-600">
                               ¥{order.fare_price.toFixed(2)}
                             </Text>
                           </View>
@@ -675,7 +675,7 @@ export default function MerchantOrders() {
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    className="text-orange-500 border-orange-500"
+                                    className="text-amber-500 border-amber-500"
                                     onClick={() => handleRequestCancel(order)}
                                   >
                                     <Text className="text-xs">申请取消</Text>
@@ -698,7 +698,7 @@ export default function MerchantOrders() {
                               <>
                                 <Button
                                   size="sm"
-                                  className="bg-orange-500"
+                                  className="bg-amber-500"
                                   onClick={() => handleConfirmFare(order.id)}
                                 >
                                   <Text className="text-xs">确认运费</Text>
@@ -709,7 +709,7 @@ export default function MerchantOrders() {
                               </>
                             )}
                             {order.status === 'accepted' && order.merchant_confirmed && (
-                              <View className="bg-green-500 px-3 py-1 rounded-lg">
+                              <View className="bg-emerald-500 px-3 py-1 rounded-lg">
                                 <Text className="text-xs text-white">已确认</Text>
                               </View>
                             )}
@@ -717,19 +717,19 @@ export default function MerchantOrders() {
                             {order.status === 'transport_completed' && order.payment_status === 'unpaid' && (
                               <Button
                                 size="sm"
-                                className="bg-green-500"
+                                className="bg-emerald-500"
                                 onClick={() => handleGoToPayment(order)}
                               >
                                 <Text className="text-xs">去付款</Text>
                               </Button>
                             )}
                             {order.status === 'transport_completed' && order.payment_status === 'paid' && (
-                              <View className="bg-blue-500 px-3 py-1 rounded-lg">
+                              <View className="bg-primary px-3 py-1 rounded-lg">
                                 <Text className="text-xs text-white">已付款</Text>
                               </View>
                             )}
                             {order.status === 'payment_confirmed' && (
-                              <View className="bg-purple-500 px-3 py-1 rounded-lg">
+                              <View className="bg-indigo-500 px-3 py-1 rounded-lg">
                                 <Text className="text-xs text-white">收款已确认</Text>
                               </View>
                             )}
@@ -755,7 +755,7 @@ export default function MerchantOrders() {
                       </Text>
                     )}
                     {order.cancel_reason && (
-                      <View className="mt-2 pt-2 border-t border-gray-200">
+                      <View className="mt-2 pt-2 border-t border-border">
                         <Text className="text-xs text-gray-500">
                           取消原因: {order.cancel_reason}
                         </Text>
@@ -782,7 +782,7 @@ export default function MerchantOrders() {
                 <Text className="block text-base font-medium mb-2">
                   取消订单
                 </Text>
-                <View className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-3">
+                <View className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
                   <Text className="block text-sm text-orange-800 mb-2">
                     ⚠️ 取消订单后：
                   </Text>
@@ -805,7 +805,7 @@ export default function MerchantOrders() {
                 <Label className="block text-sm font-medium mb-2">
                   <Text className="text-red-500">*</Text>取消原因
                 </Label>
-                <View className="bg-gray-50 rounded-lg px-4 py-3">
+                <View className="bg-muted rounded-lg px-4 py-3">
                   <Textarea
                     className="w-full"
                     placeholder="请输入取消原因"
@@ -818,7 +818,7 @@ export default function MerchantOrders() {
 
               <View className="flex gap-3 pt-2">
                 <Button
-                  className="flex-1 bg-gray-200"
+                  className="flex-1 bg-muted"
                   onClick={handleCloseCancelDialog}
                 >
                   <Text>取消</Text>
@@ -848,7 +848,7 @@ export default function MerchantOrders() {
                 <Text className="block text-sm text-gray-600 mb-2">
                   订单 &quot;{selectedOrder.demand?.cargo_name}&quot; 运费已确认，需要向车主申请取消
                 </Text>
-                <Text className="block text-sm text-orange-500 mb-2">
+                <Text className="block text-sm text-amber-500 mb-2">
                   注意：若车主同意，也将扣除您10分信用积分
                 </Text>
               </View>
@@ -857,7 +857,7 @@ export default function MerchantOrders() {
                 <Label className="block text-sm font-medium mb-2">
                   <Text className="text-red-500">*</Text>取消原因
                 </Label>
-                <View className="bg-gray-50 rounded-lg px-4 py-3">
+                <View className="bg-muted rounded-lg px-4 py-3">
                   <Textarea
                     className="w-full"
                     placeholder="请输入取消原因，将发送给车主审核"
@@ -870,13 +870,13 @@ export default function MerchantOrders() {
 
               <View className="flex gap-3 pt-2">
                 <Button
-                  className="flex-1 bg-gray-200"
+                  className="flex-1 bg-muted"
                   onClick={handleCloseRequestCancelDialog}
                 >
                   <Text>取消</Text>
                 </Button>
                 <Button
-                  className="flex-1 bg-orange-500"
+                  className="flex-1 bg-amber-500"
                   onClick={handleConfirmRequestCancel}
                   disabled={loading}
                 >

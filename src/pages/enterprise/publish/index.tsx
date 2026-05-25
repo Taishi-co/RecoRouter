@@ -246,7 +246,7 @@ const EnterprisePublishPage: FC = () => {
   }
 
   return (
-    <View className="enterprise-publish min-h-screen bg-gray-50 pb-20">
+    <View className="enterprise-publish min-h-screen bg-background pb-20">
       <View className="p-4">
         <Text className="text-2xl font-bold block mb-4">发布配送</Text>
 
@@ -348,15 +348,15 @@ const EnterprisePublishPage: FC = () => {
               ))}
             </View>
             {vehicleSource === 'external' && (
-              <View className="mt-3 p-3 bg-yellow-50 rounded-lg">
+              <View className="mt-3 p-3 bg-amber-50 rounded-lg">
                 <Text className="text-xs text-yellow-800 block">
                   注意：选择外部运力后，需求将发布到接单大厅，由外部运力方接单配送。
                 </Text>
               </View>
             )}
             {vehicleSource === 'mixed' && (
-              <View className="mt-3 p-3 bg-blue-50 rounded-lg">
-                <Text className="text-xs text-blue-800 block">
+              <View className="mt-3 p-3 bg-accent rounded-lg">
+                <Text className="text-xs text-primary block">
                   混合运力需求进入调度中心后，可同时选择自有车辆和企业外部车辆。
                 </Text>
               </View>
@@ -379,7 +379,7 @@ const EnterprisePublishPage: FC = () => {
                 {stations.map((station) => (
                   <View
                     key={station.id}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                    className="flex items-center justify-between p-3 bg-muted rounded-lg"
                   >
                     <View className="flex-1">
                       <Text className="text-sm font-medium block">{station.name}</Text>
@@ -415,7 +415,7 @@ const EnterprisePublishPage: FC = () => {
                 value={startHourIndex}
                 onChange={(e) => setStartHourIndex(Number(e.detail.value))}
               >
-                <View className="w-full px-4 py-3 bg-gray-50 rounded-lg">
+                <View className="w-full px-4 py-3 bg-muted rounded-lg">
                   <Text className="text-sm text-gray-900">
                     {hours[startHourIndex]}:00
                   </Text>
@@ -430,7 +430,7 @@ const EnterprisePublishPage: FC = () => {
                 value={endHourIndex}
                 onChange={(e) => setEndHourIndex(Number(e.detail.value))}
               >
-                <View className="w-full px-4 py-3 bg-gray-50 rounded-lg">
+                <View className="w-full px-4 py-3 bg-muted rounded-lg">
                   <Text className="text-sm text-gray-900">
                     {hours[endHourIndex]}:00
                   </Text>

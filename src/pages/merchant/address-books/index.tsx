@@ -247,7 +247,7 @@ export default function AddressBooks() {
   const getAddressTypeIcon = (type: string) => {
     switch (type) {
       case 'home':
-        return <Building2 size={16} color="#3b82f6" />
+        return <Building2 size={16} color="#0062ff" />
       case 'work':
         return <Building2 size={16} color="#f59e0b" />
       default:
@@ -267,7 +267,7 @@ export default function AddressBooks() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-50 pb-4">
+    <View className="min-h-screen bg-background pb-4">
       {/* 顶部标题栏 */}
       <View className="bg-white p-4 border-b">
         <Text className="text-lg font-semibold text-center">地址簿</Text>
@@ -277,7 +277,7 @@ export default function AddressBooks() {
       {!showAddForm && (
         <View className="p-4">
           <Button
-            className="w-full bg-blue-500 text-white"
+            className="w-full bg-primary text-white"
             onClick={() => setShowAddForm(true)}
           >
             <Plus size={20} color="#ffffff" className="mr-2" />
@@ -292,7 +292,7 @@ export default function AddressBooks() {
           <CardContent className="p-4 space-y-3">
             <View>
               <Text className="block text-sm font-medium mb-1">地址名称</Text>
-              <View className="bg-gray-50 rounded px-3 py-2">
+              <View className="bg-muted rounded px-3 py-2">
                 <Input
                   className="w-full bg-transparent"
                   placeholder="如：公司、家"
@@ -305,7 +305,7 @@ export default function AddressBooks() {
             <View>
               <Text className="block text-sm font-medium mb-1">详细地址</Text>
               <View className="flex gap-2">
-                <View className="flex-1 bg-gray-50 rounded px-3 py-2">
+                <View className="flex-1 bg-muted rounded px-3 py-2">
                   <Input
                     className="w-full bg-transparent"
                     placeholder="请输入详细地址"
@@ -315,7 +315,7 @@ export default function AddressBooks() {
                 </View>
                 <Button
                   size="sm"
-                  className="bg-blue-500 px-3"
+                  className="bg-primary px-3"
                   onClick={handleChooseLocation}
                 >
                   <Text className="text-xs">定位</Text>
@@ -330,9 +330,9 @@ export default function AddressBooks() {
             )}
 
             {formData.showLocationInput && (
-              <Card className="bg-blue-50 border-blue-200">
+              <Card className="bg-accent border-primary">
                 <CardContent className="p-3">
-                  <Text className="block text-sm font-medium text-blue-900 mb-2">手动输入坐标（H5环境）</Text>
+                  <Text className="block text-sm font-medium text-primary mb-2">手动输入坐标（H5环境）</Text>
                   <View className="flex gap-2 mb-2">
                     <View className="flex-1">
                       <Text className="block text-xs text-gray-600 mb-1">纬度</Text>
@@ -362,7 +362,7 @@ export default function AddressBooks() {
                   <View className="flex gap-2">
                     <Button
                       size="sm"
-                      className="flex-1 bg-green-500"
+                      className="flex-1 bg-emerald-500"
                       onClick={() => setFormData({ ...formData, showLocationInput: false })}
                     >
                       <Text className="text-xs">确认</Text>
@@ -385,21 +385,21 @@ export default function AddressBooks() {
               <View className="flex gap-2">
                 <Button
                   size="sm"
-                  className={`flex-1 ${formData.address_type === 'home' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                  className={`flex-1 ${formData.address_type === 'home' ? 'bg-primary text-white' : 'bg-muted'}`}
                   onClick={() => setFormData({ ...formData, address_type: 'home' })}
                 >
                   <House size={16} color={formData.address_type === 'home' ? '#ffffff' : '#6b7280'} />
                 </Button>
                 <Button
                   size="sm"
-                  className={`flex-1 ${formData.address_type === 'work' ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}
+                  className={`flex-1 ${formData.address_type === 'work' ? 'bg-amber-500 text-white' : 'bg-muted'}`}
                   onClick={() => setFormData({ ...formData, address_type: 'work' })}
                 >
                   <Building2 size={16} color={formData.address_type === 'work' ? '#ffffff' : '#6b7280'} />
                 </Button>
                 <Button
                   size="sm"
-                  className={`flex-1 ${formData.address_type === 'other' ? 'bg-gray-500 text-white' : 'bg-gray-200'}`}
+                  className={`flex-1 ${formData.address_type === 'other' ? 'bg-slate-500 text-white' : 'bg-muted'}`}
                   onClick={() => setFormData({ ...formData, address_type: 'other' })}
                 >
                   <MapPin size={16} color={formData.address_type === 'other' ? '#ffffff' : '#6b7280'} />
@@ -410,7 +410,7 @@ export default function AddressBooks() {
             <View className="flex items-center gap-2">
               <Button
                 size="sm"
-                className={`flex-1 ${formData.is_default ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}
+                className={`flex-1 ${formData.is_default ? 'bg-amber-500 text-white' : 'bg-muted'}`}
                 onClick={() => setFormData({ ...formData, is_default: !formData.is_default })}
               >
                 <Star size={16} color={formData.is_default ? '#ffffff' : '#6b7280'} />
@@ -440,7 +440,7 @@ export default function AddressBooks() {
               </Button>
               <Button
                 size="sm"
-                className="flex-1 bg-green-500"
+                className="flex-1 bg-emerald-500"
                 onClick={handleAddAddress}
                 disabled={loading}
               >

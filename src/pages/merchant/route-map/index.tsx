@@ -126,7 +126,7 @@ export default function RouteMap() {
                 latitude: point.latitude,
                 longitude: point.longitude
               })),
-              color: '#3b82f6',
+              color: '#0062ff',
               width: 4,
               dottedLine: false,
               arrowLine: true
@@ -148,7 +148,7 @@ export default function RouteMap() {
                   longitude: deliveryAddr.longitude
                 }
               ],
-              color: '#3b82f6',
+              color: '#0062ff',
               width: 4,
               dottedLine: true, // 虚线表示估算路线
               arrowLine: true
@@ -173,7 +173,7 @@ export default function RouteMap() {
               longitude: deliveryAddr.longitude
             }
           ],
-          color: '#3b82f6',
+          color: '#0062ff',
           width: 4,
           dottedLine: true,
           arrowLine: true
@@ -214,7 +214,7 @@ export default function RouteMap() {
 
   if (loading) {
     return (
-      <View className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <View className="min-h-screen bg-background flex items-center justify-center">
         <Text className="text-gray-500">加载中...</Text>
       </View>
     )
@@ -222,7 +222,7 @@ export default function RouteMap() {
 
   if (!routeInfo) {
     return (
-      <View className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
+      <View className="min-h-screen bg-background flex flex-col items-center justify-center">
         <Text className="text-red-500 text-lg font-medium mt-4">线路信息加载失败</Text>
         <Button onClick={handleBack} className="mt-4">
           返回
@@ -234,7 +234,7 @@ export default function RouteMap() {
   const isMiniApp = Taro.getEnv() === Taro.ENV_TYPE.WEAPP || Taro.getEnv() === Taro.ENV_TYPE.TT
 
   return (
-    <View className="min-h-screen bg-gray-50">
+    <View className="min-h-screen bg-background">
       {/* 顶部导航栏 */}
       <View className="bg-white p-4 border-b flex items-center">
         <View onClick={handleBack} className="flex items-center gap-2">
@@ -261,7 +261,7 @@ export default function RouteMap() {
           onError={(e) => console.error('[RouteMap] 地图加载失败:', e)}
         />
       ) : (
-        <View className="w-full h-96 bg-gray-200 flex items-center justify-center">
+        <View className="w-full h-96 bg-muted flex items-center justify-center">
           <Text className="text-gray-500">
             地图仅在小程序中可用{'\n'}请在小程序中查看完整功能
           </Text>
@@ -281,8 +281,8 @@ export default function RouteMap() {
 
           {/* 路线加载提示 */}
           {loadingRoute && (
-            <View className="bg-blue-50 p-3 rounded-lg">
-              <Text className="block text-sm text-blue-600 text-center">
+            <View className="bg-accent p-3 rounded-lg">
+              <Text className="block text-sm text-primary text-center">
                 正在加载实际驾车路线...
               </Text>
             </View>
@@ -290,9 +290,9 @@ export default function RouteMap() {
 
           <View>
             <View className="flex items-start gap-2 mb-3">
-              <MapPin size={16} color="#3b82f6" />
+              <MapPin size={16} color="#0062ff" />
               <View>
-                <Text className="block text-sm font-medium text-blue-600">
+                <Text className="block text-sm font-medium text-primary">
                   {routeInfo.pickup_address.address_name}
                 </Text>
                 <Text className="block text-xs text-gray-500 mt-1">
@@ -331,8 +331,8 @@ export default function RouteMap() {
 
           {/* 路线类型提示 */}
           {polyline.length > 0 && polyline[0].points && polyline[0].points.length > 2 && (
-            <View className="bg-green-50 p-2 rounded-lg mt-2">
-              <Text className="block text-xs text-green-600 text-center">
+            <View className="bg-emerald-50 p-2 rounded-lg mt-2">
+              <Text className="block text-xs text-emerald-600 text-center">
                 ✓ 已显示实际驾车路线（不走高速）
               </Text>
             </View>
@@ -342,7 +342,7 @@ export default function RouteMap() {
 
       {/* 导航按钮 */}
       <Button
-        className="mx-4 bg-blue-500 text-white"
+        className="mx-4 bg-primary text-white"
         onClick={handleNavigation}
       >
         <Navigation size={20} color="#ffffff" className="mr-2" />

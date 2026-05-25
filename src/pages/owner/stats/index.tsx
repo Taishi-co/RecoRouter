@@ -96,7 +96,7 @@ export default function OwnerStats() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-50">
+    <View className="min-h-screen bg-background">
       {/* 导航菜单 */}
       <View className="bg-white shadow-sm sticky top-0 z-10">
         <View className="px-4 py-3">
@@ -122,7 +122,7 @@ export default function OwnerStats() {
             >
               <Text className="text-xs">车辆管理</Text>
             </Button>
-            <Button size="sm" className="bg-blue-500">
+            <Button size="sm" className="bg-primary">
               <Text className="text-xs">收益统计</Text>
             </Button>
             <Button
@@ -159,15 +159,15 @@ export default function OwnerStats() {
               ) : (
                 <View className="space-y-4">
                   {/* 收益统计 */}
-                  <Card className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border-blue-200">
+                  <Card className="bg-gradient-to-br from-accent to-indigo-100 rounded-lg border-primary">
                     <CardContent className="p-4">
                       <Text className="block text-sm font-semibold text-gray-700 mb-3">收入统计</Text>
                       <View className="grid grid-cols-3 gap-4">
                         <View className="text-center">
                           <View className="flex items-center justify-center mb-1">
-                            <DollarSign size={16} color="#3b82f6" />
+                            <DollarSign size={16} color="#0062ff" />
                           </View>
-                          <Text className="block text-lg font-bold text-blue-600">
+                          <Text className="block text-lg font-bold text-primary">
                             ¥{(revenueData.summary.totalFare || 0).toFixed(2)}
                           </Text>
                           <Text className="block text-xs text-gray-600">总运费</Text>
@@ -185,7 +185,7 @@ export default function OwnerStats() {
                           <View className="flex items-center justify-center mb-1">
                             <TrendingUp size={16} color="#10b981" />
                           </View>
-                          <Text className="block text-lg font-bold text-green-600">
+                          <Text className="block text-lg font-bold text-emerald-600">
                             ¥{(revenueData.summary.netRevenue || 0).toFixed(2)}
                           </Text>
                           <Text className="block text-xs text-gray-600">净收益</Text>
@@ -195,24 +195,24 @@ export default function OwnerStats() {
                   </Card>
 
                   {/* 订单统计 */}
-                  <Card className="bg-green-50 rounded-lg border-green-200">
+                  <Card className="bg-emerald-50 rounded-lg border-green-200">
                     <CardContent className="p-4">
                       <Text className="block text-sm font-semibold text-gray-700 mb-3">订单统计</Text>
                       <View className="grid grid-cols-3 gap-4">
                         <View className="text-center">
-                          <Text className="block text-2xl font-bold text-green-600 mb-1">
+                          <Text className="block text-2xl font-bold text-emerald-600 mb-1">
                             {revenueData.summary.totalOrders}
                           </Text>
                           <Text className="block text-xs text-gray-600">完成订单</Text>
                         </View>
                         <View className="text-center">
-                          <Text className="block text-2xl font-bold text-blue-600 mb-1">
+                          <Text className="block text-2xl font-bold text-primary mb-1">
                             {revenueData.summary.paidOrders}
                           </Text>
                           <Text className="block text-xs text-gray-600">已收款</Text>
                         </View>
                         <View className="text-center">
-                          <Text className="block text-2xl font-bold text-orange-600 mb-1">
+                          <Text className="block text-2xl font-bold text-amber-600 mb-1">
                             {revenueData.summary.pendingPaymentOrders}
                           </Text>
                           <Text className="block text-xs text-gray-600">待收款</Text>
@@ -246,7 +246,7 @@ export default function OwnerStats() {
               <CardContent>
                 <View className="space-y-3">
                   {revenueData.revenueList.map((item) => (
-                    <Card key={item.id} className="bg-gray-50 rounded-lg border border-gray-200">
+                    <Card key={item.id} className="bg-muted rounded-lg border border-border">
                       <CardContent className="p-3">
                         <View className="flex justify-between items-start mb-2">
                           <View className="flex-1">
@@ -261,14 +261,14 @@ export default function OwnerStats() {
                           <View className="text-right">
                             <Text
                               className={`block text-sm font-bold ${
-                                item.paymentStatus === 'paid' ? 'text-green-600' : 'text-orange-600'
+                                item.paymentStatus === 'paid' ? 'text-emerald-600' : 'text-amber-600'
                               }`}
                             >
                               ¥{item.netIncome.toFixed(2)}
                             </Text>
                             <Text
                               className={`text-xs ${
-                                item.paymentStatus === 'paid' ? 'text-green-500' : 'text-orange-500'
+                                item.paymentStatus === 'paid' ? 'text-emerald-500' : 'text-amber-500'
                               }`}
                             >
                               {getPaymentStatusText(item.paymentStatus)}

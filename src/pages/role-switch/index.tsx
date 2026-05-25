@@ -222,20 +222,20 @@ export default function RoleSwitch() {
   }
 
   const getRoleIcon = (role: string) => {
-    return role === 'owner' ? <Truck size={24} color="#3b82f6" /> : <Package size={24} color="#10b981" />
+    return role === 'owner' ? <Truck size={24} color="#0062ff" /> : <Package size={24} color="#10b981" />
   }
 
   const getRoleColor = (role: string) => {
-    return role === 'owner' ? '#3b82f6' : '#10b981'
+    return role === 'owner' ? '#0062ff' : '#10b981'
   }
 
   const hasOwnerRole = roles.some(r => r.role === 'owner')
   const hasMerchantRole = roles.some(r => r.role === 'merchant')
 
   return (
-    <View className="min-h-screen bg-gray-50">
+    <View className="min-h-screen bg-background">
       {/* 头部 */}
-      <View className="bg-white p-4 border-b border-gray-200">
+      <View className="bg-white p-4 border-b border-border">
         <Text className="text-xl font-bold text-gray-900 block">角色管理</Text>
         <Text className="block text-sm text-gray-500 mt-1">管理和切换您的角色</Text>
       </View>
@@ -245,7 +245,7 @@ export default function RoleSwitch() {
         <View className="mx-4 mt-4">
           <Card className="p-4">
             <View className="flex items-center">
-              <View className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center mr-3">
+              <View className="w-12 h-12 rounded-full bg-primary flex items-center justify-center mr-3">
                 <Text className="text-white text-lg font-bold">
                   {userInfo.name?.charAt(0) || '用'}
                 </Text>
@@ -283,7 +283,7 @@ export default function RoleSwitch() {
             {roles.map((roleItem) => (
               <Card
                 key={roleItem.id}
-                className={`p-4 ${roleItem.is_active ? 'border-2 border-blue-500' : ''}`}
+                className={`p-4 ${roleItem.is_active ? 'border-2 border-primary' : ''}`}
               >
                 <View className="flex items-center justify-between">
                   <View className="flex items-center">
@@ -300,7 +300,7 @@ export default function RoleSwitch() {
                     </View>
                   </View>
                   {roleItem.is_active ? (
-                    <Badge className="bg-green-500">
+                    <Badge className="bg-emerald-500">
                       <View className="flex items-center">
                         <Check size={12} color="#ffffff" className="mr-1" />
                         <Text className="text-white text-xs">已激活</Text>
@@ -328,13 +328,13 @@ export default function RoleSwitch() {
         <View className="space-y-3">
           {!hasOwnerRole && (
             <Card
-              className="p-4 cursor-pointer active:bg-gray-50"
+              className="p-4 cursor-pointer active:bg-muted"
               onClick={() => handleCreateRole('owner')}
             >
               <View className="flex items-center justify-between">
                 <View className="flex items-center">
-                  <View className="mr-3" style={{ color: '#3b82f6' }}>
-                    <Truck size={24} color="#3b82f6" />
+                  <View className="mr-3" style={{ color: '#0062ff' }}>
+                    <Truck size={24} color="#0062ff" />
                   </View>
                   <View>
                     <Text className="block text-base font-semibold text-gray-900">
@@ -352,7 +352,7 @@ export default function RoleSwitch() {
 
           {!hasMerchantRole && (
             <Card
-              className="p-4 cursor-pointer active:bg-gray-50"
+              className="p-4 cursor-pointer active:bg-muted"
               onClick={() => handleCreateRole('merchant')}
             >
               <View className="flex items-center justify-between">
@@ -384,8 +384,8 @@ export default function RoleSwitch() {
 
       {/* 说明 */}
       <View className="mx-4 mt-4 mb-4">
-        <Card className="p-4 bg-blue-50">
-          <Text className="block text-sm text-blue-700">
+        <Card className="p-4 bg-accent">
+          <Text className="block text-sm text-primary">
             说明：一个账号可以同时拥有多个角色。切换角色后，页面和功能会根据当前角色展示不同的内容。
           </Text>
         </Card>

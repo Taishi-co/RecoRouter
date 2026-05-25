@@ -146,7 +146,7 @@ export default function ChangePhone() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-50">
+    <View className="min-h-screen bg-background">
       {/* 顶部导航栏 */}
       <View className="bg-white p-4 border-b flex items-center">
         <View onClick={handleBack} className="flex items-center gap-2">
@@ -163,7 +163,7 @@ export default function ChangePhone() {
           {/* 第一步说明 */}
           <View className="text-center py-4">
             <View className="flex justify-center mb-2">
-              <Phone size={32} color="#3b82f6" />
+              <Phone size={32} color="#0062ff" />
             </View>
             <Text className="text-base font-medium">绑定新手机号</Text>
             <Text className="text-xs text-gray-500 mt-1">
@@ -174,7 +174,7 @@ export default function ChangePhone() {
           {/* 新手机号输入 */}
           <View>
             <Text className="block text-sm font-medium mb-2">新手机号</Text>
-            <View className="bg-gray-50 rounded-xl px-4 py-3">
+            <View className="bg-muted rounded-xl px-4 py-3">
               <Input
                 className="w-full bg-transparent"
                 type="number"
@@ -190,7 +190,7 @@ export default function ChangePhone() {
           <View>
             <Text className="block text-sm font-medium mb-2">验证码</Text>
             <View className="flex gap-2">
-              <View className="flex-1 bg-gray-50 rounded-xl px-4 py-3">
+              <View className="flex-1 bg-muted rounded-xl px-4 py-3">
                 <Input
                   className="w-full bg-transparent"
                   type="number"
@@ -219,7 +219,7 @@ export default function ChangePhone() {
       {/* 确认修改按钮 */}
       <View className="m-4">
         <Button
-          className="w-full bg-blue-500 text-white"
+          className="w-full bg-primary text-white"
           onClick={handleNextStep}
           disabled={loading}
         >

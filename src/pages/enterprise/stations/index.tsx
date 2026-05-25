@@ -313,7 +313,7 @@ const EnterpriseStationsPage: FC = () => {
   }
 
   return (
-    <View className="enterprise-stations min-h-screen bg-gray-50 pb-20">
+    <View className="enterprise-stations min-h-screen bg-background pb-20">
       <View className="p-4">
         <Text className="text-2xl font-bold block mb-4">配送点管理</Text>
 
@@ -410,7 +410,7 @@ const EnterpriseStationsPage: FC = () => {
                         类型: {station.point_type === 'community_leader' ? '社区团长' : '终端点'}
                       </Text>
                       {station.location && (
-                        <Text className="text-xs text-blue-500 block">
+                        <Text className="text-xs text-primary block">
                           位置: {station.location.lat.toFixed(6)}, {station.location.lng.toFixed(6)}
                         </Text>
                       )}
@@ -492,7 +492,7 @@ const EnterpriseStationsPage: FC = () => {
                     </Button>
                   </View>
                   {newStationLocation && (
-                    <Text className="text-xs text-blue-600 mt-1 block">
+                    <Text className="text-xs text-primary mt-1 block">
                       已选择位置: {newStationLocation.lat.toFixed(6)}, {newStationLocation.lng.toFixed(6)}
                     </Text>
                   )}

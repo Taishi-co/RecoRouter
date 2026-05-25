@@ -110,12 +110,12 @@ export default function AdminVehicles() {
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      pending: 'bg-orange-500',
-      active: 'bg-green-500',
+      pending: 'bg-amber-500',
+      active: 'bg-emerald-500',
       rejected: 'bg-red-500',
-      inactive: 'bg-gray-500'
+      inactive: 'bg-slate-500'
     }
-    return colors[status] || 'bg-gray-500'
+    return colors[status] || 'bg-slate-500'
   }
 
   const parsePhotoUrls = (photosJson: string | null): string[] => {
@@ -230,7 +230,7 @@ export default function AdminVehicles() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-100">
+    <View className="min-h-screen bg-background">
       {/* 导航菜单 */}
       <View className="bg-white shadow-sm">
         <View className="px-4 py-3">
@@ -244,7 +244,7 @@ export default function AdminVehicles() {
             </Button>
             <Button
               size="sm"
-              className="bg-blue-500"
+              className="bg-primary"
             >
               <Text className="text-xs">车辆审核</Text>
             </Button>
@@ -296,7 +296,7 @@ export default function AdminVehicles() {
               <Button
                 size="sm"
                 variant={filterStatus === 'pending' ? 'default' : 'outline'}
-                className={filterStatus === 'pending' ? 'bg-orange-500' : ''}
+                className={filterStatus === 'pending' ? 'bg-amber-500' : ''}
                 onClick={() => setFilterStatus('pending')}
               >
                 <Text className="text-xs">待审核</Text>
@@ -304,7 +304,7 @@ export default function AdminVehicles() {
               <Button
                 size="sm"
                 variant={filterStatus === 'active' ? 'default' : 'outline'}
-                className={filterStatus === 'active' ? 'bg-green-500' : ''}
+                className={filterStatus === 'active' ? 'bg-emerald-500' : ''}
                 onClick={() => setFilterStatus('active')}
               >
                 <Text className="text-xs">已通过</Text>
@@ -320,7 +320,7 @@ export default function AdminVehicles() {
               <Button
                 size="sm"
                 variant={filterStatus === '' ? 'default' : 'outline'}
-                className={filterStatus === '' ? 'bg-gray-500' : ''}
+                className={filterStatus === '' ? 'bg-slate-500' : ''}
                 onClick={() => setFilterStatus('')}
               >
                 <Text className="text-xs">全部</Text>
@@ -337,7 +337,7 @@ export default function AdminVehicles() {
                   暂无车辆数据
                 </Text>
                 <Button
-                  className="bg-blue-500"
+                  className="bg-primary"
                   onClick={loadVehicles}
                 >
                   <Text>刷新</Text>
@@ -346,7 +346,7 @@ export default function AdminVehicles() {
             ) : (
               <View className="space-y-3">
                 {vehicles.map((vehicle) => (
-                  <View key={vehicle.id} className="bg-gray-50 rounded-lg p-4">
+                  <View key={vehicle.id} className="bg-muted rounded-lg p-4">
                     <View className="flex justify-between items-start mb-3">
                       <View className="flex-1">
                         <Text className="block font-medium text-base mb-1">
@@ -370,7 +370,7 @@ export default function AdminVehicles() {
                           <>
                             <Button
                               size="sm"
-                              className="bg-green-500"
+                              className="bg-emerald-500"
                               onClick={() => handleReview(vehicle)}
                             >
                               <Text className="text-xs">审核</Text>
@@ -418,7 +418,7 @@ export default function AdminVehicles() {
                                 key={idx}
                                 src={photoUrl}
                                 mode="aspectFill"
-                                className="w-20 h-20 rounded-lg bg-gray-200"
+                                className="w-20 h-20 rounded-lg bg-muted"
                                 onClick={() => Taro.previewImage({
                                   current: idx,
                                   urls: parsePhotoUrls(vehicle.photos)
@@ -484,7 +484,7 @@ export default function AdminVehicles() {
                 {selectedVehicle.photos && (
                   <View>
                     <Text className="block text-gray-500 text-xs mb-1">车辆照片</Text>
-                    <Text className="block text-blue-500">
+                    <Text className="block text-primary">
                       已上传 {JSON.parse(selectedVehicle.photos).length} 张照片
                     </Text>
                   </View>
@@ -504,7 +504,7 @@ export default function AdminVehicles() {
               <View style={{ display: 'flex', flexDirection: 'row', gap: '12px' }}>
                 <View style={{ flex: 1 }}>
                   <Button
-                    className="w-full bg-green-500"
+                    className="w-full bg-emerald-500"
                     onClick={handleApprove}
                     disabled={loading}
                   >

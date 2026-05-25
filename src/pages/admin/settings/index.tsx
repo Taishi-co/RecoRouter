@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export default function AdminSettings() {
   return (
-    <View className="min-h-screen bg-gray-100">
+    <View className="min-h-screen bg-background">
       <View className="px-4 py-4">
         <Card className="bg-white rounded-lg shadow-sm">
           <CardHeader>

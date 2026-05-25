@@ -426,8 +426,8 @@ const EnterpriseFleetPage: FC = () => {
 
   const getTripStatusColor = (status: string) => {
     const colorMap = {
-      idle: 'bg-green-100 text-green-600',
-      in_transit: 'bg-orange-100 text-orange-600',
+      idle: 'bg-green-100 text-emerald-600',
+      in_transit: 'bg-orange-100 text-amber-600',
       maintenance: 'bg-red-100 text-red-600',
     }
     return colorMap[status] || ''
@@ -442,7 +442,7 @@ const EnterpriseFleetPage: FC = () => {
   })
 
   return (
-    <View className="enterprise-fleet min-h-screen bg-gray-50 pb-20">
+    <View className="enterprise-fleet min-h-screen bg-background pb-20">
       <ScrollView scrollY className="h-full">
         <View className="p-4">
           {/* 页面标题和操作按钮 */}
@@ -487,25 +487,25 @@ const EnterpriseFleetPage: FC = () => {
               <CardContent className="p-4">
                 <View className="grid grid-cols-4 gap-2">
                   <View className="text-center">
-                    <Text className="text-lg font-bold text-blue-600 block">
+                    <Text className="text-lg font-bold text-primary block">
                       {stats.total}
                     </Text>
                     <Text className="text-xs text-gray-500 mt-1 block">总车辆</Text>
                   </View>
                   <View className="text-center">
-                    <Text className="text-lg font-bold text-orange-600 block">
+                    <Text className="text-lg font-bold text-amber-600 block">
                       {stats.in_transit}
                     </Text>
                     <Text className="text-xs text-gray-500 mt-1 block">执行中</Text>
                   </View>
                   <View className="text-center">
-                    <Text className="text-lg font-bold text-green-600 block">
+                    <Text className="text-lg font-bold text-emerald-600 block">
                       {stats.idle}
                     </Text>
                     <Text className="text-xs text-gray-500 mt-1 block">空闲</Text>
                   </View>
                   <View className="text-center">
-                    <Text className="text-lg font-bold text-purple-600 block">
+                    <Text className="text-lg font-bold text-indigo-600 block">
                       {stats.external}
                     </Text>
                     <Text className="text-xs text-gray-500 mt-1 block">对外</Text>

@@ -341,10 +341,10 @@ const EnterpriseDispatchPage: FC = () => {
 
   const getStatusColor = (status: string) => {
     const colorMap = {
-      pending: 'bg-orange-100 text-orange-600',
-      in_transit: 'bg-blue-100 text-blue-600',
-      completed: 'bg-green-100 text-green-600',
-      cancelled: 'bg-gray-100 text-gray-600',
+      pending: 'bg-orange-100 text-amber-600',
+      in_transit: 'bg-accent text-primary',
+      completed: 'bg-green-100 text-emerald-600',
+      cancelled: 'bg-background text-gray-600',
     }
     return colorMap[status] || ''
   }
@@ -381,10 +381,10 @@ const EnterpriseDispatchPage: FC = () => {
                       <Text
                         className={`text-xs px-2 py-1 rounded ${
                           point.status === 'completed'
-                            ? 'bg-green-100 text-green-600'
+                            ? 'bg-green-100 text-emerald-600'
                             : point.status === 'in_transit'
-                              ? 'bg-blue-100 text-blue-600'
-                              : 'bg-gray-100 text-gray-600'
+                              ? 'bg-accent text-primary'
+                              : 'bg-background text-gray-600'
                         }`}
                       >
                         {point.status === 'completed'
@@ -452,7 +452,7 @@ const EnterpriseDispatchPage: FC = () => {
   )
 
   return (
-    <View className="enterprise-dispatch min-h-screen bg-gray-50 pb-20">
+    <View className="enterprise-dispatch min-h-screen bg-background pb-20">
       <ScrollView scrollY className="h-full">
         <View className="p-4">
           {errorText && (
@@ -469,19 +469,19 @@ const EnterpriseDispatchPage: FC = () => {
               <CardContent className="p-4">
                 <View className="grid grid-cols-4 gap-2">
                   <View className="text-center">
-                    <Text className="text-xl font-bold text-orange-600 block">
+                    <Text className="text-xl font-bold text-amber-600 block">
                       {stats.pending}
                     </Text>
                     <Text className="text-xs text-gray-500 mt-1 block">待调度</Text>
                   </View>
                   <View className="text-center">
-                    <Text className="text-xl font-bold text-blue-600 block">
+                    <Text className="text-xl font-bold text-primary block">
                       {stats.in_transit}
                     </Text>
                     <Text className="text-xs text-gray-500 mt-1 block">进行中</Text>
                   </View>
                   <View className="text-center">
-                    <Text className="text-xl font-bold text-green-600 block">
+                    <Text className="text-xl font-bold text-emerald-600 block">
                       {stats.completed}
                     </Text>
                     <Text className="text-xs text-gray-500 mt-1 block">已完成</Text>

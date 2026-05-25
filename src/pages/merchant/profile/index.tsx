@@ -25,7 +25,7 @@ export default function MerchantProfile() {
     {
       id: 'publish',
       title: '发布需求',
-      icon: <FileText size={20} color="#3b82f6" />,
+      icon: <FileText size={20} color="#0062ff" />,
       onClick: () => Taro.navigateTo({ url: '/pages/merchant/demands/publish' })
     },
     {
@@ -58,19 +58,19 @@ export default function MerchantProfile() {
     {
       id: 'demands',
       title: '我的需求',
-      icon: <Package size={20} color="#3b82f6" />,
+      icon: <Package size={20} color="#0062ff" />,
       onClick: () => Taro.navigateTo({ url: '/pages/merchant/demands/list' })
     },
     {
       id: 'orders',
       title: '订单管理',
-      icon: <Package size={20} color="#3b82f6" />,
+      icon: <Package size={20} color="#0062ff" />,
       onClick: () => Taro.navigateTo({ url: '/pages/merchant/orders/index' })
     },
     {
       id: 'templates',
       title: '常用模板',
-      icon: <Copy size={20} color="#3b82f6" />,
+      icon: <Copy size={20} color="#0062ff" />,
       onClick: () => {
         console.log('点击常用模板')
         Taro.navigateTo({
@@ -87,7 +87,7 @@ export default function MerchantProfile() {
     {
       id: 'schedules',
       title: '定时计划',
-      icon: <Clock size={20} color="#3b82f6" />,
+      icon: <Clock size={20} color="#0062ff" />,
       onClick: () => {
         console.log('点击定时计划')
         Taro.navigateTo({
@@ -104,19 +104,19 @@ export default function MerchantProfile() {
     {
       id: 'address-books',
       title: '地址簿',
-      icon: <MapPin size={20} color="#3b82f6" />,
+      icon: <MapPin size={20} color="#0062ff" />,
       onClick: () => Taro.navigateTo({ url: '/pages/merchant/address-books/index' })
     },
     {
       id: 'favorite-routes',
       title: '常用线路',
-      icon: <Route size={20} color="#3b82f6" />,
+      icon: <Route size={20} color="#0062ff" />,
       onClick: () => Taro.navigateTo({ url: '/pages/merchant/favorite-routes/index' })
     },
     {
       id: 'stats',
       title: '数据统计',
-      icon: <ChartArea size={20} color="#3b82f6" />,
+      icon: <ChartArea size={20} color="#0062ff" />,
       onClick: () => Taro.navigateTo({ url: '/pages/merchant/stats/index' })
     },
     {
@@ -218,12 +218,12 @@ export default function MerchantProfile() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-100">
+    <View className="min-h-screen bg-background">
       {/* 头部用户信息 */}
-      <View className="bg-green-500 pt-12 pb-8 px-4">
+      <View className="bg-emerald-500 pt-12 pb-8 px-4">
         <View className="flex items-center gap-4">
           <Avatar className="w-16 h-16 bg-white">
-            <AvatarFallback className="text-green-500 text-xl font-bold">
+            <AvatarFallback className="text-emerald-500 text-xl font-bold">
               {userInfo?.name?.charAt(0) || '需'}
             </AvatarFallback>
           </Avatar>
@@ -252,7 +252,7 @@ export default function MerchantProfile() {
             <View className="flex items-center justify-between">
               <View className="flex items-center gap-3">
                 <View className="relative">
-                  <Bell size={24} color="#3b82f6" />
+                  <Bell size={24} color="#0062ff" />
                   {unreadCount > 0 && (
                     <Badge className="absolute -top-1 -right-1 w-5 h-5 flex items-center justify-center bg-red-500 border-2 border-white rounded-full">
                       <Text className="text-xs text-white">
@@ -284,8 +284,8 @@ export default function MerchantProfile() {
             {menuItems.map((item, index) => (
               <View
                 key={item.id}
-                className={`flex items-center justify-between px-4 py-4 active:bg-gray-50 ${
-                  index < menuItems.length - 1 ? 'border-b border-gray-100' : ''
+                className={`flex items-center justify-between px-4 py-4 active:bg-muted ${
+                  index < menuItems.length - 1 ? 'border-b border-border' : ''
                 }`}
                 onClick={item.onClick}
               >
@@ -303,7 +303,7 @@ export default function MerchantProfile() {
         <Card className="bg-white rounded-lg shadow-sm mb-4">
           <CardContent className="p-0">
             <View
-              className="flex items-center justify-between px-4 py-4 active:bg-gray-50"
+              className="flex items-center justify-between px-4 py-4 active:bg-muted"
               onClick={handleLogout}
             >
               <View className="flex items-center gap-3">

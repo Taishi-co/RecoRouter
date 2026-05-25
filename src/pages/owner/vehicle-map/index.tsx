@@ -120,14 +120,14 @@ export default function VehicleMap() {
   // 获取状态对应的颜色
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      idle: 'bg-blue-500',
-      running: 'bg-green-500',
-      delivering: 'bg-green-500',
-      charging: 'bg-yellow-500',
-      maintenance: 'bg-orange-500',
+      idle: 'bg-primary',
+      running: 'bg-emerald-500',
+      delivering: 'bg-emerald-500',
+      charging: 'bg-amber-500',
+      maintenance: 'bg-amber-500',
       error: 'bg-red-500',
     }
-    return colors[status] || 'bg-gray-500'
+    return colors[status] || 'bg-slate-500'
   }
 
   // 获取状态文本
@@ -225,7 +225,7 @@ export default function VehicleMap() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-100">
+    <View className="min-h-screen bg-background">
       {/* 地图区域 */}
       <View className="relative w-full" style={{ height: '60vh' }}>
         {isMiniApp ? (
@@ -246,7 +246,7 @@ export default function VehicleMap() {
           />
         ) : (
           // H5端：显示降级提示
-          <View className="w-full h-full bg-gray-200 flex items-center justify-center">
+          <View className="w-full h-full bg-muted flex items-center justify-center">
             <View className="text-center px-4">
               <Text className="block text-lg font-semibold text-gray-700 mb-2">
                 地图功能仅在小程序中可用
@@ -255,7 +255,7 @@ export default function VehicleMap() {
                 H5 端暂不支持地图显示，请使用微信小程序或抖音小程序查看车辆实时位置
               </Text>
               <Button
-                className="bg-blue-500"
+                className="bg-primary"
                 onClick={loadVehicleLocations}
                 disabled={loading}
               >
@@ -316,13 +316,13 @@ export default function VehicleMap() {
                 {vehicles.map((vehicle) => (
                   <View
                     key={vehicle.id}
-                    className="bg-gray-50 rounded-lg p-3"
+                    className="bg-muted rounded-lg p-3"
                     onClick={() => handleVehicleCardTap(vehicle)}
                   >
                     <View className="flex justify-between items-start mb-2">
                       <View className="flex-1">
                         <View className="flex items-center gap-2 mb-1">
-                          <Badge className={vehicle.manufacturer === 'neolix' ? 'bg-purple-500' : 'bg-cyan-500'}>
+                          <Badge className={vehicle.manufacturer === 'neolix' ? 'bg-indigo-500' : 'bg-cyan-500'}>
                             <Text className="text-white text-xs">
                               {getManufacturerName(vehicle.manufacturer)}
                             </Text>
@@ -373,11 +373,11 @@ export default function VehicleMap() {
 
       {/* 选中车辆详情弹窗 */}
       {selectedVehicle && (
-        <View className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 rounded-t-2xl shadow-lg p-4 z-50">
+        <View className="fixed bottom-0 left-0 right-0 bg-white border-t border-border rounded-t-2xl shadow-lg p-4 z-50">
           <View className="flex justify-between items-start mb-3">
             <View className="flex-1">
               <View className="flex items-center gap-2 mb-2">
-                <Badge className={selectedVehicle.manufacturer === 'neolix' ? 'bg-purple-500' : 'bg-cyan-500'}>
+                <Badge className={selectedVehicle.manufacturer === 'neolix' ? 'bg-indigo-500' : 'bg-cyan-500'}>
                   <Text className="text-white text-xs">
                     {getManufacturerName(selectedVehicle.manufacturer)}
                   </Text>

@@ -67,14 +67,14 @@ export default function VehicleMockDemo() {
   // 获取状态对应的颜色
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      idle: 'bg-blue-500',
-      running: 'bg-green-500',
-      delivering: 'bg-green-500',
-      charging: 'bg-yellow-500',
-      maintenance: 'bg-orange-500',
+      idle: 'bg-primary',
+      running: 'bg-emerald-500',
+      delivering: 'bg-emerald-500',
+      charging: 'bg-amber-500',
+      maintenance: 'bg-amber-500',
       error: 'bg-red-500',
     }
-    return colors[status] || 'bg-gray-500'
+    return colors[status] || 'bg-slate-500'
   }
 
   // 获取状态文本
@@ -100,7 +100,7 @@ export default function VehicleMockDemo() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-100">
+    <View className="min-h-screen bg-background">
       {/* 顶部导航 */}
       <View className="bg-white shadow-sm">
         <View className="px-4 py-3">
@@ -108,7 +108,7 @@ export default function VehicleMockDemo() {
             <Text className="text-lg font-semibold">车机数据模拟Demo</Text>
             <Button
               size="sm"
-              className="bg-blue-500"
+              className="bg-primary"
               onClick={loadMockVehicles}
               disabled={loading}
             >
@@ -125,18 +125,18 @@ export default function VehicleMockDemo() {
 
       <View className="px-4 py-4">
         {/* 说明卡片 */}
-        <Card className="bg-blue-50 border-blue-200 mb-4">
+        <Card className="bg-accent border-primary mb-4">
           <CardContent className="p-4">
-            <Text className="block text-sm text-blue-800 mb-2 font-medium">
+            <Text className="block text-sm text-primary mb-2 font-medium">
               功能说明
             </Text>
-            <Text className="block text-xs text-blue-700 mb-1">
+            <Text className="block text-xs text-primary mb-1">
               • 模拟新石器（Neolix）和九识（Ninebot）无人车实时位置数据
             </Text>
-            <Text className="block text-xs text-blue-700 mb-1">
+            <Text className="block text-xs text-primary mb-1">
               • 后端每5秒自动推送随机车辆位置更新
             </Text>
-            <Text className="block text-xs text-blue-700">
+            <Text className="block text-xs text-primary">
               • 点击&quot;刷新数据&quot;按钮可手动获取最新数据
             </Text>
           </CardContent>
@@ -163,7 +163,7 @@ export default function VehicleMockDemo() {
                   <View className="flex justify-between items-start">
                     <View className="flex-1">
                       <View className="flex items-center gap-2 mb-2">
-                        <Badge className={vehicle.manufacturer === 'neolix' ? 'bg-purple-500' : 'bg-cyan-500'}>
+                        <Badge className={vehicle.manufacturer === 'neolix' ? 'bg-indigo-500' : 'bg-cyan-500'}>
                           <Text className="text-white text-xs">
                             {getManufacturerName(vehicle.manufacturer)}
                           </Text>

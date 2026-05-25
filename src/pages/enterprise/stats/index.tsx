@@ -96,7 +96,7 @@ const EnterpriseStatsPage: FC = () => {
     : 0
 
   return (
-    <View className="enterprise-stats min-h-screen bg-gray-50 p-4 pb-20">
+    <View className="enterprise-stats min-h-screen bg-background p-4 pb-20">
       <Text className="text-2xl font-bold block mb-4">数据统计</Text>
 
       {errorText && (
@@ -122,19 +122,19 @@ const EnterpriseStatsPage: FC = () => {
             </CardHeader>
             <CardContent>
               <View className="grid grid-cols-2 gap-4">
-                <View className="bg-blue-50 rounded-lg p-4">
-                  <Text className="text-3xl font-bold text-blue-600 block">
+                <View className="bg-accent rounded-lg p-4">
+                  <Text className="text-3xl font-bold text-primary block">
                     {stats.todayOrders}
                   </Text>
                   <Text className="text-xs text-gray-500 mt-1 block">今日订单</Text>
                 </View>
-                <View className="bg-green-50 rounded-lg p-4">
-                  <Text className="text-3xl font-bold text-green-600 block">
+                <View className="bg-emerald-50 rounded-lg p-4">
+                  <Text className="text-3xl font-bold text-emerald-600 block">
                     {stats.monthOrders}
                   </Text>
                   <Text className="text-xs text-gray-500 mt-1 block">本月订单</Text>
                 </View>
-                <View className="bg-gray-50 rounded-lg p-4">
+                <View className="bg-muted rounded-lg p-4">
                   <Text className="text-3xl font-bold text-gray-900 block">
                     {stats.total || 0}
                   </Text>
@@ -175,7 +175,7 @@ const EnterpriseStatsPage: FC = () => {
                   <Text className="text-sm text-gray-600 block mb-1">
                     今日配送距离
                   </Text>
-                  <Text className="text-xl font-bold text-orange-600 block">
+                  <Text className="text-xl font-bold text-amber-600 block">
                     {stats.totalDistance} 公里
                   </Text>
                 </View>
@@ -183,7 +183,7 @@ const EnterpriseStatsPage: FC = () => {
                   <Text className="text-sm text-gray-600 block mb-1">
                     平均配送时间
                   </Text>
-                  <Text className="text-xl font-bold text-purple-600 block">
+                  <Text className="text-xl font-bold text-indigo-600 block">
                     {stats.avgDeliveryTime} 分钟
                   </Text>
                 </View>
@@ -208,13 +208,13 @@ const EnterpriseStatsPage: FC = () => {
               <View>
                 <View className="flex justify-between items-center mb-2">
                   <Text className="text-sm text-gray-600">使用率</Text>
-                  <Text className="text-sm font-bold text-blue-600">
+                  <Text className="text-sm font-bold text-primary">
                     {vehicleUsageRate}%
                   </Text>
                 </View>
-                <View className="w-full bg-gray-200 rounded-full h-3">
+                <View className="w-full bg-muted rounded-full h-3">
                   <View
-                    className="bg-blue-600 h-3 rounded-full"
+                    className="bg-primary h-3 rounded-full"
                     style={{ width: `${vehicleUsageRate}%` }}
                   />
                 </View>
@@ -255,13 +255,13 @@ const EnterpriseStatsPage: FC = () => {
                   ))}
                 </View>
                 <View className="grid grid-cols-2 gap-3 mt-4">
-                  <View className="bg-gray-50 rounded-lg p-3">
+                  <View className="bg-muted rounded-lg p-3">
                     <Text className="text-lg font-semibold text-gray-900 block">
                       {stats.terminalPoints || 0}
                     </Text>
                     <Text className="text-xs text-gray-500 block">终端点</Text>
                   </View>
-                  <View className="bg-gray-50 rounded-lg p-3">
+                  <View className="bg-muted rounded-lg p-3">
                     <Text className="text-lg font-semibold text-gray-900 block">
                       {stats.communityLeaderPoints || 0}
                     </Text>

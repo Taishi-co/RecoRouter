@@ -359,13 +359,13 @@ export default function AcceptOrder() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-50 flex flex-col">
+    <View className="min-h-screen bg-background flex flex-col">
       {/* 顶部固定区域 */}
-      <View className="bg-white px-4 py-3 flex-shrink-0 border-b border-gray-200">
+      <View className="bg-white px-4 py-3 flex-shrink-0 border-b border-border">
         <View className="flex items-center justify-between mb-2">
           <Text className="text-lg font-semibold">确认接单</Text>
           <View
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100"
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-background"
             onClick={() => Taro.navigateBack()}
           >
             <Text className="text-gray-500">✕</Text>
@@ -383,7 +383,7 @@ export default function AcceptOrder() {
           {(selectedDemand.pickup_lat && selectedDemand.pickup_lng) && (
             <View className="bg-white rounded-lg p-4">
               <Text className="font-medium mb-3 text-sm">路线地图</Text>
-              <View className="rounded-lg overflow-hidden bg-gray-100">
+              <View className="rounded-lg overflow-hidden bg-background">
                 {Taro.getEnv() === Taro.ENV_TYPE.WEAPP ? (
                   <Map
                     id="accept-map"
@@ -410,7 +410,7 @@ export default function AcceptOrder() {
                           color: '#fff',
                           fontSize: 12,
                           borderRadius: 4,
-                          bgColor: '#3b82f6',
+                          bgColor: '#0062ff',
                           padding: 4,
                           display: 'ALWAYS',
                           textAlign: 'center',
@@ -445,7 +445,7 @@ export default function AcceptOrder() {
                         ? [
                             {
                               points: routePolyline,
-                              color: '#3b82f6',
+                              color: '#0062ff',
                               width: 4,
                               dottedLine: false
                             }
@@ -463,7 +463,7 @@ export default function AcceptOrder() {
                                     longitude: parseFloat(selectedDemand.delivery_lng)
                                   }
                                 ],
-                                color: '#3b82f6',
+                                color: '#0062ff',
                                 width: 4,
                                 dottedLine: true
                               }
@@ -494,7 +494,7 @@ export default function AcceptOrder() {
 
               <View className="mt-2 flex items-center justify-center">
                 <Text
-                  className="text-xs text-blue-500 text-center"
+                  className="text-xs text-primary text-center"
                   onClick={() => setShowFullMap(true)}
                 >
                   🔍 点击查看全屏路线
@@ -509,7 +509,7 @@ export default function AcceptOrder() {
               <Text className="text-red-500">*</Text>选择车辆
             </Text>
             {vehicles.length === 0 ? (
-              <View className="bg-gray-50 rounded-lg p-4 text-center">
+              <View className="bg-muted rounded-lg p-4 text-center">
                 <Text className="text-gray-500 text-sm mb-2">
                   暂无可用车辆
                 </Text>
@@ -522,8 +522,8 @@ export default function AcceptOrder() {
                 {vehicles.map((vehicle) => (
                   <View
                     key={vehicle.id}
-                    className={`bg-gray-50 rounded-lg p-4 ${
-                      selectedVehicleId === vehicle.id ? 'border-2 border-blue-500' : 'border-2 border-transparent'
+                    className={`bg-muted rounded-lg p-4 ${
+                      selectedVehicleId === vehicle.id ? 'border-2 border-primary' : 'border-2 border-transparent'
                     }`}
                     onClick={() => handleVehicleSelect(vehicle.id)}
                   >
@@ -535,7 +535,7 @@ export default function AcceptOrder() {
                           </Text>
                           {/* 车辆归属类型标签 */}
                           {vehicle.ownership_type && (
-                            <Badge className={vehicle.ownership_type === 'owned' ? 'bg-blue-600' : 'bg-purple-600'}>
+                            <Badge className={vehicle.ownership_type === 'owned' ? 'bg-primary' : 'bg-indigo-600'}>
                               <Text className="text-white text-xs">
                                 {vehicle.ownership_type === 'owned' ? '自有' : '租赁'}
                               </Text>
@@ -556,7 +556,7 @@ export default function AcceptOrder() {
                           载重: {vehicle.load_capacity}kg | 容积: {vehicle.volume}m³ | 续航: {vehicle.battery_life}km
                         </Text>
                         {(vehicle.base_price || vehicle.base_distance || vehicle.price_per_km) && (
-                          <Text className="text-xs text-blue-600 font-medium">
+                          <Text className="text-xs text-primary font-medium">
                             💰 起步¥{vehicle.base_price || 20}（{vehicle.base_distance || 3}公里）+ ¥{vehicle.price_per_km || 2}/公里
                           </Text>
                         )}
@@ -568,7 +568,7 @@ export default function AcceptOrder() {
                             height: '24px',
                             borderRadius: '50%',
                             border: '2px solid #d1d5db',
-                            backgroundColor: selectedVehicleId === vehicle.id ? '#3b82f6' : 'transparent',
+                            backgroundColor: selectedVehicleId === vehicle.id ? '#0062ff' : 'transparent',
                             borderWidth: selectedVehicleId === vehicle.id ? '6px' : '2px'
                           }}
                         />
@@ -587,21 +587,21 @@ export default function AcceptOrder() {
             </Text>
 
             {calculatedFare && fareCalculationDetail && (
-              <View className="bg-green-50 rounded-lg p-4 mb-3">
+              <View className="bg-emerald-50 rounded-lg p-4 mb-3">
                 <Text className="text-sm font-medium text-green-700 mb-2">
                   ✅ 系统自动计算运费
                 </Text>
                 <View className="space-y-1">
-                  <Text className="text-xs text-green-600">
+                  <Text className="text-xs text-emerald-600">
                     • 起步价：¥{fareCalculationDetail.base_price}（{fareCalculationDetail.base_distance}公里）
                   </Text>
-                  <Text className="text-xs text-green-600">
+                  <Text className="text-xs text-emerald-600">
                     • 总距离：{fareCalculationDetail.total_distance.toFixed(2)}公里
                   </Text>
-                  <Text className="text-xs text-green-600">
+                  <Text className="text-xs text-emerald-600">
                     • 额外距离：{fareCalculationDetail.extra_distance.toFixed(2)}公里
                   </Text>
-                  <Text className="text-xs text-green-600">
+                  <Text className="text-xs text-emerald-600">
                     • 额外费用：¥{fareCalculationDetail.extra_fare.toFixed(2)}
                   </Text>
                   <Text className="text-xs text-green-700 font-bold">
@@ -611,7 +611,7 @@ export default function AcceptOrder() {
               </View>
             )}
 
-            <View className="bg-gray-50 rounded-lg px-4 py-3 mb-2">
+            <View className="bg-muted rounded-lg px-4 py-3 mb-2">
               <View className="flex items-center">
                 <View className="flex-1">
                   <Input
@@ -635,7 +635,7 @@ export default function AcceptOrder() {
             <Text className="font-medium mb-3 text-sm">
               备注说明（可选）
             </Text>
-            <View className="bg-gray-50 rounded-lg p-4">
+            <View className="bg-muted rounded-lg p-4">
               <Textarea
                 style={{ width: '100%', minHeight: '100px', backgroundColor: 'transparent' }}
                 placeholder="如：预计10分钟内到达取货点"
@@ -655,16 +655,16 @@ export default function AcceptOrder() {
       </ScrollView>
 
       {/* 底部固定按钮区域 */}
-      <View className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-3 flex gap-3 z-50">
+      <View className="fixed bottom-0 left-0 right-0 bg-white border-t border-border px-4 py-3 flex gap-3 z-50">
         <Button
-          className="flex-1 bg-gray-200 h-12"
+          className="flex-1 bg-muted h-12"
           onClick={() => Taro.navigateBack()}
           disabled={loading}
         >
           <Text>取消</Text>
         </Button>
         <Button
-          className="flex-1 bg-blue-500 h-12"
+          className="flex-1 bg-primary h-12"
           onClick={handleConfirmAccept}
           disabled={loading}
         >
@@ -767,7 +767,7 @@ export default function AcceptOrder() {
                     color: '#fff',
                     fontSize: 14,
                     borderRadius: 4,
-                    bgColor: '#3b82f6',
+                    bgColor: '#0062ff',
                     padding: 6,
                     display: 'ALWAYS',
                     textAlign: 'center',
@@ -802,7 +802,7 @@ export default function AcceptOrder() {
                   ? [
                       {
                         points: routePolyline,
-                        color: '#3b82f6',
+                        color: '#0062ff',
                         width: 6,
                         dottedLine: false
                       }
@@ -820,7 +820,7 @@ export default function AcceptOrder() {
                               longitude: parseFloat(selectedDemand.delivery_lng)
                             }
                           ],
-                          color: '#3b82f6',
+                          color: '#0062ff',
                           width: 6,
                           dottedLine: true
                         }

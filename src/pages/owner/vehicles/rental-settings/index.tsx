@@ -144,34 +144,34 @@ export default function VehicleRentalSettings() {
 
   if (loading) {
     return (
-      <View className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <View className="min-h-screen bg-background flex items-center justify-center">
         <Text className="block text-gray-500">加载中...</Text>
       </View>
     )
   }
 
   return (
-    <View className="min-h-screen bg-gray-50 pb-4">
+    <View className="min-h-screen bg-background pb-4">
       {/* 头部 */}
-      <View className="bg-white p-4 border-b border-gray-200">
+      <View className="bg-white p-4 border-b border-border">
         <View className="flex items-center">
           <ArrowLeft
             size={20}
-            color="#1890ff"
+            color="#0062ff"
             className="mr-3 cursor-pointer"
             onClick={() => Taro.navigateBack()}
           />
-          <Settings size={20} color="#1890ff" className="mr-2" />
+          <Settings size={20} color="#0062ff" className="mr-2" />
           <Text className="text-lg font-bold text-gray-900">车辆租赁设置</Text>
         </View>
       </View>
 
       <View className="mx-4 mt-4 space-y-4">
         {/* 提示信息 */}
-        <View className="p-3 bg-blue-50 rounded-lg">
+        <View className="p-3 bg-accent rounded-lg">
           <View className="flex items-start">
-            <Info size={16} color="#1890ff" className="mr-2 flex-shrink-0 mt-1" />
-            <Text className="block text-sm text-blue-700">
+            <Info size={16} color="#0062ff" className="mr-2 flex-shrink-0 mt-1" />
+            <Text className="block text-sm text-primary">
               设置车辆为可租赁后，需求方可以在租车大厅看到您的车辆。
             </Text>
           </View>
@@ -270,7 +270,7 @@ export default function VehicleRentalSettings() {
                 <Separator />
 
                 {/* 租赁条款 */}
-                <View className="p-3 bg-gray-50 rounded-lg">
+                <View className="p-3 bg-muted rounded-lg">
                   <Text className="block text-sm font-medium text-gray-700 mb-2">租赁条款（仅供参考）</Text>
                   <View className="space-y-1">
                     <Text className="block text-xs text-gray-600">• 车辆维修：由车主负责</Text>

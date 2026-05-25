@@ -240,9 +240,9 @@ export default function PendingRentals() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-50 pb-4">
+    <View className="min-h-screen bg-background pb-4">
       {/* 头部 */}
-      <View className="bg-white p-4 border-b border-gray-200">
+      <View className="bg-white p-4 border-b border-border">
         <Text className="text-xl font-bold text-gray-900 block">待确认租赁申请</Text>
         <Text className="block text-sm text-gray-500 mt-1">查看并处理租户的租赁申请</Text>
       </View>
@@ -266,7 +266,7 @@ export default function PendingRentals() {
                   <CardTitle className="text-base font-semibold">
                     租赁申请 - {request.vehicles.license_plate}
                   </CardTitle>
-                  <Badge className="bg-yellow-500">待确认</Badge>
+                  <Badge className="bg-amber-500">待确认</Badge>
                 </View>
               </CardHeader>
 
@@ -295,7 +295,7 @@ export default function PendingRentals() {
                 <Separator />
 
                 {/* 租赁信息 */}
-                <View className="bg-blue-50 p-3 rounded-lg">
+                <View className="bg-accent p-3 rounded-lg">
                   <View className="flex items-center text-sm text-gray-700 mb-2">
                     <Calendar size={14} className="mr-2" color="#6b7280" />
                     <Text className="block font-medium">租赁信息</Text>
@@ -338,7 +338,7 @@ export default function PendingRentals() {
                   </View>
                   <View className="flex-1">
                     <View
-                      className="bg-green-50 text-green-600 rounded-lg py-2 px-4 text-center"
+                      className="bg-emerald-50 text-emerald-600 rounded-lg py-2 px-4 text-center"
                       onClick={() => handleConfirm(request)}
                     >
                       <View className="flex items-center justify-center">

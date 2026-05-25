@@ -209,12 +209,12 @@ export default function OwnerProfile() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-100">
+    <View className="min-h-screen bg-background">
       {/* 头部用户信息 */}
-      <View className="bg-blue-500 pt-12 pb-8 px-4">
+      <View className="bg-primary pt-12 pb-8 px-4">
         <View className="flex items-center gap-4">
           <Avatar className="w-16 h-16 bg-white">
-            <AvatarFallback className="text-blue-500 text-xl font-bold">
+            <AvatarFallback className="text-primary text-xl font-bold">
               {userInfo?.name?.charAt(0) || '车'}
             </AvatarFallback>
           </Avatar>
@@ -222,7 +222,7 @@ export default function OwnerProfile() {
             <Text className="block text-xl font-bold text-white mb-1">
               {userInfo?.name || '车主'}
             </Text>
-            <Text className="block text-sm text-blue-100 mb-2">
+            <Text className="block text-sm text-white mb-2">
               {maskPhone(userInfo?.phone || '')}
             </Text>
             <Badge className="bg-white bg-opacity-20 text-white px-2 py-1">
@@ -239,7 +239,7 @@ export default function OwnerProfile() {
           <CardHeader>
             <View className="flex items-center justify-between">
               <View className="flex items-center gap-2">
-                <CreditCard size={20} color="#3b82f6" />
+                <CreditCard size={20} color="#0062ff" />
                 <CardTitle className="text-base font-semibold">微信收款码</CardTitle>
               </View>
               <Button
@@ -256,7 +256,7 @@ export default function OwnerProfile() {
             {userInfo?.wechat_payment_qr ? (
               <View className="flex flex-col items-center">
                 <View
-                  className="w-48 h-48 bg-gray-100 rounded-lg overflow-hidden mb-3"
+                  className="w-48 h-48 bg-background rounded-lg overflow-hidden mb-3"
                   onClick={handlePreviewPaymentQr}
                 >
                   <Image
@@ -272,7 +272,7 @@ export default function OwnerProfile() {
               </View>
             ) : (
               <View className="flex flex-col items-center py-8">
-                <View className="w-32 h-32 bg-gray-100 rounded-lg flex items-center justify-center mb-3">
+                <View className="w-32 h-32 bg-background rounded-lg flex items-center justify-center mb-3">
                   <Camera size={48} color="#9ca3af" />
                 </View>
                 <Text className="block text-sm text-gray-500">
@@ -292,7 +292,7 @@ export default function OwnerProfile() {
             <View className="flex items-center justify-between">
               <View className="flex items-center gap-3">
                 <View className="relative">
-                  <Bell size={24} color="#3b82f6" />
+                  <Bell size={24} color="#0062ff" />
                   {unreadCount > 0 && (
                     <Badge className="absolute -top-1 -right-1 w-5 h-5 flex items-center justify-center bg-red-500 border-2 border-white rounded-full">
                       <Text className="text-xs text-white">
@@ -322,27 +322,27 @@ export default function OwnerProfile() {
         <Card className="bg-white rounded-lg shadow-sm mb-4">
           <CardContent className="p-0">
             <View
-              className="flex items-center justify-between px-4 py-4 border-b border-gray-100 active:bg-gray-50"
+              className="flex items-center justify-between px-4 py-4 border-b border-border active:bg-muted"
               onClick={() => Taro.navigateTo({ url: '/pages/merchant/address-books/index' })}
             >
               <View className="flex items-center gap-3">
-                <MapPin size={20} color="#3b82f6" />
+                <MapPin size={20} color="#0062ff" />
                 <Text className="block text-sm">地址簿</Text>
               </View>
               <Text className="block text-gray-400 text-sm">›</Text>
             </View>
             <View
-              className="flex items-center justify-between px-4 py-4 border-b border-gray-100 active:bg-gray-50"
+              className="flex items-center justify-between px-4 py-4 border-b border-border active:bg-muted"
               onClick={() => Taro.navigateTo({ url: '/pages/merchant/favorite-routes/index' })}
             >
               <View className="flex items-center gap-3">
-                <Route size={20} color="#3b82f6" />
+                <Route size={20} color="#0062ff" />
                 <Text className="block text-sm">常用线路</Text>
               </View>
               <Text className="block text-gray-400 text-sm">›</Text>
             </View>
             <View
-              className="flex items-center justify-between px-4 py-4 border-b border-gray-100 active:bg-gray-50"
+              className="flex items-center justify-between px-4 py-4 border-b border-border active:bg-muted"
               onClick={() => Taro.navigateTo({ url: '/pages/owner/profile/revenue-stats/index' })}
             >
               <View className="flex items-center gap-3">
@@ -352,7 +352,7 @@ export default function OwnerProfile() {
               <Text className="block text-gray-400 text-sm">›</Text>
             </View>
             <View
-              className="flex items-center justify-between px-4 py-4 border-b border-gray-100 active:bg-gray-50"
+              className="flex items-center justify-between px-4 py-4 border-b border-border active:bg-muted"
               onClick={() => Taro.navigateTo({ url: '/pages/owner/rentals/pending/index' })}
             >
               <View className="flex items-center gap-3">
@@ -362,7 +362,7 @@ export default function OwnerProfile() {
               <Text className="block text-gray-400 text-sm">›</Text>
             </View>
             <View
-              className="flex items-center justify-between px-4 py-4 border-b border-gray-100 active:bg-gray-50"
+              className="flex items-center justify-between px-4 py-4 border-b border-border active:bg-muted"
               onClick={() => Taro.navigateTo({ url: '/pages/rentals-history/index' })}
             >
               <View className="flex items-center gap-3">
@@ -372,7 +372,7 @@ export default function OwnerProfile() {
               <Text className="block text-gray-400 text-sm">›</Text>
             </View>
             <View
-              className="flex items-center justify-between px-4 py-4 border-b border-gray-100 active:bg-gray-50"
+              className="flex items-center justify-between px-4 py-4 border-b border-border active:bg-muted"
               onClick={() => Taro.navigateTo({ url: '/pages/role-switch/index' })}
             >
               <View className="flex items-center gap-3">
@@ -382,17 +382,17 @@ export default function OwnerProfile() {
               <Text className="block text-gray-400 text-sm">›</Text>
             </View>
             <View
-              className="flex items-center justify-between px-4 py-4 border-b border-gray-100 active:bg-gray-50"
+              className="flex items-center justify-between px-4 py-4 border-b border-border active:bg-muted"
               onClick={() => Taro.navigateTo({ url: '/pages/owner/account-settings/index' })}
             >
               <View className="flex items-center gap-3">
-                <Settings size={20} color="#3b82f6" />
+                <Settings size={20} color="#0062ff" />
                 <Text className="block text-sm">账号设置</Text>
               </View>
               <Text className="block text-gray-400 text-sm">›</Text>
             </View>
             <View
-              className="flex items-center justify-between px-4 py-4 border-b border-gray-100 active:bg-gray-50"
+              className="flex items-center justify-between px-4 py-4 border-b border-border active:bg-muted"
               onClick={() => {
                 Taro.showToast({
                   title: '功能开发中',
@@ -401,13 +401,13 @@ export default function OwnerProfile() {
               }}
             >
               <View className="flex items-center gap-3">
-                <MessageCircle size={20} color="#3b82f6" />
+                <MessageCircle size={20} color="#0062ff" />
                 <Text className="block text-sm">帮助与反馈</Text>
               </View>
               <Text className="block text-gray-400 text-sm">›</Text>
             </View>
             <View
-              className="flex items-center justify-between px-4 py-4 active:bg-gray-50"
+              className="flex items-center justify-between px-4 py-4 active:bg-muted"
               onClick={handleLogout}
             >
               <View className="flex items-center gap-3">
