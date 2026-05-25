@@ -1,6 +1,7 @@
 import { Controller, Post, Body, HttpCode, HttpStatus, Get, Query, UseInterceptors, UploadedFile } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { AuthService } from './auth.service'
+import { CaptchaService } from './captcha.service'
 import { LoginDto, RegisterDto, UpdatePaymentQrDto } from './dto/auth.dto'
 
 interface UploadedFile {
@@ -17,7 +18,19 @@ interface UploadedFile {
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly captchaService: CaptchaService
+  ) {}
+
+  @Get('captcha')
+  async generateCaptcha() {
+    return {
+      code: 200,
+      message: '获取成功',
+      data: this.captchaService.generateCaptcha()
+    }
+  }
 
   @Post('register')
   @HttpCode(HttpStatus.OK)

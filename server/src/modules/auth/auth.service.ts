@@ -5,6 +5,7 @@ import { UserInfo } from './auth.types'
 import * as bcrypt from 'bcryptjs'
 import { v4 as uuidv4 } from 'uuid'
 import { createFileStorage } from '@/storage/file-storage'
+import { CaptchaService } from './captcha.service'
 
 const storage = createFileStorage()
 
@@ -16,8 +17,10 @@ interface UploadedFile {
 
 @Injectable()
 export class AuthService {
+  constructor(private readonly captchaService: CaptchaService) {}
+
   async register(registerDto: RegisterDto) {
-    const { phone, password, confirmPassword, verificationCode, name, role } = registerDto
+    const { phone, password, confirmPassword, captchaId, captchaCode, name, role } = registerDto
 
     if (!confirmPassword) {
       throw new BadRequestException('请再次确认密码')
@@ -27,8 +30,12 @@ export class AuthService {
       throw new BadRequestException('两次输入的密码不一致')
     }
 
-    if (!verificationCode) {
-      throw new BadRequestException('请输入验证码')
+    if (!captchaId || !captchaCode) {
+      throw new BadRequestException('请输入图形验证码')
+    }
+
+    if (!this.captchaService.verifyCaptcha(captchaId, captchaCode)) {
+      throw new BadRequestException('图形验证码错误或已过期，请刷新后重试')
     }
 
     // 检查手机号是否已注册
@@ -45,22 +52,6 @@ export class AuthService {
 
     if (existingUser) {
       throw new ConflictException('该手机号已注册')
-    }
-
-    const { data: codeData, error: codeError } = await client
-      .from('sms_codes')
-      .select('*')
-      .eq('phone', phone)
-      .eq('code', verificationCode)
-      .eq('type', 'register')
-      .eq('is_used', false)
-      .gt('created_at', new Date(Date.now() - 5 * 60 * 1000).toISOString())
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (codeError || !codeData) {
-      throw new BadRequestException('验证码无效或已过期')
     }
 
     // 加密密码
@@ -84,11 +75,6 @@ export class AuthService {
     if (insertError) {
       throw new UnauthorizedException(`注册失败: ${insertError.message}`)
     }
-
-    await client
-      .from('sms_codes')
-      .update({ is_used: true })
-      .eq('id', codeData.id)
 
     // 生成 token（简化版，使用用户ID）
     const token = userId
