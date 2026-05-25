@@ -193,19 +193,19 @@ const EnterpriseOrderHallPage: FC = () => {
 
   const getStatusColor = (status: string) => {
     const colorMap: { [key: string]: string } = {
-      pending: 'bg-yellow-500',
-      accepted: 'bg-blue-500',
-      in_progress: 'bg-green-500',
-      in_transit: 'bg-green-500',
-      completed: 'bg-gray-500',
+      pending: 'bg-amber-500',
+      accepted: 'bg-primary',
+      in_progress: 'bg-emerald-500',
+      in_transit: 'bg-emerald-500',
+      completed: 'bg-slate-500',
       cancelled: 'bg-red-500',
     }
-    return colorMap[status] || 'bg-gray-500'
+    return colorMap[status] || 'bg-slate-500'
   }
 
   return (
-    <View className="enterprise-order-hall min-h-screen bg-gray-50 pb-20">
-      <View className="bg-blue-600 text-white p-4">
+    <View className="enterprise-order-hall min-h-screen bg-background pb-20">
+      <View className="bg-primary text-white p-4">
         <Text className="text-lg font-bold block">接单大厅</Text>
         <Text className="text-sm opacity-90 block mt-1">承接外部配送订单</Text>
       </View>

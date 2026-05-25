@@ -89,8 +89,8 @@ const VehicleDetailPage: FC = () => {
 
   const getTripStatusColor = (status: string) => {
     const colorMap = {
-      idle: 'bg-green-100 text-green-600',
-      in_transit: 'bg-orange-100 text-orange-600',
+      idle: 'bg-green-100 text-emerald-600',
+      in_transit: 'bg-orange-100 text-amber-600',
       maintenance: 'bg-red-100 text-red-600',
     }
     return colorMap[status] || ''
@@ -98,7 +98,7 @@ const VehicleDetailPage: FC = () => {
 
   if (loading) {
     return (
-      <View className="min-h-screen bg-gray-50 p-4">
+      <View className="min-h-screen bg-background p-4">
         <Text className="block text-center text-gray-500">加载中...</Text>
       </View>
     )
@@ -106,14 +106,14 @@ const VehicleDetailPage: FC = () => {
 
   if (!vehicle) {
     return (
-      <View className="min-h-screen bg-gray-50 p-4">
+      <View className="min-h-screen bg-background p-4">
         <Text className="block text-center text-gray-500">未找到车辆信息</Text>
       </View>
     )
   }
 
   return (
-    <View className="min-h-screen bg-gray-50 pb-20">
+    <View className="min-h-screen bg-background pb-20">
       <ScrollView scrollY className="h-full">
         <View className="p-4">
           {/* 基本信息 */}
@@ -171,19 +171,19 @@ const VehicleDetailPage: FC = () => {
             <CardContent>
               <View className="grid grid-cols-3 gap-3">
                 <View className="text-center">
-                  <Text className="text-lg font-bold text-blue-600 block">
+                  <Text className="text-lg font-bold text-primary block">
                     {vehicle.today_internal_orders}
                   </Text>
                   <Text className="text-xs text-gray-500 mt-1 block">内部订单</Text>
                 </View>
                 <View className="text-center">
-                  <Text className="text-lg font-bold text-green-600 block">
+                  <Text className="text-lg font-bold text-emerald-600 block">
                     {vehicle.today_external_orders}
                   </Text>
                   <Text className="text-xs text-gray-500 mt-1 block">外部订单</Text>
                 </View>
                 <View className="text-center">
-                  <Text className="text-lg font-bold text-orange-600 block">
+                  <Text className="text-lg font-bold text-amber-600 block">
                     {vehicle.today_distance}
                   </Text>
                   <Text className="text-xs text-gray-500 mt-1 block">行驶距离</Text>

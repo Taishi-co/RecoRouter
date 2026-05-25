@@ -324,7 +324,7 @@ export default function FavoriteRoutes() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-50 pb-4">
+    <View className="min-h-screen bg-background pb-4">
       {/* 顶部标题栏 */}
       <View className="bg-white p-4 border-b">
         <Text className="text-lg font-semibold text-center">常用线路</Text>
@@ -334,7 +334,7 @@ export default function FavoriteRoutes() {
       {!showAddForm && (
         <View className="p-4">
           <Button
-            className="w-full bg-blue-500 text-white"
+            className="w-full bg-primary text-white"
             onClick={() => setShowAddForm(true)}
           >
             <Plus size={20} color="#ffffff" className="mr-2" />
@@ -353,7 +353,7 @@ export default function FavoriteRoutes() {
 
             <View>
               <Text className="block text-sm font-medium mb-1">线路名称</Text>
-              <View className="bg-gray-50 rounded px-3 py-2">
+              <View className="bg-muted rounded px-3 py-2">
                 <Input
                   className="w-full bg-transparent"
                   placeholder="如：上班路线"
@@ -365,7 +365,7 @@ export default function FavoriteRoutes() {
 
             <View>
               <Text className="block text-sm font-medium mb-1">取货地址</Text>
-              <View className="bg-gray-50 rounded px-3 py-2">
+              <View className="bg-muted rounded px-3 py-2">
                 <Text className="block text-sm text-gray-700">
                   {addresses.find(a => a.id === formData.pickup_address_id)?.address_name || '请选择取货地址'}
                 </Text>
@@ -375,7 +375,7 @@ export default function FavoriteRoutes() {
                   <Button
                     key={addr.id}
                     size="sm"
-                    className={`text-xs ${formData.pickup_address_id === addr.id ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                    className={`text-xs ${formData.pickup_address_id === addr.id ? 'bg-primary text-white' : 'bg-muted'}`}
                     onClick={() => setFormData({ ...formData, pickup_address_id: addr.id })}
                   >
                     <Text>{addr.address_name}</Text>
@@ -386,7 +386,7 @@ export default function FavoriteRoutes() {
 
             <View>
               <Text className="block text-sm font-medium mb-1">收货地址</Text>
-              <View className="bg-gray-50 rounded px-3 py-2">
+              <View className="bg-muted rounded px-3 py-2">
                 <Text className="block text-sm text-gray-700">
                   {addresses.find(a => a.id === formData.delivery_address_id)?.address_name || '请选择收货地址'}
                 </Text>
@@ -396,7 +396,7 @@ export default function FavoriteRoutes() {
                   <Button
                     key={addr.id}
                     size="sm"
-                    className={`text-xs ${formData.delivery_address_id === addr.id ? 'bg-green-500 text-white' : 'bg-gray-200'}`}
+                    className={`text-xs ${formData.delivery_address_id === addr.id ? 'bg-emerald-500 text-white' : 'bg-muted'}`}
                     onClick={() => setFormData({ ...formData, delivery_address_id: addr.id })}
                   >
                     <Text>{addr.address_name}</Text>
@@ -408,7 +408,7 @@ export default function FavoriteRoutes() {
             <View className="flex gap-2">
               <View className="flex-1">
                 <Text className="block text-sm font-medium mb-1">预估距离（公里）</Text>
-                <View className="bg-gray-50 rounded px-3 py-2">
+                <View className="bg-muted rounded px-3 py-2">
                   <Input
                     className="w-full bg-transparent"
                     placeholder="可选"
@@ -420,7 +420,7 @@ export default function FavoriteRoutes() {
               </View>
               <View className="flex-1">
                 <Text className="block text-sm font-medium mb-1">预估运费（元）</Text>
-                <View className="bg-gray-50 rounded px-3 py-2">
+                <View className="bg-muted rounded px-3 py-2">
                   <Input
                     className="w-full bg-transparent"
                     placeholder="可选"
@@ -443,7 +443,7 @@ export default function FavoriteRoutes() {
               </Button>
               <Button
                 size="sm"
-                className="flex-1 bg-green-500"
+                className="flex-1 bg-emerald-500"
                 onClick={handleAddRoute}
                 disabled={loading}
               >
@@ -461,13 +461,13 @@ export default function FavoriteRoutes() {
             <CardContent className="p-4">
               <View className="flex items-start justify-between mb-3">
                 <View className="flex items-center gap-2">
-                  <Route size={20} color="#3b82f6" />
+                  <Route size={20} color="#0062ff" />
                   <Text className="font-semibold text-lg">{route.route_name}</Text>
                 </View>
                 <View className="flex items-center gap-2">
                   <Button
                     size="sm"
-                    className="bg-blue-500"
+                    className="bg-primary"
                     onClick={() => handleUseRoute(route)}
                   >
                     <Navigation size={16} color="#ffffff" />
@@ -491,7 +491,7 @@ export default function FavoriteRoutes() {
 
               <View className="space-y-2 mb-3">
                 <View className="flex items-start gap-2">
-                  <MapPin size={16} color="#3b82f6" />
+                  <MapPin size={16} color="#0062ff" />
                   <View className="flex-1">
                     <Text className="block text-sm font-medium text-gray-900">
                       {route.pickup_address?.address_name || '取货地址'}

@@ -136,16 +136,16 @@ export default function MerchantPayment() {
 
   if (loading) {
     return (
-      <View className="min-h-screen bg-gray-100 flex items-center justify-center">
+      <View className="min-h-screen bg-background flex items-center justify-center">
         <Text className="text-gray-500">加载中...</Text>
       </View>
     )
   }
 
   return (
-    <View className="min-h-screen bg-gray-100">
+    <View className="min-h-screen bg-background">
       {/* 头部 */}
-      <View className="bg-green-500 pt-12 pb-6 px-4">
+      <View className="bg-emerald-500 pt-12 pb-6 px-4">
         <Text className="block text-xl font-bold text-white">
           运费支付
         </Text>
@@ -166,7 +166,7 @@ export default function MerchantPayment() {
           <CardContent>
             <View className="space-y-3">
               {paymentInfo?.cargoName && (
-                <View className="flex items-center py-2 border-b border-gray-100">
+                <View className="flex items-center py-2 border-b border-border">
                   <Text className="text-sm text-gray-600 w-16 flex-shrink-0">货物：</Text>
                   <Text className="text-sm text-gray-800 flex-1">
                     {paymentInfo.cargoName}
@@ -174,7 +174,7 @@ export default function MerchantPayment() {
                 </View>
               )}
               {paymentInfo?.pickupAddress && paymentInfo?.deliveryAddress && (
-                <View className="flex items-start py-2 border-b border-gray-100">
+                <View className="flex items-start py-2 border-b border-border">
                   <Text className="text-sm text-gray-600 w-16 flex-shrink-0 pt-1">
                     路线：
                   </Text>
@@ -185,7 +185,7 @@ export default function MerchantPayment() {
                   </Text>
                 </View>
               )}
-              <View className="flex justify-between items-center py-2 border-b border-gray-100">
+              <View className="flex justify-between items-center py-2 border-b border-border">
                 <Text className="text-sm text-gray-600">订单号</Text>
                 <Text className="text-sm text-gray-500">
                   {paymentInfo?.orderId}
@@ -193,7 +193,7 @@ export default function MerchantPayment() {
               </View>
               <View className="flex justify-between items-center py-2">
                 <Text className="text-sm text-gray-600">运费金额</Text>
-                <Text className="text-lg font-bold text-green-500">
+                <Text className="text-lg font-bold text-emerald-500">
                   ¥{paymentInfo?.farePrice || 0}
                 </Text>
               </View>
@@ -234,7 +234,7 @@ export default function MerchantPayment() {
             </CardHeader>
             <CardContent>
               <View className="flex flex-col items-center">
-                <View className="w-48 h-48 bg-gray-100 rounded-lg overflow-hidden mb-3">
+                <View className="w-48 h-48 bg-background rounded-lg overflow-hidden mb-3">
                   <Image
                     src={paymentInfo.paymentQr}
                     className="w-full h-full"
@@ -265,7 +265,7 @@ export default function MerchantPayment() {
           <Card className="bg-white rounded-lg shadow-sm mb-4">
             <CardContent className="p-4">
               <View className="text-center py-4">
-                <Text className="block text-sm text-orange-600 mb-2">
+                <Text className="block text-sm text-amber-600 mb-2">
                   ⚠️ 运力方暂未上传收款码
                 </Text>
                 <Text className="block text-xs text-gray-500">
@@ -281,7 +281,7 @@ export default function MerchantPayment() {
           <Card className="bg-white rounded-lg shadow-sm mb-4">
             <CardContent className="p-4">
               <Button
-                className="w-full bg-green-500"
+                className="w-full bg-emerald-500"
                 onClick={handleMarkPayment}
                 disabled={marking}
               >
@@ -300,7 +300,7 @@ export default function MerchantPayment() {
               <View className="text-center py-2">
                 <View className="flex items-center justify-center mb-2">
                   <Text className="block text-3xl mr-2">✓</Text>
-                  <Text className="block text-base font-semibold text-blue-600">
+                  <Text className="block text-base font-semibold text-primary">
                     已标记为已付款
                   </Text>
                 </View>
@@ -313,21 +313,21 @@ export default function MerchantPayment() {
         )}
 
         {/* 提示信息 */}
-        <View className="bg-blue-50 rounded-lg p-4 mb-4">
-          <Text className="block text-xs font-semibold text-blue-800 mb-2">
+        <View className="bg-accent rounded-lg p-4 mb-4">
+          <Text className="block text-xs font-semibold text-primary mb-2">
             支付说明
           </Text>
           <View className="space-y-1">
-            <Text className="block text-xs text-blue-700">
+            <Text className="block text-xs text-primary">
               • 请在完成运输后向运力方支付运费
             </Text>
-            <Text className="block text-xs text-blue-700">
+            <Text className="block text-xs text-primary">
               • 扫码支付后请点击&quot;我已付款&quot;按钮
             </Text>
-            <Text className="block text-xs text-blue-700">
+            <Text className="block text-xs text-primary">
               • 运力方确认收款后，订单将继续进行
             </Text>
-            <Text className="block text-xs text-blue-700">
+            <Text className="block text-xs text-primary">
               • 如有疑问，请及时联系运力方
             </Text>
           </View>

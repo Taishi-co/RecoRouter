@@ -55,8 +55,8 @@ export default typeof definePageConfig === 'function'
       ],
       window: {
         backgroundTextStyle: 'light',
-        navigationBarBackgroundColor: '#1890ff',
-        navigationBarTitleText: '无人车共享运营平台',
+        navigationBarBackgroundColor: '#0062FF',
+        navigationBarTitleText: 'RecoRouter',
         navigationBarTextStyle: 'white'
       }
     })
@@ -116,8 +116,8 @@ export default typeof definePageConfig === 'function'
       ],
       window: {
         backgroundTextStyle: 'light',
-        navigationBarBackgroundColor: '#1890ff',
-        navigationBarTitleText: '无人车共享运营平台',
+        navigationBarBackgroundColor: '#0062FF',
+        navigationBarTitleText: 'RecoRouter',
         navigationBarTextStyle: 'white'
       }
     }

@@ -125,7 +125,7 @@ export default function ChangePassword() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-50">
+    <View className="min-h-screen bg-background">
       {/* 顶部导航栏 */}
       <View className="bg-white p-4 border-b flex items-center">
         <View onClick={handleBack} className="flex items-center gap-2">
@@ -142,7 +142,7 @@ export default function ChangePassword() {
           {/* 原密码 */}
           <View>
             <Text className="block text-sm font-medium mb-2">原密码</Text>
-            <View className="bg-gray-50 rounded-xl px-4 py-3 flex items-center gap-2">
+            <View className="bg-muted rounded-xl px-4 py-3 flex items-center gap-2">
               <TaroInput
                 className="flex-1 bg-transparent"
                 password={!showPassword.old}
@@ -158,7 +158,7 @@ export default function ChangePassword() {
           {/* 新密码 */}
           <View>
             <Text className="block text-sm font-medium mb-2">新密码</Text>
-            <View className="bg-gray-50 rounded-xl px-4 py-3 flex items-center gap-2">
+            <View className="bg-muted rounded-xl px-4 py-3 flex items-center gap-2">
               <TaroInput
                 className="flex-1 bg-transparent"
                 password={!showPassword.new}
@@ -177,17 +177,17 @@ export default function ChangePassword() {
               <View className="flex items-center gap-2 mt-2">
                 <View
                   className={`h-1 flex-1 rounded ${
-                    strength.level >= 1 ? 'bg-red-500' : 'bg-gray-200'
+                    strength.level >= 1 ? 'bg-red-500' : 'bg-muted'
                   }`}
                 />
                 <View
                   className={`h-1 flex-1 rounded ${
-                    strength.level >= 2 ? 'bg-yellow-500' : 'bg-gray-200'
+                    strength.level >= 2 ? 'bg-amber-500' : 'bg-muted'
                   }`}
                 />
                 <View
                   className={`h-1 flex-1 rounded ${
-                    strength.level >= 3 ? 'bg-green-500' : 'bg-gray-200'
+                    strength.level >= 3 ? 'bg-emerald-500' : 'bg-muted'
                   }`}
                 />
                 <Text className="text-xs text-gray-500 ml-2">
@@ -200,7 +200,7 @@ export default function ChangePassword() {
           {/* 确认新密码 */}
           <View>
             <Text className="block text-sm font-medium mb-2">确认新密码</Text>
-            <View className="bg-gray-50 rounded-xl px-4 py-3 flex items-center gap-2">
+            <View className="bg-muted rounded-xl px-4 py-3 flex items-center gap-2">
               <TaroInput
                 className="flex-1 bg-transparent"
                 password={!showPassword.confirm}
@@ -220,7 +220,7 @@ export default function ChangePassword() {
       {/* 确认修改按钮 */}
       <View className="m-4">
         <Button
-          className="w-full bg-blue-500 text-white"
+          className="w-full bg-primary text-white"
           onClick={handleChangePassword}
           disabled={loading}
         >

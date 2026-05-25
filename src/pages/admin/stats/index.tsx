@@ -87,7 +87,7 @@ export default function AdminStats() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-100">
+    <View className="min-h-screen bg-background">
       {/* 导航菜单 */}
       <View className="bg-white shadow-sm">
         <View className="px-4 py-3">
@@ -122,7 +122,7 @@ export default function AdminStats() {
             </Button>
             <Button
               size="sm"
-              className="bg-blue-500"
+              className="bg-primary"
             >
               <Text className="text-xs">数据统计</Text>
             </Button>
@@ -159,7 +159,7 @@ export default function AdminStats() {
             ) : (
               <View className="space-y-4">
                 {/* 用户统计 */}
-                <Card className="bg-blue-50 rounded-lg">
+                <Card className="bg-accent rounded-lg">
                   <CardHeader>
                     <CardTitle className="text-base font-semibold">
                       用户统计
@@ -168,7 +168,7 @@ export default function AdminStats() {
                   <CardContent>
                     <View className="grid grid-cols-2 gap-4">
                       <View className="text-center">
-                        <Text className="block text-2xl font-bold text-blue-600 mb-1">
+                        <Text className="block text-2xl font-bold text-primary mb-1">
                           {stats.users.total}
                         </Text>
                         <Text className="block text-sm text-gray-600">
@@ -176,7 +176,7 @@ export default function AdminStats() {
                         </Text>
                       </View>
                       <View className="text-center">
-                        <Text className="block text-2xl font-bold text-blue-600 mb-1">
+                        <Text className="block text-2xl font-bold text-primary mb-1">
                           {stats.users.active}
                         </Text>
                         <Text className="block text-sm text-gray-600">
@@ -184,7 +184,7 @@ export default function AdminStats() {
                         </Text>
                       </View>
                       <View className="text-center">
-                        <Text className="block text-2xl font-bold text-green-600 mb-1">
+                        <Text className="block text-2xl font-bold text-emerald-600 mb-1">
                           {stats.users.owner}
                         </Text>
                         <Text className="block text-sm text-gray-600">
@@ -192,7 +192,7 @@ export default function AdminStats() {
                         </Text>
                       </View>
                       <View className="text-center">
-                        <Text className="block text-2xl font-bold text-orange-600 mb-1">
+                        <Text className="block text-2xl font-bold text-amber-600 mb-1">
                           {stats.users.merchant}
                         </Text>
                         <Text className="block text-sm text-gray-600">
@@ -201,7 +201,7 @@ export default function AdminStats() {
                       </View>
                     </View>
                     {stats.users.disabled > 0 && (
-                      <View className="mt-4 pt-4 border-t border-blue-200">
+                      <View className="mt-4 pt-4 border-t border-primary">
                         <Text className="text-sm text-red-600 text-center">
                           已禁用用户: {stats.users.disabled}
                         </Text>
@@ -211,7 +211,7 @@ export default function AdminStats() {
                 </Card>
 
                 {/* 订单统计 */}
-                <Card className="bg-green-50 rounded-lg">
+                <Card className="bg-emerald-50 rounded-lg">
                   <CardHeader>
                     <CardTitle className="text-base font-semibold">
                       订单统计
@@ -220,7 +220,7 @@ export default function AdminStats() {
                   <CardContent>
                     <View className="grid grid-cols-2 gap-4">
                       <View className="text-center">
-                        <Text className="block text-2xl font-bold text-green-600 mb-1">
+                        <Text className="block text-2xl font-bold text-emerald-600 mb-1">
                           {stats.orders.total}
                         </Text>
                         <Text className="block text-sm text-gray-600">
@@ -228,7 +228,7 @@ export default function AdminStats() {
                         </Text>
                       </View>
                       <View className="text-center">
-                        <Text className="block text-2xl font-bold text-blue-600 mb-1">
+                        <Text className="block text-2xl font-bold text-primary mb-1">
                           {stats.orders.completed}
                         </Text>
                         <Text className="block text-sm text-gray-600">
@@ -236,7 +236,7 @@ export default function AdminStats() {
                         </Text>
                       </View>
                       <View className="text-center">
-                        <Text className="block text-2xl font-bold text-orange-600 mb-1">
+                        <Text className="block text-2xl font-bold text-amber-600 mb-1">
                           {stats.orders.pending + stats.orders.accepted}
                         </Text>
                         <Text className="block text-sm text-gray-600">
@@ -273,7 +273,7 @@ export default function AdminStats() {
                         </Text>
                       </View>
                       <View className="text-center">
-                        <Text className="block text-2xl font-bold text-green-600 mb-1">
+                        <Text className="block text-2xl font-bold text-emerald-600 mb-1">
                           {stats.vehicles.active}
                         </Text>
                         <Text className="block text-sm text-gray-600">
@@ -281,7 +281,7 @@ export default function AdminStats() {
                         </Text>
                       </View>
                       <View className="text-center">
-                        <Text className="block text-2xl font-bold text-orange-600 mb-1">
+                        <Text className="block text-2xl font-bold text-amber-600 mb-1">
                           {stats.vehicles.pending}
                         </Text>
                         <Text className="block text-sm text-gray-600">
@@ -301,7 +301,7 @@ export default function AdminStats() {
                 </Card>
 
                 {/* 需求统计 */}
-                <Card className="bg-purple-50 rounded-lg">
+                <Card className="bg-indigo-50 rounded-lg">
                   <CardHeader>
                     <CardTitle className="text-base font-semibold">
                       需求统计
@@ -310,7 +310,7 @@ export default function AdminStats() {
                   <CardContent>
                     <View className="grid grid-cols-2 gap-4">
                       <View className="text-center">
-                        <Text className="block text-2xl font-bold text-purple-600 mb-1">
+                        <Text className="block text-2xl font-bold text-indigo-600 mb-1">
                           {stats.demands.total}
                         </Text>
                         <Text className="block text-sm text-gray-600">
@@ -318,7 +318,7 @@ export default function AdminStats() {
                         </Text>
                       </View>
                       <View className="text-center">
-                        <Text className="block text-2xl font-bold text-green-600 mb-1">
+                        <Text className="block text-2xl font-bold text-emerald-600 mb-1">
                           {stats.demands.completed}
                         </Text>
                         <Text className="block text-sm text-gray-600">
@@ -326,7 +326,7 @@ export default function AdminStats() {
                         </Text>
                       </View>
                       <View className="text-center">
-                        <Text className="block text-2xl font-bold text-orange-600 mb-1">
+                        <Text className="block text-2xl font-bold text-amber-600 mb-1">
                           {stats.demands.pending}
                         </Text>
                         <Text className="block text-sm text-gray-600">

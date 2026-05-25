@@ -141,12 +141,12 @@ export default function RentalsHistory() {
 
   const getStatusInfo = (status: string) => {
     const statusMap: Record<string, { label: string; color: string; icon: any }> = {
-      'pending': { label: '待确认', color: 'bg-yellow-500', icon: Clock },
-      'active': { label: '进行中', color: 'bg-green-500', icon: Check },
+      'pending': { label: '待确认', color: 'bg-amber-500', icon: Clock },
+      'active': { label: '进行中', color: 'bg-emerald-500', icon: Check },
       'terminated': { label: '已拒绝', color: 'bg-red-500', icon: X },
-      'expired': { label: '已到期', color: 'bg-gray-500', icon: Clock }
+      'expired': { label: '已到期', color: 'bg-slate-500', icon: Clock }
     }
-    return statusMap[status] || { label: status, color: 'bg-gray-500', icon: Clock }
+    return statusMap[status] || { label: status, color: 'bg-slate-500', icon: Clock }
   }
 
   const renderRentalCard = (record: RentalRecord, isRenter: boolean) => {
@@ -199,7 +199,7 @@ export default function RentalsHistory() {
           <Separator />
 
           {/* 租赁信息 */}
-          <View className="bg-blue-50 p-3 rounded-lg">
+          <View className="bg-accent p-3 rounded-lg">
             <View className="flex items-center text-sm text-gray-700 mb-2">
               <Calendar size={14} className="mr-2" color="#6b7280" />
               <Text className="block font-medium">租赁信息</Text>
@@ -222,17 +222,17 @@ export default function RentalsHistory() {
 
           {/* 支付状态 */}
           <View className="flex gap-2">
-            <Badge className={record.contract_signed ? 'bg-green-500' : 'bg-gray-500'}>
+            <Badge className={record.contract_signed ? 'bg-emerald-500' : 'bg-slate-500'}>
               <Text className="text-white text-xs">
                 {record.contract_signed ? '已签约' : '未签约'}
               </Text>
             </Badge>
-            <Badge className={record.rent_paid ? 'bg-green-500' : 'bg-gray-500'}>
+            <Badge className={record.rent_paid ? 'bg-emerald-500' : 'bg-slate-500'}>
               <Text className="text-white text-xs">
                 {record.rent_paid ? '已付租金' : '未付租金'}
               </Text>
             </Badge>
-            <Badge className={record.deposit_paid ? 'bg-green-500' : 'bg-gray-500'}>
+            <Badge className={record.deposit_paid ? 'bg-emerald-500' : 'bg-slate-500'}>
               <Text className="text-white text-xs">
                 {record.deposit_paid ? '已付押金' : '未付押金'}
               </Text>
@@ -241,7 +241,7 @@ export default function RentalsHistory() {
 
           {/* 备注 */}
           {record.notes && (
-            <View className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
+            <View className="text-sm text-gray-600 bg-muted p-2 rounded">
               <View className="flex items-start">
                 <FileText size={14} className="mr-2 flex-shrink-0 mt-1" color="#6b7280" />
                 <Text className="block">备注：{record.notes}</Text>
@@ -259,15 +259,15 @@ export default function RentalsHistory() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-50 pb-4">
+    <View className="min-h-screen bg-background pb-4">
       {/* 头部 */}
-      <View className="bg-white p-4 border-b border-gray-200">
+      <View className="bg-white p-4 border-b border-border">
         <Text className="text-xl font-bold text-gray-900 block">我的租赁记录</Text>
         <Text className="block text-sm text-gray-500 mt-1">查看租赁历史和状态</Text>
         {/* 当前用户信息提示 */}
         {userInfo && (
-          <View className="mt-2 p-2 bg-blue-50 rounded-lg">
-            <Text className="block text-xs text-blue-700">
+          <View className="mt-2 p-2 bg-accent rounded-lg">
+            <Text className="block text-xs text-primary">
               当前用户：{userInfo.name} ({userInfo.phone})
             </Text>
           </View>

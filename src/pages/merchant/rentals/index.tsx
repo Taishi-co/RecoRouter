@@ -135,18 +135,18 @@ export default function VehicleRentals() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-50 pb-4">
+    <View className="min-h-screen bg-background pb-4">
       {/* 头部 */}
-      <View className="bg-white p-4 border-b border-gray-200">
+      <View className="bg-white p-4 border-b border-border">
         <Text className="text-xl font-bold text-gray-900 block">租车大厅</Text>
         <Text className="block text-sm text-gray-500 mt-1">浏览可租赁车辆，联系车主</Text>
       </View>
 
       {/* 提示信息 */}
-      <View className="mx-4 mt-4 p-3 bg-blue-50 rounded-lg">
+      <View className="mx-4 mt-4 p-3 bg-accent rounded-lg">
         <View className="flex items-start">
-          <Info size={16} color="#1890ff" className="mr-2 flex-shrink-0 mt-1" />
-          <Text className="block text-sm text-blue-700">
+          <Info size={16} color="#0062ff" className="mr-2 flex-shrink-0 mt-1" />
+          <Text className="block text-sm text-primary">
             平台只提供信息撮合服务。租金、押金、合同等交易均在线下完成。
           </Text>
         </View>
@@ -172,13 +172,13 @@ export default function VehicleRentals() {
                   </CardTitle>
                   <View className="flex gap-2">
                     {vehicle.has_cold_chain && (
-                      <Badge className="bg-blue-500">冷链</Badge>
+                      <Badge className="bg-primary">冷链</Badge>
                     )}
                     {vehicle.has_applied && vehicle.application_status === 'pending' && (
-                      <Badge className="bg-orange-500">已申请</Badge>
+                      <Badge className="bg-amber-500">已申请</Badge>
                     )}
                     {vehicle.has_applied && vehicle.application_status === 'active' && (
-                      <Badge className="bg-green-500">已租赁</Badge>
+                      <Badge className="bg-emerald-500">已租赁</Badge>
                     )}
                   </View>
                 </View>
@@ -204,7 +204,7 @@ export default function VehicleRentals() {
                 <Separator />
 
                 {/* 租赁信息 */}
-                <View className="bg-gray-50 p-3 rounded-lg">
+                <View className="bg-muted p-3 rounded-lg">
                   <View className="flex items-center text-sm text-gray-700 mb-2">
                     <Calendar size={14} className="mr-2" color="#6b7280" />
                     <Text className="block font-medium">租赁价格</Text>

@@ -135,9 +135,9 @@ const EnterpriseHomePage: FC = () => {
   )
 
   return (
-    <View className="enterprise-home min-h-screen bg-gray-50 pb-20">
+    <View className="enterprise-home min-h-screen bg-background pb-20">
       {/* 顶部信息栏 */}
-      <View className="bg-blue-500 px-4 py-6">
+      <View className="bg-primary px-4 py-6">
         <Text className="text-white text-xl font-bold block">{enterpriseName}</Text>
       </View>
 
@@ -172,7 +172,7 @@ const EnterpriseHomePage: FC = () => {
               </Card>
               <Card>
                 <CardContent className="p-3 text-center">
-                  <Text className="text-xl font-bold text-blue-600 block">
+                  <Text className="text-xl font-bold text-primary block">
                     {stats?.in_transit || 0}
                   </Text>
                   <Text className="text-xs text-gray-500 block">运输中</Text>
@@ -180,7 +180,7 @@ const EnterpriseHomePage: FC = () => {
               </Card>
               <Card>
                 <CardContent className="p-3 text-center">
-                  <Text className="text-xl font-bold text-green-600 block">
+                  <Text className="text-xl font-bold text-emerald-600 block">
                     {stats?.completed || 0}
                   </Text>
                   <Text className="text-xs text-gray-500 block">已完成</Text>
@@ -204,7 +204,7 @@ const EnterpriseHomePage: FC = () => {
               </Card>
               <Card>
                 <CardContent className="p-3 text-center">
-                  <Text className="text-xl font-bold text-orange-600 block">
+                  <Text className="text-xl font-bold text-amber-600 block">
                     {stats?.externalOpportunities || 0}
                   </Text>
                   <Text className="text-xs text-gray-500 block">外部机会</Text>

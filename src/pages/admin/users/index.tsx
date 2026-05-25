@@ -88,11 +88,11 @@ export default function AdminUsers() {
 
   const getRoleColor = (role: string) => {
     const colors: Record<string, string> = {
-      owner: 'bg-blue-500',
-      merchant: 'bg-green-500',
-      admin: 'bg-purple-500'
+      owner: 'bg-primary',
+      merchant: 'bg-emerald-500',
+      admin: 'bg-indigo-500'
     }
-    return colors[role] || 'bg-gray-500'
+    return colors[role] || 'bg-slate-500'
   }
 
   const getStatusText = (status: string) => {
@@ -105,10 +105,10 @@ export default function AdminUsers() {
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      active: 'bg-green-500',
+      active: 'bg-emerald-500',
       disabled: 'bg-red-500'
     }
-    return colors[status] || 'bg-gray-500'
+    return colors[status] || 'bg-slate-500'
   }
 
   const handleChangeStatus = (user: User) => {
@@ -166,14 +166,14 @@ export default function AdminUsers() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-100">
+    <View className="min-h-screen bg-background">
       {/* 导航菜单 */}
       <View className="bg-white shadow-sm">
         <View className="px-4 py-3">
           <View className="flex gap-2">
             <Button
               size="sm"
-              className="bg-blue-500"
+              className="bg-primary"
             >
               <Text className="text-xs">用户管理</Text>
             </Button>
@@ -222,7 +222,7 @@ export default function AdminUsers() {
               <Button
                 size="sm"
                 variant={filterRole === '' ? 'default' : 'outline'}
-                className={filterRole === '' ? 'bg-blue-500' : ''}
+                className={filterRole === '' ? 'bg-primary' : ''}
                 onClick={() => setFilterRole('')}
               >
                 <Text className="text-xs">全部</Text>
@@ -230,7 +230,7 @@ export default function AdminUsers() {
               <Button
                 size="sm"
                 variant={filterRole === 'owner' ? 'default' : 'outline'}
-                className={filterRole === 'owner' ? 'bg-blue-500' : ''}
+                className={filterRole === 'owner' ? 'bg-primary' : ''}
                 onClick={() => setFilterRole('owner')}
               >
                 <Text className="text-xs">车主</Text>
@@ -238,7 +238,7 @@ export default function AdminUsers() {
               <Button
                 size="sm"
                 variant={filterRole === 'merchant' ? 'default' : 'outline'}
-                className={filterRole === 'merchant' ? 'bg-blue-500' : ''}
+                className={filterRole === 'merchant' ? 'bg-primary' : ''}
                 onClick={() => setFilterRole('merchant')}
               >
                 <Text className="text-xs">需求方</Text>
@@ -256,7 +256,7 @@ export default function AdminUsers() {
             ) : (
               <View className="space-y-3">
                 {users.map((user) => (
-                  <View key={user.id} className="bg-gray-50 rounded-lg p-4">
+                  <View key={user.id} className="bg-muted rounded-lg p-4">
                     <View className="flex justify-between items-start mb-3">
                       <View className="flex-1">
                         <Text className="block font-medium text-base mb-1">
@@ -278,7 +278,7 @@ export default function AdminUsers() {
                       <Button
                         size="sm"
                         variant="outline"
-                        className={user.status === 'active' ? 'text-red-500 border-red-500' : 'text-green-500 border-green-500'}
+                        className={user.status === 'active' ? 'text-red-500 border-red-500' : 'text-emerald-500 border-emerald-500'}
                         onClick={() => handleChangeStatus(user)}
                       >
                         <Text className="text-xs">
@@ -342,14 +342,14 @@ export default function AdminUsers() {
               </Text>
               <View className="flex gap-3">
                 <Button
-                  className="flex-1 bg-gray-200"
+                  className="flex-1 bg-muted"
                   onClick={handleCloseStatusDialog}
                   disabled={loading}
                 >
                   <Text>取消</Text>
                 </Button>
                 <Button
-                  className={`flex-1 ${selectedUser.status === 'active' ? 'bg-red-500' : 'bg-green-500'}`}
+                  className={`flex-1 ${selectedUser.status === 'active' ? 'bg-red-500' : 'bg-emerald-500'}`}
                   onClick={handleConfirmStatusChange}
                   disabled={loading}
                 >

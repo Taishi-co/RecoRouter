@@ -222,7 +222,7 @@ export default function OwnerCancellations() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-100">
+    <View className="min-h-screen bg-background">
       <Card className="m-4 bg-white rounded-lg shadow-sm">
         <CardHeader>
           <CardTitle className="text-base font-semibold">
@@ -243,11 +243,11 @@ export default function OwnerCancellations() {
           ) : (
             <View className="space-y-4">
               {requests.map((request) => (
-                <View key={request.id} className="border border-gray-200 rounded-lg p-4">
+                <View key={request.id} className="border border-border rounded-lg p-4">
                   <View className="flex justify-between items-start mb-3">
                     <View className="flex-1">
                       <View className="flex items-center mb-1">
-                        <Badge className="bg-orange-100 text-orange-600">
+                        <Badge className="bg-orange-100 text-amber-600">
                           <Text className="text-xs">取消申请</Text>
                         </Badge>
                         <Text className="text-xs text-gray-400 ml-2">
@@ -258,12 +258,12 @@ export default function OwnerCancellations() {
                         {request.demands.cargo_name}
                       </Text>
                     </View>
-                    <Text className="text-lg font-bold text-orange-500">
+                    <Text className="text-lg font-bold text-amber-500">
                       ¥{request.orders.fare_price?.toFixed(2) || '0.00'}
                     </Text>
                   </View>
 
-                  <View className="bg-gray-50 rounded-lg px-3 py-2 mb-3">
+                  <View className="bg-muted rounded-lg px-3 py-2 mb-3">
                     <Text className="block text-xs text-gray-500 mb-1">
                       取消原因：
                     </Text>
@@ -298,7 +298,7 @@ export default function OwnerCancellations() {
                     </Button>
                     <Button
                       size="sm"
-                      className="flex-1 bg-orange-500"
+                      className="flex-1 bg-amber-500"
                       onClick={() => handleApprove(request)}
                     >
                       <Text className="text-xs">同意取消</Text>
@@ -328,7 +328,7 @@ export default function OwnerCancellations() {
               <Label className="block text-sm font-medium mb-2">
                 处理说明（可选）
               </Label>
-              <View className="bg-gray-50 rounded-lg px-4 py-3">
+              <View className="bg-muted rounded-lg px-4 py-3">
                 <Textarea
                   className="w-full"
                   placeholder="请输入处理说明"
@@ -341,13 +341,13 @@ export default function OwnerCancellations() {
 
             <View className="flex gap-3 pt-2">
               <Button
-                className="flex-1 bg-gray-200"
+                className="flex-1 bg-muted"
                 onClick={handleCloseApproveDialog}
               >
                 <Text>取消</Text>
               </Button>
               <Button
-                className="flex-1 bg-orange-500"
+                className="flex-1 bg-amber-500"
                 onClick={handleConfirmApprove}
               >
                 <Text>确认同意</Text>
@@ -374,7 +374,7 @@ export default function OwnerCancellations() {
               <Label className="block text-sm font-medium mb-2">
                 <Text className="text-red-500">*</Text>拒绝原因
               </Label>
-              <View className="bg-gray-50 rounded-lg px-4 py-3">
+              <View className="bg-muted rounded-lg px-4 py-3">
                 <Textarea
                   className="w-full"
                   placeholder="请输入拒绝原因"
@@ -387,7 +387,7 @@ export default function OwnerCancellations() {
 
             <View className="flex gap-3 pt-2">
               <Button
-                className="flex-1 bg-gray-200"
+                className="flex-1 bg-muted"
                 onClick={handleCloseRejectDialog}
               >
                 <Text>取消</Text>

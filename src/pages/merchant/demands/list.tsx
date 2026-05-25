@@ -292,30 +292,30 @@ export default function DemandsList() {
   const getCargoTypeColor = (type: string) => {
     switch (type) {
       case 'normal':
-        return 'bg-blue-500'
+        return 'bg-primary'
       case 'fresh':
-        return 'bg-green-500'
+        return 'bg-emerald-500'
       case 'fragile':
-        return 'bg-orange-500'
+        return 'bg-amber-500'
       default:
-        return 'bg-gray-500'
+        return 'bg-slate-500'
     }
   }
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending':
-        return 'bg-blue-500'
+        return 'bg-primary'
       case 'accepted':
-        return 'bg-green-500'
+        return 'bg-emerald-500'
       case 'in_transit':
-        return 'bg-orange-500'
+        return 'bg-amber-500'
       case 'completed':
         return 'bg-gray-400'
       case 'cancelled':
         return 'bg-red-500'
       default:
-        return 'bg-gray-500'
+        return 'bg-slate-500'
     }
   }
 
@@ -337,7 +337,7 @@ export default function DemandsList() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-100">
+    <View className="min-h-screen bg-background">
       {/* 导航菜单 */}
       <View className="bg-white shadow-sm">
         <View className="px-4 py-3">
@@ -382,7 +382,7 @@ export default function DemandsList() {
             </CardTitle>
             <Button
               size="sm"
-              className="bg-blue-500"
+              className="bg-primary"
               onClick={() => Taro.navigateTo({ url: '/pages/merchant/demands/publish' })}
             >
               <Plus size={16} color="#fff" />
@@ -396,7 +396,7 @@ export default function DemandsList() {
                   您还没有发布需求
                 </Text>
                 <Button
-                  className="bg-blue-500"
+                  className="bg-primary"
                   onClick={() => Taro.navigateTo({ url: '/pages/merchant/demands/publish' })}
                 >
                   <Plus size={16} color="#fff" />
@@ -406,7 +406,7 @@ export default function DemandsList() {
             ) : (
               <View className="space-y-3">
                 {demands.map((demand) => (
-                  <View key={demand.id} className="bg-gray-50 rounded-lg p-4">
+                  <View key={demand.id} className="bg-muted rounded-lg p-4">
                     <View className="flex justify-between items-start mb-3">
                       <View className="flex-1">
                         <View className="flex items-center gap-2 mb-1">
@@ -414,7 +414,7 @@ export default function DemandsList() {
                             {demand.cargo_name}
                           </Text>
                           {demand.is_from_schedule && (
-                            <Badge className="bg-purple-500">
+                            <Badge className="bg-indigo-500">
                               <Text className="text-white text-xs">定时</Text>
                             </Badge>
                           )}
@@ -439,10 +439,10 @@ export default function DemandsList() {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="border-blue-500 text-blue-500"
+                            className="border-primary text-primary"
                             onClick={() => handleEditDemand(demand)}
                           >
-                            <Pencil size={14} color="#1890ff" />
+                            <Pencil size={14} color="#0062ff" />
                             <Text className="ml-1 text-xs">编辑</Text>
                           </Button>
                           <Button
@@ -526,7 +526,7 @@ export default function DemandsList() {
               <Label className="block text-sm font-medium mb-2">
                 <Text className="text-red-500">*</Text>取消原因
               </Label>
-              <View className="bg-gray-50 rounded-lg px-4 py-3">
+              <View className="bg-muted rounded-lg px-4 py-3">
                 <Textarea
                   className="w-full"
                   placeholder="请输入取消原因"
@@ -574,7 +574,7 @@ export default function DemandsList() {
               <Label className="block text-sm font-medium mb-2">
                 <Text className="text-red-500">*</Text>模板名称
               </Label>
-              <View className="bg-gray-50 rounded-lg px-4 py-3">
+              <View className="bg-muted rounded-lg px-4 py-3">
                 <Input
                   className="w-full bg-transparent"
                   placeholder="请输入模板名称（如：日常配送）"
@@ -585,7 +585,7 @@ export default function DemandsList() {
               </View>
             </View>
 
-            <View className="bg-gray-50 rounded-lg p-3">
+            <View className="bg-muted rounded-lg p-3">
               <Text className="block text-xs text-gray-600 mb-2">
                 需求信息：
               </Text>
@@ -608,7 +608,7 @@ export default function DemandsList() {
                 <Text>取消</Text>
               </Button>
               <Button
-                className="bg-blue-500"
+                className="bg-primary"
                 onClick={handleConfirmSaveTemplate}
                 disabled={loading}
               >

@@ -178,7 +178,7 @@ export default function DemandTemplates() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-100">
+    <View className="min-h-screen bg-background">
       {/* 导航菜单 */}
       <View className="bg-white shadow-sm">
         <View className="px-4 py-3">
@@ -254,7 +254,7 @@ export default function DemandTemplates() {
                         {template.template_name}
                       </Text>
                       {template.is_default && (
-                        <Text className="text-xs text-blue-500">默认</Text>
+                        <Text className="text-xs text-primary">默认</Text>
                       )}
                     </View>
 
@@ -285,7 +285,7 @@ export default function DemandTemplates() {
                   <View className="flex flex-col gap-2">
                     <Button
                       size="sm"
-                      className="bg-green-500"
+                      className="bg-emerald-500"
                       onClick={() => handleUseTemplate(template)}
                     >
                       <ArrowRight size={14} color="#ffffff" />

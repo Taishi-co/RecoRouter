@@ -170,7 +170,7 @@ export default function ProfileEdit() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-50">
+    <View className="min-h-screen bg-background">
       {/* 顶部导航栏 */}
       <View className="bg-white p-4 border-b flex items-center">
         <View onClick={handleBack} className="flex items-center gap-2">
@@ -188,7 +188,7 @@ export default function ProfileEdit() {
             <Text className="text-sm font-medium">头像</Text>
             <View className="flex items-center gap-3">
               <View
-                className="w-20 h-20 rounded-full bg-gray-200 overflow-hidden flex items-center justify-center"
+                className="w-20 h-20 rounded-full bg-muted overflow-hidden flex items-center justify-center"
                 onClick={handleAvatarUpload}
               >
                 {userInfo?.avatar_url ? (
@@ -213,7 +213,7 @@ export default function ProfileEdit() {
           {/* 昵称 */}
           <View>
             <Text className="block text-sm font-medium mb-2">昵称</Text>
-            <View className="bg-gray-50 rounded-xl px-4 py-3">
+            <View className="bg-muted rounded-xl px-4 py-3">
               <Input
                 className="w-full bg-transparent"
                 placeholder="请输入昵称"
@@ -230,7 +230,7 @@ export default function ProfileEdit() {
             <View className="flex gap-2">
               <View
                 className={`flex-1 py-3 text-center rounded-lg border ${
-                  formData.gender === 'male' ? 'bg-blue-500 text-white border-blue-500' : 'bg-white border-gray-300'
+                  formData.gender === 'male' ? 'bg-primary text-white border-primary' : 'bg-white border-border'
                 }`}
                 onClick={() => handleGenderChange('male')}
               >
@@ -238,7 +238,7 @@ export default function ProfileEdit() {
               </View>
               <View
                 className={`flex-1 py-3 text-center rounded-lg border ${
-                  formData.gender === 'female' ? 'bg-blue-500 text-white border-blue-500' : 'bg-white border-gray-300'
+                  formData.gender === 'female' ? 'bg-primary text-white border-primary' : 'bg-white border-border'
                 }`}
                 onClick={() => handleGenderChange('female')}
               >
@@ -246,7 +246,7 @@ export default function ProfileEdit() {
               </View>
               <View
                 className={`flex-1 py-3 text-center rounded-lg border ${
-                  formData.gender === 'secret' ? 'bg-blue-500 text-white border-blue-500' : 'bg-white border-gray-300'
+                  formData.gender === 'secret' ? 'bg-primary text-white border-primary' : 'bg-white border-border'
                 }`}
                 onClick={() => handleGenderChange('secret')}
               >
@@ -259,7 +259,7 @@ export default function ProfileEdit() {
           <View>
             <Text className="block text-sm font-medium mb-2">出生日期</Text>
             <Picker mode="date" value={formData.birthday} onChange={handleBirthdayChange}>
-              <View className="bg-gray-50 rounded-xl px-4 py-3 flex items-center justify-between">
+              <View className="bg-muted rounded-xl px-4 py-3 flex items-center justify-between">
                 <Text className={formData.birthday ? 'text-gray-900' : 'text-gray-400'}>
                   {formData.birthday || '请选择出生日期'}
                 </Text>
@@ -273,7 +273,7 @@ export default function ProfileEdit() {
       {/* 保存按钮 */}
       <View className="m-4">
         <Button
-          className="w-full bg-blue-500 text-white"
+          className="w-full bg-primary text-white"
           onClick={handleSave}
           disabled={loading}
         >

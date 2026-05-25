@@ -587,14 +587,14 @@ export default function PublishDemand() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-100">
+    <View className="min-h-screen bg-background">
       {/* 导航菜单 */}
       <View className="bg-white shadow-sm">
         <View className="px-4 py-3">
           <View className="flex gap-2">
             <Button
               size="sm"
-              className="bg-blue-500"
+              className="bg-primary"
             >
               <Text className="text-xs">发布需求</Text>
             </Button>
@@ -654,7 +654,7 @@ export default function PublishDemand() {
               <View className="flex gap-2">
                 <Button
                   size="sm"
-                  className="flex-1 bg-blue-500"
+                  className="flex-1 bg-primary"
                   onClick={handleChoosePhotos}
                   disabled={formData.cargo_photos.length >= 1 || uploadingPhotos}
                 >
@@ -664,7 +664,7 @@ export default function PublishDemand() {
                 </Button>
                 <Button
                   size="sm"
-                  className="flex-1 bg-purple-500"
+                  className="flex-1 bg-indigo-500"
                   onClick={handleAIAnalyze}
                   disabled={formData.cargo_photos.length === 0 || loading || uploadingPhotos}
                 >
@@ -680,7 +680,7 @@ export default function PublishDemand() {
                       <Image
                         src={photo}
                         mode="aspectFill"
-                        className="w-full h-24 rounded-lg bg-gray-200"
+                        className="w-full h-24 rounded-lg bg-muted"
                         onClick={() => handlePreviewPhoto(index)}
                       />
                       <View
@@ -702,7 +702,7 @@ export default function PublishDemand() {
               <Label className="block text-sm font-medium mb-2">
                 <Text className="text-red-500">*</Text>货品名称
               </Label>
-              <View className="bg-gray-50 rounded-lg px-4 py-3">
+              <View className="bg-muted rounded-lg px-4 py-3">
                 <Input
                   className="w-full bg-transparent"
                   placeholder="如：新鲜蔬菜"
@@ -728,13 +728,13 @@ export default function PublishDemand() {
                   >
                     <View className={`px-4 py-2 rounded-lg border ${
                       formData.cargo_type === type.value
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 bg-white'
+                        ? 'border-primary bg-accent'
+                        : 'border-border bg-white'
                     }`}
                     >
                       <Text className={`text-sm ${
                         formData.cargo_type === type.value
-                          ? 'text-blue-500 font-medium'
+                          ? 'text-primary font-medium'
                           : 'text-gray-700'
                       }`}
                       >
@@ -751,7 +751,7 @@ export default function PublishDemand() {
                 <Label className="block text-sm font-medium mb-2">
                   <Text className="text-red-500">*</Text>重量（公斤）
                 </Label>
-                <View className="bg-gray-50 rounded-lg px-4 py-3">
+                <View className="bg-muted rounded-lg px-4 py-3">
                   <Input
                     className="w-full bg-transparent"
                     placeholder="如：30"
@@ -765,7 +765,7 @@ export default function PublishDemand() {
                 <Label className="block text-sm font-medium mb-2">
                   <Text className="text-red-500">*</Text>体积（立方米）
                 </Label>
-                <View className="bg-gray-50 rounded-lg px-4 py-3">
+                <View className="bg-muted rounded-lg px-4 py-3">
                   <Input
                     className="w-full bg-transparent"
                     placeholder="如：0.3"
@@ -787,7 +787,7 @@ export default function PublishDemand() {
                   value={formData.pickup_time ? formData.pickup_time.split(' ')[0] : ''}
                   onChange={handlePickupDateSelect}
                 >
-                  <View className="flex-1 bg-gray-50 rounded-lg px-4 py-3 flex items-center justify-between">
+                  <View className="flex-1 bg-muted rounded-lg px-4 py-3 flex items-center justify-between">
                     <Text className={`text-sm ${formData.pickup_time ? 'text-gray-900' : 'text-gray-400'}`}>
                       {formData.pickup_time ? formData.pickup_time.split(' ')[0] : '选择日期'}
                     </Text>
@@ -799,7 +799,7 @@ export default function PublishDemand() {
                   value={formData.pickup_time ? formData.pickup_time.split(' ')[1].slice(0, 5) : ''}
                   onChange={handlePickupTimeSelect}
                 >
-                  <View className="flex-1 bg-gray-50 rounded-lg px-4 py-3 flex items-center justify-between">
+                  <View className="flex-1 bg-muted rounded-lg px-4 py-3 flex items-center justify-between">
                     <Text className={`text-sm ${formData.pickup_time ? 'text-gray-900' : 'text-gray-400'}`}>
                       {formData.pickup_time ? formData.pickup_time.split(' ')[1].slice(0, 5) : '选择时间'}
                     </Text>
@@ -810,11 +810,11 @@ export default function PublishDemand() {
             </View>
 
             {/* 快捷选择区域 */}
-            <View className="bg-blue-50 rounded-lg p-3">
-              <Text className="block text-sm font-medium text-blue-900 mb-2">快捷选择</Text>
+            <View className="bg-accent rounded-lg p-3">
+              <Text className="block text-sm font-medium text-primary mb-2">快捷选择</Text>
               <Button
                 size="sm"
-                className="w-full bg-blue-500"
+                className="w-full bg-primary"
                 onClick={() => setShowRoutePicker(true)}
                 disabled={favoriteRoutes.length === 0}
               >
@@ -828,7 +828,7 @@ export default function PublishDemand() {
                 <Text className="text-red-500">*</Text>取货地址
               </Label>
               <View className="flex gap-2">
-                <View className="flex-1 bg-gray-50 rounded-lg px-4 py-3">
+                <View className="flex-1 bg-muted rounded-lg px-4 py-3">
                   <Input
                     className="w-full bg-transparent"
                     placeholder="请选择取货地址"
@@ -838,7 +838,7 @@ export default function PublishDemand() {
                 </View>
                 <Button
                   size="sm"
-                  className="bg-blue-500 px-4"
+                  className="bg-primary px-4"
                   onClick={() => setShowAddressPicker('pickup')}
                   disabled={addressBooks.length === 0}
                 >
@@ -866,7 +866,7 @@ export default function PublishDemand() {
                 <Text className="text-red-500">*</Text>送货地址
               </Label>
               <View className="flex gap-2">
-                <View className="flex-1 bg-gray-50 rounded-lg px-4 py-3">
+                <View className="flex-1 bg-muted rounded-lg px-4 py-3">
                   <Input
                     className="w-full bg-transparent"
                     placeholder="请选择送货地址"
@@ -876,7 +876,7 @@ export default function PublishDemand() {
                 </View>
                 <Button
                   size="sm"
-                  className="bg-blue-500 px-4"
+                  className="bg-primary px-4"
                   onClick={() => setShowAddressPicker('delivery')}
                   disabled={addressBooks.length === 0}
                 >
@@ -901,7 +901,7 @@ export default function PublishDemand() {
 
             {/* 距离估算 */}
             {estimatedDistance !== null && (
-              <View className="bg-green-50 rounded-lg p-3">
+              <View className="bg-emerald-50 rounded-lg p-3">
                 <Text className="block text-sm font-medium text-green-900">
                   距离估算：{estimatedDistance} 公里
                 </Text>
@@ -912,7 +912,7 @@ export default function PublishDemand() {
               <Label className="block text-sm font-medium mb-2">
                 备注（选填）
               </Label>
-              <View className="bg-gray-50 rounded-lg px-4 py-3">
+              <View className="bg-muted rounded-lg px-4 py-3">
                 <Input
                   className="w-full bg-transparent"
                   placeholder="如：请提前10分钟联系"
@@ -923,7 +923,7 @@ export default function PublishDemand() {
             </View>
 
             <Button
-              className="w-full bg-blue-500"
+              className="w-full bg-primary"
               onClick={handleSubmit}
               disabled={loading}
             >
@@ -952,7 +952,7 @@ export default function PublishDemand() {
               addressBooks.map((address) => (
                 <View
                   key={address.id}
-                  className="bg-gray-50 rounded-lg p-3"
+                  className="bg-muted rounded-lg p-3"
                   onClick={() => handleSelectAddress(address)}
                 >
                   <View className="flex items-start gap-2">
@@ -966,11 +966,11 @@ export default function PublishDemand() {
                       </Text>
                       {address.is_default && (
                         <View className="inline-block mt-1">
-                          <Text className="text-xs text-blue-500">默认</Text>
+                          <Text className="text-xs text-primary">默认</Text>
                         </View>
                       )}
                     </View>
-                    <Check size={16} color="#1890ff" />
+                    <Check size={16} color="#0062ff" />
                   </View>
                 </View>
               ))
@@ -1010,7 +1010,7 @@ export default function PublishDemand() {
               favoriteRoutes.map((route) => (
                 <View
                   key={route.id}
-                  className="bg-gray-50 rounded-lg p-3"
+                  className="bg-muted rounded-lg p-3"
                   onClick={() => handleSelectRoute(route)}
                 >
                   <View className="flex items-start gap-2 mb-2">

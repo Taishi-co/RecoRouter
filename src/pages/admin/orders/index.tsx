@@ -122,13 +122,13 @@ export default function AdminOrders() {
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      pending: 'bg-orange-500',
-      accepted: 'bg-blue-500',
+      pending: 'bg-amber-500',
+      accepted: 'bg-primary',
       in_transit: 'bg-cyan-500',
-      completed: 'bg-green-500',
+      completed: 'bg-emerald-500',
       cancelled: 'bg-red-500'
     }
-    return colors[status] || 'bg-gray-500'
+    return colors[status] || 'bg-slate-500'
   }
 
   const getCargoTypeText = (type: string) => {
@@ -147,18 +147,18 @@ export default function AdminOrders() {
   const getCargoTypeColor = (type: string) => {
     switch (type) {
       case 'normal':
-        return 'bg-blue-500'
+        return 'bg-primary'
       case 'fresh':
-        return 'bg-green-500'
+        return 'bg-emerald-500'
       case 'fragile':
-        return 'bg-orange-500'
+        return 'bg-amber-500'
       default:
-        return 'bg-gray-500'
+        return 'bg-slate-500'
     }
   }
 
   return (
-    <View className="min-h-screen bg-gray-100">
+    <View className="min-h-screen bg-background">
       {/* 导航菜单 */}
       <View className="bg-white shadow-sm">
         <View className="px-4 py-3">
@@ -179,7 +179,7 @@ export default function AdminOrders() {
             </Button>
             <Button
               size="sm"
-              className="bg-blue-500"
+              className="bg-primary"
             >
               <Text className="text-xs">订单管理</Text>
             </Button>
@@ -214,7 +214,7 @@ export default function AdminOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === '' ? 'default' : 'outline'}
-                className={filterStatus === '' ? 'bg-blue-500' : ''}
+                className={filterStatus === '' ? 'bg-primary' : ''}
                 onClick={() => setFilterStatus('')}
               >
                 <Text className="text-xs">全部</Text>
@@ -222,7 +222,7 @@ export default function AdminOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === 'pending' ? 'default' : 'outline'}
-                className={filterStatus === 'pending' ? 'bg-blue-500' : ''}
+                className={filterStatus === 'pending' ? 'bg-primary' : ''}
                 onClick={() => setFilterStatus('pending')}
               >
                 <Text className="text-xs">待接单</Text>
@@ -230,7 +230,7 @@ export default function AdminOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === 'accepted' ? 'default' : 'outline'}
-                className={filterStatus === 'accepted' ? 'bg-blue-500' : ''}
+                className={filterStatus === 'accepted' ? 'bg-primary' : ''}
                 onClick={() => setFilterStatus('accepted')}
               >
                 <Text className="text-xs">已接单</Text>
@@ -238,7 +238,7 @@ export default function AdminOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === 'in_transit' ? 'default' : 'outline'}
-                className={filterStatus === 'in_transit' ? 'bg-blue-500' : ''}
+                className={filterStatus === 'in_transit' ? 'bg-primary' : ''}
                 onClick={() => setFilterStatus('in_transit')}
               >
                 <Text className="text-xs">运输中</Text>
@@ -246,7 +246,7 @@ export default function AdminOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === 'completed' ? 'default' : 'outline'}
-                className={filterStatus === 'completed' ? 'bg-blue-500' : ''}
+                className={filterStatus === 'completed' ? 'bg-primary' : ''}
                 onClick={() => setFilterStatus('completed')}
               >
                 <Text className="text-xs">已完成</Text>
@@ -254,7 +254,7 @@ export default function AdminOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === 'cancelled' ? 'default' : 'outline'}
-                className={filterStatus === 'cancelled' ? 'bg-blue-500' : ''}
+                className={filterStatus === 'cancelled' ? 'bg-primary' : ''}
                 onClick={() => setFilterStatus('cancelled')}
               >
                 <Text className="text-xs">已取消</Text>
@@ -272,7 +272,7 @@ export default function AdminOrders() {
             ) : (
               <View className="space-y-3">
                 {orders.map((order) => (
-                  <View key={order.id} className="bg-gray-50 rounded-lg p-4">
+                  <View key={order.id} className="bg-muted rounded-lg p-4">
                     <View className="flex justify-between items-start mb-3">
                       <View className="flex-1">
                         <Text className="block font-medium text-base mb-1">
@@ -349,21 +349,21 @@ export default function AdminOrders() {
                       )}
                     </View>
                     {order.accept_time && (
-                      <View className="mt-2 pt-2 border-t border-gray-200">
+                      <View className="mt-2 pt-2 border-t border-border">
                         <Text className="text-xs text-gray-500">
                           接单时间: {new Date(order.accept_time).toLocaleString()}
                         </Text>
                       </View>
                     )}
                     {order.complete_time && (
-                      <View className="mt-2 pt-2 border-t border-gray-200">
+                      <View className="mt-2 pt-2 border-t border-border">
                         <Text className="text-xs text-gray-500">
                           完成时间: {new Date(order.complete_time).toLocaleString()}
                         </Text>
                       </View>
                     )}
                     {order.cancel_reason && (
-                      <View className="mt-2 pt-2 border-t border-gray-200">
+                      <View className="mt-2 pt-2 border-t border-border">
                         <Text className="text-xs text-gray-500">
                           取消原因: {order.cancel_reason}
                         </Text>

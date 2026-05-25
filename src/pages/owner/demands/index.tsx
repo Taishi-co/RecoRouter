@@ -86,13 +86,13 @@ export default function OwnerDemands() {
 
   const getCargoTypeColor = (type: string) => {
     const colors: Record<string, string> = {
-      normal: 'bg-blue-500',
-      fragile: 'bg-orange-500',
+      normal: 'bg-primary',
+      fragile: 'bg-amber-500',
       refrigerated: 'bg-cyan-500',
-      bulky: 'bg-purple-500',
+      bulky: 'bg-indigo-500',
       hazardous: 'bg-red-500'
     }
-    return colors[type] || 'bg-gray-500'
+    return colors[type] || 'bg-slate-500'
   }
 
   const handleAcceptDemand = (demand: Demand) => {
@@ -107,14 +107,14 @@ export default function OwnerDemands() {
   }
 
   return (
-    <View className="min-h-screen bg-gray-100">
+    <View className="min-h-screen bg-background">
       {/* 导航菜单 */}
       <View className="bg-white shadow-sm">
         <View className="px-4 py-3">
           <View className="flex gap-2">
             <Button
               size="sm"
-              className="bg-blue-500"
+              className="bg-primary"
             >
               <Text className="text-xs">接单大厅</Text>
             </Button>
@@ -171,7 +171,7 @@ export default function OwnerDemands() {
                   暂无待接单需求
                 </Text>
                 <Button
-                  className="bg-blue-500"
+                  className="bg-primary"
                   onClick={handleRefresh}
                 >
                   <Text>刷新</Text>
@@ -180,7 +180,7 @@ export default function OwnerDemands() {
             ) : (
               <View className="space-y-3">
                 {demands.map((demand) => (
-                  <View key={demand.id} className="bg-gray-50 rounded-lg p-4">
+                  <View key={demand.id} className="bg-muted rounded-lg p-4">
                     <View className="flex justify-between items-start mb-3">
                       <View className="flex-1">
                         <Text className="block font-medium text-base mb-1">
@@ -192,7 +192,7 @@ export default function OwnerDemands() {
                               {getCargoTypeText(demand.cargo_type)}
                             </Text>
                           </Badge>
-                          <Badge className="bg-green-500">
+                          <Badge className="bg-emerald-500">
                             <Text className="text-white text-xs">
                               待接单
                             </Text>
@@ -201,7 +201,7 @@ export default function OwnerDemands() {
                       </View>
                       <Button
                         size="sm"
-                        className="bg-blue-500"
+                        className="bg-primary"
                         onClick={() => handleAcceptDemand(demand)}
                       >
                         <Text className="text-xs">接单</Text>

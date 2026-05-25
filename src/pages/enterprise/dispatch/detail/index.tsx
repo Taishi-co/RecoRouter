@@ -179,9 +179,9 @@ const DemandDetailPage: FC = () => {
 
   const getPointStatusColor = (status: string) => {
     const colorMap = {
-      pending: 'bg-gray-100 text-gray-600',
-      in_transit: 'bg-blue-100 text-blue-600',
-      completed: 'bg-green-100 text-green-600',
+      pending: 'bg-background text-gray-600',
+      in_transit: 'bg-accent text-primary',
+      completed: 'bg-green-100 text-emerald-600',
     }
     return colorMap[status] || ''
   }
@@ -228,7 +228,7 @@ const DemandDetailPage: FC = () => {
 
   if (loading) {
     return (
-      <View className="min-h-screen bg-gray-50 p-4">
+      <View className="min-h-screen bg-background p-4">
         <Text className="block text-center text-gray-500">加载中...</Text>
       </View>
     )
@@ -236,7 +236,7 @@ const DemandDetailPage: FC = () => {
 
   if (!demand) {
     return (
-      <View className="min-h-screen bg-gray-50 p-4">
+      <View className="min-h-screen bg-background p-4">
         <Text className="block text-center text-gray-500">未找到配送需求</Text>
       </View>
     )
@@ -247,7 +247,7 @@ const DemandDetailPage: FC = () => {
   const totalCount = demand.delivery_points?.length || 0
 
   return (
-    <View className="min-h-screen bg-gray-50 pb-20">
+    <View className="min-h-screen bg-background pb-20">
       <ScrollView scrollY className="h-full">
         <View className="p-4">
           {/* 基本信息 */}
@@ -323,7 +323,7 @@ const DemandDetailPage: FC = () => {
             <CardContent>
               <View className="space-y-3">
                 {demand.delivery_points?.map((point, index) => (
-                  <View key={point.stationId || index} className="border border-gray-200 rounded-lg p-3">
+                  <View key={point.stationId || index} className="border border-border rounded-lg p-3">
                     <View className="flex justify-between items-start mb-2">
                       <View className="flex-1">
                         <View className="flex items-center mb-1">
@@ -351,7 +351,7 @@ const DemandDetailPage: FC = () => {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="text-green-600 border-green-600"
+                          className="text-emerald-600 border-green-600"
                           disabled={completingPointId === point.stationId}
                           onClick={() => handleCompleteDeliveryPoint(point)}
                         >

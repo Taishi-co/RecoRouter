@@ -66,7 +66,7 @@ const AllocateVehicleDialog: FC<AllocateVehicleDialogProps> = ({
                 return (
                   <View
                     key={vehicle.id}
-                    className={`flex items-center justify-between p-3 rounded-lg border ${isAvailable ? 'border-gray-200' : 'border-gray-100 bg-gray-50'}`}
+                    className={`flex items-center justify-between p-3 rounded-lg border ${isAvailable ? 'border-border' : 'border-border bg-muted'}`}
                   >
                     <View className="flex items-center flex-1">
                       <Checkbox

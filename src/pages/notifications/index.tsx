@@ -196,7 +196,7 @@ export default function Notifications() {
       case 'fare_confirmed':
         return { icon: DollarSign, color: '#22c55e', bgColor: '#dcfce7' }
       case 'payment_received':
-        return { icon: DollarSign, color: '#3b82f6', bgColor: '#dbeafe' }
+        return { icon: DollarSign, color: '#0062ff', bgColor: '#dbeafe' }
       case 'commission_confirmed':
         return { icon: ShieldCheck, color: '#8b5cf6', bgColor: '#ede9fe' }
       case 'order_completed':
@@ -236,11 +236,11 @@ export default function Notifications() {
   }, [])
 
   return (
-    <View className="min-h-screen bg-gray-50">
+    <View className="min-h-screen bg-background">
       {/* 顶部操作栏 */}
-      <View className="bg-white px-4 py-3 flex items-center justify-between border-b border-gray-100 sticky top-0 z-10">
+      <View className="bg-white px-4 py-3 flex items-center justify-between border-b border-border sticky top-0 z-10">
         <View className="flex items-center">
-          <Bell size={20} color="#3b82f6" />
+          <Bell size={20} color="#0062ff" />
           <Text className="block text-base font-semibold ml-2">
             通知消息
           </Text>
@@ -254,7 +254,7 @@ export default function Notifications() {
           <Button
             size="sm"
             variant="outline"
-            className="text-blue-500 border-blue-500"
+            className="text-primary border-primary"
             onClick={handleMarkAllAsRead}
           >
             <Text className="text-xs">全部已读</Text>

@@ -96,17 +96,17 @@ export default function MerchantStats() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending':
-        return 'bg-yellow-500'
+        return 'bg-amber-500'
       case 'accepted':
-        return 'bg-blue-500'
+        return 'bg-primary'
       case 'in_transit':
-        return 'bg-purple-500'
+        return 'bg-indigo-500'
       case 'completed':
-        return 'bg-green-500'
+        return 'bg-emerald-500'
       case 'cancelled':
         return 'bg-red-500'
       default:
-        return 'bg-gray-500'
+        return 'bg-slate-500'
     }
   }
 
@@ -126,26 +126,26 @@ export default function MerchantStats() {
   const getCargoTypeColor = (type: string) => {
     switch (type) {
       case 'normal':
-        return 'bg-blue-500'
+        return 'bg-primary'
       case 'fresh':
-        return 'bg-green-500'
+        return 'bg-emerald-500'
       case 'fragile':
-        return 'bg-orange-500'
+        return 'bg-amber-500'
       default:
-        return 'bg-gray-500'
+        return 'bg-slate-500'
     }
   }
 
   if (loading && !stats) {
     return (
-      <View className="min-h-screen bg-gray-100 flex items-center justify-center">
+      <View className="min-h-screen bg-background flex items-center justify-center">
         <Text className="text-gray-500">加载中...</Text>
       </View>
     )
   }
 
   return (
-    <View className="min-h-screen bg-gray-100">
+    <View className="min-h-screen bg-background">
       {/* 导航菜单 */}
       <View className="bg-white shadow-sm">
         <View className="px-4 py-3">
@@ -173,7 +173,7 @@ export default function MerchantStats() {
             </Button>
             <Button
               size="sm"
-              className="bg-blue-500"
+              className="bg-primary"
             >
               <Text className="text-xs">数据统计</Text>
             </Button>
@@ -198,23 +198,23 @@ export default function MerchantStats() {
           </CardHeader>
           <CardContent>
             <View className="grid grid-cols-2 gap-4">
-              <View className="bg-blue-50 rounded-lg p-4">
-                <Text className="block text-2xl font-bold text-blue-600 mb-1">
+              <View className="bg-accent rounded-lg p-4">
+                <Text className="block text-2xl font-bold text-primary mb-1">
                   {stats?.total_demands || 0}
                 </Text>
                 <Text className="block text-sm text-gray-600">
                   总需求量
                 </Text>
               </View>
-              <View className="bg-green-50 rounded-lg p-4">
-                <Text className="block text-2xl font-bold text-green-600 mb-1">
+              <View className="bg-emerald-50 rounded-lg p-4">
+                <Text className="block text-2xl font-bold text-emerald-600 mb-1">
                   {stats?.status_counts.completed || 0}
                 </Text>
                 <Text className="block text-sm text-gray-600">
                   已完成订单
                 </Text>
               </View>
-              <View className="bg-yellow-50 rounded-lg p-4">
+              <View className="bg-amber-50 rounded-lg p-4">
                 <Text className="block text-2xl font-bold text-yellow-600 mb-1">
                   {stats?.status_counts.pending || 0}
                 </Text>
@@ -222,8 +222,8 @@ export default function MerchantStats() {
                   待接单
                 </Text>
               </View>
-              <View className="bg-purple-50 rounded-lg p-4">
-                <Text className="block text-2xl font-bold text-purple-600 mb-1">
+              <View className="bg-indigo-50 rounded-lg p-4">
+                <Text className="block text-2xl font-bold text-indigo-600 mb-1">
                   {stats?.total_weight.toFixed(1) || 0}
                 </Text>
                 <Text className="block text-sm text-gray-600">
@@ -244,10 +244,10 @@ export default function MerchantStats() {
           <CardContent>
             <View className="space-y-3">
               {[
-                { key: 'pending', label: '待接单', color: 'bg-yellow-500' },
-                { key: 'accepted', label: '已接单', color: 'bg-blue-500' },
-                { key: 'in_transit', label: '运输中', color: 'bg-purple-500' },
-                { key: 'completed', label: '已完成', color: 'bg-green-500' },
+                { key: 'pending', label: '待接单', color: 'bg-amber-500' },
+                { key: 'accepted', label: '已接单', color: 'bg-primary' },
+                { key: 'in_transit', label: '运输中', color: 'bg-indigo-500' },
+                { key: 'completed', label: '已完成', color: 'bg-emerald-500' },
                 { key: 'cancelled', label: '已取消', color: 'bg-red-500' }
               ].map((item) => (
                 <View key={item.key} className="flex items-center justify-between">
@@ -274,9 +274,9 @@ export default function MerchantStats() {
           <CardContent>
             <View className="space-y-3">
               {[
-                { key: 'normal', label: '普通货物', color: 'bg-blue-500' },
-                { key: 'fresh', label: '生鲜食品', color: 'bg-green-500' },
-                { key: 'fragile', label: '易碎物品', color: 'bg-orange-500' }
+                { key: 'normal', label: '普通货物', color: 'bg-primary' },
+                { key: 'fresh', label: '生鲜食品', color: 'bg-emerald-500' },
+                { key: 'fragile', label: '易碎物品', color: 'bg-amber-500' }
               ].map((item) => (
                 <View key={item.key} className="flex items-center justify-between">
                   <View className="flex items-center">
@@ -310,7 +310,7 @@ export default function MerchantStats() {
             {stats?.recent_demands && stats.recent_demands.length > 0 ? (
               <View className="space-y-3">
                 {stats.recent_demands.map((demand) => (
-                  <View key={demand.id} className="bg-gray-50 rounded-lg p-3">
+                  <View key={demand.id} className="bg-muted rounded-lg p-3">
                     <View className="flex justify-between items-start mb-2">
                       <Text className="block font-medium text-sm">
                         {demand.cargo_name}
@@ -347,7 +347,7 @@ export default function MerchantStats() {
         {/* 刷新按钮 */}
         <View className="mt-4">
           <Button
-            className="w-full bg-blue-500"
+            className="w-full bg-primary"
             onClick={loadStats}
             disabled={loading}
           >

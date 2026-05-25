@@ -7,7 +7,16 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Network } from '@/network'
 import Taro from '@tarojs/taro'
-import { Truck, Package, Check, Clock, Shield } from 'lucide-react-taro'
+import {
+  Building2,
+  ChevronRight,
+  Clock,
+  Package,
+  Shield,
+  Smartphone,
+  Truck,
+  UserPlus
+} from 'lucide-react-taro'
 
 interface Statistics {
   orders: {
@@ -319,230 +328,241 @@ export default function Index() {
     setShowAuthDialog(true)
   }
 
+  const handleRoleEntry = (selectedRole: 'owner' | 'merchant' | 'enterprise') => {
+    setRole(selectedRole)
+    if (currentUser) {
+      switchTabByRole(currentUser.role)
+      return
+    }
+    openAuthDialog('login')
+  }
+
+  const latestDemand = latestInfo?.latestDemands?.[0]
+  const completedOrder = latestInfo?.completedOrders?.[0]
+
   return (
-    <View className="min-h-screen bg-gray-50">
+    <View className="min-h-screen bg-background">
       <ScrollView scrollY className="h-full">
-        {/* 头部 */}
-        <View className="bg-gradient-to-br from-blue-500 to-blue-600 pt-12 pb-8 px-4 relative">
-          {/* 右上角登录/注册按钮 */}
-          <View className="absolute top-4 right-4 flex gap-3">
-            {currentUser ? (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 border-white bg-white bg-opacity-20"
-                onClick={() => switchTabByRole(currentUser.role)}
-              >
-                <Text className="text-xs text-white font-medium">进入大厅</Text>
-              </Button>
-            ) : (
-              <>
+        <View className="bg-gradient-to-br from-primary to-indigo-600 px-5 pt-12 pb-10">
+          <View className="mb-8 flex items-center justify-between">
+            <View className="flex items-center gap-3">
+              <View className="h-11 w-11 items-center justify-center rounded-2xl bg-white">
+                <Package size={24} color="#0062ff" />
+              </View>
+              <Text className="text-xl font-bold text-white">RecoRouter</Text>
+            </View>
+            <View className="flex gap-2">
+              {currentUser ? (
                 <Button
                   size="sm"
                   variant="outline"
                   className="h-8 border-white bg-white bg-opacity-20"
-                  onClick={() => openAuthDialog('login')}
+                  onClick={() => switchTabByRole(currentUser.role)}
                 >
-                  <Text className="text-xs text-white font-medium">登录</Text>
+                  <Text className="text-xs text-white font-medium">进入</Text>
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 border-white bg-white bg-opacity-20"
-                  onClick={() => openAuthDialog('register')}
-                >
-                  <Text className="text-xs text-white font-medium">注册</Text>
-                </Button>
-              </>
-            )}
+              ) : (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 border-white bg-white bg-opacity-20"
+                    onClick={() => openAuthDialog('login')}
+                  >
+                    <Text className="text-xs text-white font-medium">登录</Text>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 border-white bg-white bg-opacity-20"
+                    onClick={() => openAuthDialog('register')}
+                  >
+                    <Text className="text-xs text-white font-medium">注册</Text>
+                  </Button>
+                </>
+              )}
+            </View>
           </View>
 
-          <Text className="block text-2xl font-bold text-white text-center">
-            无人车共享运营平台
+          <Text className="block text-3xl font-bold leading-tight text-white">
+            无人车取送货调度平台
           </Text>
-          <Text className="block text-sm text-blue-100 text-center mt-2">
-            高效运力撮合 · 便捷服务
+          <Text className="mt-3 block text-sm leading-5 text-white">
+            发布需求、智能接单、企业调度和车辆租赁在一个小程序内闭环
           </Text>
+
+          <View className="mt-6 grid grid-cols-3 gap-3">
+            <View className="rounded-2xl bg-white px-3 py-4 text-center">
+              <Text className="block text-2xl font-bold text-primary">
+                {statistics?.orders.total || 0}
+              </Text>
+              <Text className="mt-1 block text-xs text-muted-foreground">今日订单</Text>
+            </View>
+            <View className="rounded-2xl bg-white px-3 py-4 text-center">
+              <Text className="block text-2xl font-bold text-primary">
+                {statistics?.vehicles.active || statistics?.vehicles.total || 0}
+              </Text>
+              <Text className="mt-1 block text-xs text-muted-foreground">在线车辆</Text>
+            </View>
+            <View className="rounded-2xl bg-white px-3 py-4 text-center">
+              <Text className="block text-2xl font-bold text-primary">
+                {statistics?.orders.total
+                  ? `${Math.round((statistics.orders.completed / statistics.orders.total) * 100)}%`
+                  : '0%'}
+              </Text>
+              <Text className="mt-1 block text-xs text-muted-foreground">准时率</Text>
+            </View>
+          </View>
         </View>
 
-        {/* 数据统计卡片 */}
-        <View className="px-4 -mt-4">
-          <Card className="bg-white rounded-lg shadow-md mb-4">
-            <CardContent className="p-4">
-              <View className="flex justify-between items-center">
-                <View className="text-center flex-1">
-                  <Text className="block text-2xl font-bold text-blue-500">
-                    {statistics?.orders.total || 0}
-                  </Text>
-                  <Text className="block text-xs text-gray-500 mt-1">总订单数</Text>
+        <View className="px-5 pb-8 -mt-5">
+          <Card className="mb-5 shadow-sm">
+            <CardContent className="p-5">
+              <View className="mb-4 flex items-center justify-between">
+                <Text className="text-xl font-bold text-foreground">选择身份进入</Text>
+                <View className="rounded-full bg-emerald-50 px-3 py-1">
+                  <Text className="text-xs font-semibold text-emerald-600">三端共用账号</Text>
                 </View>
-                <View className="text-center flex-1">
-                  <Text className="block text-2xl font-bold text-green-500">
-                    {statistics?.vehicles.total || 0}
-                  </Text>
-                  <Text className="block text-xs text-gray-500 mt-1">车辆数</Text>
-                </View>
-                <View className="text-center flex-1">
-                  <Text className="block text-2xl font-bold text-orange-500">
-                    {statistics?.demands.total || 0}
-                  </Text>
-                  <Text className="block text-xs text-gray-500 mt-1">需求数</Text>
-                </View>
+              </View>
+
+              <View className="space-y-3">
+                <Button
+                  variant="ghost"
+                  className="h-auto w-full justify-between bg-muted px-4 py-3"
+                  onClick={() => handleRoleEntry('owner')}
+                >
+                  <View className="flex items-center gap-3">
+                    <View className="h-12 w-12 items-center justify-center rounded-2xl bg-white">
+                      <Truck size={24} color="#0062ff" />
+                    </View>
+                    <View>
+                      <Text className="block text-base font-bold text-foreground">
+                        运力方（车主）
+                      </Text>
+                      <Text className="mt-1 block text-xs text-muted-foreground">
+                        注册车辆、接单、查看收益
+                      </Text>
+                    </View>
+                  </View>
+                  <ChevronRight size={20} color="#8b95a7" />
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  className="h-auto w-full justify-between bg-muted px-4 py-3"
+                  onClick={() => handleRoleEntry('merchant')}
+                >
+                  <View className="flex items-center gap-3">
+                    <View className="h-12 w-12 items-center justify-center rounded-2xl bg-white">
+                      <Package size={24} color="#10b981" />
+                    </View>
+                    <View>
+                      <Text className="block text-base font-bold text-foreground">需求方</Text>
+                      <Text className="mt-1 block text-xs text-muted-foreground">
+                        发布需求、追踪订单、复用模板
+                      </Text>
+                    </View>
+                  </View>
+                  <ChevronRight size={20} color="#8b95a7" />
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  className="h-auto w-full justify-between bg-muted px-4 py-3"
+                  onClick={() => handleRoleEntry('enterprise')}
+                >
+                  <View className="flex items-center gap-3">
+                    <View className="h-12 w-12 items-center justify-center rounded-2xl bg-white">
+                      <Building2 size={24} color="#f59e0b" />
+                    </View>
+                    <View>
+                      <Text className="block text-base font-bold text-foreground">企业端</Text>
+                      <Text className="mt-1 block text-xs text-muted-foreground">
+                        批量配送、车队与奶站调度
+                      </Text>
+                    </View>
+                  </View>
+                  <ChevronRight size={20} color="#8b95a7" />
+                </Button>
               </View>
             </CardContent>
           </Card>
-        </View>
 
-        {/* 最新信息 */}
-        <View className="px-4 mb-4">
-          <View className="grid grid-cols-1 gap-3">
-            {/* 最新需求 */}
-            <Card className="bg-white rounded-lg shadow-sm overflow-hidden">
-              <CardContent className="p-3">
-                <View className="flex items-center justify-between mb-2">
-                  <View className="flex items-center">
-                    <Package size={16} color="#ef4444" />
-                    <Text className="block text-sm font-semibold text-red-500 ml-2">
-                      最新需求
-                    </Text>
-                  </View>
-                  <Text className="text-xs text-gray-400">
-                    共 {latestInfo?.latestDemands.length || 0} 条
-                  </Text>
+          <View className="mb-5 grid grid-cols-2 gap-3">
+            <Button className="h-14 rounded-2xl" onClick={() => openAuthDialog('login')}>
+              <Smartphone size={20} color="#fff" />
+              <Text className="text-base font-bold text-white">手机号登录</Text>
+            </Button>
+            <Button
+              variant="outline"
+              className="h-14 rounded-2xl"
+              onClick={() => openAuthDialog('register')}
+            >
+              <UserPlus size={20} color="#0062ff" />
+              <Text className="text-base font-bold text-foreground">创建账号</Text>
+            </Button>
+          </View>
+
+          <View className="grid grid-cols-2 gap-3">
+            <Card>
+              <CardContent className="p-4">
+                <View className="mb-3 inline-flex rounded-full bg-red-50 px-3 py-1">
+                  <Text className="text-xs font-semibold text-red-500">最新需求</Text>
                 </View>
-                <View className="space-y-2">
-                  {latestInfo?.latestDemands.slice(0, 5).map(item => (
-                    <View key={item.id} className="py-2 border-b border-gray-50 last:border-0">
-                      <View className="flex justify-between items-start mb-1">
-                        <Text className="text-xs font-medium text-gray-800 flex-1">
-                          {item.cargoName}
-                        </Text>
-                        <Text className="text-xs text-gray-400 ml-2">
-                          {item.cargoType === 'perishable' ? '易腐' : '普通'}
-                        </Text>
-                      </View>
-                      <View className="flex items-start mb-1">
-                        <Text className="text-xs text-gray-500 w-12 flex-shrink-0">取货:</Text>
-                        <Text className="text-xs text-gray-700 flex-1">
-                          {item.pickupAddress}
-                        </Text>
-                      </View>
-                      <View className="flex items-start mb-1">
-                        <Text className="text-xs text-gray-500 w-12 flex-shrink-0">送货:</Text>
-                        <Text className="text-xs text-gray-700 flex-1">
-                          {item.deliveryAddress}
-                        </Text>
-                      </View>
-                      <View className="flex items-center justify-between">
-                        <Text className="text-xs text-gray-400">
-                          {item.merchantPhone}
-                        </Text>
-                        <Text className="text-xs text-gray-400">
-                          {new Date(item.createdAt).toLocaleString()}
-                        </Text>
-                      </View>
-                    </View>
-                  ))}
-                  {!latestInfo?.latestDemands || latestInfo.latestDemands.length === 0 && (
-                    <Text className="text-xs text-gray-400 text-center py-4">
-                      暂无需求
-                    </Text>
-                  )}
-                </View>
+                <Text className="block text-lg font-bold text-foreground">
+                  {latestDemand?.cargoName || '暂无需求'}
+                </Text>
+                <Text className="mt-2 block text-xs leading-5 text-muted-foreground">
+                  {latestDemand
+                    ? `${latestDemand.pickupAddress} → ${latestDemand.deliveryAddress}`
+                    : '后端暂无最新需求'}
+                </Text>
               </CardContent>
             </Card>
 
-            {/* 完单信息 */}
-            <Card className="bg-white rounded-lg shadow-sm overflow-hidden">
-              <CardContent className="p-3">
-                <View className="flex items-center justify-between mb-2">
-                  <View className="flex items-center">
-                    <Check size={16} color="#10b981" />
-                    <Text className="block text-sm font-semibold text-green-500 ml-2">
-                      完单信息
-                    </Text>
-                  </View>
-                  <Text className="text-xs text-gray-400">
-                    共 {latestInfo?.completedOrders.length || 0} 条
-                  </Text>
+            <Card>
+              <CardContent className="p-4">
+                <View className="mb-3 inline-flex rounded-full bg-emerald-50 px-3 py-1">
+                  <Text className="text-xs font-semibold text-emerald-600">完单信息</Text>
                 </View>
-                <View className="space-y-2">
-                  {latestInfo?.completedOrders.map(item => (
-                    <View key={item.id} className="py-2 border-b border-gray-50 last:border-0">
-                      <View className="flex justify-between items-start mb-1">
-                        <Text className="text-xs font-medium text-gray-800 flex-1">
-                          {item.cargoName}
-                        </Text>
-                        <Text className="text-xs font-bold text-green-500 ml-2">
-                          ¥{item.farePrice}
-                        </Text>
-                      </View>
-                      <Text className="text-xs text-gray-500 block">
-                        运力方: {item.ownerPhone}
-                      </Text>
-                    </View>
-                  ))}
-                  {!latestInfo?.completedOrders || latestInfo.completedOrders.length === 0 && (
-                    <Text className="text-xs text-gray-400 text-center py-4">
-                      暂无完单信息
-                    </Text>
-                  )}
-                </View>
+                <Text className="block text-lg font-bold text-foreground">
+                  {completedOrder ? `¥${completedOrder.farePrice}` : '暂无完单'}
+                </Text>
+                <Text className="mt-2 block text-xs leading-5 text-muted-foreground">
+                  {completedOrder
+                    ? `${completedOrder.cargoName} 已送达`
+                    : '后端暂无完单信息'}
+                </Text>
               </CardContent>
             </Card>
           </View>
-        </View>
 
-        {/* 平台特色 */}
-        <View className="px-4 mb-6">
-          <Text className="block text-lg font-semibold text-gray-800 mb-3">
-            平台特色
-          </Text>
-          <View className="grid grid-cols-2 gap-3">
-            <Card className="bg-white rounded-lg shadow-sm p-4">
-              <View className="flex items-center mb-2">
-                <Clock size={20} color="#3b82f6" />
-                <Text className="block text-sm font-semibold text-gray-700 ml-2">
-                  快速匹配
-                </Text>
-              </View>
-              <Text className="block text-xs text-gray-500">
-                智能算法快速匹配车辆
-              </Text>
-            </Card>
-            <Card className="bg-white rounded-lg shadow-sm p-4">
-              <View className="flex items-center mb-2">
-                <Shield size={20} color="#10b981" />
-                <Text className="block text-sm font-semibold text-gray-700 ml-2">
-                  安全保障
-                </Text>
-              </View>
-              <Text className="block text-xs text-gray-500">
-                全程追踪，安全可靠
-              </Text>
-            </Card>
-            <Card className="bg-white rounded-lg shadow-sm p-4">
-              <View className="flex items-center mb-2">
-                <Truck size={20} color="#f59e0b" />
-                <Text className="block text-sm font-semibold text-gray-700 ml-2">
-                  运力充足
-                </Text>
-              </View>
-              <Text className="block text-xs text-gray-500">
-                多种车型，满足需求
-              </Text>
-            </Card>
-            <Card className="bg-white rounded-lg shadow-sm p-4">
-              <View className="flex items-center mb-2">
-                <Package size={20} color="#8b5cf6" />
-                <Text className="block text-sm font-semibold text-gray-700 ml-2">
-                便捷下单
-                </Text>
-              </View>
-              <Text className="block text-xs text-gray-500">
-                简单几步，轻松完成
-              </Text>
-            </Card>
+          <View className="mt-6">
+            <Text className="mb-3 block text-lg font-bold text-foreground">平台特色</Text>
+            <View className="grid grid-cols-2 gap-3">
+              <Card>
+                <CardContent className="p-4">
+                  <View className="mb-2 flex items-center">
+                    <Clock size={20} color="#0062ff" />
+                    <Text className="ml-2 text-sm font-semibold text-foreground">快速匹配</Text>
+                  </View>
+                  <Text className="block text-xs text-muted-foreground">
+                    智能算法快速匹配车辆
+                  </Text>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <View className="mb-2 flex items-center">
+                    <Shield size={20} color="#10b981" />
+                    <Text className="ml-2 text-sm font-semibold text-foreground">安全保障</Text>
+                  </View>
+                  <Text className="block text-xs text-muted-foreground">
+                    全程追踪，安全可靠
+                  </Text>
+                </CardContent>
+              </Card>
+            </View>
           </View>
         </View>
       </ScrollView>
@@ -563,7 +583,7 @@ export default function Index() {
                 setMode('login')
                 setStep('role')
               }}
-              className={mode === 'login' ? 'bg-blue-500' : ''}
+              className={mode === 'login' ? 'bg-primary' : ''}
               size="sm"
             >
               <Text className="text-sm">登录</Text>
@@ -574,7 +594,7 @@ export default function Index() {
                 setMode('register')
                 setStep('role')
               }}
-              className={mode === 'register' ? 'bg-blue-500' : ''}
+              className={mode === 'register' ? 'bg-primary' : ''}
               size="sm"
             >
               <Text className="text-sm">注册</Text>
@@ -627,7 +647,7 @@ export default function Index() {
                     <Text className="text-red-500">*</Text>姓名
                   </Label>
                   <Input
-                    className="w-full bg-gray-50"
+                    className="w-full bg-muted"
                     placeholder="请输入您的姓名"
                     value={name}
                     onInput={(e) => setName(e.detail.value)}
@@ -640,7 +660,7 @@ export default function Index() {
                   <Text className="text-red-500">*</Text>手机号
                 </Label>
                 <Input
-                  className="w-full bg-gray-50"
+                  className="w-full bg-muted"
                   placeholder="请输入手机号"
                   type="number"
                   value={phone}
@@ -655,7 +675,7 @@ export default function Index() {
                   </Label>
                   <View className="flex gap-2 items-center">
                     <Input
-                      className="flex-1 bg-gray-50"
+                      className="flex-1 bg-muted"
                       placeholder="请输入图形验证码"
                       value={captchaCode}
                       onInput={(e) => setCaptchaCode(e.detail.value.toUpperCase())}
@@ -680,7 +700,7 @@ export default function Index() {
                     </Button>
                   </View>
                   <Text
-                    className="block text-xs text-blue-500 mt-2"
+                    className="block text-xs text-primary mt-2"
                     onClick={loadRegisterCaptcha}
                   >
                     刷新验证码
@@ -693,7 +713,7 @@ export default function Index() {
                   <Text className="text-red-500">*</Text>密码
                 </Label>
                 <Input
-                  className="w-full bg-gray-50"
+                  className="w-full bg-muted"
                   placeholder="请输入密码"
                   password
                   value={password}
@@ -707,7 +727,7 @@ export default function Index() {
                     <Text className="text-red-500">*</Text>再次确认密码
                   </Label>
                   <Input
-                    className="w-full bg-gray-50"
+                    className="w-full bg-muted"
                     placeholder="请再次输入密码"
                     password
                     value={confirmPassword}
@@ -717,7 +737,7 @@ export default function Index() {
               )}
 
               <Button
-                className="w-full bg-blue-500"
+                className="w-full bg-primary"
                 onClick={handleSubmit}
                 disabled={authLoading}
               >
