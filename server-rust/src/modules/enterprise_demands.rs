@@ -155,6 +155,7 @@ where
     if vehicle_source == "external" {
         let external_demand_id = publish_external_demand(
             &state.db,
+            &demand_id,
             &body,
             &delivery_points,
             &cargo_info,
@@ -250,7 +251,10 @@ async fn update_demand<S>(
 where
     S: Storage,
 {
-    if matches!(body.status.as_deref(), Some("completed") | Some("cancelled")) {
+    if matches!(
+        body.status.as_deref(),
+        Some("completed") | Some("cancelled")
+    ) {
         return Ok(envelope(
             500,
             "不能通过通用接口修改为终态，请使用配送点完成或取消接口",
@@ -782,18 +786,12 @@ where
 
 async fn publish_external_demand(
     pool: &sqlx::PgPool,
+    enterprise_demand_id: &str,
     body: &CreateDemandBody,
     delivery_points: &Value,
     cargo_info: &Value,
     time_window: &Value,
 ) -> ApiResult<String> {
-    let merchant_id: Option<String> =
-        sqlx::query_scalar("SELECT admin_id FROM enterprises WHERE id = $1")
-            .bind(&body.enterprise_id)
-            .fetch_optional(pool)
-            .await?
-            .flatten();
-    let merchant_id = merchant_id.unwrap_or_else(|| body.enterprise_id.clone());
     let first_delivery = delivery_points
         .as_array()
         .and_then(|points| points.first())
@@ -812,24 +810,27 @@ async fn publish_external_demand(
     let public_id = sqlx::query_scalar::<_, String>(
         r#"
         INSERT INTO demands (
-            id, merchant_id, cargo_name, cargo_type, weight, volume,
+            id, merchant_id, enterprise_id, enterprise_demand_id, demand_source,
+            cargo_name, cargo_type, weight, volume,
             pickup_time, pickup_address, pickup_lat, pickup_lng,
             delivery_address, delivery_lat, delivery_lng,
             time_window, delivery_points, cargo_info, status, remarks,
             created_at, updated_at
         )
         VALUES (
-            $1, $2, $3, 'normal', $4::numeric, $5::numeric,
-            now(), $6, $7::numeric, $8::numeric,
-            $9, $10::numeric, $11::numeric,
-            $12::jsonb, $13::jsonb, $14::jsonb, 'pending', '企业外部需求',
+            $1, NULL, $2, $3, 'enterprise',
+            $4, 'normal', $5::numeric, $6::numeric,
+            now(), $7, $8::numeric, $9::numeric,
+            $10, $11::numeric, $12::numeric,
+            $13::jsonb, $14::jsonb, $15::jsonb, 'pending', '企业外部需求',
             now(), now()
         )
         RETURNING id
         "#,
     )
     .bind(&public_demand_id)
-    .bind(merchant_id)
+    .bind(&body.enterprise_id)
+    .bind(enterprise_demand_id)
     .bind(cargo_name)
     .bind(total_weight)
     .bind(total_volume)
@@ -1085,9 +1086,29 @@ async fn linked_external_demand_ids(pool: &sqlx::PgPool, demand: &Value) -> ApiR
     let Some(enterprise_id) = demand.get("enterprise_id").and_then(Value::as_str) else {
         return Ok(Vec::new());
     };
+    let enterprise_demand_id = demand.get("id").and_then(Value::as_str);
     let Some(created_at) = demand.get("created_at").and_then(Value::as_str) else {
         return Ok(Vec::new());
     };
+
+    let explicit_external_demand_ids = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT id
+        FROM demands
+        WHERE demand_source = 'enterprise'
+          AND enterprise_id = $1
+          AND ($2::text IS NULL OR enterprise_demand_id = $2)
+          AND remarks = '企业外部需求'
+          AND status = 'pending'
+        "#,
+    )
+    .bind(enterprise_id)
+    .bind(enterprise_demand_id)
+    .fetch_all(pool)
+    .await?;
+    if !explicit_external_demand_ids.is_empty() {
+        return Ok(explicit_external_demand_ids);
+    }
 
     let admin_id: Option<String> =
         sqlx::query_scalar("SELECT admin_id FROM enterprises WHERE id = $1")

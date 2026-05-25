@@ -99,6 +99,9 @@ struct CommissionPaymentRequest {
 struct DemandRow {
     id: String,
     merchant_id: Option<String>,
+    enterprise_id: Option<String>,
+    enterprise_demand_id: Option<String>,
+    demand_source: Option<String>,
     cargo_name: Option<String>,
     status: Option<String>,
 }
@@ -122,6 +125,8 @@ struct OrderRow {
     demand_id: Option<String>,
     vehicle_id: Option<String>,
     merchant_id: Option<String>,
+    enterprise_id: Option<String>,
+    order_source: Option<String>,
     owner_id: Option<String>,
     status: Option<String>,
     remarks: Option<String>,
@@ -200,16 +205,43 @@ where
     validate_vehicle_rental_permission(&state.db, &body.owner_id, &body.vehicle_id, &vehicle)
         .await?;
 
+    let order_source = demand.demand_source.as_deref().unwrap_or("merchant");
+    let requester_id = resolve_demand_requester_id(
+        &state.db,
+        order_source,
+        demand.merchant_id.as_deref(),
+        demand.enterprise_id.as_deref(),
+    )
+    .await?;
+
     let order = sqlx::query_scalar::<_, Value>(
         r#"
-        INSERT INTO orders (demand_id, vehicle_id, merchant_id, owner_id, status, accept_time)
-        VALUES ($1, $2, $3, $4, 'accepted', now())
+        INSERT INTO orders (
+            demand_id, vehicle_id, merchant_id, enterprise_id, enterprise_demand_id,
+            order_source, owner_id, status, accept_time
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'accepted', now())
         RETURNING row_to_json(orders)
         "#,
     )
     .bind(&body.demand_id)
     .bind(&body.vehicle_id)
-    .bind(&demand.merchant_id)
+    .bind(if order_source == "merchant" {
+        demand.merchant_id.as_deref()
+    } else {
+        None
+    })
+    .bind(if order_source == "enterprise" {
+        demand.enterprise_id.as_deref()
+    } else {
+        None
+    })
+    .bind(if order_source == "enterprise" {
+        demand.enterprise_demand_id.as_deref()
+    } else {
+        None
+    })
+    .bind(order_source)
     .bind(&body.owner_id)
     .fetch_one(&state.db)
     .await
@@ -223,7 +255,7 @@ where
     let order_id = order.get("id").and_then(Value::as_str);
     create_notification(
         &state.db,
-        demand.merchant_id.as_deref(),
+        requester_id.as_deref(),
         "order_accepted",
         "您的需求已被接单",
         &format!(
@@ -740,7 +772,8 @@ where
             .await?;
     }
     increment_credit_score(&state.db, order.owner_id.as_deref()).await?;
-    increment_credit_score(&state.db, order.merchant_id.as_deref()).await?;
+    let requester_id = resolve_order_requester_id(&state.db, &order).await?;
+    increment_credit_score(&state.db, requester_id.as_deref()).await?;
 
     create_notification(
         &state.db,
@@ -757,7 +790,7 @@ where
     .await;
     create_notification(
         &state.db,
-        order.merchant_id.as_deref(),
+        requester_id.as_deref(),
         "order_completed",
         "订单已完成",
         "您的订单已完成，感谢使用本平台。信用积分 +2",
@@ -928,12 +961,51 @@ where
 
 async fn fetch_demand(pool: &PgPool, demand_id: &str) -> ApiResult<DemandRow> {
     sqlx::query_as::<_, DemandRow>(
-        "SELECT id, merchant_id, cargo_name, status FROM demands WHERE id = $1",
+        r#"
+        SELECT id, merchant_id, enterprise_id, enterprise_demand_id, demand_source, cargo_name, status
+        FROM demands
+        WHERE id = $1
+        "#,
     )
     .bind(demand_id)
     .fetch_optional(pool)
     .await?
     .ok_or_else(|| ApiError::NotFound("需求不存在".to_string()))
+}
+
+async fn resolve_demand_requester_id(
+    pool: &PgPool,
+    source: &str,
+    merchant_id: Option<&str>,
+    enterprise_id: Option<&str>,
+) -> ApiResult<Option<String>> {
+    if source != "enterprise" {
+        return Ok(merchant_id.map(ToOwned::to_owned));
+    }
+
+    let Some(enterprise_id) = enterprise_id else {
+        return Ok(None);
+    };
+
+    let admin_id: Option<String> =
+        sqlx::query_scalar("SELECT admin_id FROM enterprises WHERE id = $1")
+            .bind(enterprise_id)
+            .fetch_optional(pool)
+            .await?
+            .flatten();
+
+    Ok(Some(admin_id.unwrap_or_else(|| enterprise_id.to_string())))
+}
+
+async fn resolve_order_requester_id(pool: &PgPool, order: &OrderRow) -> ApiResult<Option<String>> {
+    let source = order.order_source.as_deref().unwrap_or("merchant");
+    resolve_demand_requester_id(
+        pool,
+        source,
+        order.merchant_id.as_deref(),
+        order.enterprise_id.as_deref(),
+    )
+    .await
 }
 
 async fn fetch_vehicle(pool: &PgPool, vehicle_id: &str) -> ApiResult<VehicleRow> {
@@ -954,6 +1026,8 @@ async fn fetch_order(pool: &PgPool, id: &str) -> ApiResult<OrderRow> {
             demand_id,
             vehicle_id,
             merchant_id,
+            enterprise_id,
+            order_source,
             owner_id,
             status,
             remarks,
