@@ -12,16 +12,6 @@ const VEHICLE_SOURCES: VehicleSource[] = ['internal', 'external', 'mixed'];
 export class DemandService {
   private readonly logger = new Logger(DemandService.name);
 
-  private async getEnterpriseRequesterId(supabase: any, enterpriseId: string) {
-    const { data: enterprise } = await supabase
-      .from('enterprises')
-      .select('admin_id')
-      .eq('id', enterpriseId)
-      .single();
-
-    return enterprise?.admin_id || enterpriseId;
-  }
-
   /**
    * 创建配送需求
    */
@@ -83,9 +73,6 @@ export class DemandService {
       const totalWeight = cargoInfo.quantity || 0;
       const totalVolume = totalWeight * 0.001; // 假设每箱0.001立方米
 
-      // 公共 demands 表当前用 merchant_id 保存需求发布用户 ID，企业外部需求使用企业管理员作为发布用户。
-      const enterpriseRequesterId = await this.getEnterpriseRequesterId(supabase, data.enterpriseId);
-
       // 构建取货时间（使用今天的时间，加上时间窗的开始时间）
       const today = new Date();
       const [startHour, startMinute] = timeWindow.start.split(':');
@@ -101,7 +88,9 @@ export class DemandService {
       const { data: existingDemands } = await supabase
         .from('demands')
         .select('id')
-        .eq('merchant_id', enterpriseRequesterId)
+        .eq('demand_source', 'enterprise')
+        .eq('enterprise_id', data.enterpriseId)
+        .eq('enterprise_demand_id', demand.id)
         .eq('remarks', '企业外部需求')
         .gte('created_at', demand.created_at)
         .lt('created_at', new Date(new Date(demand.created_at).getTime() + 10000)); // 10秒内创建的
@@ -112,7 +101,10 @@ export class DemandService {
           .from('demands')
           .insert({
             id: publicDemandId,
-            merchant_id: enterpriseRequesterId,
+            merchant_id: null,
+            enterprise_id: data.enterpriseId,
+            enterprise_demand_id: demand.id,
+            demand_source: 'enterprise',
             cargo_name: cargoInfo.type || '货物',
             cargo_type: 'normal',
             weight: totalWeight.toString(),
@@ -645,21 +637,12 @@ export class DemandService {
       let externalDemandIds: string[] = demand.external_demand_id ? [demand.external_demand_id] : [];
 
       if (externalDemandIds.length === 0) {
-        const { data: enterprise } = await supabase
-          .from('enterprises')
-          .select('admin_id')
-          .eq('id', demand.enterprise_id)
-          .single();
-
-        const merchantIds = Array.from(
-          new Set([enterprise?.admin_id, demand.enterprise_id].filter(Boolean))
-        );
-
-        // 兼容旧数据：早期没有 external_demand_id，只能通过商户与创建时间窗口回溯。
         const { data: externalDemands } = await supabase
           .from('demands')
           .select('id')
-          .in('merchant_id', merchantIds)
+          .eq('demand_source', 'enterprise')
+          .eq('enterprise_id', demand.enterprise_id)
+          .eq('enterprise_demand_id', demand.id)
           .eq('remarks', '企业外部需求')
           .gte('created_at', demand.created_at)
           .lt('created_at', new Date(new Date(demand.created_at).getTime() + 10000)) // 10秒内创建的

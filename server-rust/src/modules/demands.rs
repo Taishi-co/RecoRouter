@@ -78,6 +78,9 @@ struct SaveAsTemplateRequest {
 #[derive(Debug, FromRow)]
 struct DemandAcceptRow {
     merchant_id: Option<String>,
+    enterprise_id: Option<String>,
+    enterprise_demand_id: Option<String>,
+    demand_source: Option<String>,
     cargo_name: Option<String>,
     status: Option<String>,
     pickup_time: Option<chrono::DateTime<chrono::Utc>>,
@@ -191,14 +194,14 @@ where
     let demand = sqlx::query_scalar::<_, Value>(
         r#"
         INSERT INTO demands (
-            merchant_id, cargo_name, cargo_type, weight, volume,
+            merchant_id, demand_source, cargo_name, cargo_type, weight, volume,
             pickup_time, pickup_address, pickup_location,
             delivery_address, delivery_location,
             remarks, pickup_lat, pickup_lng, delivery_lat, delivery_lng,
             estimated_distance, estimated_fare, route_type, cargo_photos, status
         )
         VALUES (
-            $1, $2, $3, $4::numeric, $5::numeric,
+            $1, 'merchant', $2, $3, $4::numeric, $5::numeric,
             $6::timestamptz, $7, $8::jsonb,
             $9, $10::jsonb,
             $11, $12::numeric, $13::numeric, $14::numeric, $15::numeric,
@@ -460,10 +463,15 @@ where
 
     let total_distance = demand_distance(&demand);
     let fare = resolve_fare(body.fare_price, total_distance, &vehicle);
-    let merchant_id = demand
-        .merchant_id
-        .as_deref()
-        .ok_or_else(|| ApiError::BadRequest("需求方不存在".to_string()))?;
+    let order_source = demand.demand_source.as_deref().unwrap_or("merchant");
+    let requester_id = resolve_demand_requester_id(
+        &state.db,
+        order_source,
+        demand.merchant_id.as_deref(),
+        demand.enterprise_id.as_deref(),
+    )
+    .await?
+    .ok_or_else(|| ApiError::BadRequest("需求发布方不存在".to_string()))?;
 
     let mut tx = state.db.begin().await?;
     let updated_demand = sqlx::query_scalar::<_, Value>(
@@ -485,20 +493,37 @@ where
     let order = sqlx::query_scalar::<_, Value>(
         r#"
         INSERT INTO orders (
-            demand_id, merchant_id, owner_id, vehicle_id, status,
+            demand_id, merchant_id, enterprise_id, enterprise_demand_id, order_source,
+            owner_id, vehicle_id, status,
             fare_price, calculated_fare, fare_calculation_detail, is_custom_fare,
             merchant_confirmed, pickup_time, pickup_address, delivery_address, remarks
         )
         VALUES (
-            $1, $2, $3, $4, 'accepted',
-            $5::numeric, $6::numeric, $7::jsonb, $8,
-            false, $9, $10, $11, $12
+            $1, $2, $3, $4, $5,
+            $6, $7, 'accepted',
+            $8::numeric, $9::numeric, $10::jsonb, $11,
+            false, $12, $13, $14, $15
         )
         RETURNING row_to_json(orders)
         "#,
     )
     .bind(&id)
-    .bind(merchant_id)
+    .bind(if order_source == "merchant" {
+        demand.merchant_id.as_deref()
+    } else {
+        None
+    })
+    .bind(if order_source == "enterprise" {
+        demand.enterprise_id.as_deref()
+    } else {
+        None
+    })
+    .bind(if order_source == "enterprise" {
+        demand.enterprise_demand_id.as_deref()
+    } else {
+        None
+    })
+    .bind(order_source)
     .bind(&body.owner_id)
     .bind(&body.vehicle_id)
     .bind(fare.fare_price)
@@ -528,7 +553,7 @@ where
             VALUES ($1, 'order_accepted', '您的需求已被接单', $2, $3, $4, false)
             "#,
         )
-        .bind(merchant_id)
+        .bind(&requester_id)
         .bind(format!(
             "您发布的\"{}\"需求已被接单，运费：¥{:.2}，请确认运费后车主将开始运输",
             demand.cargo_name.as_deref().unwrap_or(""),
@@ -698,6 +723,9 @@ async fn fetch_demand_accept_row(pool: &sqlx::PgPool, id: &str) -> ApiResult<Dem
         r#"
         SELECT
             merchant_id,
+            enterprise_id,
+            enterprise_demand_id,
+            demand_source,
             cargo_name,
             status,
             pickup_time,
@@ -716,6 +744,30 @@ async fn fetch_demand_accept_row(pool: &sqlx::PgPool, id: &str) -> ApiResult<Dem
     .fetch_optional(pool)
     .await?
     .ok_or_else(|| ApiError::NotFound("需求不存在".to_string()))
+}
+
+async fn resolve_demand_requester_id(
+    pool: &sqlx::PgPool,
+    source: &str,
+    merchant_id: Option<&str>,
+    enterprise_id: Option<&str>,
+) -> ApiResult<Option<String>> {
+    if source != "enterprise" {
+        return Ok(merchant_id.map(ToOwned::to_owned));
+    }
+
+    let Some(enterprise_id) = enterprise_id else {
+        return Ok(None);
+    };
+
+    let admin_id: Option<String> =
+        sqlx::query_scalar("SELECT admin_id FROM enterprises WHERE id = $1")
+            .bind(enterprise_id)
+            .fetch_optional(pool)
+            .await?
+            .flatten();
+
+    Ok(Some(admin_id.unwrap_or_else(|| enterprise_id.to_string())))
 }
 
 async fn fetch_vehicle_accept_row(

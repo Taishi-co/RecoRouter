@@ -49,7 +49,7 @@ export const vehicles = pgTable(
   "vehicles",
   {
     id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-    owner_id: varchar("owner_id", { length: 36 }).notNull().references(() => users.id, { onDelete: "cascade" }),
+    owner_id: varchar("owner_id", { length: 36 }).notNull(),
     enterprise_id: varchar("enterprise_id", { length: 36 }),
     vehicle_code: varchar("vehicle_code", { length: 50 }),
     vehicle_type: varchar("vehicle_type", { length: 50 }).notNull(), // 车型
@@ -95,7 +95,10 @@ export const demands = pgTable(
   "demands",
   {
     id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-    merchant_id: varchar("merchant_id", { length: 36 }).notNull().references(() => users.id, { onDelete: "cascade" }),
+    merchant_id: varchar("merchant_id", { length: 36 }),
+    enterprise_id: varchar("enterprise_id", { length: 36 }),
+    enterprise_demand_id: varchar("enterprise_demand_id", { length: 36 }),
+    demand_source: varchar("demand_source", { length: 20 }).notNull().default("merchant"), // merchant/enterprise
     cargo_name: varchar("cargo_name", { length: 100 }).notNull(), // 货品名称
     cargo_type: varchar("cargo_type", { length: 20 }).notNull(), // normal/fresh/fragile
     weight: numeric("weight", { precision: 10, scale: 2 }).notNull(), // 重量（公斤）
@@ -125,6 +128,9 @@ export const demands = pgTable(
   },
   (table) => [
     index("demands_merchant_id_idx").on(table.merchant_id),
+    index("demands_enterprise_id_idx").on(table.enterprise_id),
+    index("demands_enterprise_demand_id_idx").on(table.enterprise_demand_id),
+    index("demands_source_status_idx").on(table.demand_source, table.status),
     index("demands_status_idx").on(table.status),
     index("demands_pickup_time_idx").on(table.pickup_time),
   ]
@@ -135,10 +141,13 @@ export const orders = pgTable(
   "orders",
   {
     id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-    demand_id: varchar("demand_id", { length: 36 }).notNull().references(() => demands.id, { onDelete: "cascade" }),
-    vehicle_id: varchar("vehicle_id", { length: 36 }).references(() => vehicles.id, { onDelete: "set null" }),
-    merchant_id: varchar("merchant_id", { length: 36 }).notNull().references(() => users.id, { onDelete: "cascade" }),
-    owner_id: varchar("owner_id", { length: 36 }).references(() => users.id, { onDelete: "set null" }),
+    demand_id: varchar("demand_id", { length: 36 }).notNull(),
+    vehicle_id: varchar("vehicle_id", { length: 36 }),
+    merchant_id: varchar("merchant_id", { length: 36 }),
+    enterprise_id: varchar("enterprise_id", { length: 36 }),
+    enterprise_demand_id: varchar("enterprise_demand_id", { length: 36 }),
+    order_source: varchar("order_source", { length: 20 }).notNull().default("merchant"), // merchant/enterprise
+    owner_id: varchar("owner_id", { length: 36 }),
     status: varchar("status", { length: 20 }).notNull().default("pending"), // pending/accepted/in_transit/completed/cancelled
     pickup_photo_key: varchar("pickup_photo_key", { length: 255 }), // 取货照片（TOS key）
     delivery_photo_key: varchar("delivery_photo_key", { length: 255 }), // 送货照片（TOS key）
@@ -169,6 +178,9 @@ export const orders = pgTable(
     index("orders_demand_id_idx").on(table.demand_id),
     index("orders_vehicle_id_idx").on(table.vehicle_id),
     index("orders_merchant_id_idx").on(table.merchant_id),
+    index("orders_enterprise_id_idx").on(table.enterprise_id),
+    index("orders_enterprise_demand_id_idx").on(table.enterprise_demand_id),
+    index("orders_source_status_idx").on(table.order_source, table.status),
     index("orders_owner_id_idx").on(table.owner_id),
     index("orders_status_idx").on(table.status),
     index("orders_created_at_idx").on(table.created_at),
@@ -183,7 +195,7 @@ export const enterprises = pgTable(
     name: varchar("name", { length: 100 }).notNull(),
     type: varchar("type", { length: 50 }).notNull(), // dairy, logistics
     status: varchar("status", { length: 20 }).notNull().default("active"), // active/disabled
-    admin_id: varchar("admin_id", { length: 36 }).references(() => users.id, { onDelete: "set null" }), // 企业管理员
+    admin_id: varchar("admin_id", { length: 36 }), // 企业管理员
     created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updated_at: timestamp("updated_at", { withTimezone: true }),
   },
@@ -199,7 +211,7 @@ export const dairyStations = pgTable(
   "dairy_stations",
   {
     id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-    enterprise_id: varchar("enterprise_id", { length: 36 }).notNull().references(() => enterprises.id, { onDelete: "cascade" }),
+    enterprise_id: varchar("enterprise_id", { length: 36 }).notNull(),
     name: varchar("name", { length: 100 }).notNull(),
     address: varchar("address", { length: 255 }).notNull(),
     location: jsonb("location"), // {lat, lng}
@@ -223,7 +235,7 @@ export const enterpriseDemands = pgTable(
   "enterprise_demands",
   {
     id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-    enterprise_id: varchar("enterprise_id", { length: 36 }).notNull().references(() => enterprises.id, { onDelete: "cascade" }),
+    enterprise_id: varchar("enterprise_id", { length: 36 }).notNull(),
     pickup_point_type: varchar("pickup_point_type", { length: 20 }).notNull(), // warehouse, station
     pickup_point_info: jsonb("pickup_point_info").notNull(), // {type, name, address, contact, phone, location}
     delivery_points: jsonb("delivery_points").notNull(), // [{type, name, address, contact, phone, location, cargo}]
