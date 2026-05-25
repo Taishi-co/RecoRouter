@@ -105,13 +105,18 @@ export class OrdersService {
       console.log('===================================')
     }
 
+    const orderSource = demand.demand_source || 'merchant'
+
     // 创建订单
     const { data: order, error: insertError } = await client
       .from('orders')
       .insert({
         demand_id,
         vehicle_id,
-        merchant_id: demand.merchant_id,
+        merchant_id: orderSource === 'merchant' ? demand.merchant_id : null,
+        enterprise_id: orderSource === 'enterprise' ? demand.enterprise_id : null,
+        enterprise_demand_id: orderSource === 'enterprise' ? demand.enterprise_demand_id : null,
+        order_source: orderSource,
         owner_id,
         status: 'accepted',
         accept_time: new Date().toISOString()
@@ -131,8 +136,17 @@ export class OrdersService {
 
     // 给需求方发送通知
     try {
+      let requesterId = demand.merchant_id
+      if (orderSource === 'enterprise' && demand.enterprise_id) {
+        const { data: enterprise } = await client
+          .from('enterprises')
+          .select('admin_id')
+          .eq('id', demand.enterprise_id)
+          .single()
+        requesterId = enterprise?.admin_id || demand.enterprise_id
+      }
       await this.notificationsService.create({
-        userId: demand.merchant_id,
+        userId: requesterId,
         type: 'order_accepted',
         title: '您的需求已被接单',
         content: `您发布的"${demand.cargo_name}"需求已被接单，请关注订单状态`,

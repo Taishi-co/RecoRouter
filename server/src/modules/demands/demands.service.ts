@@ -323,8 +323,8 @@ export class DemandsService {
     }
 
     // 验证用户角色
-    if (!['merchant', 'enterprise'].includes(user.role)) {
-      throw new BadRequestException('只有需求方或企业方可以发布需求')
+    if (user.role !== 'merchant') {
+      throw new BadRequestException('只有需求方可以发布需求')
     }
 
     // 创建需求记录
@@ -350,6 +350,7 @@ export class DemandsService {
         estimated_fare: estimated_fare || null,
         route_type: estimated_distance ? 'non_highway' : null,
         cargo_photos: cargo_photos || [], // 货品照片URL数组
+        demand_source: 'merchant',
         status: 'pending', // 默认待接单
       })
       .select()
@@ -699,12 +700,26 @@ export class DemandsService {
       throw new BadRequestException(`接单失败: ${updateError.message}`)
     }
 
+    const orderSource = existingDemand.demand_source || 'merchant'
+    let requesterId = existingDemand.merchant_id
+    if (orderSource === 'enterprise' && existingDemand.enterprise_id) {
+      const { data: enterprise } = await client
+        .from('enterprises')
+        .select('admin_id')
+        .eq('id', existingDemand.enterprise_id)
+        .single()
+      requesterId = enterprise?.admin_id || existingDemand.enterprise_id
+    }
+
     // 创建订单
     const { data: order, error: orderError } = await client
       .from('orders')
       .insert({
         demand_id: id,
-        merchant_id: existingDemand.merchant_id,
+        merchant_id: orderSource === 'merchant' ? existingDemand.merchant_id : null,
+        enterprise_id: orderSource === 'enterprise' ? existingDemand.enterprise_id : null,
+        enterprise_demand_id: orderSource === 'enterprise' ? existingDemand.enterprise_demand_id : null,
+        order_source: orderSource,
         owner_id: ownerId,
         vehicle_id: vehicleId,
         status: 'accepted',
@@ -732,14 +747,16 @@ export class DemandsService {
 
     // 给需求方发送通知
     try {
-      await this.notificationsService.create({
-        userId: existingDemand.merchant_id,
-        type: 'order_accepted',
-        title: '您的需求已被接单',
-        content: `您发布的"${existingDemand.cargo_name}"需求已被接单，运费：¥${farePrice.toFixed(2)}，请确认运费后车主将开始运输`,
-        relatedOrderId: order.id,
-        relatedDemandId: id
-      })
+      if (requesterId) {
+        await this.notificationsService.create({
+          userId: requesterId,
+          type: 'order_accepted',
+          title: '您的需求已被接单',
+          content: `您发布的"${existingDemand.cargo_name}"需求已被接单，运费：¥${farePrice.toFixed(2)}，请确认运费后车主将开始运输`,
+          relatedOrderId: order.id,
+          relatedDemandId: id
+        })
+      }
     } catch (notificationError) {
       console.error('[DemandsService] 创建通知失败:', notificationError)
       // 通知创建失败不影响接单流程
