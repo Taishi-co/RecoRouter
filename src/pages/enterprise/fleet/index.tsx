@@ -9,6 +9,13 @@ import {
   Card,
   CardContent,
 } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { getApiData, getApiMessage, isApiSuccess } from '@/lib/api-response'
 import { Network } from '@/network'
@@ -49,6 +56,7 @@ const EnterpriseFleetPage: FC = () => {
   const [activeTab, setActiveTab] = useState('all')
   const [errorText, setErrorText] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [pendingVehicleIds, setPendingVehicleIds] = useState<string[]>([])
 
   // 添加车辆弹窗状态
   const [showAddDialog, setShowAddDialog] = useState(false)
@@ -140,7 +148,10 @@ const EnterpriseFleetPage: FC = () => {
   }
 
   const handleUpdateStatus = async (vehicleId: string, newStatus: 'idle' | 'in_transit' | 'maintenance') => {
+    if (pendingVehicleIds.includes(vehicleId)) return
+
     try {
+      setPendingVehicleIds(prev => prev.includes(vehicleId) ? prev : [...prev, vehicleId])
       const res = await Network.request({
         url: `/api/enterprise-vehicles/${vehicleId}/status`,
         method: 'PUT',
@@ -165,6 +176,8 @@ const EnterpriseFleetPage: FC = () => {
         title: '更新失败',
         icon: 'none',
       })
+    } finally {
+      setPendingVehicleIds(prev => prev.filter(id => id !== vehicleId))
     }
   }
 
@@ -174,7 +187,10 @@ const EnterpriseFleetPage: FC = () => {
       content: `确认删除车辆"${vehicleCode}"吗？`,
       success: async (res) => {
         if (res.confirm) {
+          if (pendingVehicleIds.includes(vehicleId)) return
+
           try {
+            setPendingVehicleIds(prev => prev.includes(vehicleId) ? prev : [...prev, vehicleId])
             const deleteRes = await Network.request({
               url: `/api/enterprise-vehicles/${vehicleId}`,
               method: 'DELETE',
@@ -198,6 +214,8 @@ const EnterpriseFleetPage: FC = () => {
               title: '删除失败',
               icon: 'none',
             })
+          } finally {
+            setPendingVehicleIds(prev => prev.filter(id => id !== vehicleId))
           }
         }
       },
@@ -205,9 +223,12 @@ const EnterpriseFleetPage: FC = () => {
   }
 
   const handleChangeUsageMode = async (vehicleId: string, currentMode: 'internal' | 'external') => {
+    if (pendingVehicleIds.includes(vehicleId)) return
+
     const nextMode = currentMode === 'internal' ? 'external' : 'internal'
 
     try {
+      setPendingVehicleIds(prev => prev.includes(vehicleId) ? prev : [...prev, vehicleId])
       const res = await Network.request({
         url: `/api/enterprise-vehicles/${vehicleId}/usage-mode`,
         method: 'PUT',
@@ -232,10 +253,22 @@ const EnterpriseFleetPage: FC = () => {
         title: '切换失败',
         icon: 'none',
       })
+    } finally {
+      setPendingVehicleIds(prev => prev.filter(id => id !== vehicleId))
     }
   }
 
   const handleAddVehicle = async () => {
+    if (submitting) return
+
+    if (!enterpriseId) {
+      Taro.showToast({
+        title: '企业信息缺失',
+        icon: 'none',
+      })
+      return
+    }
+
     if (!newVehicleId || !newVehicleCode || !newVehicleType || !newLoadCapacity || !newVolume) {
       Taro.showToast({
         title: '请填写完整信息',
@@ -327,6 +360,7 @@ const EnterpriseFleetPage: FC = () => {
         setNewWidth('')
         setNewHeight('')
         setNewHasColdChain(true)
+        setNewUsageMode('internal')
         // 刷新列表
         loadVehicles(enterpriseId)
         loadStats(enterpriseId)
@@ -350,6 +384,27 @@ const EnterpriseFleetPage: FC = () => {
     Taro.navigateTo({
       url: `/pages/enterprise/fleet/detail/index?id=${vehicleId}`,
     })
+  }
+
+  const resetAddVehicleForm = () => {
+    setNewVehicleId('')
+    setNewVehicleCode('')
+    setNewVehicleType('')
+    setNewLoadCapacity('')
+    setNewVolume('')
+    setNewLength('')
+    setNewWidth('')
+    setNewHeight('')
+    setNewHasColdChain(true)
+    setNewUsageMode('internal')
+  }
+
+  const handleAddDialogOpenChange = (open: boolean) => {
+    if (submitting) return
+    setShowAddDialog(open)
+    if (!open) {
+      resetAddVehicleForm()
+    }
   }
 
   const getUsageModeText = (mode: string) => {
@@ -396,6 +451,7 @@ const EnterpriseFleetPage: FC = () => {
             <Button
               size="sm"
               onClick={() => setShowAddDialog(true)}
+              disabled={!enterpriseId}
             >
               <Text className="text-xs">添加车辆</Text>
             </Button>
@@ -405,6 +461,22 @@ const EnterpriseFleetPage: FC = () => {
             <Card className="mb-4 border-red-200 bg-red-50">
               <CardContent className="p-3">
                 <Text className="block text-sm text-red-600">{errorText}</Text>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-3"
+                  onClick={() => {
+                    if (enterpriseId) {
+                      loadVehicles(enterpriseId)
+                      loadStats(enterpriseId)
+                    } else {
+                      loadEnterpriseInfo()
+                    }
+                  }}
+                  disabled={loading}
+                >
+                  <Text className="text-xs">重试</Text>
+                </Button>
               </CardContent>
             </Card>
           )}
@@ -509,6 +581,7 @@ const EnterpriseFleetPage: FC = () => {
                       variant="outline"
                       className="flex-1"
                       onClick={() => handleViewDetail(vehicle.id)}
+                      disabled={pendingVehicleIds.includes(vehicle.id)}
                     >
                       <Text className="text-xs">详情</Text>
                     </Button>
@@ -522,14 +595,18 @@ const EnterpriseFleetPage: FC = () => {
                         const nextIndex = (currentIndex + 1) % statuses.length
                         handleUpdateStatus(vehicle.id, statuses[nextIndex])
                       }}
+                      disabled={pendingVehicleIds.includes(vehicle.id)}
                     >
-                      <Text className="text-xs">切换状态</Text>
+                      <Text className="text-xs">
+                        {pendingVehicleIds.includes(vehicle.id) ? '处理中' : '切换状态'}
+                      </Text>
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
                       className="flex-1"
                       onClick={() => handleChangeUsageMode(vehicle.id, vehicle.usage_mode)}
+                      disabled={pendingVehicleIds.includes(vehicle.id)}
                     >
                       <Text className="text-xs">切换类型</Text>
                     </Button>
@@ -537,8 +614,11 @@ const EnterpriseFleetPage: FC = () => {
                       size="sm"
                       variant="destructive"
                       onClick={() => handleDeleteVehicle(vehicle.id, vehicle.vehicle_code)}
+                      disabled={pendingVehicleIds.includes(vehicle.id)}
                     >
-                      <Text className="text-xs">删除</Text>
+                      <Text className="text-xs">
+                        {pendingVehicleIds.includes(vehicle.id) ? '处理中' : '删除'}
+                      </Text>
                     </Button>
                   </View>
                 </CardContent>
@@ -547,14 +627,13 @@ const EnterpriseFleetPage: FC = () => {
           )}
 
           {/* 添加车辆弹窗 */}
-          {showAddDialog && (
-            <View
-              className="bg-black bg-opacity-50 z-50"
-              style={{ position: 'fixed', top: 0, right: 0, bottom: 0, left: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >
-              <View className="bg-white rounded-lg p-6 w-11/12 max-w-md max-h-[80vh] overflow-y-auto">
-                <Text className="text-xl font-bold block mb-4">添加车辆</Text>
-
+          <Dialog open={showAddDialog} onOpenChange={handleAddDialogOpenChange}>
+            <DialogContent className="max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>
+                  <Text className="text-xl font-bold block">添加车辆</Text>
+                </DialogTitle>
+              </DialogHeader>
                 <View className="space-y-4">
                   <View>
                     <Text className="text-sm text-gray-600 block mb-2">车辆ID</Text>
@@ -670,34 +749,22 @@ const EnterpriseFleetPage: FC = () => {
                     </Text>
                   </View>
 
-                  <View className="flex gap-3 mt-6">
+                  <DialogFooter className="flex flex-row gap-3 mt-6">
                     <Button
                       variant="outline"
                       className="flex-1"
-                      onClick={() => {
-                        setShowAddDialog(false)
-                        setNewVehicleId('')
-                        setNewVehicleCode('')
-                        setNewVehicleType('')
-                        setNewLoadCapacity('')
-                        setNewVolume('')
-                        setNewLength('')
-                        setNewWidth('')
-                        setNewHeight('')
-                        setNewHasColdChain(true)
-                        setNewUsageMode('internal')
-                      }}
+                      onClick={() => handleAddDialogOpenChange(false)}
+                      disabled={submitting}
                     >
                       <Text>取消</Text>
                     </Button>
                     <Button className="flex-1" onClick={handleAddVehicle} disabled={submitting}>
                       <Text>{submitting ? '添加中...' : '确认添加'}</Text>
                     </Button>
-                  </View>
+                  </DialogFooter>
                 </View>
-              </View>
-            </View>
-          )}
+            </DialogContent>
+          </Dialog>
         </View>
       </ScrollView>
     </View>

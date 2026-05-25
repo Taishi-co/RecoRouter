@@ -6,6 +6,13 @@ import {
   Card,
   CardContent,
 } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { getApiData, getApiMessage, isApiSuccess } from '@/lib/api-response'
 import { Network } from '@/network'
@@ -34,6 +41,7 @@ const EnterpriseStationsPage: FC = () => {
   const [enterpriseId, setEnterpriseId] = useState('')
   const [errorText, setErrorText] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [deletingStationIds, setDeletingStationIds] = useState<string[]>([])
   
   // 新增配送点弹窗状态
   const [showAddDialog, setShowAddDialog] = useState(false)
@@ -123,12 +131,14 @@ const EnterpriseStationsPage: FC = () => {
   }
 
   const handleSearch = () => {
+    if (loading) return
     if (enterpriseId) {
       loadStations(enterpriseId, activePointType)
     }
   }
 
   const handleChangePointType = (pointType: PointType) => {
+    if (loading) return
     setActivePointType(pointType)
     if (enterpriseId) {
       loadStations(enterpriseId, pointType)
@@ -136,6 +146,8 @@ const EnterpriseStationsPage: FC = () => {
   }
 
   const handleDelete = async (stationId: string, stationName: string) => {
+    if (deletingStationIds.includes(stationId)) return
+
     try {
       const res = await Taro.showModal({
         title: '确认删除',
@@ -143,6 +155,7 @@ const EnterpriseStationsPage: FC = () => {
       })
 
       if (res.confirm) {
+        setDeletingStationIds(prev => prev.includes(stationId) ? prev : [...prev, stationId])
         const delRes = await Network.request({
           url: `/api/station/${stationId}`,
           method: 'DELETE',
@@ -160,8 +173,10 @@ const EnterpriseStationsPage: FC = () => {
             icon: 'none',
           })
         }
+        setDeletingStationIds(prev => prev.filter(id => id !== stationId))
       }
     } catch {
+      setDeletingStationIds(prev => prev.filter(id => id !== stationId))
       Taro.showToast({
         title: '删除失败',
         icon: 'none',
@@ -170,6 +185,16 @@ const EnterpriseStationsPage: FC = () => {
   }
 
   const handleAddStation = async () => {
+    if (submitting) return
+
+    if (!enterpriseId) {
+      Taro.showToast({
+        title: '企业信息缺失',
+        icon: 'none',
+      })
+      return
+    }
+
     if (!newStationName || !newStationAddress || !newStationPhone) {
       Taro.showToast({
         title: '请填写完整信息',
@@ -271,6 +296,22 @@ const EnterpriseStationsPage: FC = () => {
     }
   }
 
+  const resetAddStationForm = () => {
+    setNewStationName('')
+    setNewStationAddress('')
+    setNewStationPhone('')
+    setNewStationLocation(null)
+    setNewPointType(activePointType)
+  }
+
+  const handleAddDialogOpenChange = (open: boolean) => {
+    if (submitting) return
+    setShowAddDialog(open)
+    if (!open) {
+      resetAddStationForm()
+    }
+  }
+
   return (
     <View className="enterprise-stations min-h-screen bg-gray-50 pb-20">
       <View className="p-4">
@@ -280,6 +321,21 @@ const EnterpriseStationsPage: FC = () => {
           <Card className="mb-4 border-red-200 bg-red-50">
             <CardContent className="p-3">
               <Text className="block text-sm text-red-600">{errorText}</Text>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-3"
+                onClick={() => {
+                  if (enterpriseId) {
+                    loadStations(enterpriseId, activePointType)
+                  } else {
+                    loadEnterpriseInfo()
+                  }
+                }}
+                disabled={loading}
+              >
+                <Text className="text-xs">重试</Text>
+              </Button>
             </CardContent>
           </Card>
         )}
@@ -290,6 +346,7 @@ const EnterpriseStationsPage: FC = () => {
               key={option.value}
               variant={activePointType === option.value ? 'default' : 'outline'}
               onClick={() => handleChangePointType(option.value)}
+              disabled={loading}
             >
               <Text className="text-sm">{option.label}</Text>
             </Button>
@@ -303,7 +360,7 @@ const EnterpriseStationsPage: FC = () => {
             value={keyword}
             onInput={(e) => setKeyword(e.detail.value)}
           />
-          <Button onClick={handleSearch}>搜索</Button>
+          <Button onClick={handleSearch} disabled={loading || !enterpriseId}>搜索</Button>
         </View>
 
         {/* 新增按钮 */}
@@ -314,6 +371,7 @@ const EnterpriseStationsPage: FC = () => {
               setNewPointType(activePointType)
               setShowAddDialog(true)
             }}
+            disabled={!enterpriseId}
           >
             <Text>新增{activePointTypeLabel}</Text>
           </Button>
@@ -362,8 +420,11 @@ const EnterpriseStationsPage: FC = () => {
                         size="sm"
                         variant="destructive"
                         onClick={() => handleDelete(station.id, station.name)}
+                        disabled={deletingStationIds.includes(station.id)}
                       >
-                        <Text className="text-xs">删除</Text>
+                        <Text className="text-xs">
+                          {deletingStationIds.includes(station.id) ? '删除中' : '删除'}
+                        </Text>
                       </Button>
                     </View>
                   </View>
@@ -374,14 +435,13 @@ const EnterpriseStationsPage: FC = () => {
         )}
 
         {/* 新增配送点弹窗 */}
-        {showAddDialog && (
-          <View
-            className="bg-black bg-opacity-50 z-50"
-            style={{ position: 'fixed', top: 0, right: 0, bottom: 0, left: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            <View className="bg-white rounded-lg p-6 w-11/12 max-w-md max-h-[80vh] overflow-y-auto">
-              <Text className="text-xl font-bold block mb-4">新增配送点</Text>
-
+        <Dialog open={showAddDialog} onOpenChange={handleAddDialogOpenChange}>
+          <DialogContent className="max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                <Text className="text-xl font-bold block">新增配送点</Text>
+              </DialogTitle>
+            </DialogHeader>
               <View className="space-y-4">
                 <View>
                   <Text className="text-sm text-gray-600 block mb-2">{newPointTypeConfig.nameLabel}</Text>
@@ -438,29 +498,22 @@ const EnterpriseStationsPage: FC = () => {
                   )}
                 </View>
 
-                <View className="flex gap-3 mt-6">
+                <DialogFooter className="flex flex-row gap-3 mt-6">
                   <Button
                     variant="outline"
                     className="flex-1"
-                    onClick={() => {
-                      setShowAddDialog(false)
-                      setNewStationName('')
-                      setNewStationAddress('')
-                      setNewStationPhone('')
-                      setNewStationLocation(null)
-                      setNewPointType(activePointType)
-                    }}
+                    onClick={() => handleAddDialogOpenChange(false)}
+                    disabled={submitting}
                   >
                     <Text>取消</Text>
                   </Button>
                   <Button className="flex-1" onClick={handleAddStation} disabled={submitting}>
                     <Text>{submitting ? '添加中...' : '确认添加'}</Text>
                   </Button>
-                </View>
+                </DialogFooter>
               </View>
-            </View>
-          </View>
-        )}
+          </DialogContent>
+        </Dialog>
       </View>
     </View>
   )
