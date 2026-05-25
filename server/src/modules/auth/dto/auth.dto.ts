@@ -4,9 +4,11 @@ import { z } from 'zod'
 export const registerSchema = z.object({
   phone: z.string().regex(/^1[3-9]\d{9}$/, '手机号格式不正确'),
   password: z.string().min(6, '密码至少6位'),
+  confirmPassword: z.string().min(6, '确认密码至少6位'),
+  verificationCode: z.string().min(4, '验证码不能为空').max(6, '验证码最多6位'),
   name: z.string().min(1, '姓名不能为空').max(50, '姓名最多50个字符'),
-  role: z.enum(['owner', 'merchant'], {
-    message: '角色必须为 owner 或 merchant'
+  role: z.enum(['owner', 'merchant', 'enterprise'], {
+    message: '角色必须为 owner、merchant 或 enterprise'
   })
 })
 

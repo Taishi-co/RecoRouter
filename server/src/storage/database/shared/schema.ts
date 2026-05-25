@@ -27,7 +27,7 @@ export const users = pgTable(
     id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
     phone: varchar("phone", { length: 11 }).notNull().unique(),
     password: varchar("password", { length: 255 }).notNull(),
-    role: varchar("role", { length: 20 }).notNull(), // owner/merchant/admin
+    role: varchar("role", { length: 20 }).notNull(), // owner/merchant/enterprise/admin
     name: varchar("name", { length: 50 }).notNull(),
     id_card: varchar("id_card", { length: 18 }), // 仅车主收集
     merchant_type: varchar("merchant_type", { length: 20 }), // shop/individual/rental，仅需求方

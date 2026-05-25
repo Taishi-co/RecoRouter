@@ -11,6 +11,8 @@
     "build:tt": "taro build --type tt",
     "build:weapp": "taro build --type weapp",
     "build:web": "taro build --type h5",
+    "check:merchant-enterprise-boundary": "node scripts/check-merchant-enterprise-boundary.mjs",
+    "check:registration-security": "node scripts/check-registration-security.mjs",
     "dev": "pnpm exec concurrently --kill-others --kill-signal SIGKILL -n web,server -c blue,green \"pnpm dev:web\" \"pnpm dev:server\"",
     "dev:server": "pnpm --filter server dev",
     "dev:tt": "taro build --type tt --watch",
