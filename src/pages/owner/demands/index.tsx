@@ -153,7 +153,7 @@ export default function OwnerDemands() {
       title="需求大厅"
       subtitle="RecoRouter 运力端"
       contentClassName="space-y-3"
-      bottom={<BottomNav type="owner" active="home" />}
+      bottom={<BottomNav type="owner" active="demands" />}
     >
         <Card className="bg-white rounded-lg shadow-sm">
           <CardHeader>

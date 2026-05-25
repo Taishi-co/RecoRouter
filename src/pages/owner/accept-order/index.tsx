@@ -402,7 +402,7 @@ export default function AcceptOrder() {
       <AppPageShell
         title="接单确认"
         subtitle="RecoRouter 运力端"
-        bottom={<BottomNav type="owner" active="home" />}
+        bottom={<BottomNav type="owner" active="demands" />}
       >
         <Text className="text-gray-500">加载中...</Text>
       </AppPageShell>
@@ -414,7 +414,7 @@ export default function AcceptOrder() {
       title="接单确认"
       subtitle="RecoRouter 运力端"
       contentClassName="space-y-4"
-      bottom={<BottomNav type="owner" active="home" />}
+      bottom={<BottomNav type="owner" active="demands" />}
     >
         <View className="bg-white rounded-lg p-4">
           <Text className="block text-sm font-semibold text-gray-900">

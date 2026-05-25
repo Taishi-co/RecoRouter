@@ -402,7 +402,7 @@ export default function FavoriteRoutes() {
       subtitle="RecoRouter 商户小程序"
       icon={Star}
       contentClassName="space-y-3"
-      bottom={<BottomNav type="merchant" active="map" />}
+      bottom={<BottomNav type="merchant" active="demands" />}
     >
       {/* 添加/编辑线路表单 */}
       {showAddForm && (

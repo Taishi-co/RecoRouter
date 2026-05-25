@@ -9,7 +9,6 @@ import {
   ChartNoAxesCombined,
   ClipboardList,
   House,
-  Map,
   ReceiptText,
   Route,
   Truck,
@@ -19,6 +18,7 @@ import {
 } from 'lucide-react-taro'
 import { cn } from '@/lib/utils'
 import { IS_H5_ENV } from '@/presets/env'
+import { getFixedBottomPadding } from '@/lib/safe-area'
 
 type NavIcon = ComponentType<any>
 
@@ -30,17 +30,17 @@ interface BottomNavItem {
 }
 
 const merchantItems: BottomNavItem[] = [
-  { key: 'publish', label: '发布', icon: ClipboardList, url: '/pages/merchant/demands/publish' },
+  { key: 'publish', label: '发布需求', icon: ClipboardList, url: '/pages/merchant/demands/publish' },
+  { key: 'demands', label: '需求', icon: Route, url: '/pages/merchant/demands/list' },
   { key: 'orders', label: '订单', icon: ReceiptText, url: '/pages/merchant/orders/index' },
-  { key: 'map', label: '地图', icon: Map, url: '/pages/merchant/route-map/index' },
   { key: 'stats', label: '统计', icon: Activity, url: '/pages/merchant/stats/index' },
   { key: 'profile', label: '我的', icon: User, url: '/pages/merchant/profile/index' },
 ]
 
 const ownerItems: BottomNavItem[] = [
-  { key: 'home', label: '首页', icon: House, url: '/pages/owner/demands/index' },
+  { key: 'demands', label: '接需求', icon: ClipboardList, url: '/pages/owner/demands/index' },
   { key: 'vehicles', label: '车辆', icon: Truck, url: '/pages/owner/vehicles/index' },
-  { key: 'map', label: '地图', icon: Map, url: '/pages/owner/vehicle-map/index' },
+  { key: 'orders', label: '订单', icon: ReceiptText, url: '/pages/owner/orders/index' },
   { key: 'revenue', label: '收益', icon: Wallet, url: '/pages/owner/profile/revenue-stats/index' },
   { key: 'profile', label: '我的', icon: User, url: '/pages/owner/profile/index' },
 ]
@@ -93,6 +93,7 @@ const writeStoredActiveKey = (storageKey: string, activeKey: string) => {
 
 export const BottomNav = ({ type, active }: BottomNavProps) => {
   const items = itemGroups[type]
+  const bottomPadding = IS_H5_ENV ? 'max(14px, env(safe-area-inset-bottom))' : `${getFixedBottomPadding(14)}px`
   const navStateKey = `recorouter-bottom-nav:${type}`
   const [activeKey, setActiveKey] = useState(() => readStoredActiveKey(navStateKey, items, active))
   const [pageVisible, setPageVisible] = useState(true)
@@ -201,7 +202,7 @@ export const BottomNav = ({ type, active }: BottomNavProps) => {
         boxSizing: 'border-box',
         width: '100%',
         maxWidth: '100%',
-        paddingBottom: 'max(14px, env(safe-area-inset-bottom))',
+        paddingBottom: bottomPadding,
       }}
     >
       <View

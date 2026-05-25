@@ -418,7 +418,7 @@ export default function EditDemand() {
       subtitle="RecoRouter 商户小程序"
       icon={Pencil}
       contentClassName="space-y-3"
-      bottom={<BottomNav type="merchant" active="publish" />}
+      bottom={<BottomNav type="merchant" active="demands" />}
     >
       {/* 加载状态 */}
       {loading && (

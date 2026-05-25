@@ -260,7 +260,7 @@ export default function VehicleMap() {
       title="车辆地图"
       subtitle="RecoRouter 运力端"
       contentClassName="space-y-3"
-      bottom={<BottomNav type="owner" active="map" />}
+      bottom={<BottomNav type="owner" active="vehicles" />}
     >
       {/* 地图区域 */}
       <View className="relative w-full h-72 rounded-2xl overflow-hidden bg-gray-200">
