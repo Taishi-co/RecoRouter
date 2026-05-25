@@ -1,10 +1,5 @@
-import { useEffect } from 'react'
-import Taro from '@tarojs/taro'
+import { RecoDesignPage } from '@/components/reco-ui/reco-page'
 
-export default function MerchantDemands() {
-  useEffect(() => {
-    Taro.redirectTo({ url: '/pages/merchant/demands/list' })
-  }, [])
-
-  return null
+export default function PagesMerchantDemandsIndex() {
+  return <RecoDesignPage path="pages/merchant/demands/index" />
 }

@@ -1,0 +1,1316 @@
+{
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "title": "登录注册",
+      "subtitle": "RecoRouter",
+      "brand": "RecoRouter",
+      "variant": "landing",
+      "activeNav": "首页",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/index/index" },
+        { "label": "登录", "icon": "lock", "target": "pages/index/index" },
+        { "label": "注册", "icon": "plus", "target": "pages/index/index" }
+      ],
+      "sections": [
+        {
+          "type": "hero",
+          "title": "无人车共享运营平台",
+          "subtitle": "需求发布 · 运力接单 · 企业调度",
+          "stats": [
+            { "label": "订单", "value": "128", "tone": "blue" },
+            { "label": "车辆", "value": "36", "tone": "green" },
+            { "label": "需求", "value": "24", "tone": "orange" }
+          ]
+        },
+        {
+          "type": "form",
+          "title": "手机号登录",
+          "fields": [
+            { "label": "手机号", "value": "请输入手机号", "icon": "phone" },
+            { "label": "密码", "value": "请输入密码", "icon": "lock" }
+          ],
+          "action": "登录"
+        },
+        {
+          "type": "actions",
+          "title": "选择角色",
+          "items": [
+            { "label": "运力方", "icon": "truck", "target": "pages/owner/demands/index", "variant": "primary" },
+            { "label": "需求方", "icon": "store", "target": "pages/merchant/demands/index", "tone": "green" },
+            { "label": "企业端", "icon": "building", "target": "pages/enterprise/index/index", "tone": "indigo" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/role-switch/index",
+      "title": "角色管理",
+      "subtitle": "陈老板 · 138****6288 · 当前需求方",
+      "brand": "RecoRouter",
+      "variant": "public",
+      "activeNav": "我的",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/index/index" },
+        { "label": "消息", "icon": "bell", "target": "pages/notifications/index" },
+        { "label": "我的", "icon": "user", "target": "pages/role-switch/index" }
+      ],
+      "sections": [
+        {
+          "type": "cards",
+          "items": [
+            { "title": "运力方", "subtitle": "注册车辆、接单运输", "status": "切换", "icon": "truck", "target": "pages/owner/demands/index", "tone": "blue" },
+            { "title": "需求方", "subtitle": "发布需求、租车下单", "status": "当前", "icon": "store", "target": "pages/merchant/demands/index", "tone": "green" },
+            { "title": "企业端", "subtitle": "企业配送和车队调度", "status": "创建", "icon": "building", "target": "pages/enterprise/index/index", "tone": "indigo" }
+          ]
+        },
+        { "type": "notice", "title": "创建新角色", "body": "同一手机号可在需求方、运力方和企业端之间切换，资产和订单隔离展示。", "tone": "blue" }
+      ]
+    },
+    {
+      "path": "pages/rentals-history/index",
+      "title": "租赁记录",
+      "subtitle": "我的车辆租赁履约",
+      "brand": "RecoRouter",
+      "variant": "public",
+      "activeNav": "我的",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/index/index" },
+        { "label": "消息", "icon": "bell", "target": "pages/notifications/index" },
+        { "label": "我的", "icon": "user", "target": "pages/role-switch/index" }
+      ],
+      "sections": [
+        {
+          "type": "cards",
+          "items": [
+            { "title": "A17 车租赁中", "subtitle": "05-25 至 05-28 · ¥360", "status": "进行中", "icon": "car", "tone": "blue", "action": "查看详情" },
+            { "title": "B08 已归还", "subtitle": "05-12 至 05-14 · 已结算", "status": "完成", "icon": "check", "tone": "green", "action": "刷新" },
+            { "title": "C21 待确认", "subtitle": "等待车主确认租赁申请", "status": "待确认", "icon": "clock", "tone": "orange", "action": "查看详情" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/notifications/index",
+      "title": "通知消息",
+      "subtitle": "未读 3 条",
+      "brand": "RecoRouter",
+      "variant": "public",
+      "activeNav": "消息",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/index/index" },
+        { "label": "消息", "icon": "bell", "target": "pages/notifications/index" },
+        { "label": "我的", "icon": "user", "target": "pages/role-switch/index" }
+      ],
+      "sections": [
+        {
+          "type": "actions",
+          "items": [
+            { "label": "全部已读", "icon": "check", "variant": "primary" }
+          ]
+        },
+        {
+          "type": "cards",
+          "items": [
+            { "title": "新需求已匹配", "subtitle": "2 台无人车可接唐山南湖配送", "status": "未读", "icon": "bell", "tone": "blue", "action": "查看" },
+            { "title": "付款已确认", "subtitle": "订单 RC20260525001 已进入结算", "status": "已读", "icon": "credit", "tone": "green" },
+            { "title": "订单状态更新", "subtitle": "无人车 A17 正在配送途中", "status": "查看", "icon": "truck", "tone": "orange" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/merchant/demands/index",
+      "title": "发布需求",
+      "subtitle": "RecoRouter 商户小程序",
+      "brand": "需求方",
+      "variant": "merchant",
+      "activeNav": "发布",
+      "nav": [
+        { "label": "发布", "icon": "plus", "target": "pages/merchant/demands/publish" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/merchant/orders/index" },
+        { "label": "地图", "icon": "map", "target": "pages/merchant/route-map/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/merchant/stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/merchant/profile/index" }
+      ],
+      "sections": [
+        {
+          "type": "tabs",
+          "items": ["整车", "零担", "冷链"],
+          "active": "整车"
+        },
+        {
+          "type": "fields",
+          "items": [
+            { "label": "装货地", "value": "上海 宝山钢贸园", "icon": "marker", "tone": "blue" },
+            { "label": "卸货地", "value": "杭州 萧山仓", "icon": "warehouse", "tone": "green" },
+            { "label": "车型", "value": "9.6m 厢车", "helper": "18 吨 · 今天 16:30 前到场", "icon": "truck", "tone": "orange" }
+          ]
+        },
+        {
+          "type": "metrics",
+          "items": [
+            { "label": "系统建议运费", "value": "¥2,860", "caption": "按路线、车型和时效估算", "tone": "blue" },
+            { "label": "可匹配车辆", "value": "12", "caption": "附近 40km", "tone": "green" },
+            { "label": "准点率", "value": "94%", "caption": "近 30 天", "tone": "indigo" }
+          ]
+        },
+        {
+          "type": "actions",
+          "items": [
+            { "label": "立即发布并智能匹配", "icon": "plus", "target": "pages/merchant/demands/publish", "variant": "primary" },
+            { "label": "常用模板", "icon": "file", "target": "pages/merchant/demands/templates", "tone": "green" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/merchant/demands/publish",
+      "title": "发布需求",
+      "subtitle": "三步完成下单",
+      "brand": "需求方",
+      "variant": "merchant",
+      "activeNav": "发布",
+      "nav": [
+        { "label": "发布", "icon": "plus", "target": "pages/merchant/demands/publish" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/merchant/orders/index" },
+        { "label": "地图", "icon": "map", "target": "pages/merchant/route-map/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/merchant/stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/merchant/profile/index" }
+      ],
+      "sections": [
+        {
+          "type": "form",
+          "title": "运输信息",
+          "fields": [
+            { "label": "装货地", "value": "上海 · 宝山钢贸园" },
+            { "label": "卸货地", "value": "杭州 · 萧山中心仓" },
+            { "label": "货物信息", "value": "卷钢 18吨 / 需雨布" },
+            { "label": "计划时间", "value": "今天 16:30 前到场" }
+          ],
+          "action": "立即发布并智能匹配"
+        },
+        { "type": "notice", "title": "AI 运价建议", "body": "系统建议 ¥2,860，可自动匹配附近 12 台可接单车辆。", "tone": "blue" }
+      ]
+    },
+    {
+      "path": "pages/merchant/demands/list",
+      "title": "需求列表",
+      "subtitle": "RecoRouter 商户小程序",
+      "brand": "需求方",
+      "variant": "merchant",
+      "activeNav": "订单",
+      "nav": [
+        { "label": "发布", "icon": "plus", "target": "pages/merchant/demands/publish" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/merchant/orders/index" },
+        { "label": "地图", "icon": "map", "target": "pages/merchant/route-map/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/merchant/stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/merchant/profile/index" }
+      ],
+      "sections": [
+        { "type": "tabs", "items": ["全部", "待接单", "运输中", "已完成"], "active": "待接单" },
+        {
+          "type": "cards",
+          "items": [
+            { "title": "上海 → 杭州", "subtitle": "13.5m 平板 · 26吨 · 今日 18:00", "status": "待接单", "amount": "¥2,860", "icon": "route", "tone": "orange", "target": "pages/merchant/demands/edit" },
+            { "title": "苏州 → 宁波", "subtitle": "13.5m 平板 · 26吨 · 今日 18:00", "status": "运输中", "amount": "¥3,420", "icon": "truck", "tone": "blue" },
+            { "title": "嘉兴 → 常州", "subtitle": "13.5m 平板 · 26吨 · 今日 18:00", "status": "已完成", "amount": "¥1,760", "icon": "check", "tone": "green" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/merchant/demands/edit",
+      "title": "编辑需求",
+      "subtitle": "宝山钢材运输至萧山仓",
+      "brand": "需求方",
+      "variant": "merchant",
+      "activeNav": "发布",
+      "nav": [
+        { "label": "发布", "icon": "plus", "target": "pages/merchant/demands/publish" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/merchant/orders/index" },
+        { "label": "地图", "icon": "map", "target": "pages/merchant/route-map/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/merchant/stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/merchant/profile/index" }
+      ],
+      "sections": [
+        {
+          "type": "form",
+          "fields": [
+            { "label": "需求标题", "value": "宝山钢材运输至萧山仓" },
+            { "label": "货物信息", "value": "卷钢 18吨 / 需雨布" },
+            { "label": "联系人", "value": "陈经理 138****8231" }
+          ],
+          "action": "保存修改"
+        },
+        { "type": "notice", "title": "允许承运商议价", "body": "开启后承运商可在接单前提交报价，商户确认后生成订单。", "tone": "orange" },
+        { "type": "actions", "items": [{ "label": "下架需求", "icon": "warning", "tone": "red" }] }
+      ]
+    },
+    {
+      "path": "pages/merchant/demands/templates",
+      "title": "常用模板",
+      "subtitle": "搜索常用路线/车型",
+      "brand": "需求方",
+      "variant": "merchant",
+      "activeNav": "发布",
+      "nav": [
+        { "label": "发布", "icon": "plus", "target": "pages/merchant/demands/publish" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/merchant/orders/index" },
+        { "label": "地图", "icon": "map", "target": "pages/merchant/route-map/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/merchant/stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/merchant/profile/index" }
+      ],
+      "sections": [
+        {
+          "type": "cards",
+          "items": [
+            { "title": "宝山钢贸园 → 萧山仓", "subtitle": "9.6m 厢车 · 18吨", "status": "套用", "icon": "route", "tone": "blue", "target": "pages/merchant/demands/publish" },
+            { "title": "太仓码头 → 昆山仓", "subtitle": "13.5m 平板 · 30吨", "status": "套用", "icon": "route", "tone": "green", "target": "pages/merchant/demands/publish" },
+            { "title": "无锡厂区 → 宁波北仑", "subtitle": "17.5m 高栏 · 32吨", "status": "套用", "icon": "route", "tone": "orange", "target": "pages/merchant/demands/publish" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/merchant/demands/schedules",
+      "title": "排班日历",
+      "subtitle": "固定班次与补货计划",
+      "brand": "需求方",
+      "variant": "merchant",
+      "activeNav": "发布",
+      "nav": [
+        { "label": "发布", "icon": "plus", "target": "pages/merchant/demands/publish" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/merchant/orders/index" },
+        { "label": "地图", "icon": "map", "target": "pages/merchant/route-map/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/merchant/stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/merchant/profile/index" }
+      ],
+      "sections": [
+        { "type": "tabs", "items": ["一", "二", "三 25", "四", "五", "六", "日"], "active": "三 25" },
+        {
+          "type": "timeline",
+          "title": "今日班次",
+          "items": [
+            { "time": "08:00", "title": "宝山装货", "detail": "2车", "tone": "blue" },
+            { "time": "14:30", "title": "张家港补货", "detail": "1车", "tone": "green" },
+            { "time": "20:00", "title": "夜间专线", "detail": "3车", "tone": "orange" }
+          ]
+        },
+        { "type": "actions", "items": [{ "label": "新增固定班次", "icon": "calendar", "variant": "primary" }] }
+      ]
+    },
+    {
+      "path": "pages/merchant/orders/index",
+      "title": "订单中心",
+      "subtitle": "待确认、运输中和待支付订单",
+      "brand": "需求方",
+      "variant": "merchant",
+      "activeNav": "订单",
+      "nav": [
+        { "label": "发布", "icon": "plus", "target": "pages/merchant/demands/publish" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/merchant/orders/index" },
+        { "label": "地图", "icon": "map", "target": "pages/merchant/route-map/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/merchant/stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/merchant/profile/index" }
+      ],
+      "sections": [
+        {
+          "type": "metrics",
+          "items": [
+            { "label": "待确认", "value": "12", "tone": "orange" },
+            { "label": "运输中", "value": "8", "tone": "blue" },
+            { "label": "本月完成", "value": "36", "tone": "green" }
+          ]
+        },
+        {
+          "type": "cards",
+          "items": [
+            { "title": "沪A·9231", "subtitle": "司机已到场", "status": "待确认", "icon": "truck", "tone": "orange" },
+            { "title": "苏E·5518", "subtitle": "预计 42 分钟到达", "status": "运输中", "icon": "navigation", "tone": "blue" },
+            { "title": "浙B·8840", "subtitle": "待支付尾款", "status": "待支付", "icon": "wallet", "tone": "green", "target": "pages/merchant/payment/index" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/merchant/payment/index",
+      "title": "支付结算",
+      "subtitle": "3笔运输尾款 · 1笔租赁押金",
+      "brand": "需求方",
+      "variant": "merchant",
+      "activeNav": "订单",
+      "nav": [
+        { "label": "发布", "icon": "plus", "target": "pages/merchant/demands/publish" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/merchant/orders/index" },
+        { "label": "地图", "icon": "map", "target": "pages/merchant/route-map/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/merchant/stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/merchant/profile/index" }
+      ],
+      "sections": [
+        { "type": "metrics", "items": [{ "label": "待支付金额", "value": "¥8,426.00", "caption": "付款后自动通知承运商", "tone": "blue" }] },
+        {
+          "type": "cards",
+          "items": [
+            { "title": "微信支付", "subtitle": "推荐", "status": "推荐", "icon": "credit", "tone": "green" },
+            { "title": "企业月结账户", "subtitle": "余额 ¥42,900", "status": "编辑", "icon": "wallet", "tone": "blue" }
+          ]
+        },
+        { "type": "notice", "title": "支付确认", "body": "将从企业月结账户扣款 ¥8,426.00，付款后自动通知承运商。", "tone": "blue" },
+        { "type": "actions", "items": [{ "label": "取消", "icon": "warning", "tone": "slate" }, { "label": "确认支付", "icon": "check", "variant": "primary" }] }
+      ]
+    },
+    {
+      "path": "pages/merchant/address-books/index",
+      "title": "地址簿",
+      "subtitle": "常用装卸点",
+      "brand": "需求方",
+      "variant": "merchant",
+      "activeNav": "我的",
+      "nav": [
+        { "label": "发布", "icon": "plus", "target": "pages/merchant/demands/publish" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/merchant/orders/index" },
+        { "label": "地图", "icon": "map", "target": "pages/merchant/route-map/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/merchant/stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/merchant/profile/index" }
+      ],
+      "sections": [
+        {
+          "type": "cards",
+          "items": [
+            { "title": "宝山钢贸园", "subtitle": "上海市宝山区铁山路 88号", "status": "默认", "icon": "warehouse", "tone": "blue" },
+            { "title": "萧山中心仓", "subtitle": "杭州市萧山区通货路 12号", "status": "默认", "icon": "warehouse", "tone": "green" },
+            { "title": "宁波北仑码头", "subtitle": "宁波市北仑区港前路 9号", "status": "默认", "icon": "warehouse", "tone": "indigo" }
+          ]
+        },
+        { "type": "actions", "items": [{ "label": "新增地址", "icon": "plus", "variant": "primary" }] }
+      ]
+    },
+    {
+      "path": "pages/merchant/favorite-routes/index",
+      "title": "收藏路线",
+      "subtitle": "常跑线路与行情",
+      "brand": "需求方",
+      "variant": "merchant",
+      "activeNav": "地图",
+      "nav": [
+        { "label": "发布", "icon": "plus", "target": "pages/merchant/demands/publish" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/merchant/orders/index" },
+        { "label": "地图", "icon": "map", "target": "pages/merchant/route-map/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/merchant/stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/merchant/profile/index" }
+      ],
+      "sections": [
+        {
+          "type": "cards",
+          "items": [
+            { "title": "上海宝山 → 杭州萧山", "subtitle": "常跑 · 31次", "amount": "¥2,700-3,100", "action": "一键发布", "icon": "route", "tone": "blue", "target": "pages/merchant/demands/publish" },
+            { "title": "苏州太仓 → 昆山周市", "subtitle": "短驳 · 18次", "amount": "¥680-820", "action": "看行情", "icon": "route", "tone": "green" },
+            { "title": "无锡惠山 → 宁波北仑", "subtitle": "港口 · 12次", "amount": "¥3,600-4,200", "action": "看行情", "icon": "route", "tone": "orange" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/merchant/route-map/index",
+      "title": "路线地图",
+      "subtitle": "宝山钢贸园 → 萧山中心仓",
+      "brand": "需求方",
+      "variant": "merchant",
+      "activeNav": "地图",
+      "nav": [
+        { "label": "发布", "icon": "plus", "target": "pages/merchant/demands/publish" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/merchant/orders/index" },
+        { "label": "地图", "icon": "map", "target": "pages/merchant/route-map/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/merchant/stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/merchant/profile/index" }
+      ],
+      "sections": [
+        {
+          "type": "map",
+          "title": "G60 沪昆高速 · 168 km",
+          "points": [
+            { "label": "起点", "value": "宝山钢贸园", "tone": "blue", "icon": "marker" },
+            { "label": "终点", "value": "萧山中心仓", "tone": "green", "icon": "warehouse" },
+            { "label": "预计时效", "value": "约 2小时40分", "tone": "orange", "icon": "clock" }
+          ],
+          "action": "按此路线发布需求"
+        }
+      ]
+    },
+    {
+      "path": "pages/merchant/stats/index",
+      "title": "经营统计",
+      "subtitle": "本月运费与准点率",
+      "brand": "需求方",
+      "variant": "merchant",
+      "activeNav": "统计",
+      "nav": [
+        { "label": "发布", "icon": "plus", "target": "pages/merchant/demands/publish" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/merchant/orders/index" },
+        { "label": "地图", "icon": "map", "target": "pages/merchant/route-map/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/merchant/stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/merchant/profile/index" }
+      ],
+      "sections": [
+        { "type": "metrics", "items": [{ "label": "本月运费", "value": "¥126k", "tone": "blue" }, { "label": "准点率", "value": "94%", "tone": "green" }, { "label": "活跃路线", "value": "12", "tone": "indigo" }] },
+        { "type": "chart", "title": "路线排行", "items": [{ "label": "上海 → 杭州", "value": "31单", "percent": 92, "tone": "blue" }, { "label": "苏州 → 宁波", "value": "18单", "percent": 68, "tone": "green" }] }
+      ]
+    },
+    {
+      "path": "pages/merchant/profile/index",
+      "title": "商户中心",
+      "subtitle": "上海某某贸易 · 已认证 · 月结账户",
+      "brand": "需求方",
+      "variant": "merchant",
+      "activeNav": "我的",
+      "nav": [
+        { "label": "发布", "icon": "plus", "target": "pages/merchant/demands/publish" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/merchant/orders/index" },
+        { "label": "地图", "icon": "map", "target": "pages/merchant/route-map/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/merchant/stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/merchant/profile/index" }
+      ],
+      "sections": [
+        {
+          "type": "cards",
+          "items": [
+            { "title": "员工与权限", "subtitle": "5人", "icon": "users", "tone": "blue" },
+            { "title": "车辆租赁合同", "subtitle": "2份", "icon": "file", "tone": "green", "target": "pages/rentals-history/index" },
+            { "title": "客服与反馈", "subtitle": "24h", "icon": "bell", "tone": "orange" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/merchant/rentals/index",
+      "title": "租赁列表",
+      "subtitle": "可预约车辆与当前租赁",
+      "brand": "需求方",
+      "variant": "merchant",
+      "activeNav": "我的",
+      "nav": [
+        { "label": "发布", "icon": "plus", "target": "pages/merchant/demands/publish" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/merchant/orders/index" },
+        { "label": "地图", "icon": "map", "target": "pages/merchant/route-map/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/merchant/stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/merchant/profile/index" }
+      ],
+      "sections": [
+        { "type": "tabs", "items": ["全部", "待取车", "使用中"], "active": "全部" },
+        {
+          "type": "cards",
+          "items": [
+            { "title": "9.6m 厢式货车", "status": "待取车", "amount": "¥480/天", "icon": "truck", "tone": "blue", "target": "pages/merchant/rentals/detail" },
+            { "title": "13.5m 平板车", "status": "使用中", "amount": "¥760/天", "icon": "truck", "tone": "green", "target": "pages/merchant/rentals/detail" },
+            { "title": "冷藏车 8.6m", "status": "可预约", "amount": "¥920/天", "icon": "truck", "tone": "cyan", "target": "pages/merchant/rentals/detail" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/merchant/rentals/detail",
+      "title": "租赁详情",
+      "subtitle": "13.5m 平板车",
+      "brand": "需求方",
+      "variant": "merchant",
+      "activeNav": "我的",
+      "nav": [
+        { "label": "发布", "icon": "plus", "target": "pages/merchant/demands/publish" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/merchant/orders/index" },
+        { "label": "地图", "icon": "map", "target": "pages/merchant/route-map/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/merchant/stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/merchant/profile/index" }
+      ],
+      "sections": [
+        {
+          "type": "fields",
+          "items": [
+            { "label": "车辆", "value": "沪A·R8821 · 载重32吨 · GPS已接入", "icon": "truck", "tone": "blue" },
+            { "label": "日租价格", "value": "¥760/天", "icon": "wallet", "tone": "green" },
+            { "label": "押金", "value": "¥5,000", "icon": "credit", "tone": "orange" },
+            { "label": "取车地址", "value": "宝山服务站", "icon": "marker", "tone": "indigo" }
+          ]
+        },
+        { "type": "actions", "items": [{ "label": "预约租赁并支付押金", "icon": "check", "variant": "primary" }] }
+      ]
+    },
+    {
+      "path": "pages/owner/vehicles/index",
+      "title": "我的车辆",
+      "subtitle": "RecoRouter 运力端",
+      "brand": "运力方",
+      "variant": "owner",
+      "activeNav": "车辆",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/owner/demands/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/owner/vehicles/index" },
+        { "label": "地图", "icon": "map", "target": "pages/owner/vehicle-map/index" },
+        { "label": "收益", "icon": "wallet", "target": "pages/owner/profile/revenue-stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/owner/profile/index" }
+      ],
+      "sections": [
+        {
+          "type": "cards",
+          "items": [
+            { "title": "粤B·R8201 厢式货车", "subtitle": "4.2m / 3.5吨 / 冷链可用", "status": "空闲", "meta": "已认证 · 深圳龙岗 · 2分钟前", "icon": "truck", "tone": "blue", "target": "pages/owner/vehicles/rental-settings/index" }
+          ]
+        },
+        { "type": "metrics", "items": [{ "label": "今日接单", "value": "3 单", "tone": "blue" }, { "label": "车辆总数", "value": "12", "tone": "green" }, { "label": "维修中", "value": "1", "tone": "orange" }] },
+        { "type": "actions", "items": [{ "label": "添加车辆", "icon": "plus", "variant": "primary" }, { "label": "出租设置", "icon": "settings", "target": "pages/owner/vehicles/rental-settings/index" }] }
+      ]
+    },
+    {
+      "path": "pages/owner/vehicles/rental-settings/index",
+      "title": "出租设置",
+      "subtitle": "接单、闲置出租与夜间接单",
+      "brand": "运力方",
+      "variant": "owner",
+      "activeNav": "车辆",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/owner/demands/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/owner/vehicles/index" },
+        { "label": "地图", "icon": "map", "target": "pages/owner/vehicle-map/index" },
+        { "label": "收益", "icon": "wallet", "target": "pages/owner/profile/revenue-stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/owner/profile/index" }
+      ],
+      "sections": [
+        {
+          "type": "toggles",
+          "items": [
+            { "label": "接单开关", "value": "已开启", "checked": true },
+            { "label": "闲置出租", "value": "自动发布", "checked": true },
+            { "label": "夜间接单", "value": "手动确认", "checked": false }
+          ]
+        },
+        {
+          "type": "fields",
+          "items": [
+            { "label": "出租价格", "value": "日租 ¥680 / 天", "icon": "wallet", "tone": "green" },
+            { "label": "押金", "value": "¥3000", "icon": "credit", "tone": "orange" },
+            { "label": "可出租时段", "value": "周一至周六 08:00-20:00", "icon": "calendar", "tone": "blue" }
+          ]
+        },
+        { "type": "actions", "items": [{ "label": "保存设置", "icon": "check", "variant": "primary" }] }
+      ]
+    },
+    {
+      "path": "pages/owner/vehicle-mock-demo/index",
+      "title": "模拟数据",
+      "subtitle": "车辆资料上传与演示车辆生成",
+      "brand": "运力方",
+      "variant": "owner",
+      "activeNav": "车辆",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/owner/demands/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/owner/vehicles/index" },
+        { "label": "地图", "icon": "map", "target": "pages/owner/vehicle-map/index" },
+        { "label": "收益", "icon": "wallet", "target": "pages/owner/profile/revenue-stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/owner/profile/index" }
+      ],
+      "sections": [
+        { "type": "notice", "title": "车辆资料上传", "body": "上传车辆照片 / 行驶证，支持拍照、相册、OCR 自动识别。", "tone": "blue" },
+        { "type": "actions", "items": [{ "label": "车头", "icon": "car" }, { "label": "车厢", "icon": "truck", "tone": "green" }, { "label": "证件", "icon": "file", "tone": "orange" }, { "label": "一键生成演示车辆", "icon": "plus", "variant": "primary" }] }
+      ]
+    },
+    {
+      "path": "pages/owner/vehicle-map/index",
+      "title": "车辆地图",
+      "subtitle": "附近需求热区",
+      "brand": "运力方",
+      "variant": "owner",
+      "activeNav": "地图",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/owner/demands/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/owner/vehicles/index" },
+        { "label": "地图", "icon": "map", "target": "pages/owner/vehicle-map/index" },
+        { "label": "收益", "icon": "wallet", "target": "pages/owner/profile/revenue-stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/owner/profile/index" }
+      ],
+      "sections": [
+        {
+          "type": "map",
+          "title": "需求热区",
+          "points": [
+            { "label": "宝安机场", "value": "6 单 · 均价 ¥820", "tone": "blue" },
+            { "label": "龙岗仓储园", "value": "4 单 · 均价 ¥560", "tone": "green" }
+          ],
+          "action": "导航到最近需求"
+        }
+      ]
+    },
+    {
+      "path": "pages/owner/demands/index",
+      "title": "需求大厅",
+      "subtitle": "RecoRouter 运力端",
+      "brand": "运力方",
+      "variant": "owner",
+      "activeNav": "首页",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/owner/demands/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/owner/vehicles/index" },
+        { "label": "地图", "icon": "map", "target": "pages/owner/vehicle-map/index" },
+        { "label": "收益", "icon": "wallet", "target": "pages/owner/profile/revenue-stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/owner/profile/index" }
+      ],
+      "sections": [
+        { "type": "tabs", "items": ["全部", "同城", "冷链", "高价"], "active": "高价" },
+        {
+          "type": "cards",
+          "items": [
+            { "title": "深圳南山 → 东莞厚街", "subtitle": "4.2m 厢车 · 13:30装货", "amount": "¥680", "meta": "距离 12km", "icon": "route", "tone": "blue", "target": "pages/owner/accept-order/index" },
+            { "title": "广州黄埔 → 佛山顺德", "subtitle": "冷链 · 2.8吨", "amount": "¥920", "meta": "距离 38km", "icon": "route", "tone": "green", "target": "pages/owner/accept-order/index" },
+            { "title": "宝安机场 → 惠州仲恺", "subtitle": "急单 · 今晚送达", "amount": "¥760", "meta": "距离 21km", "icon": "route", "tone": "orange", "target": "pages/owner/accept-order/index" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/owner/accept-order/index",
+      "title": "接单确认",
+      "subtitle": "深圳南山 → 东莞厚街",
+      "brand": "运力方",
+      "variant": "owner",
+      "activeNav": "首页",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/owner/demands/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/owner/vehicles/index" },
+        { "label": "地图", "icon": "map", "target": "pages/owner/vehicle-map/index" },
+        { "label": "收益", "icon": "wallet", "target": "pages/owner/profile/revenue-stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/owner/profile/index" }
+      ],
+      "sections": [
+        {
+          "type": "fields",
+          "items": [
+            { "label": "车型要求", "value": "4.2m 厢式货车", "icon": "truck", "tone": "blue" },
+            { "label": "装货时间", "value": "今天 13:30", "icon": "clock", "tone": "orange" },
+            { "label": "货物", "value": "电子配件 2.6吨", "icon": "demand", "tone": "green" },
+            { "label": "预计收入", "value": "¥680", "icon": "wallet", "tone": "blue" }
+          ]
+        },
+        { "type": "notice", "title": "确认接单？", "body": "接单后需在 15 分钟内联系货主，超时将影响接单分。", "tone": "orange" },
+        { "type": "actions", "items": [{ "label": "再看看", "icon": "search", "target": "pages/owner/demands/index" }, { "label": "确认接单", "icon": "check", "variant": "primary" }] }
+      ]
+    },
+    {
+      "path": "pages/owner/orders/index",
+      "title": "我的订单",
+      "subtitle": "进行中、待结算、已完成",
+      "brand": "运力方",
+      "variant": "owner",
+      "activeNav": "首页",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/owner/demands/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/owner/vehicles/index" },
+        { "label": "地图", "icon": "map", "target": "pages/owner/vehicle-map/index" },
+        { "label": "收益", "icon": "wallet", "target": "pages/owner/profile/revenue-stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/owner/profile/index" }
+      ],
+      "sections": [
+        { "type": "tabs", "items": ["进行中", "待结算", "已完成"], "active": "进行中" },
+        {
+          "type": "cards",
+          "items": [
+            { "title": "南山 → 东莞", "subtitle": "距卸货点 8.4km", "status": "运输中", "meta": "订单号 RR2026052508", "icon": "truck", "tone": "blue" },
+            { "title": "宝安 → 惠州", "subtitle": "13:30 前到仓", "status": "待装货", "meta": "订单号 RR2026052508", "icon": "clock", "tone": "orange" },
+            { "title": "黄埔 → 顺德", "subtitle": "货主确认车辆", "status": "待确认", "meta": "订单号 RR2026052508", "icon": "check", "tone": "green" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/owner/cancellations/index",
+      "title": "取消订单",
+      "subtitle": "选择取消原因",
+      "brand": "运力方",
+      "variant": "owner",
+      "activeNav": "首页",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/owner/demands/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/owner/vehicles/index" },
+        { "label": "地图", "icon": "map", "target": "pages/owner/vehicle-map/index" },
+        { "label": "收益", "icon": "wallet", "target": "pages/owner/profile/revenue-stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/owner/profile/index" }
+      ],
+      "sections": [
+        { "type": "tabs", "items": ["车辆临时故障", "装货时间冲突", "联系不上货主"], "active": "车辆临时故障" },
+        { "type": "notice", "title": "信用分提醒", "body": "距装货不足 2 小时取消将扣除信用分。", "tone": "red" },
+        { "type": "actions", "items": [{ "label": "提交取消申请", "icon": "warning", "variant": "primary" }] }
+      ]
+    },
+    {
+      "path": "pages/owner/commission-payment/index",
+      "title": "佣金明细",
+      "subtitle": "本月平台服务费",
+      "brand": "运力方",
+      "variant": "owner",
+      "activeNav": "收益",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/owner/demands/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/owner/vehicles/index" },
+        { "label": "地图", "icon": "map", "target": "pages/owner/vehicle-map/index" },
+        { "label": "收益", "icon": "wallet", "target": "pages/owner/profile/revenue-stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/owner/profile/index" }
+      ],
+      "sections": [
+        { "type": "metrics", "items": [{ "label": "平台服务费", "value": "¥1,248.60", "tone": "orange" }, { "label": "订单流水", "value": "¥24,972.00", "tone": "blue" }, { "label": "可提现", "value": "¥23,723.40", "tone": "green" }] },
+        {
+          "type": "cards",
+          "items": [
+            { "title": "南山-东莞", "subtitle": "平台佣金 · 已入账", "amount": "-¥34.00", "icon": "wallet", "tone": "orange" },
+            { "title": "黄埔-顺德", "subtitle": "平台佣金 · 已入账", "amount": "-¥46.00", "icon": "wallet", "tone": "orange" },
+            { "title": "宝安-惠州", "subtitle": "平台佣金 · 已入账", "amount": "-¥38.00", "icon": "wallet", "tone": "orange" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/owner/stats/index",
+      "title": "运营统计",
+      "subtitle": "接单率、准点率与高峰时段",
+      "brand": "运力方",
+      "variant": "owner",
+      "activeNav": "收益",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/owner/demands/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/owner/vehicles/index" },
+        { "label": "地图", "icon": "map", "target": "pages/owner/vehicle-map/index" },
+        { "label": "收益", "icon": "wallet", "target": "pages/owner/profile/revenue-stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/owner/profile/index" }
+      ],
+      "sections": [
+        { "type": "metrics", "items": [{ "label": "接单率", "value": "86%", "tone": "blue" }, { "label": "准点率", "value": "94%", "tone": "green" }, { "label": "高峰时段", "value": "14-18", "tone": "orange" }] },
+        { "type": "chart", "title": "近 7 日订单", "items": [{ "label": "周一", "value": "8单", "percent": 62 }, { "label": "周三", "value": "13单", "percent": 88 }, { "label": "周五", "value": "11单", "percent": 76 }] }
+      ]
+    },
+    {
+      "path": "pages/owner/profile/index",
+      "title": "我的",
+      "subtitle": "陈师傅运输队 · 企业认证 · 信用分 96",
+      "brand": "运力方",
+      "variant": "owner",
+      "activeNav": "我的",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/owner/demands/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/owner/vehicles/index" },
+        { "label": "地图", "icon": "map", "target": "pages/owner/vehicle-map/index" },
+        { "label": "收益", "icon": "wallet", "target": "pages/owner/profile/revenue-stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/owner/profile/index" }
+      ],
+      "sections": [
+        {
+          "type": "cards",
+          "items": [
+            { "title": "账户与安全", "icon": "shield", "tone": "blue", "target": "pages/owner/account-settings/index" },
+            { "title": "车辆认证", "icon": "truck", "tone": "green", "target": "pages/owner/vehicles/index" },
+            { "title": "客服与协议", "icon": "file", "tone": "orange" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/owner/profile/revenue-stats/index",
+      "title": "收益中心",
+      "subtitle": "可提现余额",
+      "brand": "运力方",
+      "variant": "owner",
+      "activeNav": "收益",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/owner/demands/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/owner/vehicles/index" },
+        { "label": "地图", "icon": "map", "target": "pages/owner/vehicle-map/index" },
+        { "label": "收益", "icon": "wallet", "target": "pages/owner/profile/revenue-stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/owner/profile/index" }
+      ],
+      "sections": [
+        { "type": "metrics", "items": [{ "label": "可提现余额", "value": "¥23,723.40", "tone": "green" }, { "label": "本周收入", "value": "¥8,430", "tone": "blue" }, { "label": "待结算", "value": "¥2,180", "tone": "orange" }] },
+        { "type": "actions", "items": [{ "label": "申请提现", "icon": "wallet", "variant": "primary" }, { "label": "佣金账单", "icon": "file", "target": "pages/owner/commission-payment/index" }] },
+        { "type": "chart", "title": "收入走势", "items": [{ "label": "周一", "value": "¥920", "percent": 52 }, { "label": "周三", "value": "¥1,860", "percent": 82 }, { "label": "周五", "value": "¥1,420", "percent": 68 }] }
+      ]
+    },
+    {
+      "path": "pages/owner/account-settings/index",
+      "title": "账户设置",
+      "subtitle": "安全、结算与通知",
+      "brand": "运力方",
+      "variant": "owner",
+      "activeNav": "我的",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/owner/demands/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/owner/vehicles/index" },
+        { "label": "地图", "icon": "map", "target": "pages/owner/vehicle-map/index" },
+        { "label": "收益", "icon": "wallet", "target": "pages/owner/profile/revenue-stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/owner/profile/index" }
+      ],
+      "sections": [
+        {
+          "type": "cards",
+          "items": [
+            { "title": "手机号 138****2468", "subtitle": "安全", "icon": "phone", "tone": "blue", "target": "pages/owner/change-phone/index" },
+            { "title": "修改密码", "subtitle": "安全", "icon": "key", "tone": "orange", "target": "pages/owner/change-password/index" },
+            { "title": "提现账户 招商银行", "subtitle": "结算", "icon": "wallet", "tone": "green" },
+            { "title": "订单消息 已开启", "subtitle": "通知", "icon": "bell", "tone": "blue" }
+          ]
+        },
+        { "type": "actions", "items": [{ "label": "退出登录", "icon": "warning", "tone": "red" }] }
+      ]
+    },
+    {
+      "path": "pages/owner/profile-edit/index",
+      "title": "编辑资料",
+      "subtitle": "陈师傅运输队",
+      "brand": "运力方",
+      "variant": "owner",
+      "activeNav": "我的",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/owner/demands/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/owner/vehicles/index" },
+        { "label": "地图", "icon": "map", "target": "pages/owner/vehicle-map/index" },
+        { "label": "收益", "icon": "wallet", "target": "pages/owner/profile/revenue-stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/owner/profile/index" }
+      ],
+      "sections": [
+        {
+          "type": "form",
+          "fields": [
+            { "label": "更换头像", "value": "点击上传" },
+            { "label": "企业名称", "value": "陈师傅运输队" },
+            { "label": "联系人", "value": "陈建国" },
+            { "label": "经营城市", "value": "深圳 / 东莞 / 惠州" }
+          ],
+          "action": "保存资料"
+        }
+      ]
+    },
+    {
+      "path": "pages/owner/change-phone/index",
+      "title": "更换手机号",
+      "subtitle": "当前手机号 138 0000 2468",
+      "brand": "运力方",
+      "variant": "owner",
+      "activeNav": "我的",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/owner/demands/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/owner/vehicles/index" },
+        { "label": "地图", "icon": "map", "target": "pages/owner/vehicle-map/index" },
+        { "label": "收益", "icon": "wallet", "target": "pages/owner/profile/revenue-stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/owner/profile/index" }
+      ],
+      "sections": [
+        { "type": "form", "fields": [{ "label": "新手机号", "value": "请输入新手机号" }, { "label": "验证码", "value": "6 位短信验证码" }], "action": "确认更换" },
+        { "type": "actions", "items": [{ "label": "获取验证码", "icon": "phone", "tone": "blue" }] }
+      ]
+    },
+    {
+      "path": "pages/owner/change-password/index",
+      "title": "修改密码",
+      "subtitle": "密码需包含字母和数字，不少于 8 位",
+      "brand": "运力方",
+      "variant": "owner",
+      "activeNav": "我的",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/owner/demands/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/owner/vehicles/index" },
+        { "label": "地图", "icon": "map", "target": "pages/owner/vehicle-map/index" },
+        { "label": "收益", "icon": "wallet", "target": "pages/owner/profile/revenue-stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/owner/profile/index" }
+      ],
+      "sections": [
+        { "type": "form", "fields": [{ "label": "原密码", "value": "********" }, { "label": "新密码", "value": "********" }, { "label": "确认新密码", "value": "********" }], "action": "提交修改" }
+      ]
+    },
+    {
+      "path": "pages/owner/rentals/pending/index",
+      "title": "出租申请",
+      "subtitle": "出租订单待处理",
+      "brand": "运力方",
+      "variant": "owner",
+      "activeNav": "车辆",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/owner/demands/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/owner/vehicles/index" },
+        { "label": "地图", "icon": "map", "target": "pages/owner/vehicle-map/index" },
+        { "label": "收益", "icon": "wallet", "target": "pages/owner/profile/revenue-stats/index" },
+        { "label": "我的", "icon": "user", "target": "pages/owner/profile/index" }
+      ],
+      "sections": [
+        {
+          "type": "cards",
+          "items": [
+            { "title": "鸿运物流申请租车", "subtitle": "粤B·R8201 4.2m 厢车", "status": "待确认", "amount": "¥2,720", "meta": "租期 05/26 - 05/29 共 4 天", "icon": "truck", "tone": "orange" }
+          ]
+        },
+        { "type": "notice", "title": "押金状态", "body": "租客押金已冻结 ¥3000，车辆险已覆盖。", "tone": "green" },
+        { "type": "actions", "items": [{ "label": "拒绝", "icon": "warning", "tone": "red" }, { "label": "同意出租", "icon": "check", "variant": "primary" }] }
+      ]
+    },
+    {
+      "path": "pages/enterprise/index/index",
+      "title": "企业运营台",
+      "subtitle": "武汉 · 今日履约 86%",
+      "brand": "企业端",
+      "variant": "enterprise",
+      "activeNav": "首页",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/enterprise/index/index" },
+        { "label": "调度", "icon": "sliders", "target": "pages/enterprise/dispatch/index" },
+        { "label": "车队", "icon": "truck", "target": "pages/enterprise/fleet/index" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/enterprise/order-hall/index" },
+        { "label": "数据", "icon": "chart", "target": "pages/enterprise/stats/index" }
+      ],
+      "sections": [
+        { "type": "metrics", "items": [{ "label": "今日订单", "value": "128", "caption": "+18%", "tone": "blue" }, { "label": "待调度", "value": "24", "caption": "需处理", "tone": "orange" }, { "label": "在线车辆", "value": "73", "caption": "稳定", "tone": "green" }] },
+        { "type": "notice", "title": "实时运力热区", "body": "AI 推荐 3 条待处理线路，优先保障青山库发车确认和到仓异常回传。", "tone": "blue" },
+        {
+          "type": "cards",
+          "title": "待处理",
+          "items": [
+            { "title": "A-203 发车确认", "subtitle": "12车 · 16:30前", "icon": "truck", "tone": "blue", "target": "pages/enterprise/dispatch/index" },
+            { "title": "鄂A7K21 到仓异常", "subtitle": "等待司机回传", "icon": "warning", "tone": "red", "target": "pages/enterprise/dispatch/detail/index" },
+            { "title": "汉口北站 余量预警", "subtitle": "可用库位 18%", "icon": "warehouse", "tone": "orange", "target": "pages/enterprise/stations/index" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/enterprise/dispatch/index",
+      "title": "调度看板",
+      "subtitle": "按线路、车辆、时效分配",
+      "brand": "企业端",
+      "variant": "enterprise",
+      "activeNav": "调度",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/enterprise/index/index" },
+        { "label": "调度", "icon": "sliders", "target": "pages/enterprise/dispatch/index" },
+        { "label": "车队", "icon": "truck", "target": "pages/enterprise/fleet/index" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/enterprise/order-hall/index" },
+        { "label": "数据", "icon": "chart", "target": "pages/enterprise/stats/index" }
+      ],
+      "sections": [
+        { "type": "tabs", "items": ["待派", "在途", "异常"], "active": "待派" },
+        { "type": "metrics", "items": [{ "label": "急单", "value": "8", "caption": "今日", "tone": "red" }, { "label": "今日", "value": "21", "tone": "blue" }, { "label": "明日", "value": "37", "tone": "green" }] },
+        {
+          "type": "cards",
+          "title": "智能分配抽屉 · 3辆可派",
+          "items": [
+            { "title": "鄂A·7K21", "subtitle": "距装点 2.1km", "amount": "92%", "icon": "truck", "tone": "green", "target": "pages/enterprise/dispatch/detail/index" },
+            { "title": "鄂A·65Q8", "subtitle": "返程空载", "amount": "84%", "icon": "truck", "tone": "blue", "target": "pages/enterprise/dispatch/detail/index" },
+            { "title": "鄂B·2J18", "subtitle": "需换挂", "amount": "71%", "icon": "truck", "tone": "orange", "target": "pages/enterprise/dispatch/detail/index" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/enterprise/dispatch/detail/index",
+      "title": "调度详情",
+      "subtitle": "R240525-018 · 钢卷运输",
+      "brand": "企业端",
+      "variant": "enterprise",
+      "activeNav": "调度",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/enterprise/index/index" },
+        { "label": "调度", "icon": "sliders", "target": "pages/enterprise/dispatch/index" },
+        { "label": "车队", "icon": "truck", "target": "pages/enterprise/fleet/index" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/enterprise/order-hall/index" },
+        { "label": "数据", "icon": "chart", "target": "pages/enterprise/stats/index" }
+      ],
+      "sections": [
+        { "type": "notice", "title": "武钢青山库 → 长沙雨花仓", "body": "32吨 · 270km · 预计 5h20m。已分配 12/14 车 · 2车待确认。", "tone": "blue" },
+        {
+          "type": "cards",
+          "title": "车辆分配",
+          "items": [
+            { "title": "鄂A7K21", "status": "已接单", "icon": "truck", "tone": "green" },
+            { "title": "鄂A65Q8", "status": "待确认", "icon": "truck", "tone": "orange" },
+            { "title": "鄂B2J18", "status": "替补", "icon": "truck", "tone": "blue" }
+          ]
+        },
+        {
+          "type": "timeline",
+          "title": "履约时间线",
+          "items": [
+            { "time": "09:20", "title": "司机接单", "detail": "车辆已锁定任务", "tone": "green" },
+            { "time": "10:05", "title": "到达装点", "detail": "电子围栏自动签到", "tone": "blue" },
+            { "time": "10:42", "title": "装货完成", "detail": "待上传磅单", "tone": "orange" },
+            { "time": "16:20", "title": "预计到仓", "detail": "系统持续监控 ETA", "tone": "indigo" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/enterprise/fleet/index",
+      "title": "车队管理",
+      "subtitle": "73辆在线 · 12辆空载",
+      "brand": "企业端",
+      "variant": "enterprise",
+      "activeNav": "车队",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/enterprise/index/index" },
+        { "label": "调度", "icon": "sliders", "target": "pages/enterprise/dispatch/index" },
+        { "label": "车队", "icon": "truck", "target": "pages/enterprise/fleet/index" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/enterprise/order-hall/index" },
+        { "label": "数据", "icon": "chart", "target": "pages/enterprise/stats/index" }
+      ],
+      "sections": [
+        { "type": "metrics", "items": [{ "label": "可调度", "value": "42", "caption": "+6", "tone": "green" }, { "label": "在途", "value": "28", "caption": "实时", "tone": "blue" }, { "label": "异常", "value": "3", "caption": "处理", "tone": "red" }] },
+        { "type": "tabs", "items": ["全部", "空载", "冷链", "高栏"], "active": "全部" },
+        {
+          "type": "cards",
+          "items": [
+            { "title": "鄂A·7K21", "subtitle": "重卡 · 13.5m · 青山库 2.1km", "status": "可派", "icon": "truck", "tone": "green", "target": "pages/enterprise/fleet/detail/index" },
+            { "title": "鄂A·65Q8", "subtitle": "半挂 · 17.5m · 返程空载", "status": "优先", "icon": "truck", "tone": "blue", "target": "pages/enterprise/fleet/detail/index" },
+            { "title": "鄂B·2J18", "subtitle": "厢车 · 9.6m · 保养后可用", "status": "限制", "icon": "truck", "tone": "orange", "target": "pages/enterprise/fleet/detail/index" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/enterprise/fleet/detail/index",
+      "title": "车辆详情",
+      "subtitle": "鄂A·7K21 · 张师傅",
+      "brand": "企业端",
+      "variant": "enterprise",
+      "activeNav": "车队",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/enterprise/index/index" },
+        { "label": "调度", "icon": "sliders", "target": "pages/enterprise/dispatch/index" },
+        { "label": "车队", "icon": "truck", "target": "pages/enterprise/fleet/index" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/enterprise/order-hall/index" },
+        { "label": "数据", "icon": "chart", "target": "pages/enterprise/stats/index" }
+      ],
+      "sections": [
+        { "type": "metrics", "items": [{ "label": "综合评分", "value": "92", "caption": "证照、保险、GPS、司机信用均可用", "tone": "green" }] },
+        {
+          "type": "fields",
+          "items": [
+            { "label": "当前位置", "value": "青山库 2.1km", "icon": "marker", "tone": "blue" },
+            { "label": "道路运输证", "value": "2027-04-18", "icon": "file", "tone": "green" },
+            { "label": "保险到期", "value": "42天后", "icon": "shield", "tone": "orange" },
+            { "label": "最近保养", "value": "2,340km前", "icon": "settings", "tone": "indigo" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/enterprise/stations/index",
+      "title": "站点管理",
+      "subtitle": "装卸点、仓库、围栏配置",
+      "brand": "企业端",
+      "variant": "enterprise",
+      "activeNav": "车队",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/enterprise/index/index" },
+        { "label": "调度", "icon": "sliders", "target": "pages/enterprise/dispatch/index" },
+        { "label": "车队", "icon": "truck", "target": "pages/enterprise/fleet/index" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/enterprise/order-hall/index" },
+        { "label": "数据", "icon": "chart", "target": "pages/enterprise/stats/index" }
+      ],
+      "sections": [
+        { "type": "form", "fields": [{ "label": "站点名称", "value": "武汉青山钢材库" }, { "label": "站点类型", "value": "装货点 / 仓储" }, { "label": "联系人", "value": "李经理 138****8421" }, { "label": "电子围栏", "value": "半径 300m" }], "action": "保存站点" }
+      ]
+    },
+    {
+      "path": "pages/enterprise/stats/index",
+      "title": "统计分析",
+      "subtitle": "履约、成本、效率趋势",
+      "brand": "企业端",
+      "variant": "enterprise",
+      "activeNav": "数据",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/enterprise/index/index" },
+        { "label": "调度", "icon": "sliders", "target": "pages/enterprise/dispatch/index" },
+        { "label": "车队", "icon": "truck", "target": "pages/enterprise/fleet/index" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/enterprise/order-hall/index" },
+        { "label": "数据", "icon": "chart", "target": "pages/enterprise/stats/index" }
+      ],
+      "sections": [
+        { "type": "metrics", "items": [{ "label": "履约率", "value": "94%", "caption": "+3.2", "tone": "green" }, { "label": "均价/吨", "value": "183", "caption": "-4.1", "tone": "blue" }, { "label": "异常率", "value": "2.8%", "caption": "-0.6", "tone": "orange" }] },
+        { "type": "chart", "title": "线路效率排行", "items": [{ "label": "武汉-长沙", "value": "98%", "percent": 98, "tone": "green" }, { "label": "鄂州-南昌", "value": "93%", "percent": 93, "tone": "blue" }, { "label": "黄石-合肥", "value": "88%", "percent": 88, "tone": "orange" }] }
+      ]
+    },
+    {
+      "path": "pages/enterprise/publish/index",
+      "title": "发布货源",
+      "subtitle": "三步完成企业发布",
+      "brand": "企业端",
+      "variant": "enterprise",
+      "activeNav": "订单",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/enterprise/index/index" },
+        { "label": "调度", "icon": "sliders", "target": "pages/enterprise/dispatch/index" },
+        { "label": "车队", "icon": "truck", "target": "pages/enterprise/fleet/index" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/enterprise/order-hall/index" },
+        { "label": "数据", "icon": "chart", "target": "pages/enterprise/stats/index" }
+      ],
+      "sections": [
+        { "type": "form", "fields": [{ "label": "装货地", "value": "武汉 · 青山钢材库" }, { "label": "卸货地", "value": "长沙 · 雨花仓储中心" }, { "label": "货物规格", "value": "钢卷 32吨 / 13.5m" }, { "label": "装车时间", "value": "今日 18:00 前" }], "action": "发布并匹配运力" },
+        { "type": "notice", "title": "AI 运价建议", "body": "建议运价 ¥5,860，可直接进入智能派车池。", "tone": "blue" }
+      ]
+    },
+    {
+      "path": "pages/enterprise/order-hall/index",
+      "title": "订单大厅",
+      "subtitle": "企业可接货源实时刷新",
+      "brand": "企业端",
+      "variant": "enterprise",
+      "activeNav": "订单",
+      "nav": [
+        { "label": "首页", "icon": "home", "target": "pages/enterprise/index/index" },
+        { "label": "调度", "icon": "sliders", "target": "pages/enterprise/dispatch/index" },
+        { "label": "车队", "icon": "truck", "target": "pages/enterprise/fleet/index" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/enterprise/order-hall/index" },
+        { "label": "数据", "icon": "chart", "target": "pages/enterprise/stats/index" }
+      ],
+      "sections": [
+        { "type": "form", "fields": [{ "label": "搜索", "value": "搜索线路 / 货品 / 站点" }] },
+        { "type": "tabs", "items": ["附近", "高价", "返程", "今日装"], "active": "附近" },
+        {
+          "type": "cards",
+          "items": [
+            { "title": "#OR-5832 武汉青山 → 长沙雨花", "subtitle": "32吨 · 13.5m · 今日18:00", "amount": "¥5,860", "status": "可接单", "icon": "route", "tone": "blue" },
+            { "title": "#OR-5833 鄂州花湖 → 南昌经开", "subtitle": "32吨 · 13.5m · 今日18:00", "amount": "¥3,420", "status": "可接单", "icon": "route", "tone": "green" },
+            { "title": "#OR-5834 黄石港 → 合肥肥东", "subtitle": "32吨 · 13.5m · 今日18:00", "amount": "¥4,090", "status": "可接单", "icon": "route", "tone": "orange" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/admin/users/index",
+      "title": "用户管理",
+      "subtitle": "搜索手机号 / 姓名 / 角色",
+      "brand": "运营端",
+      "variant": "admin",
+      "activeNav": "用户",
+      "nav": [
+        { "label": "用户", "icon": "users", "target": "pages/admin/users/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/admin/vehicles/index" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/admin/orders/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/admin/stats/index" },
+        { "label": "设置", "icon": "settings", "target": "pages/admin/settings/index" }
+      ],
+      "sections": [
+        {
+          "type": "cards",
+          "items": [
+            { "title": "张三", "subtitle": "车主 · 正常", "status": "禁用", "icon": "user", "tone": "blue" },
+            { "title": "唐山南湖店", "subtitle": "需求方 · 正常", "status": "禁用", "icon": "store", "tone": "green" },
+            { "title": "蒙牛管理员", "subtitle": "企业端 · 待审", "status": "启用", "icon": "building", "tone": "orange" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pages/admin/vehicles/index",
+      "title": "车辆审核",
+      "subtitle": "无人车 A17 · 待审",
+      "brand": "运营端",
+      "variant": "admin",
+      "activeNav": "车辆",
+      "nav": [
+        { "label": "用户", "icon": "users", "target": "pages/admin/users/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/admin/vehicles/index" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/admin/orders/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/admin/stats/index" },
+        { "label": "设置", "icon": "settings", "target": "pages/admin/settings/index" }
+      ],
+      "sections": [
+        { "type": "notice", "title": "资料预览", "body": "载重 800kg · 冷链 · 3 张照片。车牌、照片、定价、续航信息已提交。", "tone": "orange" },
+        { "type": "form", "fields": [{ "label": "审核意见", "value": "请输入原因，可为空" }], "action": "通过" },
+        { "type": "actions", "items": [{ "label": "驳回", "icon": "warning", "tone": "red" }, { "label": "通过", "icon": "check", "variant": "primary" }] }
+      ]
+    },
+    {
+      "path": "pages/admin/orders/index",
+      "title": "订单管理",
+      "subtitle": "平台订单和金额概览",
+      "brand": "运营端",
+      "variant": "admin",
+      "activeNav": "订单",
+      "nav": [
+        { "label": "用户", "icon": "users", "target": "pages/admin/users/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/admin/vehicles/index" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/admin/orders/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/admin/stats/index" },
+        { "label": "设置", "icon": "settings", "target": "pages/admin/settings/index" }
+      ],
+      "sections": [
+        { "type": "metrics", "items": [{ "label": "进行中", "value": "46", "tone": "blue" }, { "label": "总订单", "value": "128", "tone": "green" }, { "label": "金额", "value": "¥8.2k", "tone": "orange" }] },
+        {
+          "type": "cards",
+          "items": [
+            { "title": "RC20260525001", "subtitle": "南湖店 -> 唐山站 · ¥86", "status": "运输中", "icon": "clipboard", "tone": "blue" },
+            { "title": "RC20260524008", "subtitle": "已送达 · 等待付款确认", "status": "已达", "icon": "check", "tone": "green" }
+          ]
+        },
+        { "type": "actions", "items": [{ "label": "筛选状态", "icon": "sliders", "tone": "blue" }] }
+      ]
+    },
+    {
+      "path": "pages/admin/commission/index",
+      "title": "佣金审核",
+      "subtitle": "待确认佣金 ¥186",
+      "brand": "运营端",
+      "variant": "admin",
+      "activeNav": "订单",
+      "nav": [
+        { "label": "用户", "icon": "users", "target": "pages/admin/users/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/admin/vehicles/index" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/admin/orders/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/admin/stats/index" },
+        { "label": "设置", "icon": "settings", "target": "pages/admin/settings/index" }
+      ],
+      "sections": [
+        { "type": "notice", "title": "订单 3 笔 · 平台服务费", "body": "车主已标记支付，需平台确认后进入佣金汇总。", "tone": "orange" },
+        { "type": "cards", "items": [{ "title": "RC20260525001", "subtitle": "车主已标记支付 · 需平台确认", "status": "审核", "icon": "credit", "tone": "blue" }, { "title": "佣金汇总", "subtitle": "本周 ¥1,240 · 本月 ¥6,800", "status": "汇总", "icon": "wallet", "tone": "green" }] },
+        { "type": "actions", "items": [{ "label": "确认到账", "icon": "check", "variant": "primary" }] }
+      ]
+    },
+    {
+      "path": "pages/admin/stats/index",
+      "title": "运营统计",
+      "subtitle": "用户、车辆与订单增长",
+      "brand": "运营端",
+      "variant": "admin",
+      "activeNav": "统计",
+      "nav": [
+        { "label": "用户", "icon": "users", "target": "pages/admin/users/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/admin/vehicles/index" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/admin/orders/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/admin/stats/index" },
+        { "label": "设置", "icon": "settings", "target": "pages/admin/settings/index" }
+      ],
+      "sections": [
+        { "type": "metrics", "items": [{ "label": "用户", "value": "356", "tone": "blue" }, { "label": "车辆", "value": "92", "tone": "green" }, { "label": "订单", "value": "128", "tone": "orange" }] },
+        { "type": "notice", "title": "本周增长", "body": "订单 +18%，车辆在线率 92%。", "tone": "green" }
+      ]
+    },
+    {
+      "path": "pages/admin/settings/index",
+      "title": "运营设置",
+      "subtitle": "平台规则与系统参数",
+      "brand": "运营端",
+      "variant": "admin",
+      "activeNav": "设置",
+      "nav": [
+        { "label": "用户", "icon": "users", "target": "pages/admin/users/index" },
+        { "label": "车辆", "icon": "truck", "target": "pages/admin/vehicles/index" },
+        { "label": "订单", "icon": "clipboard", "target": "pages/admin/orders/index" },
+        { "label": "统计", "icon": "chart", "target": "pages/admin/stats/index" },
+        { "label": "设置", "icon": "settings", "target": "pages/admin/settings/index" }
+      ],
+      "sections": [
+        {
+          "type": "cards",
+          "items": [
+            { "title": "平台费率", "subtitle": "订单佣金比例 5%", "status": "编辑", "icon": "money", "tone": "blue" },
+            { "title": "审核规则", "subtitle": "车辆资料需运营审核", "status": "开启", "icon": "shield", "tone": "green" },
+            { "title": "通知策略", "subtitle": "订单、付款、取消申请通知", "status": "配置", "icon": "bell", "tone": "orange" },
+            { "title": "系统参数", "subtitle": "地图、上传、支付标记开关", "status": "保存", "icon": "settings", "tone": "indigo" }
+          ]
+        },
+        { "type": "actions", "items": [{ "label": "保存设置", "icon": "check", "variant": "primary" }] }
+      ]
+    }
+  ]
+}
