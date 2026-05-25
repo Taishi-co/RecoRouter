@@ -98,8 +98,12 @@ export default function Index() {
   const [step, setStep] = useState<'role' | 'form'>('role')
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [verificationCode, setVerificationCode] = useState('')
   const [name, setName] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
+  const [smsLoading, setSmsLoading] = useState(false)
+  const [smsCountdown, setSmsCountdown] = useState(0)
 
   useEffect(() => {
     setCurrentUser(getStoredAuthUser())
@@ -150,6 +154,68 @@ export default function Index() {
     }
   }
 
+  const handleSendRegisterCode = async () => {
+    if (!/^1[3-9]\d{9}$/.test(phone)) {
+      Taro.showToast({
+        title: '手机号格式不正确',
+        icon: 'none'
+      })
+      return
+    }
+
+    setSmsLoading(true)
+
+    try {
+      const res = await Network.request({
+        url: '/api/account-settings/send-sms-code',
+        method: 'POST',
+        data: {
+          phone,
+          type: 'register'
+        }
+      })
+
+      if (res.data.code === 200) {
+        Taro.showToast({
+          title: '验证码已发送',
+          icon: 'success'
+        })
+
+        if (res.data.data?.code) {
+          Taro.showModal({
+            title: '测试验证码',
+            content: `验证码：${res.data.data.code}`,
+            showCancel: false
+          })
+        }
+
+        setSmsCountdown(60)
+        const timer = setInterval(() => {
+          setSmsCountdown((prev) => {
+            if (prev <= 1) {
+              clearInterval(timer)
+              return 0
+            }
+            return prev - 1
+          })
+        }, 1000)
+      } else {
+        Taro.showToast({
+          title: res.data.message || '验证码发送失败',
+          icon: 'none'
+        })
+      }
+    } catch (error) {
+      console.error('发送验证码失败:', error)
+      Taro.showToast({
+        title: '验证码发送失败',
+        icon: 'none'
+      })
+    } finally {
+      setSmsLoading(false)
+    }
+  }
+
   const handleSubmit = async () => {
     if (!phone || !password) {
       Taro.showToast({
@@ -159,12 +225,38 @@ export default function Index() {
       return
     }
 
-    if (mode === 'register' && !name) {
-      Taro.showToast({
-        title: '请填写姓名',
-        icon: 'none'
-      })
-      return
+    if (mode === 'register') {
+      if (!name) {
+        Taro.showToast({
+          title: '请填写姓名',
+          icon: 'none'
+        })
+        return
+      }
+
+      if (!verificationCode) {
+        Taro.showToast({
+          title: '请输入验证码',
+          icon: 'none'
+        })
+        return
+      }
+
+      if (!confirmPassword) {
+        Taro.showToast({
+          title: '请再次确认密码',
+          icon: 'none'
+        })
+        return
+      }
+
+      if (password !== confirmPassword) {
+        Taro.showToast({
+          title: '两次输入的密码不一致',
+          icon: 'none'
+        })
+        return
+      }
     }
 
     setAuthLoading(true)
@@ -199,7 +291,7 @@ export default function Index() {
         const res = await Network.request({
           url: '/api/auth/register',
           method: 'POST',
-          data: { phone, password, name, role }
+          data: { phone, password, confirmPassword, verificationCode, name, role }
         })
 
         if (res.data.code === 200) {
@@ -580,6 +672,35 @@ export default function Index() {
                 />
               </View>
 
+              {mode === 'register' && (
+                <View className="mb-4">
+                  <Label className="block text-sm font-medium mb-2">
+                    <Text className="text-red-500">*</Text>验证码
+                  </Label>
+                  <View className="flex gap-2">
+                    <Input
+                      className="flex-1 bg-gray-50"
+                      placeholder="请输入验证码"
+                      type="number"
+                      value={verificationCode}
+                      onInput={(e) => setVerificationCode(e.detail.value)}
+                      maxlength={6}
+                    />
+                    <Button
+                      size="sm"
+                      className="px-4"
+                      variant={smsCountdown > 0 ? 'outline' : 'default'}
+                      disabled={smsCountdown > 0 || smsLoading}
+                      onClick={handleSendRegisterCode}
+                    >
+                      <Text className="text-sm">
+                        {smsCountdown > 0 ? `${smsCountdown}秒` : '获取验证码'}
+                      </Text>
+                    </Button>
+                  </View>
+                </View>
+              )}
+
               <View className="mb-4">
                 <Label className="block text-sm font-medium mb-2">
                   <Text className="text-red-500">*</Text>密码
@@ -592,6 +713,21 @@ export default function Index() {
                   onInput={(e) => setPassword(e.detail.value)}
                 />
               </View>
+
+              {mode === 'register' && (
+                <View className="mb-4">
+                  <Label className="block text-sm font-medium mb-2">
+                    <Text className="text-red-500">*</Text>再次确认密码
+                  </Label>
+                  <Input
+                    className="w-full bg-gray-50"
+                    placeholder="请再次输入密码"
+                    password
+                    value={confirmPassword}
+                    onInput={(e) => setConfirmPassword(e.detail.value)}
+                  />
+                </View>
+              )}
 
               <Button
                 className="w-full bg-blue-500"
