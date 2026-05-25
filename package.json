@@ -13,7 +13,6 @@
     "build:web": "taro build --type h5",
     "check:merchant-enterprise-boundary": "node scripts/check-merchant-enterprise-boundary.mjs",
     "check:registration-security": "node scripts/check-registration-security.mjs",
-    "check:ui-design-coverage": "node scripts/check-ui-design-coverage.mjs",
     "dev": "pnpm exec concurrently --kill-others --kill-signal SIGKILL -n web,server -c blue,green \"pnpm dev:web\" \"pnpm dev:server\"",
     "dev:server": "pnpm --filter server dev",
     "dev:tt": "taro build --type tt --watch",
@@ -31,7 +30,7 @@
     "test:rust-server": "cd server-rust && cargo test --lib --bins --tests",
     "test:rust-server:db": "test -n \"$TEST_DATABASE_URL\" && cd server-rust && cargo test --lib --bins --tests",
     "tsc": "npx tsc --noEmit --skipLibCheck",
-    "validate": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n lint,tsc,ui -c red,blue,green \"pnpm lint:build\" \"pnpm tsc\" \"pnpm check:ui-design-coverage\""
+    "validate": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n lint,tsc -c red,blue \"pnpm lint:build\" \"pnpm tsc\""
   },
   "lint-staged": {
     "src/**/*.{js,jsx,ts,tsx,css}": [

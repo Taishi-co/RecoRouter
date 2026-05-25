@@ -1,23 +1,54 @@
-import { useCallback, useEffect, useState } from 'react'
-import Taro from '@tarojs/taro'
-import { Image, ScrollView, Text, View } from '@tarojs/components'
-import { Building2, Clock, Package, ShieldCheck, Store, Truck, UserRound } from 'lucide-react-taro'
+import { useState, useEffect, useCallback } from 'react'
+import { View, Text, ScrollView, Image } from '@tarojs/components'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Network } from '@/network'
+import Taro from '@tarojs/taro'
+import { Truck, Package, Check, Clock, Shield } from 'lucide-react-taro'
 
 interface Statistics {
   orders: {
     total: number
+    completed: number
+    in_transit: number
   }
   vehicles: {
     total: number
+    active: number
   }
   demands: {
     total: number
+    pending: number
   }
+  recentOrders: Array<{
+    id: string
+    cargoName: string
+    ownerName: string
+    farePrice: number
+    completeTime: string
+  }>
+}
+
+interface LatestInfo {
+  latestDemands: Array<{
+    id: string
+    cargoName: string
+    cargoType: string
+    pickupAddress: string
+    deliveryAddress: string
+    merchantPhone: string
+    createdAt: string
+  }>
+  completedOrders: Array<{
+    id: string
+    cargoName: string
+    ownerPhone: string
+    farePrice: number
+    completedTime: string
+  }>
 }
 
 interface AuthUserInfo {
@@ -28,23 +59,12 @@ interface AuthUserInfo {
   token?: string
 }
 
-const roleOptions = [
-  { value: 'owner', label: '运力方', detail: '车辆管理、接单运输', icon: Truck },
-  { value: 'merchant', label: '需求方', detail: '发布需求、租车下单', icon: Store },
-  { value: 'enterprise', label: '企业端', detail: '企业配送和车队调度', icon: Building2 },
-] as const
-
-type RegisterRole = (typeof roleOptions)[number]['value']
-
-const fallbackStats: Statistics = {
-  orders: { total: 128 },
-  vehicles: { total: 36 },
-  demands: { total: 24 },
-}
-
 const persistAuthSession = (userInfo: AuthUserInfo) => {
   const token = userInfo.token || Taro.getStorageSync('token') || userInfo.id
-  const normalizedUserInfo = { ...userInfo, token }
+  const normalizedUserInfo = {
+    ...userInfo,
+    token
+  }
 
   Taro.setStorageSync('userInfo', normalizedUserInfo)
   Taro.setStorageSync('token', token)
@@ -62,33 +82,20 @@ const getStoredAuthUser = (): AuthUserInfo | null => {
 
   return persistAuthSession({
     ...userInfo,
-    token: userInfo.token || token || userInfo.id,
+    token: userInfo.token || token || userInfo.id
   })
 }
 
-const switchTabByRole = (userRole: string) => {
-  if (userRole === 'owner') {
-    Taro.redirectTo({ url: '/pages/owner/demands/index' })
-    return
-  }
-  if (userRole === 'merchant') {
-    Taro.redirectTo({ url: '/pages/merchant/demands/index' })
-    return
-  }
-  if (userRole === 'admin') {
-    Taro.redirectTo({ url: '/pages/admin/users/index' })
-    return
-  }
-  if (userRole === 'enterprise_admin' || userRole === 'enterprise') {
-    Taro.redirectTo({ url: '/pages/enterprise/index/index' })
-  }
-}
-
 export default function Index() {
-  const [statistics, setStatistics] = useState<Statistics>(fallbackStats)
+  const [statistics, setStatistics] = useState<Statistics | null>(null)
+  const [latestInfo, setLatestInfo] = useState<LatestInfo | null>(null)
   const [currentUser, setCurrentUser] = useState<AuthUserInfo | null>(null)
+
+  // 登录/注册弹窗
+  const [showAuthDialog, setShowAuthDialog] = useState(false)
   const [mode, setMode] = useState<'login' | 'register'>('login')
-  const [role, setRole] = useState<RegisterRole>('owner')
+  const [role, setRole] = useState<'owner' | 'merchant' | 'enterprise'>('owner')
+  const [step, setStep] = useState<'role' | 'form'>('role')
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -101,23 +108,50 @@ export default function Index() {
 
   useEffect(() => {
     setCurrentUser(getStoredAuthUser())
-    if (TARO_ENV !== 'h5' || PROJECT_DOMAIN) {
-      void loadStatistics()
-    }
+    loadStatistics()
+    loadLatestInfo()
   }, [])
 
   const loadStatistics = async () => {
     try {
       const res = await Network.request({
         url: '/api/home/statistics',
-        method: 'GET',
+        method: 'GET'
       })
 
-      if (res.data?.code === 200) {
+      console.log('统计数据响应:', res.data)
+
+      if (res.data.code === 200) {
         setStatistics(res.data.data)
       }
     } catch (error) {
       console.error('加载统计数据失败:', error)
+    }
+  }
+
+  const loadLatestInfo = async () => {
+    try {
+      const res = await Network.request({
+        url: '/api/home/latest-info',
+        method: 'GET'
+      })
+
+      console.log('最新信息响应:', res.data)
+
+      if (res.data.code === 200) {
+        setLatestInfo(res.data.data)
+      }
+    } catch (error) {
+      console.error('加载最新信息失败:', error)
+    }
+  }
+
+  const handleRoleSelect = (selectedRole: 'owner' | 'merchant' | 'enterprise') => {
+    setRole(selectedRole)
+    if (mode === 'register') {
+      setStep('form')
+    } else {
+      setStep('form')
     }
   }
 
@@ -127,7 +161,7 @@ export default function Index() {
     try {
       const res = await Network.request({
         url: '/api/auth/captcha',
-        method: 'GET',
+        method: 'GET'
       })
 
       if (res.data.code === 200 && res.data.data?.captchaId && res.data.data?.image) {
@@ -137,14 +171,14 @@ export default function Index() {
       } else {
         Taro.showToast({
           title: res.data.message || '验证码加载失败',
-          icon: 'none',
+          icon: 'none'
         })
       }
     } catch (error) {
       console.error('加载图形验证码失败:', error)
       Taro.showToast({
         title: '验证码加载失败',
-        icon: 'none',
+        icon: 'none'
       })
     } finally {
       setCaptchaLoading(false)
@@ -152,25 +186,41 @@ export default function Index() {
   }, [])
 
   useEffect(() => {
-    if (mode === 'register' && (TARO_ENV !== 'h5' || PROJECT_DOMAIN)) {
+    if (showAuthDialog && mode === 'register' && step === 'form') {
       void loadRegisterCaptcha()
     }
-  }, [loadRegisterCaptcha, mode])
+  }, [loadRegisterCaptcha, mode, showAuthDialog, step])
 
   const handleSubmit = async () => {
     if (!phone || !password) {
       Taro.showToast({
         title: '请填写完整信息',
-        icon: 'none',
+        icon: 'none'
       })
       return
     }
 
     if (mode === 'register') {
-      if (!name || !confirmPassword || !captchaId || !captchaCode) {
+      if (!name) {
         Taro.showToast({
-          title: '请补全注册信息',
-          icon: 'none',
+          title: '请填写姓名',
+          icon: 'none'
+        })
+        return
+      }
+
+      if (!captchaId || !captchaCode) {
+        Taro.showToast({
+          title: '请输入图形验证码',
+          icon: 'none'
+        })
+        return
+      }
+
+      if (!confirmPassword) {
+        Taro.showToast({
+          title: '请再次确认密码',
+          icon: 'none'
         })
         return
       }
@@ -178,7 +228,7 @@ export default function Index() {
       if (password !== confirmPassword) {
         Taro.showToast({
           title: '两次输入的密码不一致',
-          icon: 'none',
+          icon: 'none'
         })
         return
       }
@@ -191,260 +241,500 @@ export default function Index() {
         const res = await Network.request({
           url: '/api/auth/login',
           method: 'POST',
-          data: { phone, password },
+          data: { phone, password }
         })
 
         if (res.data.code === 200) {
           const authUser = persistAuthSession(res.data.data as AuthUserInfo)
           setCurrentUser(authUser)
-          Taro.showToast({ title: '登录成功', icon: 'success' })
-          setTimeout(() => switchTabByRole(authUser.role), 800)
+
+          Taro.showToast({
+            title: '登录成功',
+            icon: 'success'
+          })
+
+          setTimeout(() => {
+            switchTabByRole(authUser.role)
+          }, 1500)
         } else {
           Taro.showToast({
             title: res.data.message || '登录失败',
-            icon: 'none',
+            icon: 'none'
           })
         }
-        return
-      }
-
-      const res = await Network.request({
-        url: '/api/auth/register',
-        method: 'POST',
-        data: { phone, password, confirmPassword, captchaId, captchaCode, name, role },
-      })
-
-      if (res.data.code === 200) {
-        const authUser = persistAuthSession(res.data.data as AuthUserInfo)
-        setCurrentUser(authUser)
-        Taro.showToast({ title: '注册成功，已自动登录', icon: 'success' })
-        setTimeout(() => switchTabByRole(authUser.role), 800)
       } else {
-        Taro.showToast({
-          title: res.data.message || '注册失败',
-          icon: 'none',
+        const res = await Network.request({
+          url: '/api/auth/register',
+          method: 'POST',
+          data: { phone, password, confirmPassword, captchaId, captchaCode, name, role }
         })
-        void loadRegisterCaptcha()
+
+        if (res.data.code === 200) {
+          const authUser = persistAuthSession(res.data.data as AuthUserInfo)
+          setCurrentUser(authUser)
+
+          Taro.showToast({
+            title: '注册成功，已自动登录',
+            icon: 'success'
+          })
+
+          setTimeout(() => {
+            switchTabByRole(authUser.role)
+          }, 1500)
+        } else {
+          Taro.showToast({
+            title: res.data.message || '注册失败',
+            icon: 'none'
+          })
+          void loadRegisterCaptcha()
+        }
       }
     } catch (error) {
-      console.error('认证请求失败:', error)
+      console.error('请求失败:', error)
       Taro.showToast({
         title: '网络错误，请重试',
-        icon: 'none',
+        icon: 'none'
       })
     } finally {
       setAuthLoading(false)
     }
   }
 
+  const switchTabByRole = (userRole: string) => {
+    setShowAuthDialog(false)
+    if (userRole === 'owner') {
+      Taro.redirectTo({ url: '/pages/owner/demands/index' })
+    } else if (userRole === 'merchant') {
+      Taro.redirectTo({ url: '/pages/merchant/demands/index' })
+    } else if (userRole === 'admin') {
+      Taro.redirectTo({ url: '/pages/admin/users/index' })
+    } else if (userRole === 'enterprise_admin' || userRole === 'enterprise') {
+      Taro.redirectTo({ url: '/pages/enterprise/index/index' })
+    }
+  }
+
+  const openAuthDialog = (authMode: 'login' | 'register') => {
+    setMode(authMode)
+    setStep('role')
+    setShowAuthDialog(true)
+  }
+
   return (
-    <View className="min-h-screen bg-slate-100">
-      <ScrollView scrollY className="min-h-screen pb-8">
-        <View className="flex flex-row items-center justify-between px-5 pt-3 pb-2">
-          <Text className="block text-xs font-semibold text-slate-900">9:41</Text>
-          <View className="flex flex-row items-center gap-1">
-            <View className="size-2 rounded-full bg-slate-900" />
-            <View className="size-2 rounded-full bg-slate-900" />
-            <View className="h-2 w-4 rounded-full bg-slate-900" />
-          </View>
-        </View>
-
-        <View className="mx-3 rounded-3xl bg-blue-600 px-5 py-6 shadow-lg shadow-blue-200">
-          <View className="flex flex-row items-start justify-between gap-3">
-            <View className="flex-1">
-              <Text className="block text-2xl font-bold text-white">无人车共享运营平台</Text>
-              <Text className="mt-2 block text-sm leading-5 text-blue-100">
-                需求发布 · 运力接单 · 企业调度
-              </Text>
-            </View>
+    <View className="min-h-screen bg-gray-50">
+      <ScrollView scrollY className="h-full">
+        {/* 头部 */}
+        <View className="bg-gradient-to-br from-blue-500 to-blue-600 pt-12 pb-8 px-4 relative">
+          {/* 右上角登录/注册按钮 */}
+          <View className="absolute top-4 right-4 flex gap-3">
             {currentUser ? (
-              <Button className="rounded-full bg-white" size="sm" onClick={() => switchTabByRole(currentUser.role)}>
-                <Text className="text-xs font-semibold text-blue-600">进入</Text>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 border-white bg-white bg-opacity-20"
+                onClick={() => switchTabByRole(currentUser.role)}
+              >
+                <Text className="text-xs text-white font-medium">进入大厅</Text>
               </Button>
-            ) : null}
+            ) : (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 border-white bg-white bg-opacity-20"
+                  onClick={() => openAuthDialog('login')}
+                >
+                  <Text className="text-xs text-white font-medium">登录</Text>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 border-white bg-white bg-opacity-20"
+                  onClick={() => openAuthDialog('register')}
+                >
+                  <Text className="text-xs text-white font-medium">注册</Text>
+                </Button>
+              </>
+            )}
           </View>
 
-          <View className="mt-5 grid grid-cols-3 gap-2">
-            <View className="rounded-2xl bg-white px-3 py-3">
-              <Text className="block text-xl font-bold text-blue-600">{statistics.orders.total}</Text>
-              <Text className="mt-1 block text-xs text-slate-500">订单</Text>
-            </View>
-            <View className="rounded-2xl bg-white px-3 py-3">
-              <Text className="block text-xl font-bold text-emerald-600">{statistics.vehicles.total}</Text>
-              <Text className="mt-1 block text-xs text-slate-500">车辆</Text>
-            </View>
-            <View className="rounded-2xl bg-white px-3 py-3">
-              <Text className="block text-xl font-bold text-amber-600">{statistics.demands.total}</Text>
-              <Text className="mt-1 block text-xs text-slate-500">需求</Text>
-            </View>
-          </View>
+          <Text className="block text-2xl font-bold text-white text-center">
+            无人车共享运营平台
+          </Text>
+          <Text className="block text-sm text-blue-100 text-center mt-2">
+            高效运力撮合 · 便捷服务
+          </Text>
         </View>
 
-        <View className="flex flex-col gap-4 px-3 pt-4">
-          <Card className="rounded-3xl border border-slate-100 bg-white shadow-sm">
+        {/* 数据统计卡片 */}
+        <View className="px-4 -mt-4">
+          <Card className="bg-white rounded-lg shadow-md mb-4">
             <CardContent className="p-4">
-              <View className="mb-4 flex flex-row gap-2">
-                <Button
-                  className={mode === 'login' ? 'h-10 flex-1 rounded-2xl bg-blue-600' : 'h-10 flex-1 rounded-2xl bg-slate-50'}
-                  variant={mode === 'login' ? 'default' : 'outline'}
-                  onClick={() => setMode('login')}
-                >
-                  <Text className={mode === 'login' ? 'text-sm font-semibold text-white' : 'text-sm font-semibold text-slate-700'}>
-                    登录
+              <View className="flex justify-between items-center">
+                <View className="text-center flex-1">
+                  <Text className="block text-2xl font-bold text-blue-500">
+                    {statistics?.orders.total || 0}
                   </Text>
-                </Button>
-                <Button
-                  className={mode === 'register' ? 'h-10 flex-1 rounded-2xl bg-blue-600' : 'h-10 flex-1 rounded-2xl bg-slate-50'}
-                  variant={mode === 'register' ? 'default' : 'outline'}
-                  onClick={() => setMode('register')}
-                >
-                  <Text className={mode === 'register' ? 'text-sm font-semibold text-white' : 'text-sm font-semibold text-slate-700'}>
-                    注册
-                  </Text>
-                </Button>
-              </View>
-
-              <View className="mb-4 grid grid-cols-3 gap-2">
-                {roleOptions.map((option) => {
-                  const Icon = option.icon
-                  const selected = role === option.value
-                  return (
-                    <View
-                      key={option.value}
-                      className={selected ? 'rounded-2xl border border-blue-200 bg-blue-50 px-2 py-3' : 'rounded-2xl border border-slate-100 bg-slate-50 px-2 py-3'}
-                      onClick={() => setRole(option.value)}
-                    >
-                      <View className="items-center">
-                        <Icon size={18} color={selected ? '#0062FF' : '#64748B'} strokeWidth={2.2} />
-                        <Text className={selected ? 'mt-2 block text-center text-xs font-bold text-blue-600' : 'mt-2 block text-center text-xs font-bold text-slate-700'}>
-                          {option.label}
-                        </Text>
-                        <Text className="mt-1 block text-center text-xs text-slate-400">{option.detail}</Text>
-                      </View>
-                    </View>
-                  )
-                })}
-              </View>
-
-              <View className="flex flex-col gap-3">
-                {mode === 'register' ? (
-                  <View>
-                    <Label className="mb-2 block text-xs font-semibold text-slate-500">姓名</Label>
-                    <Input className="rounded-2xl bg-slate-50" placeholder="请输入您的姓名" value={name} onInput={(event) => setName(event.detail.value)} />
-                  </View>
-                ) : null}
-
-                <View>
-                  <Label className="mb-2 block text-xs font-semibold text-slate-500">手机号</Label>
-                  <Input
-                    className="rounded-2xl bg-slate-50"
-                    placeholder="请输入手机号"
-                    type="number"
-                    value={phone}
-                    onInput={(event) => setPhone(event.detail.value)}
-                  />
+                  <Text className="block text-xs text-gray-500 mt-1">总订单数</Text>
                 </View>
-
-                {mode === 'register' ? (
-                  <View>
-                    <Label className="mb-2 block text-xs font-semibold text-slate-500">图形验证码</Label>
-                    <View className="flex flex-row items-center gap-2">
-                      <Input
-                        className="flex-1 rounded-2xl bg-slate-50"
-                        placeholder="验证码"
-                        value={captchaCode}
-                        maxlength={6}
-                        onInput={(event) => setCaptchaCode(event.detail.value.toUpperCase())}
-                      />
-                      <Button className="h-11 rounded-2xl bg-slate-50 px-2" variant="outline" disabled={captchaLoading} onClick={loadRegisterCaptcha}>
-                        {captchaImage ? (
-                          <Image src={captchaImage} mode="aspectFit" className="h-8 w-24" />
-                        ) : (
-                          <Text className="text-xs text-slate-500">{TARO_ENV === 'h5' && !PROJECT_DOMAIN ? '预览' : '加载中'}</Text>
-                        )}
-                      </Button>
-                    </View>
-                  </View>
-                ) : null}
-
-                <View>
-                  <Label className="mb-2 block text-xs font-semibold text-slate-500">密码</Label>
-                  <Input className="rounded-2xl bg-slate-50" placeholder="请输入密码" password value={password} onInput={(event) => setPassword(event.detail.value)} />
-                </View>
-
-                {mode === 'register' ? (
-                  <View>
-                    <Label className="mb-2 block text-xs font-semibold text-slate-500">确认密码</Label>
-                    <Input
-                      className="rounded-2xl bg-slate-50"
-                      placeholder="请再次输入密码"
-                      password
-                      value={confirmPassword}
-                      onInput={(event) => setConfirmPassword(event.detail.value)}
-                    />
-                  </View>
-                ) : null}
-
-                <Button className="mt-1 h-12 rounded-2xl bg-blue-600" disabled={authLoading} onClick={handleSubmit}>
-                  <Text className="text-sm font-semibold text-white">
-                    {authLoading ? (mode === 'login' ? '登录中...' : '注册中...') : mode === 'login' ? '登录' : '注册'}
+                <View className="text-center flex-1">
+                  <Text className="block text-2xl font-bold text-green-500">
+                    {statistics?.vehicles.total || 0}
                   </Text>
-                </Button>
+                  <Text className="block text-xs text-gray-500 mt-1">车辆数</Text>
+                </View>
+                <View className="text-center flex-1">
+                  <Text className="block text-2xl font-bold text-orange-500">
+                    {statistics?.demands.total || 0}
+                  </Text>
+                  <Text className="block text-xs text-gray-500 mt-1">需求数</Text>
+                </View>
               </View>
             </CardContent>
           </Card>
+        </View>
 
-          <View className="grid grid-cols-2 gap-3">
-            <Card className="rounded-3xl border border-slate-100 bg-white shadow-sm">
-              <CardContent className="p-4">
-                <Clock size={20} color="#0062FF" />
-                <Text className="mt-3 block text-sm font-bold text-slate-900">快速匹配</Text>
-                <Text className="mt-1 block text-xs text-slate-500">发布后自动匹配车辆</Text>
-              </CardContent>
-            </Card>
-            <Card className="rounded-3xl border border-slate-100 bg-white shadow-sm">
-              <CardContent className="p-4">
-                <ShieldCheck size={20} color="#10B981" />
-                <Text className="mt-3 block text-sm font-bold text-slate-900">安全保障</Text>
-                <Text className="mt-1 block text-xs text-slate-500">订单、车辆、履约可追踪</Text>
-              </CardContent>
-            </Card>
-            <Card className="rounded-3xl border border-slate-100 bg-white shadow-sm">
-              <CardContent className="p-4">
-                <Truck size={20} color="#F59E0B" />
-                <Text className="mt-3 block text-sm font-bold text-slate-900">运力充足</Text>
-                <Text className="mt-1 block text-xs text-slate-500">多车型覆盖核心线路</Text>
-              </CardContent>
-            </Card>
-            <Card className="rounded-3xl border border-slate-100 bg-white shadow-sm">
-              <CardContent className="p-4">
-                <Package size={20} color="#4F46E5" />
-                <Text className="mt-3 block text-sm font-bold text-slate-900">便捷下单</Text>
-                <Text className="mt-1 block text-xs text-slate-500">常用模板快速复用</Text>
-              </CardContent>
-            </Card>
-          </View>
-
-          {currentUser ? (
-            <Card className="rounded-3xl border border-blue-100 bg-blue-50 shadow-sm">
-              <CardContent className="p-4">
-                <View className="flex flex-row items-center gap-3">
-                  <View className="flex size-10 items-center justify-center rounded-2xl bg-white">
-                    <UserRound size={20} color="#0062FF" />
+        {/* 最新信息 */}
+        <View className="px-4 mb-4">
+          <View className="grid grid-cols-1 gap-3">
+            {/* 最新需求 */}
+            <Card className="bg-white rounded-lg shadow-sm overflow-hidden">
+              <CardContent className="p-3">
+                <View className="flex items-center justify-between mb-2">
+                  <View className="flex items-center">
+                    <Package size={16} color="#ef4444" />
+                    <Text className="block text-sm font-semibold text-red-500 ml-2">
+                      最新需求
+                    </Text>
                   </View>
-                  <View className="flex-1">
-                    <Text className="block text-sm font-bold text-slate-900">{currentUser.name || currentUser.phone}</Text>
-                    <Text className="mt-1 block text-xs text-slate-500">已登录 · {currentUser.role}</Text>
-                  </View>
-                  <Button className="rounded-2xl bg-blue-600" size="sm" onClick={() => switchTabByRole(currentUser.role)}>
-                    <Text className="text-xs font-semibold text-white">进入工作台</Text>
-                  </Button>
+                  <Text className="text-xs text-gray-400">
+                    共 {latestInfo?.latestDemands.length || 0} 条
+                  </Text>
+                </View>
+                <View className="space-y-2">
+                  {latestInfo?.latestDemands.slice(0, 5).map(item => (
+                    <View key={item.id} className="py-2 border-b border-gray-50 last:border-0">
+                      <View className="flex justify-between items-start mb-1">
+                        <Text className="text-xs font-medium text-gray-800 flex-1">
+                          {item.cargoName}
+                        </Text>
+                        <Text className="text-xs text-gray-400 ml-2">
+                          {item.cargoType === 'perishable' ? '易腐' : '普通'}
+                        </Text>
+                      </View>
+                      <View className="flex items-start mb-1">
+                        <Text className="text-xs text-gray-500 w-12 flex-shrink-0">取货:</Text>
+                        <Text className="text-xs text-gray-700 flex-1">
+                          {item.pickupAddress}
+                        </Text>
+                      </View>
+                      <View className="flex items-start mb-1">
+                        <Text className="text-xs text-gray-500 w-12 flex-shrink-0">送货:</Text>
+                        <Text className="text-xs text-gray-700 flex-1">
+                          {item.deliveryAddress}
+                        </Text>
+                      </View>
+                      <View className="flex items-center justify-between">
+                        <Text className="text-xs text-gray-400">
+                          {item.merchantPhone}
+                        </Text>
+                        <Text className="text-xs text-gray-400">
+                          {new Date(item.createdAt).toLocaleString()}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                  {!latestInfo?.latestDemands || latestInfo.latestDemands.length === 0 && (
+                    <Text className="text-xs text-gray-400 text-center py-4">
+                      暂无需求
+                    </Text>
+                  )}
                 </View>
               </CardContent>
             </Card>
-          ) : null}
+
+            {/* 完单信息 */}
+            <Card className="bg-white rounded-lg shadow-sm overflow-hidden">
+              <CardContent className="p-3">
+                <View className="flex items-center justify-between mb-2">
+                  <View className="flex items-center">
+                    <Check size={16} color="#10b981" />
+                    <Text className="block text-sm font-semibold text-green-500 ml-2">
+                      完单信息
+                    </Text>
+                  </View>
+                  <Text className="text-xs text-gray-400">
+                    共 {latestInfo?.completedOrders.length || 0} 条
+                  </Text>
+                </View>
+                <View className="space-y-2">
+                  {latestInfo?.completedOrders.map(item => (
+                    <View key={item.id} className="py-2 border-b border-gray-50 last:border-0">
+                      <View className="flex justify-between items-start mb-1">
+                        <Text className="text-xs font-medium text-gray-800 flex-1">
+                          {item.cargoName}
+                        </Text>
+                        <Text className="text-xs font-bold text-green-500 ml-2">
+                          ¥{item.farePrice}
+                        </Text>
+                      </View>
+                      <Text className="text-xs text-gray-500 block">
+                        运力方: {item.ownerPhone}
+                      </Text>
+                    </View>
+                  ))}
+                  {!latestInfo?.completedOrders || latestInfo.completedOrders.length === 0 && (
+                    <Text className="text-xs text-gray-400 text-center py-4">
+                      暂无完单信息
+                    </Text>
+                  )}
+                </View>
+              </CardContent>
+            </Card>
+          </View>
+        </View>
+
+        {/* 平台特色 */}
+        <View className="px-4 mb-6">
+          <Text className="block text-lg font-semibold text-gray-800 mb-3">
+            平台特色
+          </Text>
+          <View className="grid grid-cols-2 gap-3">
+            <Card className="bg-white rounded-lg shadow-sm p-4">
+              <View className="flex items-center mb-2">
+                <Clock size={20} color="#3b82f6" />
+                <Text className="block text-sm font-semibold text-gray-700 ml-2">
+                  快速匹配
+                </Text>
+              </View>
+              <Text className="block text-xs text-gray-500">
+                智能算法快速匹配车辆
+              </Text>
+            </Card>
+            <Card className="bg-white rounded-lg shadow-sm p-4">
+              <View className="flex items-center mb-2">
+                <Shield size={20} color="#10b981" />
+                <Text className="block text-sm font-semibold text-gray-700 ml-2">
+                  安全保障
+                </Text>
+              </View>
+              <Text className="block text-xs text-gray-500">
+                全程追踪，安全可靠
+              </Text>
+            </Card>
+            <Card className="bg-white rounded-lg shadow-sm p-4">
+              <View className="flex items-center mb-2">
+                <Truck size={20} color="#f59e0b" />
+                <Text className="block text-sm font-semibold text-gray-700 ml-2">
+                  运力充足
+                </Text>
+              </View>
+              <Text className="block text-xs text-gray-500">
+                多种车型，满足需求
+              </Text>
+            </Card>
+            <Card className="bg-white rounded-lg shadow-sm p-4">
+              <View className="flex items-center mb-2">
+                <Package size={20} color="#8b5cf6" />
+                <Text className="block text-sm font-semibold text-gray-700 ml-2">
+                便捷下单
+                </Text>
+              </View>
+              <Text className="block text-xs text-gray-500">
+                简单几步，轻松完成
+              </Text>
+            </Card>
+          </View>
         </View>
       </ScrollView>
+
+      {/* 登录/注册弹窗 */}
+      <Dialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>
+        <DialogContent className="rounded-lg">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold text-center">
+              {mode === 'login' ? '登录' : '注册'}
+            </DialogTitle>
+          </DialogHeader>
+
+          <View className="flex justify-center gap-4 mb-4">
+            <Button
+              variant={mode === 'login' ? 'default' : 'outline'}
+              onClick={() => {
+                setMode('login')
+                setStep('role')
+              }}
+              className={mode === 'login' ? 'bg-blue-500' : ''}
+              size="sm"
+            >
+              <Text className="text-sm">登录</Text>
+            </Button>
+            <Button
+              variant={mode === 'register' ? 'default' : 'outline'}
+              onClick={() => {
+                setMode('register')
+                setStep('role')
+              }}
+              className={mode === 'register' ? 'bg-blue-500' : ''}
+              size="sm"
+            >
+              <Text className="text-sm">注册</Text>
+            </Button>
+          </View>
+
+          {step === 'role' && mode === 'register' ? (
+            <View>
+              <Text className="block text-sm font-semibold text-center mb-4">
+                选择您的角色
+              </Text>
+              <View className="space-y-3">
+                <Button
+                  variant="outline"
+                  className="w-full h-16"
+                  onClick={() => handleRoleSelect('owner')}
+                >
+                  <View className="text-center">
+                    <Text className="block text-base font-semibold">运力方（车主）</Text>
+                    <Text className="block text-xs text-gray-500 mt-1">注册车辆、接单、查看收益</Text>
+                  </View>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full h-16"
+                  onClick={() => handleRoleSelect('merchant')}
+                >
+                  <View className="text-center">
+                    <Text className="block text-base font-semibold">需求方</Text>
+                    <Text className="block text-xs text-gray-500 mt-1">发布需求、下单、追踪订单</Text>
+                  </View>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full h-16"
+                  onClick={() => handleRoleSelect('enterprise')}
+                >
+                  <View className="text-center">
+                    <Text className="block text-base font-semibold">企业端</Text>
+                    <Text className="block text-xs text-gray-500 mt-1">企业配送、车队管理、奶站调货</Text>
+                  </View>
+                </Button>
+              </View>
+            </View>
+          ) : (
+            <View>
+              {mode === 'register' && (
+                <View className="mb-4">
+                  <Label className="block text-sm font-medium mb-2">
+                    <Text className="text-red-500">*</Text>姓名
+                  </Label>
+                  <Input
+                    className="w-full bg-gray-50"
+                    placeholder="请输入您的姓名"
+                    value={name}
+                    onInput={(e) => setName(e.detail.value)}
+                  />
+                </View>
+              )}
+
+              <View className="mb-4">
+                <Label className="block text-sm font-medium mb-2">
+                  <Text className="text-red-500">*</Text>手机号
+                </Label>
+                <Input
+                  className="w-full bg-gray-50"
+                  placeholder="请输入手机号"
+                  type="number"
+                  value={phone}
+                  onInput={(e) => setPhone(e.detail.value)}
+                />
+              </View>
+
+              {mode === 'register' && (
+                <View className="mb-4">
+                  <Label className="block text-sm font-medium mb-2">
+                    <Text className="text-red-500">*</Text>图形验证码
+                  </Label>
+                  <View className="flex gap-2 items-center">
+                    <Input
+                      className="flex-1 bg-gray-50"
+                      placeholder="请输入图形验证码"
+                      value={captchaCode}
+                      onInput={(e) => setCaptchaCode(e.detail.value.toUpperCase())}
+                      maxlength={6}
+                    />
+                    <Button
+                      size="sm"
+                      className="h-10 px-2"
+                      variant="outline"
+                      disabled={captchaLoading}
+                      onClick={loadRegisterCaptcha}
+                    >
+                      {captchaImage ? (
+                        <Image
+                          src={captchaImage}
+                          mode="aspectFit"
+                          className="w-28 h-8"
+                        />
+                      ) : (
+                        <Text className="text-xs">加载中</Text>
+                      )}
+                    </Button>
+                  </View>
+                  <Text
+                    className="block text-xs text-blue-500 mt-2"
+                    onClick={loadRegisterCaptcha}
+                  >
+                    刷新验证码
+                  </Text>
+                </View>
+              )}
+
+              <View className="mb-4">
+                <Label className="block text-sm font-medium mb-2">
+                  <Text className="text-red-500">*</Text>密码
+                </Label>
+                <Input
+                  className="w-full bg-gray-50"
+                  placeholder="请输入密码"
+                  password
+                  value={password}
+                  onInput={(e) => setPassword(e.detail.value)}
+                />
+              </View>
+
+              {mode === 'register' && (
+                <View className="mb-4">
+                  <Label className="block text-sm font-medium mb-2">
+                    <Text className="text-red-500">*</Text>再次确认密码
+                  </Label>
+                  <Input
+                    className="w-full bg-gray-50"
+                    placeholder="请再次输入密码"
+                    password
+                    value={confirmPassword}
+                    onInput={(e) => setConfirmPassword(e.detail.value)}
+                  />
+                </View>
+              )}
+
+              <Button
+                className="w-full bg-blue-500"
+                onClick={handleSubmit}
+                disabled={authLoading}
+              >
+                <Text className="text-sm">
+                  {authLoading
+                    ? mode === 'login'
+                      ? '登录中...'
+                      : '注册中...'
+                    : mode === 'login'
+                    ? '登录'
+                    : '注册'}
+                </Text>
+              </Button>
+            </View>
+          )}
+        </DialogContent>
+      </Dialog>
     </View>
   )
 }
