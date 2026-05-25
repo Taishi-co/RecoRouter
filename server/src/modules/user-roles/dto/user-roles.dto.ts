@@ -3,8 +3,8 @@ import { z } from 'zod'
 // 创建角色 DTO
 export const createRoleSchema = z.object({
   userId: z.string().min(1, '用户ID不能为空'),
-  role: z.enum(['owner', 'merchant', 'enterprise'], {
-    message: '角色必须为 owner、merchant 或 enterprise'
+  role: z.enum(['owner', 'merchant'], {
+    message: '角色必须为 owner 或 merchant'
   })
 })
 

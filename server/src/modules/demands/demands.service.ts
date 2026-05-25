@@ -323,8 +323,8 @@ export class DemandsService {
     }
 
     // 验证用户角色
-    if (!['merchant', 'enterprise'].includes(user.role)) {
-      throw new BadRequestException('只有需求方或企业方可以发布需求')
+    if (user.role !== 'merchant') {
+      throw new BadRequestException('只有需求方可以发布需求')
     }
 
     // 创建需求记录

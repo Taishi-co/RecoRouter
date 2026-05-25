@@ -181,7 +181,6 @@ export class AdminService {
         total: usersByRole?.length || 0,
         owner: usersByRole?.filter(u => u.role === 'owner').length || 0,
         merchant: usersByRole?.filter(u => u.role === 'merchant').length || 0,
-        enterprise: usersByRole?.filter(u => u.role === 'enterprise').length || 0,
         active: usersByRole?.filter(u => u.status === 'active').length || 0,
         disabled: usersByRole?.filter(u => u.status === 'disabled').length || 0
       },

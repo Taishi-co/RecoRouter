@@ -17,19 +17,7 @@ interface UploadedFile {
 @Injectable()
 export class AuthService {
   async register(registerDto: RegisterDto) {
-    const { phone, password, confirmPassword, verificationCode, name, role } = registerDto
-
-    if (!confirmPassword) {
-      throw new BadRequestException('请再次确认密码')
-    }
-
-    if (password !== confirmPassword) {
-      throw new BadRequestException('两次输入的密码不一致')
-    }
-
-    if (!verificationCode) {
-      throw new BadRequestException('请输入验证码')
-    }
+    const { phone, password, name, role } = registerDto
 
     // 检查手机号是否已注册
     const client = getSupabaseClient()
@@ -45,22 +33,6 @@ export class AuthService {
 
     if (existingUser) {
       throw new ConflictException('该手机号已注册')
-    }
-
-    const { data: codeData, error: codeError } = await client
-      .from('sms_codes')
-      .select('*')
-      .eq('phone', phone)
-      .eq('code', verificationCode)
-      .eq('type', 'register')
-      .eq('is_used', false)
-      .gt('created_at', new Date(Date.now() - 5 * 60 * 1000).toISOString())
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (codeError || !codeData) {
-      throw new BadRequestException('验证码无效或已过期')
     }
 
     // 加密密码
@@ -84,11 +56,6 @@ export class AuthService {
     if (insertError) {
       throw new UnauthorizedException(`注册失败: ${insertError.message}`)
     }
-
-    await client
-      .from('sms_codes')
-      .update({ is_used: true })
-      .eq('id', codeData.id)
 
     // 生成 token（简化版，使用用户ID）
     const token = userId
