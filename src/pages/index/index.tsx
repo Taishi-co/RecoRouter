@@ -51,9 +51,45 @@ interface LatestInfo {
   }>
 }
 
+interface AuthUserInfo {
+  id: string
+  phone: string
+  name: string
+  role: string
+  token?: string
+}
+
+const persistAuthSession = (userInfo: AuthUserInfo) => {
+  const token = userInfo.token || Taro.getStorageSync('token') || userInfo.id
+  const normalizedUserInfo = {
+    ...userInfo,
+    token
+  }
+
+  Taro.setStorageSync('userInfo', normalizedUserInfo)
+  Taro.setStorageSync('token', token)
+
+  return normalizedUserInfo
+}
+
+const getStoredAuthUser = (): AuthUserInfo | null => {
+  const userInfo = Taro.getStorageSync('userInfo') as AuthUserInfo | undefined
+  const token = Taro.getStorageSync('token') as string | undefined
+
+  if (!userInfo || !userInfo.id || !userInfo.role) {
+    return null
+  }
+
+  return persistAuthSession({
+    ...userInfo,
+    token: userInfo.token || token || userInfo.id
+  })
+}
+
 export default function Index() {
   const [statistics, setStatistics] = useState<Statistics | null>(null)
   const [latestInfo, setLatestInfo] = useState<LatestInfo | null>(null)
+  const [currentUser, setCurrentUser] = useState<AuthUserInfo | null>(null)
 
   // 登录/注册弹窗
   const [showAuthDialog, setShowAuthDialog] = useState(false)
@@ -66,6 +102,7 @@ export default function Index() {
   const [authLoading, setAuthLoading] = useState(false)
 
   useEffect(() => {
+    setCurrentUser(getStoredAuthUser())
     loadStatistics()
     loadLatestInfo()
   }, [])
@@ -141,8 +178,8 @@ export default function Index() {
         })
 
         if (res.data.code === 200) {
-          Taro.setStorageSync('userInfo', res.data.data)
-          Taro.setStorageSync('token', res.data.data.token)
+          const authUser = persistAuthSession(res.data.data as AuthUserInfo)
+          setCurrentUser(authUser)
 
           Taro.showToast({
             title: '登录成功',
@@ -150,8 +187,7 @@ export default function Index() {
           })
 
           setTimeout(() => {
-            const userRole = res.data.data.role
-            switchTabByRole(userRole)
+            switchTabByRole(authUser.role)
           }, 1500)
         } else {
           Taro.showToast({
@@ -167,14 +203,16 @@ export default function Index() {
         })
 
         if (res.data.code === 200) {
+          const authUser = persistAuthSession(res.data.data as AuthUserInfo)
+          setCurrentUser(authUser)
+
           Taro.showToast({
-            title: '注册成功',
+            title: '注册成功，已自动登录',
             icon: 'success'
           })
 
           setTimeout(() => {
-            const userRole = res.data.data.role
-            switchTabByRole(userRole)
+            switchTabByRole(authUser.role)
           }, 1500)
         } else {
           Taro.showToast({
@@ -220,18 +258,35 @@ export default function Index() {
         <View className="bg-gradient-to-br from-blue-500 to-blue-600 pt-12 pb-8 px-4 relative">
           {/* 右上角登录/注册按钮 */}
           <View className="absolute top-4 right-4 flex gap-3">
-            <View
-              className="py-1 px-3 rounded-full"
-              onClick={() => openAuthDialog('login')}
-            >
-              <Text className="text-xs text-white font-medium">登录</Text>
-            </View>
-            <View
-              className="py-1 px-3 rounded-full"
-              onClick={() => openAuthDialog('register')}
-            >
-              <Text className="text-xs text-white font-medium">注册</Text>
-            </View>
+            {currentUser ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 border-white bg-white bg-opacity-20"
+                onClick={() => switchTabByRole(currentUser.role)}
+              >
+                <Text className="text-xs text-white font-medium">进入大厅</Text>
+              </Button>
+            ) : (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 border-white bg-white bg-opacity-20"
+                  onClick={() => openAuthDialog('login')}
+                >
+                  <Text className="text-xs text-white font-medium">登录</Text>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 border-white bg-white bg-opacity-20"
+                  onClick={() => openAuthDialog('register')}
+                >
+                  <Text className="text-xs text-white font-medium">注册</Text>
+                </Button>
+              </>
+            )}
           </View>
 
           <Text className="block text-2xl font-bold text-white text-center">
