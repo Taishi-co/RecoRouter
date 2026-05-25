@@ -77,6 +77,7 @@ const EnterprisePublishPage: FC = () => {
   }, [])
 
   const loadEnterpriseInfo = async () => {
+    setLoading(true)
     try {
       const userInfo = Taro.getStorageSync('userInfo')
       if (!userInfo) {
@@ -95,7 +96,7 @@ const EnterprisePublishPage: FC = () => {
           return
         }
         setEnterpriseId(entId)
-        loadStations(entId, businessMode)
+        await loadStations(entId, businessMode)
       } else {
         setErrorText(getApiMessage(enterpriseRes, '加载企业信息失败'))
       }
@@ -107,6 +108,7 @@ const EnterprisePublishPage: FC = () => {
   }
 
   const loadStations = async (entId: string, mode: BusinessMode = businessMode) => {
+    setLoading(true)
     try {
       const expectedPointType = pointTypeForMode(mode)
       const res = await Network.request({
@@ -124,6 +126,8 @@ const EnterprisePublishPage: FC = () => {
       }
     } catch {
       setErrorText('加载点位失败')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -138,6 +142,16 @@ const EnterprisePublishPage: FC = () => {
   }
 
   const handleSubmit = async () => {
+    if (submitting) return
+
+    if (!enterpriseId) {
+      Taro.showToast({
+        title: '企业信息缺失',
+        icon: 'none',
+      })
+      return
+    }
+
     if (!cargoType || !cargoQuantity) {
       Taro.showToast({
         title: '请填写完整信息',
@@ -240,6 +254,21 @@ const EnterprisePublishPage: FC = () => {
           <Card className="mb-4 border-red-200 bg-red-50">
             <CardContent className="p-3">
               <Text className="block text-sm text-red-600">{errorText}</Text>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-3"
+                onClick={() => {
+                  if (enterpriseId) {
+                    loadStations(enterpriseId, businessMode)
+                  } else {
+                    loadEnterpriseInfo()
+                  }
+                }}
+                disabled={loading}
+              >
+                <Text className="text-xs">重试</Text>
+              </Button>
             </CardContent>
           </Card>
         )}
@@ -416,7 +445,7 @@ const EnterprisePublishPage: FC = () => {
           <Button
             className="w-full"
             onClick={handleSubmit}
-            disabled={submitting || loading}
+            disabled={submitting || loading || !enterpriseId}
           >
             <Text>{submitting ? '发布中...' : '发布配送'}</Text>
           </Button>
