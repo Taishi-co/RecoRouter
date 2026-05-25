@@ -5,7 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Car, Phone, Mail, Calendar, DollarSign, Info } from 'lucide-react-taro'
+import { Car, Phone, Mail, Calendar, DollarSign, Info, Truck } from 'lucide-react-taro'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import { Network } from '@/network'
 
 interface VehicleOwner {
@@ -36,9 +38,81 @@ interface Vehicle {
   application_status: string | null
 }
 
+const demoRentalVehicles: Vehicle[] = [
+  {
+    id: 'demo-rental-1',
+    license_plate: '沪A·R8821',
+    vehicle_type: 'van',
+    load_capacity: 12000,
+    volume: 45,
+    battery_life: 380,
+    has_cold_chain: false,
+    photos: [],
+    owners: {
+      id: 'demo-owner-1',
+      name: '上海锐驰车队',
+      phone: '13800001234',
+    },
+    is_available_for_rent: true,
+    rent_monthly_price: 14400,
+    rent_yearly_price: 158000,
+    rent_deposit: 5000,
+    contact_phone: '13800001234',
+    contact_wechat: 'recocar-demo',
+    has_applied: false,
+    application_status: null,
+  },
+  {
+    id: 'demo-rental-2',
+    license_plate: '苏E·P5518',
+    vehicle_type: 'large_truck',
+    load_capacity: 32000,
+    volume: 62,
+    battery_life: 420,
+    has_cold_chain: false,
+    photos: [],
+    owners: {
+      id: 'demo-owner-2',
+      name: '苏州好运车队',
+      phone: '13900005678',
+    },
+    is_available_for_rent: true,
+    rent_monthly_price: 22800,
+    rent_yearly_price: 246000,
+    rent_deposit: 8000,
+    contact_phone: '13900005678',
+    has_applied: true,
+    application_status: 'pending',
+  },
+  {
+    id: 'demo-rental-3',
+    license_plate: '浙B·C8620',
+    vehicle_type: 'small_truck',
+    load_capacity: 8600,
+    volume: 38,
+    battery_life: 320,
+    has_cold_chain: true,
+    photos: [],
+    owners: {
+      id: 'demo-owner-3',
+      name: '宁波冷链联盟',
+      phone: '13700004321',
+    },
+    is_available_for_rent: true,
+    rent_monthly_price: 27600,
+    rent_yearly_price: 298000,
+    rent_deposit: 9000,
+    contact_phone: '13700004321',
+    contact_wechat: 'cold-demo',
+    has_applied: false,
+    application_status: null,
+  },
+]
+
 export default function VehicleRentals() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [loading, setLoading] = useState(false)
+  const visibleVehicles = vehicles.length > 0 ? vehicles : demoRentalVehicles
 
   useDidShow(() => {
     loadVehicles()
@@ -135,35 +209,35 @@ export default function VehicleRentals() {
   }
 
   return (
-    <View className="min-h-screen bg-background pb-4">
-      {/* 头部 */}
-      <View className="bg-white p-4 border-b border-border">
-        <Text className="text-xl font-bold text-gray-900 block">租车大厅</Text>
-        <Text className="block text-sm text-gray-500 mt-1">浏览可租赁车辆，联系车主</Text>
-      </View>
-
+    <AppPageShell
+      title="租赁列表"
+      subtitle="RecoRouter 商户小程序"
+      icon={Truck}
+      contentClassName="space-y-3"
+      bottom={<BottomNav type="merchant" active="profile" />}
+    >
       {/* 提示信息 */}
-      <View className="mx-4 mt-4 p-3 bg-accent rounded-lg">
+      <View className="p-3 bg-blue-50 rounded-lg">
         <View className="flex items-start">
-          <Info size={16} color="#0062ff" className="mr-2 flex-shrink-0 mt-1" />
-          <Text className="block text-sm text-primary">
+          <Info size={16} color="#1890ff" className="mr-2 flex-shrink-0 mt-1" />
+          <Text className="block text-sm text-blue-700">
             平台只提供信息撮合服务。租金、押金、合同等交易均在线下完成。
           </Text>
         </View>
       </View>
 
       {/* 车辆列表 */}
-      <View className="mx-4 mt-4 space-y-4">
+      <View className="space-y-4">
         {loading ? (
           <View className="text-center py-8">
             <Text className="block text-gray-500">加载中...</Text>
           </View>
-        ) : vehicles.length === 0 ? (
+        ) : visibleVehicles.length === 0 ? (
           <View className="text-center py-8">
             <Text className="block text-gray-500">暂无可租赁车辆</Text>
           </View>
         ) : (
-          vehicles.map((vehicle) => (
+          visibleVehicles.map((vehicle) => (
             <Card key={vehicle.id} className="overflow-hidden">
               <CardHeader className="pb-3">
                 <View className="flex items-center justify-between">
@@ -172,13 +246,13 @@ export default function VehicleRentals() {
                   </CardTitle>
                   <View className="flex gap-2">
                     {vehicle.has_cold_chain && (
-                      <Badge className="bg-primary">冷链</Badge>
+                      <Badge className="bg-blue-500">冷链</Badge>
                     )}
                     {vehicle.has_applied && vehicle.application_status === 'pending' && (
-                      <Badge className="bg-amber-500">已申请</Badge>
+                      <Badge className="bg-orange-500">已申请</Badge>
                     )}
                     {vehicle.has_applied && vehicle.application_status === 'active' && (
-                      <Badge className="bg-emerald-500">已租赁</Badge>
+                      <Badge className="bg-green-500">已租赁</Badge>
                     )}
                   </View>
                 </View>
@@ -204,7 +278,7 @@ export default function VehicleRentals() {
                 <Separator />
 
                 {/* 租赁信息 */}
-                <View className="bg-muted p-3 rounded-lg">
+                <View className="bg-gray-50 p-3 rounded-lg">
                   <View className="flex items-center text-sm text-gray-700 mb-2">
                     <Calendar size={14} className="mr-2" color="#6b7280" />
                     <Text className="block font-medium">租赁价格</Text>
@@ -262,6 +336,6 @@ export default function VehicleRentals() {
           ))
         )}
       </View>
-    </View>
+    </AppPageShell>
   )
 }

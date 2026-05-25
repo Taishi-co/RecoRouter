@@ -1,25 +1,23 @@
-FROM node:20-bookworm-slim AS deps
+FROM rust:1-bookworm AS builder
 
 WORKDIR /app
-
-RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
-
-COPY package.json ./
-RUN pnpm install --no-frozen-lockfile
-
-COPY nest-cli.json tsconfig.json ./
+COPY Cargo.toml Cargo.lock ./
+COPY migrations ./migrations
 COPY src ./src
-RUN pnpm build && pnpm prune --prod
+RUN cargo build --release
 
-FROM node:20-bookworm-slim AS runner
+FROM debian:bookworm-slim AS runner
 
 WORKDIR /app
-ENV NODE_ENV=production
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
-COPY --from=deps /app/package.json ./
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/dist ./dist
+COPY --from=builder /app/target/release/recorouter-api /usr/local/bin/recorouter-api
+COPY --from=builder /app/migrations ./migrations
 
+ENV SERVER_PORT=34532
+ENV LOCAL_UPLOAD_DIR=/app/uploads
 EXPOSE 34532
 
-CMD ["node", "dist/main.js", "-p", "34532"]
+CMD ["recorouter-api"]

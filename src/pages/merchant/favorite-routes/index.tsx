@@ -5,7 +5,9 @@ import Taro from '@tarojs/taro'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Plus, Trash2, Route, MapPin, Navigation, FilePen } from 'lucide-react-taro'
+import { Plus, Trash2, Route, MapPin, Navigation, FilePen, Star } from 'lucide-react-taro'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 
 interface Address {
   id: string
@@ -26,6 +28,75 @@ interface FavoriteRoute {
   created_at: string
 }
 
+const demoFavoriteRoutes: FavoriteRoute[] = [
+  {
+    id: 'demo-route-1',
+    route_name: '上海宝山 → 杭州萧山',
+    pickup_address: {
+      id: 'demo-address-1',
+      address_name: '宝山钢贸园',
+      address: '上海市宝山区铁山路 588 号',
+      latitude: 31.405221,
+      longitude: 121.489102,
+    },
+    delivery_address: {
+      id: 'demo-address-2',
+      address_name: '萧山中心仓',
+      address: '杭州市萧山区建设四路 1688 号',
+      latitude: 30.176124,
+      longitude: 120.26432,
+    },
+    estimated_distance: 168,
+    estimated_fare: 1680,
+    use_count: 31,
+    created_at: '2026-05-20T09:00:00+10:00',
+  },
+  {
+    id: 'demo-route-2',
+    route_name: '苏州太仓 → 昆山周市',
+    pickup_address: {
+      id: 'demo-address-3',
+      address_name: '太仓码头',
+      address: '苏州市太仓港区滨江大道',
+      latitude: 31.631102,
+      longitude: 121.191211,
+    },
+    delivery_address: {
+      id: 'demo-address-4',
+      address_name: '昆山周市仓',
+      address: '昆山市周市镇康庄路 88 号',
+      latitude: 31.399003,
+      longitude: 120.999238,
+    },
+    estimated_distance: 42,
+    estimated_fare: 620,
+    use_count: 18,
+    created_at: '2026-05-18T09:00:00+10:00',
+  },
+  {
+    id: 'demo-route-3',
+    route_name: '无锡惠山 → 宁波北仑',
+    pickup_address: {
+      id: 'demo-address-5',
+      address_name: '无锡惠山厂区',
+      address: '无锡市惠山区洛社镇工业园',
+      latitude: 31.6811,
+      longitude: 120.2982,
+    },
+    delivery_address: {
+      id: 'demo-address-6',
+      address_name: '宁波北仑码头',
+      address: '宁波市北仑区港东大道 99 号',
+      latitude: 29.899118,
+      longitude: 121.844011,
+    },
+    estimated_distance: 296,
+    estimated_fare: 2860,
+    use_count: 12,
+    created_at: '2026-05-16T09:00:00+10:00',
+  },
+]
+
 export default function FavoriteRoutes() {
   const [routes, setRoutes] = useState<FavoriteRoute[]>([])
   const [addresses, setAddresses] = useState<Address[]>([])
@@ -39,6 +110,8 @@ export default function FavoriteRoutes() {
     estimated_distance: '',
     estimated_fare: ''
   })
+  const visibleRoutes = routes.length > 0 ? routes : demoFavoriteRoutes
+  const isUsingDemoRoutes = routes.length === 0
 
   useEffect(() => {
     loadRoutes()
@@ -324,28 +397,16 @@ export default function FavoriteRoutes() {
   }
 
   return (
-    <View className="min-h-screen bg-background pb-4">
-      {/* 顶部标题栏 */}
-      <View className="bg-white p-4 border-b">
-        <Text className="text-lg font-semibold text-center">常用线路</Text>
-      </View>
-
-      {/* 添加线路按钮 */}
-      {!showAddForm && (
-        <View className="p-4">
-          <Button
-            className="w-full bg-primary text-white"
-            onClick={() => setShowAddForm(true)}
-          >
-            <Plus size={20} color="#ffffff" className="mr-2" />
-            <Text>添加线路</Text>
-          </Button>
-        </View>
-      )}
-
+    <AppPageShell
+      title="收藏路线"
+      subtitle="RecoRouter 商户小程序"
+      icon={Star}
+      contentClassName="space-y-3"
+      bottom={<BottomNav type="merchant" active="map" />}
+    >
       {/* 添加/编辑线路表单 */}
       {showAddForm && (
-        <Card className="m-4">
+        <Card>
           <CardContent className="p-4 space-y-3">
             <View className="flex items-center justify-between mb-2">
               <Text className="text-base font-semibold">{editingRouteId ? '编辑线路' : '添加线路'}</Text>
@@ -353,7 +414,7 @@ export default function FavoriteRoutes() {
 
             <View>
               <Text className="block text-sm font-medium mb-1">线路名称</Text>
-              <View className="bg-muted rounded px-3 py-2">
+              <View className="bg-gray-50 rounded px-3 py-2">
                 <Input
                   className="w-full bg-transparent"
                   placeholder="如：上班路线"
@@ -365,7 +426,7 @@ export default function FavoriteRoutes() {
 
             <View>
               <Text className="block text-sm font-medium mb-1">取货地址</Text>
-              <View className="bg-muted rounded px-3 py-2">
+              <View className="bg-gray-50 rounded px-3 py-2">
                 <Text className="block text-sm text-gray-700">
                   {addresses.find(a => a.id === formData.pickup_address_id)?.address_name || '请选择取货地址'}
                 </Text>
@@ -375,7 +436,7 @@ export default function FavoriteRoutes() {
                   <Button
                     key={addr.id}
                     size="sm"
-                    className={`text-xs ${formData.pickup_address_id === addr.id ? 'bg-primary text-white' : 'bg-muted'}`}
+                    className={`text-xs ${formData.pickup_address_id === addr.id ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
                     onClick={() => setFormData({ ...formData, pickup_address_id: addr.id })}
                   >
                     <Text>{addr.address_name}</Text>
@@ -386,7 +447,7 @@ export default function FavoriteRoutes() {
 
             <View>
               <Text className="block text-sm font-medium mb-1">收货地址</Text>
-              <View className="bg-muted rounded px-3 py-2">
+              <View className="bg-gray-50 rounded px-3 py-2">
                 <Text className="block text-sm text-gray-700">
                   {addresses.find(a => a.id === formData.delivery_address_id)?.address_name || '请选择收货地址'}
                 </Text>
@@ -396,7 +457,7 @@ export default function FavoriteRoutes() {
                   <Button
                     key={addr.id}
                     size="sm"
-                    className={`text-xs ${formData.delivery_address_id === addr.id ? 'bg-emerald-500 text-white' : 'bg-muted'}`}
+                    className={`text-xs ${formData.delivery_address_id === addr.id ? 'bg-green-500 text-white' : 'bg-gray-200'}`}
                     onClick={() => setFormData({ ...formData, delivery_address_id: addr.id })}
                   >
                     <Text>{addr.address_name}</Text>
@@ -408,7 +469,7 @@ export default function FavoriteRoutes() {
             <View className="flex gap-2">
               <View className="flex-1">
                 <Text className="block text-sm font-medium mb-1">预估距离（公里）</Text>
-                <View className="bg-muted rounded px-3 py-2">
+                <View className="bg-gray-50 rounded px-3 py-2">
                   <Input
                     className="w-full bg-transparent"
                     placeholder="可选"
@@ -420,7 +481,7 @@ export default function FavoriteRoutes() {
               </View>
               <View className="flex-1">
                 <Text className="block text-sm font-medium mb-1">预估运费（元）</Text>
-                <View className="bg-muted rounded px-3 py-2">
+                <View className="bg-gray-50 rounded px-3 py-2">
                   <Input
                     className="w-full bg-transparent"
                     placeholder="可选"
@@ -443,7 +504,7 @@ export default function FavoriteRoutes() {
               </Button>
               <Button
                 size="sm"
-                className="flex-1 bg-emerald-500"
+                className="flex-1 bg-green-500"
                 onClick={handleAddRoute}
                 disabled={loading}
               >
@@ -455,43 +516,47 @@ export default function FavoriteRoutes() {
       )}
 
       {/* 线路列表 */}
-      <View className="px-4 space-y-3">
-        {routes.map((route) => (
+      <View className="space-y-3">
+        {visibleRoutes.map((route) => (
           <Card key={route.id} className="border-2">
             <CardContent className="p-4">
               <View className="flex items-start justify-between mb-3">
                 <View className="flex items-center gap-2">
-                  <Route size={20} color="#0062ff" />
+                  <Route size={20} color="#3b82f6" />
                   <Text className="font-semibold text-lg">{route.route_name}</Text>
                 </View>
                 <View className="flex items-center gap-2">
                   <Button
                     size="sm"
-                    className="bg-primary"
+                    className="bg-blue-500"
                     onClick={() => handleUseRoute(route)}
                   >
                     <Navigation size={16} color="#ffffff" />
                   </Button>
-                  <Button
-                    size="sm"
-                    className="bg-amber-500"
-                    onClick={() => handleEdit(route)}
-                  >
-                    <FilePen size={16} color="#ffffff" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="bg-red-500"
-                    onClick={() => handleDelete(route.id)}
-                  >
-                    <Trash2 size={16} color="#ffffff" />
-                  </Button>
+                  {!isUsingDemoRoutes && (
+                    <Button
+                      size="sm"
+                      className="bg-amber-500"
+                      onClick={() => handleEdit(route)}
+                    >
+                      <FilePen size={16} color="#ffffff" />
+                    </Button>
+                  )}
+                  {!isUsingDemoRoutes && (
+                    <Button
+                      size="sm"
+                      className="bg-red-500"
+                      onClick={() => handleDelete(route.id)}
+                    >
+                      <Trash2 size={16} color="#ffffff" />
+                    </Button>
+                  )}
                 </View>
               </View>
 
               <View className="space-y-2 mb-3">
                 <View className="flex items-start gap-2">
-                  <MapPin size={16} color="#0062ff" />
+                  <MapPin size={16} color="#3b82f6" />
                   <View className="flex-1">
                     <Text className="block text-sm font-medium text-gray-900">
                       {route.pickup_address?.address_name || '取货地址'}
@@ -544,14 +609,24 @@ export default function FavoriteRoutes() {
           </Card>
         ))}
 
-        {routes.length === 0 && !showAddForm && (
+        {visibleRoutes.length === 0 && !showAddForm && (
           <View className="flex flex-col items-center justify-center py-12">
             <Route size={48} color="#d1d5db" />
             <Text className="text-gray-400 mt-4">暂无线路</Text>
-            <Text className="text-gray-400 text-sm mt-1">点击上方按钮添加常用线路</Text>
+            <Text className="text-gray-400 text-sm mt-1">点击底部按钮添加收藏路线</Text>
           </View>
         )}
       </View>
-    </View>
+
+      {!showAddForm && (
+        <Button
+          className="w-full bg-blue-500 text-white"
+          onClick={() => setShowAddForm(true)}
+        >
+          <Plus size={20} color="#FFFFFF" className="mr-2" />
+          <Text className="text-white">新增收藏路线</Text>
+        </Button>
+      )}
+    </AppPageShell>
   )
 }

@@ -55,9 +55,10 @@ export default typeof definePageConfig === 'function'
       ],
       window: {
         backgroundTextStyle: 'light',
-        navigationBarBackgroundColor: '#0062FF',
-        navigationBarTitleText: 'RecoRouter',
-        navigationBarTextStyle: 'white'
+        navigationStyle: 'custom',
+        navigationBarBackgroundColor: '#ffffff',
+        navigationBarTitleText: '无人车共享运营平台',
+        navigationBarTextStyle: 'black'
       }
     })
   : {
@@ -116,8 +117,9 @@ export default typeof definePageConfig === 'function'
       ],
       window: {
         backgroundTextStyle: 'light',
-        navigationBarBackgroundColor: '#0062FF',
-        navigationBarTitleText: 'RecoRouter',
-        navigationBarTextStyle: 'white'
+        navigationStyle: 'custom',
+        navigationBarBackgroundColor: '#ffffff',
+        navigationBarTitleText: '无人车共享运营平台',
+        navigationBarTextStyle: 'black'
       }
     }

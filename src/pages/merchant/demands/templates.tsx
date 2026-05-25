@@ -4,7 +4,9 @@ import { View, Text } from '@tarojs/components'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Trash2, ArrowRight, FileText } from 'lucide-react-taro'
+import { Trash2, ArrowRight, FileText, Layers } from 'lucide-react-taro'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import { Network } from '@/network'
 
 interface DemandTemplate {
@@ -28,11 +30,76 @@ interface DemandTemplate {
   updated_at: string
 }
 
+const demoTemplates: DemandTemplate[] = [
+  {
+    id: 'demo-template-1',
+    user_id: 'demo',
+    template_name: '宝山钢贸园 → 萧山仓',
+    cargo_name: '钢卷零担',
+    cargo_type: 'normal',
+    weight: 3200,
+    volume: 18,
+    pickup_address: '上海宝山钢贸园',
+    pickup_lat: 31.405,
+    pickup_lng: 121.489,
+    delivery_address: '杭州萧山中心仓',
+    delivery_lat: 30.176,
+    delivery_lng: 120.264,
+    remarks: '9.6m 厢式车 · 常跑路线',
+    is_default: true,
+    use_count: 31,
+    created_at: '2026-05-20T09:00:00+10:00',
+    updated_at: '2026-05-25T09:00:00+10:00',
+  },
+  {
+    id: 'demo-template-2',
+    user_id: 'demo',
+    template_name: '太仓码头 → 昆山仓',
+    cargo_name: '港口短驳',
+    cargo_type: 'fresh',
+    weight: 2400,
+    volume: 14,
+    pickup_address: '太仓港区',
+    pickup_lat: 31.631,
+    pickup_lng: 121.191,
+    delivery_address: '昆山周市仓',
+    delivery_lat: 31.399,
+    delivery_lng: 120.999,
+    remarks: '冷链优先 · 短驳高频',
+    is_default: false,
+    use_count: 18,
+    created_at: '2026-05-18T09:00:00+10:00',
+    updated_at: '2026-05-24T09:00:00+10:00',
+  },
+  {
+    id: 'demo-template-3',
+    user_id: 'demo',
+    template_name: '无锡厂区 → 宁波北仑',
+    cargo_name: '托盘货',
+    cargo_type: 'fragile',
+    weight: 1800,
+    volume: 12,
+    pickup_address: '无锡惠山厂区',
+    pickup_lat: 31.681,
+    pickup_lng: 120.298,
+    delivery_address: '宁波北仑码头',
+    delivery_lat: 29.899,
+    delivery_lng: 121.844,
+    remarks: '防震包装 · 港口线路',
+    is_default: false,
+    use_count: 12,
+    created_at: '2026-05-16T09:00:00+10:00',
+    updated_at: '2026-05-23T09:00:00+10:00',
+  },
+]
+
 export default function DemandTemplates() {
   const [templates, setTemplates] = useState<DemandTemplate[]>([])
   const [loading, setLoading] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [deletingTemplate, setDeletingTemplate] = useState<DemandTemplate | null>(null)
+  const visibleTemplates = templates.length > 0 ? templates : demoTemplates
+  const isUsingDemoTemplates = templates.length === 0
 
   useEffect(() => {
     loadTemplates()
@@ -178,61 +245,19 @@ export default function DemandTemplates() {
   }
 
   return (
-    <View className="min-h-screen bg-background">
-      {/* 导航菜单 */}
-      <View className="bg-white shadow-sm">
-        <View className="px-4 py-3">
-          <View className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateBack()}
-            >
-              <Text className="text-xs">返回</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/merchant/demands/list' })}
-            >
-              <Text className="text-xs">我的需求</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/merchant/orders/index' })}
-            >
-              <Text className="text-xs">订单管理</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/merchant/profile/index' })}
-            >
-              <Text className="text-xs">我的</Text>
-            </Button>
-          </View>
-        </View>
-      </View>
-
-      {/* 标题栏 */}
-      <View className="bg-white px-4 py-3 mb-2">
-        <View className="flex items-center justify-between">
-          <Text className="block text-lg font-semibold text-gray-900">
-            常用模板
-          </Text>
-          <Text className="block text-xs text-gray-500">
-            共 {templates.length} 个模板
-          </Text>
-        </View>
-      </View>
-
+    <AppPageShell
+      title="常用模板"
+      subtitle={`RecoRouter 商户小程序 · 共 ${visibleTemplates.length} 个模板`}
+      icon={Layers}
+      contentClassName="space-y-3"
+      bottom={<BottomNav type="merchant" active="profile" />}
+    >
       {/* 模板列表 */}
       {loading ? (
         <View className="flex items-center justify-center py-8">
           <Text className="block text-gray-500 text-sm">加载中...</Text>
         </View>
-      ) : templates.length === 0 ? (
+      ) : visibleTemplates.length === 0 ? (
         <View className="flex flex-col items-center justify-center py-16 px-4">
           <FileText size={64} color="#d1d5db" />
           <Text className="block text-gray-500 text-sm mt-4 text-center">
@@ -243,8 +268,8 @@ export default function DemandTemplates() {
           </Text>
         </View>
       ) : (
-        <View className="px-4 space-y-3 pb-4">
-          {templates.map((template) => (
+        <View className="space-y-3">
+          {visibleTemplates.map((template) => (
             <Card key={template.id} className="bg-white rounded-lg shadow-sm">
               <CardContent className="p-4">
                 <View className="flex items-start gap-3">
@@ -254,7 +279,7 @@ export default function DemandTemplates() {
                         {template.template_name}
                       </Text>
                       {template.is_default && (
-                        <Text className="text-xs text-primary">默认</Text>
+                        <Text className="text-xs text-blue-500">默认</Text>
                       )}
                     </View>
 
@@ -285,20 +310,22 @@ export default function DemandTemplates() {
                   <View className="flex flex-col gap-2">
                     <Button
                       size="sm"
-                      className="bg-emerald-500"
+                      className="bg-green-500"
                       onClick={() => handleUseTemplate(template)}
                     >
                       <ArrowRight size={14} color="#ffffff" />
                       <Text className="ml-1 text-xs text-white">使用</Text>
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="border-red-500 text-red-500"
-                      onClick={() => handleDeleteTemplate(template)}
-                    >
-                      <Trash2 size={14} color="#ef4444" />
-                    </Button>
+                    {!isUsingDemoTemplates && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-red-500 text-red-500"
+                        onClick={() => handleDeleteTemplate(template)}
+                      >
+                        <Trash2 size={14} color="#ef4444" />
+                      </Button>
+                    )}
                   </View>
                 </View>
               </CardContent>
@@ -334,6 +361,6 @@ export default function DemandTemplates() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </View>
+    </AppPageShell>
   )
 }

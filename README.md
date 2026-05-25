@@ -1,6 +1,6 @@
 # Coze Mini Program
 
-这是一个基于 [Taro 4](https://docs.taro.zone/docs/) + [Nest.js](https://nestjs.com/) 的前后端分离项目，由扣子编程 CLI 创建。
+这是一个基于 [Taro 4](https://docs.taro.zone/docs/) + Rust/Axum 的前后端分离项目，由扣子编程 CLI 创建。
 
 ## 技术栈
 
@@ -14,9 +14,9 @@
 - **工程化**: Vite 4.2.0
 - **包管理**: pnpm
 - **运行时**: Node.js >= 18
-- **服务端**: NestJS 10.4.15
-- **数据库 ORM**: Drizzle ORM 0.45.1
-- **类型校验**: Zod 4.3.5
+- **服务端**: Rust 2021 + Axum 0.7
+- **数据库访问**: SQLx 0.8
+- **类型校验**: Serde + Rust 类型系统
 
 ## 项目结构
 
@@ -27,12 +27,12 @@
 │   ├── index.ts              # 主配置文件
 │   ├── dev.ts                # 开发环境配置
 │   └── prod.ts               # 生产环境配置
-├── server/                   # NestJS 后端服务
+├── server/                   # Rust/Axum 后端服务
 │   └── src/
-│       ├── main.ts           # 服务入口
-│       ├── app.module.ts     # 根模块
-│       ├── app.controller.ts # 应用控制器
-│       └── app.service.ts    # 应用服务
+│       ├── main.rs           # 服务入口
+│       ├── app.rs            # 路由组装
+│       ├── config.rs         # 环境配置
+│       └── modules/          # 业务模块
 ├── src/                      # 前端源码
 │   ├── pages/                # 页面组件
 │   ├── presets/              # 框架预置逻辑（无需读取，如无必要不改动）
@@ -57,14 +57,14 @@ pnpm install
 
 ### 本地开发
 
-同时启动 H5 前端和 NestJS 后端：
+同时启动 H5 前端和 Rust 后端：
 
 ```bash
 pnpm dev
 ```
 
 - 前端地址：http://localhost:5000
-- 后端地址：http://localhost:3000
+- 后端地址：http://localhost:34532
 
 单独启动：
 
@@ -543,41 +543,38 @@ async function getLocation(): Promise<Taro.getLocation.SuccessCallbackResult> {
 
 ## 后端核心开发规范
 
-本项目后端基于 NestJS + TypeScript 构建，提供高效、可扩展的服务端能力。
+本项目后端基于 Rust + Axum 构建，`server/` 是 canonical 后端目录。
 
 ### 项目结构
 
 ```sh
 .
-├── server/                   # NestJS 后端服务
+├── server/                   # Rust/Axum 后端服务
 │   └── src/
-│       ├── main.ts           # 服务入口
-│       ├── app.module.ts     # 根模块
-│       ├── app.controller.ts # 根控制器
-│       └── app.service.ts    # 根服务
+│       ├── main.rs           # 服务入口
+│       ├── app.rs            # 路由组装
+│       ├── config.rs         # 环境配置
+│       └── modules/          # 业务模块
 ```
 
 ### 开发命令
 
 ```sh
-pnpm dev:server // 启动开发服务 (热重载, 默认端口 3000)
+pnpm dev:server // 启动开发服务 (默认端口 34532)
 pnpm build:server // 构建生产版本
 ```
 
-### 新建模块流程 (CLI)
+### 新建模块流程
 
-快速生成样板代码：
+后端模块按 Rust 文件组织，优先复用 `server/src/modules/` 下的既有模式：
 
 ```bash
 cd server
 
-# 生成完整的 CRUD 资源 (包含 Module, Controller, Service, DTO, Entity)
-npx nest g resource modules/product
-
-# 仅生成特定部分
-npx nest g module modules/order
-npx nest g controller modules/order
-npx nest g service modules/order
+# 新增模块后在 modules/mod.rs 和 app.rs 中挂载路由
+touch src/modules/product.rs
+cargo fmt
+cargo check
 ```
 
 ### 环境变量配置
@@ -586,7 +583,7 @@ npx nest g service modules/order
 
 ```sh
 ## 服务端口
-PORT=3000
+SERVER_PORT=34532
 
 ## 微信小程序配置
 WX_APP_ID=你的AppID
@@ -596,168 +593,24 @@ WX_APP_SECRET=你的AppSecret
 JWT_SECRET=your-super-secret-key
 ```
 
-在代码中使用 @nestjs/config 读取环境变量：
-
-```typescript
-import { ConfigService } from '@nestjs/config';
-
-// 在 Service 中注入
-constructor(private configService: ConfigService) {}
-
-getWxConfig() {
-  return {
-    appId: this.configService.get<string>('WX_APP_ID'),
-    secret: this.configService.get<string>('WX_APP_SECRET'),
-  };
-}
-```
+在代码中通过 `server/src/config.rs` 统一读取环境变量。
 
 ### 标准响应封装
 
-建议使用拦截器 (Interceptor) 统一 API 响应格式：
-
-```typeScript
-// src/common/interceptors/transform.interceptor.ts
-import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
-import { Observable } from 'rxjs';
-import { map } from 'rxjs/operators';
-
-export interface Response<T> {
-  code: number;
-  data: T;
-  message: string;
-}
-
-@Injectable()
-export class TransformInterceptor<T> implements NestInterceptor<T, Response<T>> {
-  intercept(context: ExecutionContext, next: CallHandler): Observable<Response<T>> {
-    return next.handle().pipe(
-      map((data) => ({
-        code: 200,
-        data,
-        message: 'success',
-      })),
-    );
-  }
-}
-```
-
-在 main.ts 中全局注册：
-
-```typescript
-app.useGlobalInterceptors(new TransformInterceptor());
-```
+建议复用 `server/src/response.rs` 中的响应封装，保持 API 返回结构一致。
 
 ### 微信登录后端实现
 
-```typescript
-// src/modules/auth/auth.service.ts
-import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { HttpService } from '@nestjs/axios';
-import { ConfigService } from '@nestjs/config';
-import { lastValueFrom } from 'rxjs';
-
-@Injectable()
-export class AuthService {
-  constructor(
-    private httpService: HttpService,
-    private configService: ConfigService,
-  ) {}
-
-  async code2Session(code: string) {
-    const appId = this.configService.get('WX_APP_ID');
-    const secret = this.configService.get('WX_APP_SECRET');
-    const url = `https://api.weixin.qq.com/sns/jscode2session?appid=${appId}&secret=${secret}&js_code=${code}&grant_type=authorization_code`;
-
-    const { data } = await lastValueFrom(this.httpService.get(url));
-
-    if (data.errcode) {
-      throw new UnauthorizedException(`微信登录失败: ${data.errmsg}`);
-    }
-
-    return data; // 包含 openid, session_key
-  }
-}
-```
+微信登录实现位于 `server/src/modules/auth.rs`，调整登录流程时优先在该模块内保持现有响应结构。
 
 ### 异常处理
 
-使用全局异常过滤器 (Filter) 统一错误响应：
+后端错误处理集中在 `server/src/error.rs`，业务模块返回统一错误类型后由 Axum 响应转换处理。
 
-```typescript
-// src/common/filters/http-exception.filter.ts
-import { ExceptionFilter, Catch, ArgumentsHost, HttpException } from '@nestjs/common';
-import { Response } from 'express';
+### 数据库 (SQLx)
 
-@Catch(HttpException)
-export class HttpExceptionFilter implements ExceptionFilter {
-  catch(exception: HttpException, host: ArgumentsHost) {
-    const ctx = host.switchToHttp();
-    const response = ctx.getResponse<Response>();
-    const status = exception.getStatus();
-    const exceptionResponse = exception.getResponse();
+后端使用 [SQLx](https://github.com/launchbadge/sqlx)，迁移文件位于 `server/migrations/`。
 
-    response.status(status).json({
-      code: status,
-      message: typeof exceptionResponse === 'string' ? exceptionResponse : (exceptionResponse as any).message,
-      data: null,
-    });
-  }
-}
-```
+### 类型校验
 
-在 main.ts 中注册：
-
-```
-app.useGlobalFilters(new HttpExceptionFilter());
-```
-
-### 数据库 (Drizzle ORM)
-
-推荐使用 [Drizzle ORM](https://orm.drizzle.team/)，已预安装。
-
-### 类型校验 (Zod)
-
-项目集成了 [Zod](https://zod.dev/) 用于运行时类型校验。
-
-#### 定义 Schema
-
-```typescript
-import { z } from 'zod';
-
-// 基础类型
-const userSchema = z.object({
-  id: z.number(),
-  name: z.string().min(1).max(50),
-  email: z.string().email(),
-  age: z.number().int().positive().optional(),
-});
-
-// 从 schema 推导 TypeScript 类型
-type User = z.infer<typeof userSchema>;
-```
-
-#### 请求校验
-
-```typescript
-// src/modules/user/dto/create-user.dto.ts
-import { z } from 'zod';
-
-export const createUserSchema = z.object({
-  nickname: z.string().min(1, '昵称不能为空').max(20, '昵称最多20个字符'),
-  avatar: z.string().url('头像必须是有效的URL').optional(),
-  phone: z.string().regex(/^1[3-9]\d{9}$/, '手机号格式不正确').optional(),
-});
-
-export type CreateUserDto = z.infer<typeof createUserSchema>;
-
-// 在 Controller 中使用
-@Post()
-create(@Body() body: unknown) {
-  const result = createUserSchema.safeParse(body);
-  if (!result.success) {
-    throw new BadRequestException(result.error.errors);
-  }
-  return this.userService.create(result.data);
-}
-```
+请求/响应 DTO 使用 Rust 结构体、`serde` 和明确的业务校验逻辑表达。

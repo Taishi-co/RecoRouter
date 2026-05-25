@@ -1,56 +1,34 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 
 const root = resolve('.')
-const read = (path) => readFileSync(resolve(root, path), 'utf8')
-const sqlDirs = [
-  'server/database/init',
-  'server/database/migrations',
-  'server-rust/migrations',
-]
 
-const immutableSqlxMigrations = new Set([
-  // Already-applied SQLx migrations must not be rewritten; later migrations clean up final state.
-  'server-rust/migrations/0001_init.sql',
-])
+const read = (path) => readFileSync(resolve(root, path), 'utf8')
 
 const stripSqlComments = (source) =>
   source
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/--.*$/gm, '')
 
-const sqlFiles = sqlDirs.flatMap((dir) => {
-  const absoluteDir = resolve(root, dir)
-  if (!existsSync(absoluteDir)) return []
-  return readdirSync(absoluteDir)
+const sqlFiles = [
+  ...readdirSync(resolve(root, 'server/migrations'))
     .filter((file) => extname(file) === '.sql')
-    .map((file) => join(dir, file))
-})
-
-const violations = []
-const schema = read('server/src/storage/database/shared/schema.ts')
-
-if (/\.references\s*\(/.test(schema)) {
-  violations.push('server/src/storage/database/shared/schema.ts contains Drizzle .references(...) definitions')
-}
-
-for (const file of sqlFiles) {
-  if (immutableSqlxMigrations.has(file)) continue
-
-  const source = stripSqlComments(read(file))
-  if (/\bREFERENCES\b/i.test(source)) {
-    violations.push(`${file} contains SQL REFERENCES definitions`)
-  }
-  if (/\bFOREIGN\s+KEY\b/i.test(source)) {
-    violations.push(`${file} contains SQL FOREIGN KEY definitions`)
-  }
-}
-
-const initFiles = [
-  'server/database/init/01-schema.sql',
-  'server-rust/migrations/0005_merchant_enterprise_no_physical_constraints.sql',
+    .map((file) => join('server/migrations', file)),
 ]
 
+const violations = []
+
+for (const file of sqlFiles.filter((file) => !file.endsWith('0001_init.sql'))) {
+  const source = stripSqlComments(read(file))
+  if (/\bREFERENCES\b/i.test(source)) {
+    violations.push(`${file} contains SQL REFERENCES physical FK definitions`)
+  }
+  if (/\bFOREIGN\s+KEY\b/i.test(source)) {
+    violations.push(`${file} contains SQL FOREIGN KEY physical FK definitions`)
+  }
+}
+
+const migrationSql = sqlFiles.map((file) => read(file)).join('\n')
 const requiredIndexes = [
   'demands_merchant_id_idx',
   'demands_owner_id_idx',
@@ -69,15 +47,12 @@ const requiredIndexes = [
   'enterprise_demands_enterprise_id_idx',
 ]
 
-for (const file of initFiles) {
-  const source = read(file)
-  for (const indexName of requiredIndexes) {
-    if (!source.includes(indexName)) {
-      violations.push(`${file} is missing relation lookup index ${indexName}`)
-    }
+for (const indexName of requiredIndexes) {
+  if (!migrationSql.includes(indexName)) {
+    violations.push(`server/migrations is missing relation lookup index ${indexName}`)
   }
 }
 
 if (violations.length > 0) {
-  throw new Error(`Physical DB relation check failed:\n- ${violations.join('\n- ')}`)
+  throw new Error(`Physical FK check failed:\n- ${violations.join('\n- ')}`)
 }

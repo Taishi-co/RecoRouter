@@ -44,6 +44,7 @@ export default defineConfig<'vite'>(async (merge, _env) => {
   const defaultOutputRoot = outputRootMap[process.env.TARO_ENV || ''] || 'dist';
   const outputRoot = process.env.OUTPUT_ROOT?.trim() || defaultOutputRoot;
   const isH5 = process.env.TARO_ENV === 'h5';
+  const h5DevPort = Number(process.env.H5_DEV_PORT || 5000);
 
   const buildMiniCIPluginConfig = () => {
     const hasWeappConfig = !!process.env.TARO_APP_WEAPP_APPID;
@@ -52,8 +53,8 @@ export default defineConfig<'vite'>(async (merge, _env) => {
       return [];
     }
     const miniCIConfig: Record<string, any> = {
-      version: process.env.MINIAPP_UPLOAD_VERSION || pkg.version,
-      desc: process.env.MINIAPP_UPLOAD_DESC || pkg.description,
+      version: pkg.version,
+      desc: pkg.description,
     };
     if (hasWeappConfig) {
       miniCIConfig.weapp = {
@@ -182,12 +183,12 @@ export default defineConfig<'vite'>(async (merge, _env) => {
         mode: 'hash',
       },
       devServer: {
-        port: 5000,
+        port: Number.isFinite(h5DevPort) ? h5DevPort : 5000,
         host: '0.0.0.0',
         open: false,
         proxy: {
           '/api': {
-            target: 'http://localhost:3000',
+            target: process.env.API_PROXY_TARGET || 'http://localhost:34532',
             changeOrigin: true,
           },
         },

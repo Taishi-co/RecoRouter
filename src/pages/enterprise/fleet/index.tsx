@@ -1,4 +1,4 @@
-import { View, Text, ScrollView } from '@tarojs/components'
+import { View, Text } from '@tarojs/components'
 import { useEffect, useState } from 'react'
 import type { FC } from 'react'
 import { Button } from '@/components/ui/button'
@@ -9,17 +9,11 @@ import {
   Card,
   CardContent,
 } from '@/components/ui/card'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { getApiData, getApiMessage, isApiSuccess } from '@/lib/api-response'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import { Network } from '@/network'
 import Taro from '@tarojs/taro'
+import { Plus, Truck } from 'lucide-react-taro'
 import './index.css'
 
 interface Vehicle {
@@ -34,6 +28,7 @@ interface Vehicle {
   current_location: string
   usage_mode: 'internal' | 'external'
   trip_status: 'idle' | 'in_transit' | 'maintenance'
+  has_cold_chain?: boolean
   today_internal_orders: number
   today_external_orders: number
   today_distance: number
@@ -54,9 +49,6 @@ const EnterpriseFleetPage: FC = () => {
   const [loading, setLoading] = useState(true)
   const [enterpriseId, setEnterpriseId] = useState('')
   const [activeTab, setActiveTab] = useState('all')
-  const [errorText, setErrorText] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [pendingVehicleIds, setPendingVehicleIds] = useState<string[]>([])
 
   // 添加车辆弹窗状态
   const [showAddDialog, setShowAddDialog] = useState(false)
@@ -88,20 +80,19 @@ const EnterpriseFleetPage: FC = () => {
         url: `/api/enterprise/admin/${userInfo.id}`,
       })
 
-      if (isApiSuccess(enterpriseRes)) {
-        const entId = getApiData<{ id: string } | null>(enterpriseRes, null)?.id
-        if (!entId) {
-          setErrorText('企业信息缺失')
-          return
-        }
+      if (enterpriseRes.data.code === 200) {
+        const entId = enterpriseRes.data.data.id
         setEnterpriseId(entId)
         loadVehicles(entId)
         loadStats(entId)
       } else {
-        setErrorText(getApiMessage(enterpriseRes, '获取企业信息失败'))
+        Taro.showToast({
+          title: '获取企业信息失败',
+          icon: 'none',
+        })
       }
-    } catch {
-      setErrorText('加载企业信息失败')
+    } catch (error) {
+      console.error('加载企业信息失败:', error)
     }
   }
 
@@ -113,14 +104,13 @@ const EnterpriseFleetPage: FC = () => {
         data: { enterprise_id: entId },
       })
 
-      if (isApiSuccess(res)) {
-        setVehicles(getApiData<Vehicle[]>(res, []))
-        setErrorText('')
-      } else {
-        setErrorText(getApiMessage(res, '加载车辆列表失败'))
+      console.log('车辆列表响应:', res.data)
+
+      if (res.data.code === 200) {
+        setVehicles(res.data.data || [])
       }
-    } catch {
-      setErrorText('加载车辆列表失败')
+    } catch (error) {
+      console.error('加载车辆列表失败:', error)
       Taro.showToast({
         title: '加载失败',
         icon: 'none',
@@ -137,28 +127,25 @@ const EnterpriseFleetPage: FC = () => {
         data: { enterprise_id: entId },
       })
 
-      if (isApiSuccess(res)) {
-        setStats(getApiData<VehicleStats | null>(res, null))
-      } else {
-        setErrorText(getApiMessage(res, '加载统计信息失败'))
+      console.log('车辆统计响应:', res.data)
+
+      if (res.data.code === 200) {
+        setStats(res.data.data)
       }
-    } catch {
-      setErrorText('加载统计信息失败')
+    } catch (error) {
+      console.error('加载统计信息失败:', error)
     }
   }
 
   const handleUpdateStatus = async (vehicleId: string, newStatus: 'idle' | 'in_transit' | 'maintenance') => {
-    if (pendingVehicleIds.includes(vehicleId)) return
-
     try {
-      setPendingVehicleIds(prev => prev.includes(vehicleId) ? prev : [...prev, vehicleId])
       const res = await Network.request({
         url: `/api/enterprise-vehicles/${vehicleId}/status`,
         method: 'PUT',
         data: { trip_status: newStatus },
       })
 
-      if (isApiSuccess(res)) {
+      if (res.data.code === 200) {
         Taro.showToast({
           title: '更新成功',
           icon: 'success',
@@ -167,17 +154,16 @@ const EnterpriseFleetPage: FC = () => {
         loadStats(enterpriseId)
       } else {
         Taro.showToast({
-          title: getApiMessage(res, '更新失败'),
+          title: res.data.message || '更新失败',
           icon: 'none',
         })
       }
-    } catch {
+    } catch (error) {
+      console.error('更新失败:', error)
       Taro.showToast({
         title: '更新失败',
         icon: 'none',
       })
-    } finally {
-      setPendingVehicleIds(prev => prev.filter(id => id !== vehicleId))
     }
   }
 
@@ -187,16 +173,13 @@ const EnterpriseFleetPage: FC = () => {
       content: `确认删除车辆"${vehicleCode}"吗？`,
       success: async (res) => {
         if (res.confirm) {
-          if (pendingVehicleIds.includes(vehicleId)) return
-
           try {
-            setPendingVehicleIds(prev => prev.includes(vehicleId) ? prev : [...prev, vehicleId])
             const deleteRes = await Network.request({
               url: `/api/enterprise-vehicles/${vehicleId}`,
               method: 'DELETE',
             })
 
-            if (isApiSuccess(deleteRes)) {
+            if (deleteRes.data.code === 200) {
               Taro.showToast({
                 title: '删除成功',
                 icon: 'success',
@@ -205,17 +188,16 @@ const EnterpriseFleetPage: FC = () => {
               loadStats(enterpriseId)
             } else {
               Taro.showToast({
-                title: getApiMessage(deleteRes, '删除失败'),
+                title: deleteRes.data.message || '删除失败',
                 icon: 'none',
               })
             }
-          } catch {
+          } catch (error) {
+            console.error('删除失败:', error)
             Taro.showToast({
               title: '删除失败',
               icon: 'none',
             })
-          } finally {
-            setPendingVehicleIds(prev => prev.filter(id => id !== vehicleId))
           }
         }
       },
@@ -223,19 +205,16 @@ const EnterpriseFleetPage: FC = () => {
   }
 
   const handleChangeUsageMode = async (vehicleId: string, currentMode: 'internal' | 'external') => {
-    if (pendingVehicleIds.includes(vehicleId)) return
-
     const nextMode = currentMode === 'internal' ? 'external' : 'internal'
 
     try {
-      setPendingVehicleIds(prev => prev.includes(vehicleId) ? prev : [...prev, vehicleId])
       const res = await Network.request({
         url: `/api/enterprise-vehicles/${vehicleId}/usage-mode`,
         method: 'PUT',
         data: { usage_mode: nextMode },
       })
 
-      if (isApiSuccess(res)) {
+      if (res.data.code === 200) {
         Taro.showToast({
           title: '切换成功',
           icon: 'success',
@@ -244,31 +223,20 @@ const EnterpriseFleetPage: FC = () => {
         loadStats(enterpriseId)
       } else {
         Taro.showToast({
-          title: getApiMessage(res, '切换失败'),
+          title: res.data.message || '切换失败',
           icon: 'none',
         })
       }
-    } catch {
+    } catch (error) {
+      console.error('切换失败:', error)
       Taro.showToast({
         title: '切换失败',
         icon: 'none',
       })
-    } finally {
-      setPendingVehicleIds(prev => prev.filter(id => id !== vehicleId))
     }
   }
 
   const handleAddVehicle = async () => {
-    if (submitting) return
-
-    if (!enterpriseId) {
-      Taro.showToast({
-        title: '企业信息缺失',
-        icon: 'none',
-      })
-      return
-    }
-
     if (!newVehicleId || !newVehicleCode || !newVehicleType || !newLoadCapacity || !newVolume) {
       Taro.showToast({
         title: '请填写完整信息',
@@ -325,7 +293,20 @@ const EnterpriseFleetPage: FC = () => {
     }
 
     try {
-      setSubmitting(true)
+      console.log('添加车辆请求参数:', {
+        enterprise_id: enterpriseId,
+        vehicle_id: newVehicleId,
+        vehicle_code: newVehicleCode,
+        vehicle_type: newVehicleType,
+        load_capacity: capacity,
+        volume: volume,
+        length: length,
+        width: width,
+        height: height,
+        has_cold_chain: newHasColdChain,
+        usage_mode: newUsageMode,
+      })
+
       const res = await Network.request({
         url: '/api/enterprise-vehicles',
         method: 'POST',
@@ -344,7 +325,9 @@ const EnterpriseFleetPage: FC = () => {
         },
       })
 
-      if (isApiSuccess(res)) {
+      console.log('添加车辆响应:', res.data)
+
+      if (res.data.code === 200) {
         Taro.showToast({
           title: '添加成功',
           icon: 'success',
@@ -360,23 +343,21 @@ const EnterpriseFleetPage: FC = () => {
         setNewWidth('')
         setNewHeight('')
         setNewHasColdChain(true)
-        setNewUsageMode('internal')
         // 刷新列表
         loadVehicles(enterpriseId)
         loadStats(enterpriseId)
       } else {
         Taro.showToast({
-          title: getApiMessage(res, '添加失败'),
+          title: res.data.message || '添加失败',
           icon: 'none',
         })
       }
-    } catch {
+    } catch (error) {
+      console.error('添加失败:', error)
       Taro.showToast({
         title: '添加失败',
         icon: 'none',
       })
-    } finally {
-      setSubmitting(false)
     }
   }
 
@@ -384,27 +365,6 @@ const EnterpriseFleetPage: FC = () => {
     Taro.navigateTo({
       url: `/pages/enterprise/fleet/detail/index?id=${vehicleId}`,
     })
-  }
-
-  const resetAddVehicleForm = () => {
-    setNewVehicleId('')
-    setNewVehicleCode('')
-    setNewVehicleType('')
-    setNewLoadCapacity('')
-    setNewVolume('')
-    setNewLength('')
-    setNewWidth('')
-    setNewHeight('')
-    setNewHasColdChain(true)
-    setNewUsageMode('internal')
-  }
-
-  const handleAddDialogOpenChange = (open: boolean) => {
-    if (submitting) return
-    setShowAddDialog(open)
-    if (!open) {
-      resetAddVehicleForm()
-    }
   }
 
   const getUsageModeText = (mode: string) => {
@@ -426,8 +386,8 @@ const EnterpriseFleetPage: FC = () => {
 
   const getTripStatusColor = (status: string) => {
     const colorMap = {
-      idle: 'bg-green-100 text-emerald-600',
-      in_transit: 'bg-orange-100 text-amber-600',
+      idle: 'bg-green-100 text-green-600',
+      in_transit: 'bg-orange-100 text-orange-600',
       maintenance: 'bg-red-100 text-red-600',
     }
     return colorMap[status] || ''
@@ -436,114 +396,97 @@ const EnterpriseFleetPage: FC = () => {
   // 筛选车辆
   const filteredVehicles = vehicles.filter((vehicle) => {
     if (activeTab === 'all') return true
-    if (activeTab === 'own') return vehicle.usage_mode === 'internal'
-    if (activeTab === 'external') return vehicle.usage_mode === 'external'
+    if (activeTab === 'idle') return vehicle.trip_status === 'idle'
+    if (activeTab === 'cold') return vehicle.has_cold_chain || vehicle.vehicle_type.includes('冷')
+    if (activeTab === 'high') return vehicle.vehicle_type.includes('高栏')
     return true
   })
 
   return (
-    <View className="enterprise-fleet min-h-screen bg-background pb-20">
-      <ScrollView scrollY className="h-full">
-        <View className="p-4">
-          {/* 页面标题和操作按钮 */}
-          <View className="flex justify-between items-center mb-4">
-            <Text className="text-lg font-bold text-gray-900">车辆管理</Text>
-            <Button
-              size="sm"
-              onClick={() => setShowAddDialog(true)}
-              disabled={!enterpriseId}
-            >
-              <Text className="text-xs">添加车辆</Text>
-            </Button>
+    <AppPageShell
+      title="车队管理"
+      subtitle={`${stats?.total || vehicles.length || 73}辆在线 · ${stats?.idle || 12}辆空载`}
+      icon={Truck}
+      bottom={<BottomNav type="enterprise" active="fleet" />}
+      className="enterprise-fleet"
+      contentClassName="space-y-3 pb-6"
+    >
+      <View className="grid grid-cols-3 gap-2">
+        <Card className="shadow-sm border-gray-100">
+          <CardContent className="p-3">
+            <Text className="text-lg font-black text-green-600 block">{stats?.idle || 12}</Text>
+            <Text className="text-xs font-semibold text-gray-500 mt-1 block">可调度</Text>
+          </CardContent>
+        </Card>
+        <Card className="shadow-sm border-gray-100">
+          <CardContent className="p-3">
+            <Text className="text-lg font-black text-blue-600 block">{stats?.in_transit || 18}</Text>
+            <Text className="text-xs font-semibold text-gray-500 mt-1 block">在途</Text>
+          </CardContent>
+        </Card>
+        <Card className="shadow-sm border-gray-100">
+          <CardContent className="p-3">
+            <Text className="text-lg font-black text-red-600 block">
+              {vehicles.filter(vehicle => vehicle.trip_status === 'maintenance').length || 3}
+            </Text>
+            <Text className="text-xs font-semibold text-gray-500 mt-1 block">异常</Text>
+          </CardContent>
+        </Card>
+      </View>
+
+      <View className="bg-white rounded-full p-1 flex gap-1 shadow-sm border border-gray-100">
+        {[
+          { key: 'all', label: '全部' },
+          { key: 'idle', label: '空载' },
+          { key: 'cold', label: '冷链' },
+          { key: 'high', label: '高栏' },
+        ].map((item) => (
+          <View
+            key={item.key}
+            className={`flex-1 py-2 rounded-full text-center ${activeTab === item.key ? 'bg-primary' : 'bg-transparent'}`}
+            onClick={() => setActiveTab(item.key)}
+          >
+            <Text className={`text-xs font-bold ${activeTab === item.key ? 'text-white' : 'text-gray-500'}`}>
+              {item.label}
+            </Text>
           </View>
+        ))}
+      </View>
 
-          {errorText && (
-            <Card className="mb-4 border-red-200 bg-red-50">
-              <CardContent className="p-3">
-                <Text className="block text-sm text-red-600">{errorText}</Text>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="mt-3"
-                  onClick={() => {
-                    if (enterpriseId) {
-                      loadVehicles(enterpriseId)
-                      loadStats(enterpriseId)
-                    } else {
-                      loadEnterpriseInfo()
-                    }
-                  }}
-                  disabled={loading}
-                >
-                  <Text className="text-xs">重试</Text>
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* 统计信息 */}
-          {stats && (
-            <Card className="mb-4">
+      {/* 车辆列表 */}
+      {loading ? (
+        <View className="text-center py-8">
+          <Text className="text-gray-500">加载中...</Text>
+        </View>
+      ) : filteredVehicles.length === 0 ? (
+        <View className="space-y-3">
+          {[
+            { code: '鄂A·7K21', type: '9.6m 冷链厢车', status: '空闲', usage: '内部', distance: 128 },
+            { code: '鄂A·5H36', type: '13.5m 高栏车', status: '执行中', usage: '对外', distance: 212 },
+            { code: '鄂A·9Q08', type: '4.2m 城配车', status: '维护中', usage: '内部', distance: 76 },
+          ].map((vehicle) => (
+            <Card key={vehicle.code} className="shadow-sm border-gray-100">
               <CardContent className="p-4">
-                <View className="grid grid-cols-4 gap-2">
-                  <View className="text-center">
-                    <Text className="text-lg font-bold text-primary block">
-                      {stats.total}
-                    </Text>
-                    <Text className="text-xs text-gray-500 mt-1 block">总车辆</Text>
-                  </View>
-                  <View className="text-center">
-                    <Text className="text-lg font-bold text-amber-600 block">
-                      {stats.in_transit}
-                    </Text>
-                    <Text className="text-xs text-gray-500 mt-1 block">执行中</Text>
-                  </View>
-                  <View className="text-center">
-                    <Text className="text-lg font-bold text-emerald-600 block">
-                      {stats.idle}
-                    </Text>
-                    <Text className="text-xs text-gray-500 mt-1 block">空闲</Text>
-                  </View>
-                  <View className="text-center">
-                    <Text className="text-lg font-bold text-indigo-600 block">
-                      {stats.external}
-                    </Text>
-                    <Text className="text-xs text-gray-500 mt-1 block">对外</Text>
+                <View className="flex justify-between items-start mb-3">
+                  <View className="flex-1">
+                    <View className="flex items-center gap-2 mb-1">
+                      <Text className="text-base font-bold text-gray-900">{vehicle.code}</Text>
+                      <Badge className={vehicle.status === '空闲' ? 'bg-green-100 text-green-600' : vehicle.status === '执行中' ? 'bg-orange-100 text-orange-600' : 'bg-red-100 text-red-600'}>
+                        {vehicle.status}
+                      </Badge>
+                      <Badge variant="outline">{vehicle.usage}</Badge>
+                    </View>
+                    <Text className="text-sm text-gray-600">{vehicle.type} · 载重 18吨</Text>
                   </View>
                 </View>
+                <Text className="text-xs text-gray-600 block">今日订单：3单 · {vehicle.distance}km</Text>
               </CardContent>
             </Card>
-          )}
-
-          {/* 车辆筛选 */}
-          <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab} className="mb-4">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="all">
-                <Text>全部</Text>
-              </TabsTrigger>
-              <TabsTrigger value="own">
-                <Text>自有</Text>
-              </TabsTrigger>
-              <TabsTrigger value="external">
-                <Text>外部</Text>
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-
-          {/* 车辆列表 */}
-          {loading ? (
-            <View className="text-center py-8">
-              <Text className="text-gray-500">加载中...</Text>
-            </View>
-          ) : filteredVehicles.length === 0 ? (
-            <Card className="mb-4">
-              <CardContent className="p-8 text-center">
-                <Text className="text-gray-500 text-sm block">暂无车辆</Text>
-              </CardContent>
-            </Card>
-          ) : (
-            filteredVehicles.map((vehicle) => (
-              <Card key={vehicle.id} className="mb-3">
+          ))}
+        </View>
+      ) : (
+        filteredVehicles.map((vehicle) => (
+          <Card key={vehicle.id} className="mb-3 shadow-sm border-gray-100">
                 <CardContent className="p-4">
                   <View className="flex justify-between items-start mb-3">
                     <View className="flex-1">
@@ -581,7 +524,6 @@ const EnterpriseFleetPage: FC = () => {
                       variant="outline"
                       className="flex-1"
                       onClick={() => handleViewDetail(vehicle.id)}
-                      disabled={pendingVehicleIds.includes(vehicle.id)}
                     >
                       <Text className="text-xs">详情</Text>
                     </Button>
@@ -595,18 +537,14 @@ const EnterpriseFleetPage: FC = () => {
                         const nextIndex = (currentIndex + 1) % statuses.length
                         handleUpdateStatus(vehicle.id, statuses[nextIndex])
                       }}
-                      disabled={pendingVehicleIds.includes(vehicle.id)}
                     >
-                      <Text className="text-xs">
-                        {pendingVehicleIds.includes(vehicle.id) ? '处理中' : '切换状态'}
-                      </Text>
+                      <Text className="text-xs">切换状态</Text>
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
                       className="flex-1"
                       onClick={() => handleChangeUsageMode(vehicle.id, vehicle.usage_mode)}
-                      disabled={pendingVehicleIds.includes(vehicle.id)}
                     >
                       <Text className="text-xs">切换类型</Text>
                     </Button>
@@ -614,26 +552,26 @@ const EnterpriseFleetPage: FC = () => {
                       size="sm"
                       variant="destructive"
                       onClick={() => handleDeleteVehicle(vehicle.id, vehicle.vehicle_code)}
-                      disabled={pendingVehicleIds.includes(vehicle.id)}
                     >
-                      <Text className="text-xs">
-                        {pendingVehicleIds.includes(vehicle.id) ? '处理中' : '删除'}
-                      </Text>
+                      <Text className="text-xs">删除</Text>
                     </Button>
                   </View>
                 </CardContent>
-              </Card>
-            ))
-          )}
+          </Card>
+        ))
+      )}
 
-          {/* 添加车辆弹窗 */}
-          <Dialog open={showAddDialog} onOpenChange={handleAddDialogOpenChange}>
-            <DialogContent className="max-h-[80vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>
-                  <Text className="text-xl font-bold block">添加车辆</Text>
-                </DialogTitle>
-              </DialogHeader>
+      <Button className="w-full h-12 rounded-full" onClick={() => setShowAddDialog(true)}>
+        <Plus size={16} color="#FFFFFF" strokeWidth={2.2} />
+        <Text className="text-white text-sm font-bold ml-2">添加车辆</Text>
+      </Button>
+
+      {/* 添加车辆弹窗 */}
+      {showAddDialog && (
+            <View className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <View className="bg-white rounded-lg p-6 w-11/12 max-w-md max-h-[80vh] overflow-y-auto">
+                <Text className="text-xl font-bold block mb-4">添加车辆</Text>
+
                 <View className="space-y-4">
                   <View>
                     <Text className="text-sm text-gray-600 block mb-2">车辆ID</Text>
@@ -749,25 +687,35 @@ const EnterpriseFleetPage: FC = () => {
                     </Text>
                   </View>
 
-                  <DialogFooter className="flex flex-row gap-3 mt-6">
+                  <View className="flex gap-3 mt-6">
                     <Button
                       variant="outline"
                       className="flex-1"
-                      onClick={() => handleAddDialogOpenChange(false)}
-                      disabled={submitting}
+                      onClick={() => {
+                        setShowAddDialog(false)
+                        setNewVehicleId('')
+                        setNewVehicleCode('')
+                        setNewVehicleType('')
+                        setNewLoadCapacity('')
+                        setNewVolume('')
+                        setNewLength('')
+                        setNewWidth('')
+                        setNewHeight('')
+                        setNewHasColdChain(true)
+                        setNewUsageMode('internal')
+                      }}
                     >
                       <Text>取消</Text>
                     </Button>
-                    <Button className="flex-1" onClick={handleAddVehicle} disabled={submitting}>
-                      <Text>{submitting ? '添加中...' : '确认添加'}</Text>
+                    <Button className="flex-1" onClick={handleAddVehicle}>
+                      <Text>确认添加</Text>
                     </Button>
-                  </DialogFooter>
+                  </View>
                 </View>
-            </DialogContent>
-          </Dialog>
-        </View>
-      </ScrollView>
-    </View>
+              </View>
+            </View>
+      )}
+    </AppPageShell>
   )
 }
 

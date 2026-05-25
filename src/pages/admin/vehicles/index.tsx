@@ -5,7 +5,10 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import Taro from '@tarojs/taro'
+import { Truck } from 'lucide-react-taro'
 import { Network } from '@/network'
 
 interface VehicleOwner {
@@ -32,6 +35,53 @@ interface Vehicle {
   created_at: string
   owner?: VehicleOwner
 }
+
+const demoVehicles: Vehicle[] = [
+  {
+    id: 'demo-vehicle-pending',
+    owner_id: 'demo-owner-1',
+    vehicle_type: '9.6m 厢式货车',
+    license_plate: '鄂A·7K21',
+    load_capacity: 9600,
+    volume: 52,
+    battery_life: 420,
+    has_cold_chain: false,
+    operation_area: null,
+    available_hours: null,
+    status: 'pending',
+    photos: null,
+    remarks: null,
+    created_at: '2026-05-26T08:30:00+10:00',
+    owner: {
+      id: 'demo-owner-1',
+      phone: '138****6621',
+      role: 'owner',
+      name: '张师傅',
+    },
+  },
+  {
+    id: 'demo-vehicle-active',
+    owner_id: 'demo-owner-2',
+    vehicle_type: '冷藏车 8.6m',
+    license_plate: '沪A·R8821',
+    load_capacity: 12000,
+    volume: 46,
+    battery_life: 380,
+    has_cold_chain: true,
+    operation_area: null,
+    available_hours: null,
+    status: 'active',
+    photos: null,
+    remarks: null,
+    created_at: '2026-05-24T14:10:00+10:00',
+    owner: {
+      id: 'demo-owner-2',
+      phone: '156****7098',
+      role: 'owner',
+      name: '李师傅',
+    },
+  },
+]
 
 export default function AdminVehicles() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
@@ -110,12 +160,12 @@ export default function AdminVehicles() {
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      pending: 'bg-amber-500',
-      active: 'bg-emerald-500',
+      pending: 'bg-orange-500',
+      active: 'bg-green-500',
       rejected: 'bg-red-500',
-      inactive: 'bg-slate-500'
+      inactive: 'bg-gray-500'
     }
-    return colors[status] || 'bg-slate-500'
+    return colors[status] || 'bg-gray-500'
   }
 
   const parsePhotoUrls = (photosJson: string | null): string[] => {
@@ -229,51 +279,25 @@ export default function AdminVehicles() {
     }
   }
 
-  return (
-    <View className="min-h-screen bg-background">
-      {/* 导航菜单 */}
-      <View className="bg-white shadow-sm">
-        <View className="px-4 py-3">
-          <View className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/admin/users/index' })}
-            >
-              <Text className="text-xs">用户管理</Text>
-            </Button>
-            <Button
-              size="sm"
-              className="bg-primary"
-            >
-              <Text className="text-xs">车辆审核</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/admin/orders/index' })}
-            >
-              <Text className="text-xs">订单管理</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/admin/commission/index' })}
-            >
-              <Text className="text-xs">佣金审核</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/admin/stats/index' })}
-            >
-              <Text className="text-xs">数据统计</Text>
-            </Button>
-          </View>
-        </View>
-      </View>
+  const filteredDemoVehicles = filterStatus
+    ? demoVehicles.filter((vehicle) => vehicle.status === filterStatus)
+    : demoVehicles
+  const displayVehicles = vehicles.length > 0 ? vehicles : filteredDemoVehicles
 
-      <View className="px-4 py-4">
+  return (
+    <AppPageShell
+      title="车辆审核"
+      subtitle="RecoRouter 运营端"
+      right={
+        <View className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center">
+          <Truck size={20} color="#0062FF" strokeWidth={2.3} />
+        </View>
+      }
+      bottom={<BottomNav type="admin" active="vehicles" />}
+      scroll={false}
+      contentClassName="space-y-3"
+    >
+      <View>
         <Card className="bg-white rounded-lg shadow-sm">
           <CardHeader>
             <View className="flex justify-between items-center">
@@ -296,7 +320,7 @@ export default function AdminVehicles() {
               <Button
                 size="sm"
                 variant={filterStatus === 'pending' ? 'default' : 'outline'}
-                className={filterStatus === 'pending' ? 'bg-amber-500' : ''}
+                className={filterStatus === 'pending' ? 'bg-orange-500' : ''}
                 onClick={() => setFilterStatus('pending')}
               >
                 <Text className="text-xs">待审核</Text>
@@ -304,7 +328,7 @@ export default function AdminVehicles() {
               <Button
                 size="sm"
                 variant={filterStatus === 'active' ? 'default' : 'outline'}
-                className={filterStatus === 'active' ? 'bg-emerald-500' : ''}
+                className={filterStatus === 'active' ? 'bg-green-500' : ''}
                 onClick={() => setFilterStatus('active')}
               >
                 <Text className="text-xs">已通过</Text>
@@ -320,7 +344,7 @@ export default function AdminVehicles() {
               <Button
                 size="sm"
                 variant={filterStatus === '' ? 'default' : 'outline'}
-                className={filterStatus === '' ? 'bg-slate-500' : ''}
+                className={filterStatus === '' ? 'bg-gray-500' : ''}
                 onClick={() => setFilterStatus('')}
               >
                 <Text className="text-xs">全部</Text>
@@ -331,13 +355,13 @@ export default function AdminVehicles() {
               <View className="text-center py-8">
                 <Text className="block text-gray-500 text-sm">加载中...</Text>
               </View>
-            ) : vehicles.length === 0 ? (
+            ) : displayVehicles.length === 0 ? (
               <View className="text-center py-8">
                 <Text className="block text-gray-500 text-sm mb-4">
                   暂无车辆数据
                 </Text>
                 <Button
-                  className="bg-primary"
+                  className="bg-blue-500"
                   onClick={loadVehicles}
                 >
                   <Text>刷新</Text>
@@ -345,8 +369,8 @@ export default function AdminVehicles() {
               </View>
             ) : (
               <View className="space-y-3">
-                {vehicles.map((vehicle) => (
-                  <View key={vehicle.id} className="bg-muted rounded-lg p-4">
+                {displayVehicles.map((vehicle) => (
+                  <View key={vehicle.id} className="bg-gray-50 rounded-lg p-4">
                     <View className="flex justify-between items-start mb-3">
                       <View className="flex-1">
                         <Text className="block font-medium text-base mb-1">
@@ -370,7 +394,8 @@ export default function AdminVehicles() {
                           <>
                             <Button
                               size="sm"
-                              className="bg-emerald-500"
+                              className="bg-green-500"
+                              disabled={vehicle.id.startsWith('demo-')}
                               onClick={() => handleReview(vehicle)}
                             >
                               <Text className="text-xs">审核</Text>
@@ -418,7 +443,7 @@ export default function AdminVehicles() {
                                 key={idx}
                                 src={photoUrl}
                                 mode="aspectFill"
-                                className="w-20 h-20 rounded-lg bg-muted"
+                                className="w-20 h-20 rounded-lg bg-gray-200"
                                 onClick={() => Taro.previewImage({
                                   current: idx,
                                   urls: parsePhotoUrls(vehicle.photos)
@@ -484,7 +509,7 @@ export default function AdminVehicles() {
                 {selectedVehicle.photos && (
                   <View>
                     <Text className="block text-gray-500 text-xs mb-1">车辆照片</Text>
-                    <Text className="block text-primary">
+                    <Text className="block text-blue-500">
                       已上传 {JSON.parse(selectedVehicle.photos).length} 张照片
                     </Text>
                   </View>
@@ -501,17 +526,17 @@ export default function AdminVehicles() {
                 />
               </View>
 
-              <View style={{ display: 'flex', flexDirection: 'row', gap: '12px' }}>
-                <View style={{ flex: 1 }}>
+              <View className="flex gap-3">
+                <View className="flex-1">
                   <Button
-                    className="w-full bg-emerald-500"
+                    className="w-full bg-green-500"
                     onClick={handleApprove}
                     disabled={loading}
                   >
                     <Text>通过</Text>
                   </Button>
                 </View>
-                <View style={{ flex: 1 }}>
+                <View className="flex-1">
                   <Button
                     variant="outline"
                     className="w-full"
@@ -526,6 +551,6 @@ export default function AdminVehicles() {
           </DialogContent>
         </Dialog>
       )}
-    </View>
+    </AppPageShell>
   )
 }

@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import Taro from '@tarojs/taro'
 import { Network } from '@/network'
 import { useNotificationPolling } from '@/hooks/useNotificationPolling'
@@ -168,21 +170,21 @@ export default function OwnerOrders() {
     // 特殊处理 transport_completed 状态，根据 payment_status 显示不同颜色
     if (status === 'transport_completed') {
       if (payment_status === 'paid') {
-        return 'bg-primary' // 已付款用蓝色
+        return 'bg-blue-500' // 已付款用蓝色
       }
-      return 'bg-amber-500' // 待付款用黄色
+      return 'bg-yellow-500' // 待付款用黄色
     }
 
     const colors: Record<string, string> = {
-      pending: 'bg-amber-500',
-      accepted: 'bg-primary',
+      pending: 'bg-orange-500',
+      accepted: 'bg-blue-500',
       in_transit: 'bg-cyan-500',
-      payment_confirmed: 'bg-indigo-500',
+      payment_confirmed: 'bg-purple-500',
       commission_pending: 'bg-pink-500',
-      completed: 'bg-emerald-500',
+      completed: 'bg-green-500',
       cancelled: 'bg-red-500'
     }
-    return colors[status] || 'bg-slate-500'
+    return colors[status] || 'bg-gray-500'
   }
 
   const getCargoTypeText = (type: string) => {
@@ -451,43 +453,12 @@ export default function OwnerOrders() {
   }
 
   return (
-    <View className="min-h-screen bg-background">
-      {/* 导航菜单 */}
-      <View className="bg-white shadow-sm">
-        <View className="px-4 py-3">
-          <View className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/owner/demands/index' })}
-            >
-              <Text className="text-xs">接单大厅</Text>
-            </Button>
-            <Button
-              size="sm"
-              className="bg-primary"
-            >
-              <Text className="text-xs">订单管理</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/owner/vehicles/index' })}
-            >
-              <Text className="text-xs">车辆管理</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/owner/profile/index' })}
-            >
-              <Text className="text-xs">我的</Text>
-            </Button>
-          </View>
-        </View>
-      </View>
-
-      <View className="px-4 py-4">
+    <AppPageShell
+      title="我的订单"
+      subtitle="RecoRouter 运力端"
+      contentClassName="space-y-3"
+      bottom={<BottomNav type="owner" active="home" />}
+    >
         <Card className="bg-white rounded-lg shadow-sm">
           <CardHeader>
             <View className="flex justify-between items-center">
@@ -510,7 +481,7 @@ export default function OwnerOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === '' ? 'default' : 'outline'}
-                className={filterStatus === '' ? 'bg-primary' : ''}
+                className={filterStatus === '' ? 'bg-blue-500' : ''}
                 onClick={() => setFilterStatus('')}
               >
                 <Text className="text-xs">全部</Text>
@@ -518,7 +489,7 @@ export default function OwnerOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === 'accepted' ? 'default' : 'outline'}
-                className={filterStatus === 'accepted' ? 'bg-primary' : ''}
+                className={filterStatus === 'accepted' ? 'bg-blue-500' : ''}
                 onClick={() => setFilterStatus('accepted')}
               >
                 <Text className="text-xs">已接单</Text>
@@ -526,7 +497,7 @@ export default function OwnerOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === 'in_transit' ? 'default' : 'outline'}
-                className={filterStatus === 'in_transit' ? 'bg-primary' : ''}
+                className={filterStatus === 'in_transit' ? 'bg-blue-500' : ''}
                 onClick={() => setFilterStatus('in_transit')}
               >
                 <Text className="text-xs">运输中</Text>
@@ -534,7 +505,7 @@ export default function OwnerOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === 'completed' ? 'default' : 'outline'}
-                className={filterStatus === 'completed' ? 'bg-primary' : ''}
+                className={filterStatus === 'completed' ? 'bg-blue-500' : ''}
                 onClick={() => setFilterStatus('completed')}
               >
                 <Text className="text-xs">已完成</Text>
@@ -543,16 +514,16 @@ export default function OwnerOrders() {
 
             {/* 取消申请提示 */}
             <View
-              className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 mb-4"
+              className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-3 mb-4"
               onClick={() => Taro.navigateTo({ url: '/pages/owner/cancellations/index' })}
             >
               <View className="flex items-center justify-between">
                 <View className="flex items-center">
-                  <Text className="text-xs text-amber-600">
+                  <Text className="text-xs text-orange-600">
                     📋 有需求方申请取消订单，请及时处理
                   </Text>
                 </View>
-                <Text className="text-xs text-amber-500">查看处理 ›</Text>
+                <Text className="text-xs text-orange-500">查看处理 ›</Text>
               </View>
             </View>
 
@@ -564,7 +535,7 @@ export default function OwnerOrders() {
               <View className="text-center py-8">
                 <Text className="block text-gray-500 text-sm mb-4">暂无订单</Text>
                 <Button
-                  className="bg-primary"
+                  className="bg-blue-500"
                   onClick={() => Taro.navigateTo({ url: '/pages/owner/demands/index' })}
                 >
                   <Text>去接单</Text>
@@ -573,7 +544,7 @@ export default function OwnerOrders() {
             ) : (
               <View className="space-y-3">
                 {orders.map((order) => (
-                  <View key={order.id} className="bg-muted rounded-lg p-4">
+                  <View key={order.id} className="bg-gray-50 rounded-lg p-4">
                     <View className="flex justify-between items-start mb-3">
                       <View className="flex-1">
                         <Text className="block font-medium text-base mb-1">
@@ -581,7 +552,7 @@ export default function OwnerOrders() {
                         </Text>
                         <View className="flex items-center gap-2 mb-2">
                           {order.demand && (
-                            <Badge className="bg-primary">
+                            <Badge className="bg-blue-500">
                               <Text className="text-white text-xs">
                                 {getCargoTypeText(order.demand.cargo_type)}
                               </Text>
@@ -604,7 +575,7 @@ export default function OwnerOrders() {
                           >
                             <Text className="text-xs text-red-600">取消</Text>
                           </Button>
-                          <View className="bg-muted px-3 py-1 rounded-lg">
+                          <View className="bg-gray-200 px-3 py-1 rounded-lg">
                             <Text className="text-xs text-gray-600">等待确认运费</Text>
                           </View>
                         </View>
@@ -612,7 +583,7 @@ export default function OwnerOrders() {
                       {order.status === 'accepted' && order.merchant_confirmed && (
                         <Button
                           size="sm"
-                          className="bg-emerald-500"
+                          className="bg-green-500"
                           onClick={() => handleStartTransport(order)}
                         >
                           <Text className="text-xs">开始运输</Text>
@@ -621,7 +592,7 @@ export default function OwnerOrders() {
                       {order.status === 'in_transit' && (
                         <Button
                           size="sm"
-                          className="bg-primary"
+                          className="bg-blue-500"
                           onClick={() => handleCompleteOrder(order)}
                         >
                           <Text className="text-xs">完成运输</Text>
@@ -630,7 +601,7 @@ export default function OwnerOrders() {
                       {order.status === 'transport_completed' && order.payment_status === 'paid' && (
                         <Button
                           size="sm"
-                          className="bg-emerald-500"
+                          className="bg-green-500"
                           onClick={() => handleConfirmPayment(order)}
                         >
                           <Text className="text-xs">确认收款</Text>
@@ -639,7 +610,7 @@ export default function OwnerOrders() {
                       {order.status === 'payment_confirmed' && (
                         <Button
                           size="sm"
-                          className="bg-indigo-500"
+                          className="bg-purple-500"
                           onClick={() => handleGoToCommissionPayment(order)}
                         >
                           <Text className="text-xs">支付佣金</Text>
@@ -658,7 +629,7 @@ export default function OwnerOrders() {
 
                     {/* 需求信息 */}
                     {order.demand && (
-                      <View className="space-y-2 mb-3 pb-3 border-b border-border">
+                      <View className="space-y-2 mb-3 pb-3 border-b border-gray-200">
                         <View className="flex items-start">
                           <Text className="text-xs text-gray-500 w-16 flex-shrink-0">取货:</Text>
                           <Text className="text-xs text-gray-700 flex-1">
@@ -696,21 +667,21 @@ export default function OwnerOrders() {
 
                     {/* 运费信息（仅已接单后显示） */}
                     {order.status === 'accepted' && order.fare_price && (
-                      <View className="bg-amber-50 rounded-lg p-3 mb-3">
+                      <View className="bg-yellow-50 rounded-lg p-3 mb-3">
                         <View className="flex justify-between items-center">
                           <View>
                             <Text className="block text-xs text-gray-600 mb-1">运费报价</Text>
-                            <Text className="block text-lg font-bold text-amber-600">
+                            <Text className="block text-lg font-bold text-orange-600">
                               ¥{order.fare_price.toFixed(2)}
                             </Text>
                           </View>
                           {!order.merchant_confirmed && (
-                            <View className="bg-muted px-3 py-1 rounded-lg">
+                            <View className="bg-gray-200 px-3 py-1 rounded-lg">
                               <Text className="text-xs text-gray-600">待确认</Text>
                             </View>
                           )}
                           {order.merchant_confirmed && (
-                            <View className="bg-emerald-500 px-3 py-1 rounded-lg">
+                            <View className="bg-green-500 px-3 py-1 rounded-lg">
                               <Text className="text-xs text-white">已确认</Text>
                             </View>
                           )}
@@ -765,7 +736,6 @@ export default function OwnerOrders() {
             )}
           </CardContent>
         </Card>
-      </View>
 
       {/* 开始运输确认弹窗 */}
       {showStartDialog && selectedOrder && (
@@ -779,7 +749,7 @@ export default function OwnerOrders() {
                 确认开始运输订单：{selectedOrder.demand?.cargo_name}
               </Text>
               {selectedOrder.demand && (
-                <View className="bg-muted rounded-lg p-4 mb-4">
+                <View className="bg-gray-50 rounded-lg p-4 mb-4">
                   <View className="space-y-2">
                     <View className="flex items-start">
                       <Text className="text-xs text-gray-500 w-16 flex-shrink-0">取货:</Text>
@@ -798,14 +768,14 @@ export default function OwnerOrders() {
               )}
               <View className="flex gap-3">
                 <Button
-                  className="flex-1 bg-muted"
+                  className="flex-1 bg-gray-200"
                   onClick={handleCloseStartDialog}
                   disabled={loading}
                 >
                   <Text>取消</Text>
                 </Button>
                 <Button
-                  className="flex-1 bg-emerald-500"
+                  className="flex-1 bg-green-500"
                   onClick={handleConfirmStart}
                   disabled={loading}
                 >
@@ -835,7 +805,7 @@ export default function OwnerOrders() {
                     <Text className="text-red-500">*</Text>取货凭证
                   </Text>
                   <View
-                    className="bg-muted rounded-lg p-4 text-center"
+                    className="bg-gray-50 rounded-lg p-4 text-center"
                     onClick={handleChoosePickupPhoto}
                   >
                     {pickupImage ? (
@@ -858,7 +828,7 @@ export default function OwnerOrders() {
                     <Text className="text-red-500">*</Text>送货凭证
                   </Text>
                   <View
-                    className="bg-muted rounded-lg p-4 text-center"
+                    className="bg-gray-50 rounded-lg p-4 text-center"
                     onClick={handleChooseDeliveryPhoto}
                   >
                     {deliveryImage ? (
@@ -879,14 +849,14 @@ export default function OwnerOrders() {
 
               <View className="flex gap-3">
                 <Button
-                  className="flex-1 bg-muted"
+                  className="flex-1 bg-gray-200"
                   onClick={handleCloseCompleteDialog}
                   disabled={loading}
                 >
                   <Text>取消</Text>
                 </Button>
                 <Button
-                  className="flex-1 bg-primary"
+                  className="flex-1 bg-blue-500"
                   onClick={handleConfirmComplete}
                   disabled={loading}
                 >
@@ -906,7 +876,7 @@ export default function OwnerOrders() {
               <Text className="block text-lg font-semibold mb-2">
                 取消订单
               </Text>
-              <View className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
+              <View className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-3">
                 <Text className="block text-sm text-orange-800 mb-2">
                   ⚠️ 取消订单后：
                 </Text>
@@ -927,7 +897,7 @@ export default function OwnerOrders() {
                 <Text className="block text-sm font-medium mb-2">
                   <Text className="text-red-500">*</Text>取消原因
                 </Text>
-                <View className="bg-muted rounded-lg p-3">
+                <View className="bg-gray-50 rounded-lg p-3">
                   <Input
                     className="w-full bg-transparent"
                     placeholder="请输入取消原因"
@@ -939,7 +909,7 @@ export default function OwnerOrders() {
               </View>
               <View className="flex gap-3 mt-4">
                 <Button
-                  className="flex-1 bg-muted"
+                  className="flex-1 bg-gray-200"
                   onClick={handleCloseCancelDialog}
                   disabled={loading}
                 >
@@ -957,6 +927,6 @@ export default function OwnerOrders() {
           </DialogContent>
         </Dialog>
       )}
-    </View>
+    </AppPageShell>
   )
 }

@@ -75,7 +75,7 @@ CMD ["recorouter-api"]
 EOF
   docker build -t "$IMAGE_REF" -f "$RELEASE_DIR/Dockerfile.runtime" "$RELEASE_DIR"
 else
-  docker build -t "$IMAGE_REF" "$RELEASE_DIR/server-rust"
+  docker build -t "$IMAGE_REF" "$RELEASE_DIR/server"
 fi
 
 CANDIDATE_NAME="${CONTAINER_NAME}-candidate-$RELEASE_ID"
@@ -134,7 +134,7 @@ nginx -s reload
 for _ in $(seq 1 30); do
   if curl -fsS "http://127.0.0.1:$API_PORT/api/health" >/dev/null; then
     echo "RecoRouter API is healthy on 127.0.0.1:$API_PORT"
-    echo "RecoRouter frontend is configured for https://$DOMAIN"
+    echo "RecoRouter backend is configured for https://$DOMAIN"
     exit 0
   fi
   sleep 1

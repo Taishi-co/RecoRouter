@@ -3,6 +3,8 @@ import { View, Text } from '@tarojs/components'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import Taro from '@tarojs/taro'
 import { Network } from '@/network'
 // import { useNotificationPolling } from '@/hooks/useNotificationPolling'
@@ -31,6 +33,43 @@ interface Demand {
     name: string
   }
 }
+
+const demoDemands: Demand[] = [
+  {
+    id: 'demo-demand-1',
+    cargo_name: '冷链鲜奶配送',
+    cargo_type: 'refrigerated',
+    weight: 820,
+    volume: 3.2,
+    pickup_time: '2026-05-26T08:30:00+10:00',
+    pickup_address: '宝山城市仓 · 1号月台',
+    delivery_address: '萧山中心站 · 北门',
+    remarks: '需全程温控 2-8°C，优先派冷链车',
+    status: 'pending',
+    created_at: '2026-05-26T07:45:00+10:00',
+    merchant_id: 'demo-merchant',
+    estimated_distance: 168,
+    merchant: {
+      phone: '13800000000',
+      name: '演示商户',
+    },
+  },
+  {
+    id: 'demo-demand-2',
+    cargo_name: '社区补货专线',
+    cargo_type: 'normal',
+    weight: 460,
+    volume: 2.1,
+    pickup_time: '2026-05-26T14:30:00+10:00',
+    pickup_address: '苏州前置仓',
+    delivery_address: '昆山周市店群',
+    remarks: '三点卸货，需司机电话回执',
+    status: 'pending',
+    created_at: '2026-05-26T11:20:00+10:00',
+    merchant_id: 'demo-merchant',
+    estimated_distance: 42,
+  },
+]
 
 export default function OwnerDemands() {
   const [demands, setDemands] = useState<Demand[]>([])
@@ -86,13 +125,13 @@ export default function OwnerDemands() {
 
   const getCargoTypeColor = (type: string) => {
     const colors: Record<string, string> = {
-      normal: 'bg-primary',
-      fragile: 'bg-amber-500',
+      normal: 'bg-blue-500',
+      fragile: 'bg-orange-500',
       refrigerated: 'bg-cyan-500',
-      bulky: 'bg-indigo-500',
+      bulky: 'bg-purple-500',
       hazardous: 'bg-red-500'
     }
-    return colors[type] || 'bg-slate-500'
+    return colors[type] || 'bg-gray-500'
   }
 
   const handleAcceptDemand = (demand: Demand) => {
@@ -106,49 +145,21 @@ export default function OwnerDemands() {
     loadDemands()
   }
 
-  return (
-    <View className="min-h-screen bg-background">
-      {/* 导航菜单 */}
-      <View className="bg-white shadow-sm">
-        <View className="px-4 py-3">
-          <View className="flex gap-2">
-            <Button
-              size="sm"
-              className="bg-primary"
-            >
-              <Text className="text-xs">接单大厅</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/owner/orders/index' })}
-            >
-              <Text className="text-xs">订单管理</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/owner/vehicles/index' })}
-            >
-              <Text className="text-xs">车辆管理</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/owner/profile/index' })}
-            >
-              <Text className="text-xs">我的</Text>
-            </Button>
-          </View>
-        </View>
-      </View>
+  const visibleDemands = demands.length > 0 ? demands : demoDemands
+  const usingDemoDemands = !loading && demands.length === 0
 
-      <View className="px-4 py-4">
+  return (
+    <AppPageShell
+      title="需求大厅"
+      subtitle="RecoRouter 运力端"
+      contentClassName="space-y-3"
+      bottom={<BottomNav type="owner" active="home" />}
+    >
         <Card className="bg-white rounded-lg shadow-sm">
           <CardHeader>
             <View className="flex justify-between items-center">
               <CardTitle className="text-lg font-semibold">
-                待接单需求
+                附近需求
               </CardTitle>
               <Button
                 size="sm"
@@ -165,22 +176,17 @@ export default function OwnerDemands() {
               <View className="text-center py-8">
                 <Text className="block text-gray-500 text-sm">加载中...</Text>
               </View>
-            ) : demands.length === 0 ? (
-              <View className="text-center py-8">
-                <Text className="block text-gray-500 text-sm mb-4">
-                  暂无待接单需求
-                </Text>
-                <Button
-                  className="bg-primary"
-                  onClick={handleRefresh}
-                >
-                  <Text>刷新</Text>
-                </Button>
-              </View>
             ) : (
               <View className="space-y-3">
-                {demands.map((demand) => (
-                  <View key={demand.id} className="bg-muted rounded-lg p-4">
+                {usingDemoDemands && (
+                  <View className="bg-blue-50 rounded-lg p-3">
+                    <Text className="block text-xs text-blue-700">
+                      暂无真实待接单需求，以下为设计稿演示数据
+                    </Text>
+                  </View>
+                )}
+                {visibleDemands.map((demand) => (
+                  <View key={demand.id} className="bg-gray-50 rounded-lg p-4">
                     <View className="flex justify-between items-start mb-3">
                       <View className="flex-1">
                         <Text className="block font-medium text-base mb-1">
@@ -192,7 +198,7 @@ export default function OwnerDemands() {
                               {getCargoTypeText(demand.cargo_type)}
                             </Text>
                           </Badge>
-                          <Badge className="bg-emerald-500">
+                          <Badge className="bg-green-500">
                             <Text className="text-white text-xs">
                               待接单
                             </Text>
@@ -201,7 +207,7 @@ export default function OwnerDemands() {
                       </View>
                       <Button
                         size="sm"
-                        className="bg-primary"
+                        className="bg-blue-500"
                         onClick={() => handleAcceptDemand(demand)}
                       >
                         <Text className="text-xs">接单</Text>
@@ -250,7 +256,6 @@ export default function OwnerDemands() {
             )}
           </CardContent>
         </Card>
-      </View>
-    </View>
+    </AppPageShell>
   )
 }

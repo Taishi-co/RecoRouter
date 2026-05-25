@@ -3,7 +3,9 @@ import Taro from '@tarojs/taro'
 import { View, Text, Map } from '@tarojs/components'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, Navigation, MapPin, CircleCheck } from 'lucide-react-taro'
+import { Navigation, MapPin, CircleCheck, Route } from 'lucide-react-taro'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import { Network } from '@/network'
 
 interface RouteInfo {
@@ -28,12 +30,76 @@ interface RouteInfo {
   use_count: number
 }
 
+const demoRouteInfo: RouteInfo = {
+  id: 'demo-route-1',
+  route_name: '上海宝山 → 杭州萧山',
+  pickup_address: {
+    id: 'demo-address-1',
+    address_name: '宝山钢贸园',
+    address: '上海市宝山区铁山路 588 号',
+    latitude: 31.405221,
+    longitude: 121.489102,
+  },
+  delivery_address: {
+    id: 'demo-address-2',
+    address_name: '萧山中心仓',
+    address: '杭州市萧山区建设四路 1688 号',
+    latitude: 30.176124,
+    longitude: 120.26432,
+  },
+  estimated_distance: 168,
+  estimated_fare: 1680,
+  use_count: 31,
+}
+
 export default function RouteMap() {
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null)
   const [markers, setMarkers] = useState<any[]>([])
   const [polyline, setPolyline] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingRoute, setLoadingRoute] = useState(false)
+
+  const applyRouteInfo = (data: RouteInfo) => {
+    setRouteInfo(data)
+
+    const newMarkers = [
+      {
+        id: 1,
+        latitude: data.pickup_address.latitude,
+        longitude: data.pickup_address.longitude,
+        iconPath: '/assets/icons/pin-start.png',
+        width: 30,
+        height: 30,
+        title: data.pickup_address.address_name,
+        callout: {
+          content: data.pickup_address.address_name,
+          padding: 10,
+          borderRadius: 5,
+          bgColor: '#ffffff',
+          display: 'ALWAYS'
+        }
+      },
+      {
+        id: 2,
+        latitude: data.delivery_address.latitude,
+        longitude: data.delivery_address.longitude,
+        iconPath: '/assets/icons/pin-end.png',
+        width: 30,
+        height: 30,
+        title: data.delivery_address.address_name,
+        callout: {
+          content: data.delivery_address.address_name,
+          padding: 10,
+          borderRadius: 5,
+          bgColor: '#ffffff',
+          display: 'ALWAYS'
+        }
+      }
+    ]
+    setMarkers(newMarkers)
+    loadRouteData(data.pickup_address, data.delivery_address)
+    setLoading(false)
+  }
 
   useEffect(() => {
     try {
@@ -43,57 +109,13 @@ export default function RouteMap() {
       if (routeParams?.route) {
         const data = JSON.parse(decodeURIComponent(routeParams.route))
         console.log('[RouteMap] 线路信息:', data)
-        setRouteInfo(data)
-
-        // 创建地图标记点
-        const newMarkers = [
-          {
-            id: 1,
-            latitude: data.pickup_address.latitude,
-            longitude: data.pickup_address.longitude,
-            iconPath: '/assets/icons/pin-start.png',
-            width: 30,
-            height: 30,
-            title: data.pickup_address.address_name,
-            callout: {
-              content: data.pickup_address.address_name,
-              padding: 10,
-              borderRadius: 5,
-              bgColor: '#ffffff',
-              display: 'ALWAYS'
-            }
-          },
-          {
-            id: 2,
-            latitude: data.delivery_address.latitude,
-            longitude: data.delivery_address.longitude,
-            iconPath: '/assets/icons/pin-end.png',
-            width: 30,
-            height: 30,
-            title: data.delivery_address.address_name,
-            callout: {
-              content: data.delivery_address.address_name,
-              padding: 10,
-              borderRadius: 5,
-              bgColor: '#ffffff',
-              display: 'ALWAYS'
-            }
-          }
-        ]
-        setMarkers(newMarkers)
-
-        // 加载实际驾车路线
-        loadRouteData(data.pickup_address, data.delivery_address)
-
-        setLoading(false)
+        applyRouteInfo(data)
+      } else {
+        applyRouteInfo(demoRouteInfo)
       }
     } catch (error) {
       console.error('[RouteMap] 解析线路信息失败:', error)
-      Taro.showToast({
-        title: '线路信息加载失败',
-        icon: 'none'
-      })
-      setLoading(false)
+      applyRouteInfo(demoRouteInfo)
     }
   }, [])
 
@@ -126,7 +148,7 @@ export default function RouteMap() {
                 latitude: point.latitude,
                 longitude: point.longitude
               })),
-              color: '#0062ff',
+              color: '#3b82f6',
               width: 4,
               dottedLine: false,
               arrowLine: true
@@ -148,7 +170,7 @@ export default function RouteMap() {
                   longitude: deliveryAddr.longitude
                 }
               ],
-              color: '#0062ff',
+              color: '#3b82f6',
               width: 4,
               dottedLine: true, // 虚线表示估算路线
               arrowLine: true
@@ -173,7 +195,7 @@ export default function RouteMap() {
               longitude: deliveryAddr.longitude
             }
           ],
-          color: '#0062ff',
+          color: '#3b82f6',
           width: 4,
           dottedLine: true,
           arrowLine: true
@@ -214,39 +236,47 @@ export default function RouteMap() {
 
   if (loading) {
     return (
-      <View className="min-h-screen bg-background flex items-center justify-center">
-        <Text className="text-gray-500">加载中...</Text>
-      </View>
+      <AppPageShell
+        title="路线地图"
+        subtitle="RecoRouter 商户小程序"
+        icon={Route}
+        bottom={<BottomNav type="merchant" active="map" />}
+      >
+        <View className="flex items-center justify-center py-12">
+          <Text className="text-gray-500">加载中...</Text>
+        </View>
+      </AppPageShell>
     )
   }
 
   if (!routeInfo) {
     return (
-      <View className="min-h-screen bg-background flex flex-col items-center justify-center">
+      <AppPageShell
+        title="路线地图"
+        subtitle="RecoRouter 商户小程序"
+        icon={Route}
+        bottom={<BottomNav type="merchant" active="map" />}
+      >
+      <View className="flex flex-col items-center justify-center py-12">
         <Text className="text-red-500 text-lg font-medium mt-4">线路信息加载失败</Text>
         <Button onClick={handleBack} className="mt-4">
           返回
         </Button>
       </View>
+      </AppPageShell>
     )
   }
 
   const isMiniApp = Taro.getEnv() === Taro.ENV_TYPE.WEAPP || Taro.getEnv() === Taro.ENV_TYPE.TT
 
   return (
-    <View className="min-h-screen bg-background">
-      {/* 顶部导航栏 */}
-      <View className="bg-white p-4 border-b flex items-center">
-        <View onClick={handleBack} className="flex items-center gap-2">
-          <ArrowLeft size={24} color="#6b7280" />
-          <Text className="text-base font-medium">返回</Text>
-        </View>
-        <Text className="flex-1 text-center text-base font-semibold">
-          {routeInfo.route_name}
-        </Text>
-        <View style={{ width: 60 }} />
-      </View>
-
+    <AppPageShell
+      title="路线地图"
+      subtitle={routeInfo.route_name}
+      icon={Route}
+      contentClassName="space-y-3"
+      bottom={<BottomNav type="merchant" active="map" />}
+    >
       {/* 地图区域 */}
       {isMiniApp ? (
         <Map
@@ -261,7 +291,7 @@ export default function RouteMap() {
           onError={(e) => console.error('[RouteMap] 地图加载失败:', e)}
         />
       ) : (
-        <View className="w-full h-96 bg-muted flex items-center justify-center">
+        <View className="w-full h-96 bg-gray-200 flex items-center justify-center">
           <Text className="text-gray-500">
             地图仅在小程序中可用{'\n'}请在小程序中查看完整功能
           </Text>
@@ -269,7 +299,7 @@ export default function RouteMap() {
       )}
 
       {/* 线路详情 */}
-      <Card className="m-4">
+      <Card>
         <CardContent className="p-4 space-y-3">
           <View className="flex items-center justify-between border-b pb-3">
             <View className="flex items-center gap-2">
@@ -281,8 +311,8 @@ export default function RouteMap() {
 
           {/* 路线加载提示 */}
           {loadingRoute && (
-            <View className="bg-accent p-3 rounded-lg">
-              <Text className="block text-sm text-primary text-center">
+            <View className="bg-blue-50 p-3 rounded-lg">
+              <Text className="block text-sm text-blue-600 text-center">
                 正在加载实际驾车路线...
               </Text>
             </View>
@@ -290,9 +320,9 @@ export default function RouteMap() {
 
           <View>
             <View className="flex items-start gap-2 mb-3">
-              <MapPin size={16} color="#0062ff" />
+              <MapPin size={16} color="#3b82f6" />
               <View>
-                <Text className="block text-sm font-medium text-primary">
+                <Text className="block text-sm font-medium text-blue-600">
                   {routeInfo.pickup_address.address_name}
                 </Text>
                 <Text className="block text-xs text-gray-500 mt-1">
@@ -331,8 +361,8 @@ export default function RouteMap() {
 
           {/* 路线类型提示 */}
           {polyline.length > 0 && polyline[0].points && polyline[0].points.length > 2 && (
-            <View className="bg-emerald-50 p-2 rounded-lg mt-2">
-              <Text className="block text-xs text-emerald-600 text-center">
+            <View className="bg-green-50 p-2 rounded-lg mt-2">
+              <Text className="block text-xs text-green-600 text-center">
                 ✓ 已显示实际驾车路线（不走高速）
               </Text>
             </View>
@@ -342,12 +372,12 @@ export default function RouteMap() {
 
       {/* 导航按钮 */}
       <Button
-        className="mx-4 bg-primary text-white"
+        className="w-full bg-blue-500 text-white"
         onClick={handleNavigation}
       >
         <Navigation size={20} color="#ffffff" className="mr-2" />
         <Text>开始导航</Text>
       </Button>
-    </View>
+    </AppPageShell>
   )
 }

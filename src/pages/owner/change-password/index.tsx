@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import Taro from '@tarojs/taro'
-// eslint-disable-next-line no-restricted-syntax
-import { View, Text, Input as TaroInput } from '@tarojs/components'
+import { View, Text } from '@tarojs/components'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, Lock, Eye, EyeOff } from 'lucide-react-taro'
+import { Input } from '@/components/ui/input'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
+import { Lock, Eye, EyeOff } from 'lucide-react-taro'
 import { Network } from '@/network'
 
 export default function ChangePassword() {
@@ -19,10 +21,6 @@ export default function ChangePassword() {
     confirm: false
   })
   const [loading, setLoading] = useState(false)
-
-  const handleBack = () => {
-    Taro.navigateBack()
-  }
 
   const getPasswordStrength = (password: string) => {
     if (!password) return { level: 0, text: '' }
@@ -125,25 +123,20 @@ export default function ChangePassword() {
   }
 
   return (
-    <View className="min-h-screen bg-background">
-      {/* 顶部导航栏 */}
-      <View className="bg-white p-4 border-b flex items-center">
-        <View onClick={handleBack} className="flex items-center gap-2">
-          <ArrowLeft size={24} color="#6b7280" />
-          <Text className="text-base font-medium">返回</Text>
-        </View>
-        <Text className="flex-1 text-center text-base font-semibold">修改密码</Text>
-        <View style={{ width: 60 }} />
-      </View>
-
+    <AppPageShell
+      title="修改密码"
+      subtitle="RecoRouter 运力端"
+      contentClassName="space-y-4"
+      bottom={<BottomNav type="owner" active="profile" />}
+    >
       {/* 修改密码表单 */}
-      <Card className="m-4">
+      <Card>
         <CardContent className="p-4 space-y-4">
           {/* 原密码 */}
           <View>
             <Text className="block text-sm font-medium mb-2">原密码</Text>
-            <View className="bg-muted rounded-xl px-4 py-3 flex items-center gap-2">
-              <TaroInput
+            <View className="bg-gray-50 rounded-xl px-4 py-3 flex items-center gap-2">
+              <Input
                 className="flex-1 bg-transparent"
                 password={!showPassword.old}
                 placeholder="请输入原密码"
@@ -158,8 +151,8 @@ export default function ChangePassword() {
           {/* 新密码 */}
           <View>
             <Text className="block text-sm font-medium mb-2">新密码</Text>
-            <View className="bg-muted rounded-xl px-4 py-3 flex items-center gap-2">
-              <TaroInput
+            <View className="bg-gray-50 rounded-xl px-4 py-3 flex items-center gap-2">
+              <Input
                 className="flex-1 bg-transparent"
                 password={!showPassword.new}
                 placeholder="请输入新密码（6-20位）"
@@ -177,17 +170,17 @@ export default function ChangePassword() {
               <View className="flex items-center gap-2 mt-2">
                 <View
                   className={`h-1 flex-1 rounded ${
-                    strength.level >= 1 ? 'bg-red-500' : 'bg-muted'
+                    strength.level >= 1 ? 'bg-red-500' : 'bg-gray-200'
                   }`}
                 />
                 <View
                   className={`h-1 flex-1 rounded ${
-                    strength.level >= 2 ? 'bg-amber-500' : 'bg-muted'
+                    strength.level >= 2 ? 'bg-yellow-500' : 'bg-gray-200'
                   }`}
                 />
                 <View
                   className={`h-1 flex-1 rounded ${
-                    strength.level >= 3 ? 'bg-emerald-500' : 'bg-muted'
+                    strength.level >= 3 ? 'bg-green-500' : 'bg-gray-200'
                   }`}
                 />
                 <Text className="text-xs text-gray-500 ml-2">
@@ -200,8 +193,8 @@ export default function ChangePassword() {
           {/* 确认新密码 */}
           <View>
             <Text className="block text-sm font-medium mb-2">确认新密码</Text>
-            <View className="bg-muted rounded-xl px-4 py-3 flex items-center gap-2">
-              <TaroInput
+            <View className="bg-gray-50 rounded-xl px-4 py-3 flex items-center gap-2">
+              <Input
                 className="flex-1 bg-transparent"
                 password={!showPassword.confirm}
                 placeholder="请再次输入新密码"
@@ -218,15 +211,15 @@ export default function ChangePassword() {
       </Card>
 
       {/* 确认修改按钮 */}
-      <View className="m-4">
+      <View>
         <Button
-          className="w-full bg-primary text-white"
+          className="w-full bg-blue-500 text-white"
           onClick={handleChangePassword}
           disabled={loading}
         >
-          <Text>{loading ? '修改中...' : '确认修改'}</Text>
+          <Text>{loading ? '修改中...' : '提交修改'}</Text>
         </Button>
       </View>
-    </View>
+    </AppPageShell>
   )
 }

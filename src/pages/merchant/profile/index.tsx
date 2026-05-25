@@ -5,7 +5,9 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import Taro from '@tarojs/taro'
 import { Network } from '@/network'
-import { Bell, LogOut, FileText, Package, ChartArea, MapPin, Route, Copy, Clock, Car, Users } from 'lucide-react-taro'
+import { Bell, LogOut, FileText, Package, ChartArea, MapPin, Route, Copy, Clock, Car, Users, User } from 'lucide-react-taro'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 
 interface UserInfo {
   id: string
@@ -25,12 +27,12 @@ export default function MerchantProfile() {
     {
       id: 'publish',
       title: '发布需求',
-      icon: <FileText size={20} color="#0062ff" />,
+      icon: <FileText size={20} color="#3b82f6" />,
       onClick: () => Taro.navigateTo({ url: '/pages/merchant/demands/publish' })
     },
     {
       id: 'rentals',
-      title: '租车大厅',
+      title: '租赁列表',
       icon: <Car size={20} color="#10b981" />,
       onClick: () => {
         console.log('点击租车大厅')
@@ -57,20 +59,20 @@ export default function MerchantProfile() {
     },
     {
       id: 'demands',
-      title: '我的需求',
-      icon: <Package size={20} color="#0062ff" />,
+      title: '需求列表',
+      icon: <Package size={20} color="#3b82f6" />,
       onClick: () => Taro.navigateTo({ url: '/pages/merchant/demands/list' })
     },
     {
       id: 'orders',
-      title: '订单管理',
-      icon: <Package size={20} color="#0062ff" />,
+      title: '订单中心',
+      icon: <Package size={20} color="#3b82f6" />,
       onClick: () => Taro.navigateTo({ url: '/pages/merchant/orders/index' })
     },
     {
       id: 'templates',
       title: '常用模板',
-      icon: <Copy size={20} color="#0062ff" />,
+      icon: <Copy size={20} color="#3b82f6" />,
       onClick: () => {
         console.log('点击常用模板')
         Taro.navigateTo({
@@ -86,8 +88,8 @@ export default function MerchantProfile() {
     },
     {
       id: 'schedules',
-      title: '定时计划',
-      icon: <Clock size={20} color="#0062ff" />,
+      title: '排班日历',
+      icon: <Clock size={20} color="#3b82f6" />,
       onClick: () => {
         console.log('点击定时计划')
         Taro.navigateTo({
@@ -104,19 +106,19 @@ export default function MerchantProfile() {
     {
       id: 'address-books',
       title: '地址簿',
-      icon: <MapPin size={20} color="#0062ff" />,
+      icon: <MapPin size={20} color="#3b82f6" />,
       onClick: () => Taro.navigateTo({ url: '/pages/merchant/address-books/index' })
     },
     {
       id: 'favorite-routes',
-      title: '常用线路',
-      icon: <Route size={20} color="#0062ff" />,
+      title: '收藏路线',
+      icon: <Route size={20} color="#3b82f6" />,
       onClick: () => Taro.navigateTo({ url: '/pages/merchant/favorite-routes/index' })
     },
     {
       id: 'stats',
-      title: '数据统计',
-      icon: <ChartArea size={20} color="#0062ff" />,
+      title: '经营统计',
+      icon: <ChartArea size={20} color="#3b82f6" />,
       onClick: () => Taro.navigateTo({ url: '/pages/merchant/stats/index' })
     },
     {
@@ -218,31 +220,38 @@ export default function MerchantProfile() {
   }
 
   return (
-    <View className="min-h-screen bg-background">
+    <AppPageShell
+      title="商户中心"
+      subtitle="RecoRouter 商户小程序"
+      icon={User}
+      contentClassName="space-y-3"
+      bottom={<BottomNav type="merchant" active="profile" />}
+    >
       {/* 头部用户信息 */}
-      <View className="bg-emerald-500 pt-12 pb-8 px-4">
+      <Card className="bg-white rounded-lg shadow-sm">
+        <CardContent className="p-4">
         <View className="flex items-center gap-4">
-          <Avatar className="w-16 h-16 bg-white">
-            <AvatarFallback className="text-emerald-500 text-xl font-bold">
+          <Avatar className="w-16 h-16 bg-blue-50">
+            <AvatarFallback className="text-blue-500 text-xl font-bold">
               {userInfo?.name?.charAt(0) || '需'}
             </AvatarFallback>
           </Avatar>
           <View className="flex-1">
-            <Text className="block text-xl font-bold text-white mb-1">
+            <Text className="block text-xl font-bold text-gray-900 mb-1">
               {userInfo?.name || '需求方'}
             </Text>
-            <Text className="block text-sm text-green-100 mb-2">
+            <Text className="block text-sm text-gray-500 mb-2">
               {maskPhone(userInfo?.phone || '')}
             </Text>
-            <Badge className="bg-white bg-opacity-20 text-white px-2 py-1">
-              <Text className="text-xs">信用积分：{creditScore}分</Text>
+            <Badge className="bg-blue-500 px-2 py-1">
+              <Text className="text-xs text-white">信用积分：{creditScore}分</Text>
             </Badge>
           </View>
         </View>
-      </View>
+        </CardContent>
+      </Card>
 
       {/* 内容区域 */}
-      <View className="px-4 -mt-4">
         {/* 通知消息卡片 */}
         <Card
           className="bg-white rounded-lg shadow-sm mb-4"
@@ -252,7 +261,7 @@ export default function MerchantProfile() {
             <View className="flex items-center justify-between">
               <View className="flex items-center gap-3">
                 <View className="relative">
-                  <Bell size={24} color="#0062ff" />
+                  <Bell size={24} color="#3b82f6" />
                   {unreadCount > 0 && (
                     <Badge className="absolute -top-1 -right-1 w-5 h-5 flex items-center justify-center bg-red-500 border-2 border-white rounded-full">
                       <Text className="text-xs text-white">
@@ -284,8 +293,8 @@ export default function MerchantProfile() {
             {menuItems.map((item, index) => (
               <View
                 key={item.id}
-                className={`flex items-center justify-between px-4 py-4 active:bg-muted ${
-                  index < menuItems.length - 1 ? 'border-b border-border' : ''
+                className={`flex items-center justify-between px-4 py-4 active:bg-gray-50 ${
+                  index < menuItems.length - 1 ? 'border-b border-gray-100' : ''
                 }`}
                 onClick={item.onClick}
               >
@@ -303,7 +312,7 @@ export default function MerchantProfile() {
         <Card className="bg-white rounded-lg shadow-sm mb-4">
           <CardContent className="p-0">
             <View
-              className="flex items-center justify-between px-4 py-4 active:bg-muted"
+              className="flex items-center justify-between px-4 py-4 active:bg-gray-50"
               onClick={handleLogout}
             >
               <View className="flex items-center gap-3">
@@ -321,7 +330,6 @@ export default function MerchantProfile() {
             无人车共享运营平台 v1.0.0
           </Text>
         </View>
-      </View>
-    </View>
+    </AppPageShell>
   )
 }

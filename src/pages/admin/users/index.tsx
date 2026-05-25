@@ -4,7 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import Taro from '@tarojs/taro'
+import { Users } from 'lucide-react-taro'
 import { Network } from '@/network'
 
 interface User {
@@ -19,6 +22,45 @@ interface User {
   status: string
   created_at: string
 }
+
+const demoUsers: User[] = [
+  {
+    id: 'demo-user-owner',
+    phone: '138****6621',
+    role: 'owner',
+    name: '张师傅',
+    id_card: '4201**********21',
+    merchant_type: null,
+    address: '武汉市东西湖区',
+    avatar: null,
+    status: 'active',
+    created_at: '2026-05-18T09:30:00+10:00',
+  },
+  {
+    id: 'demo-user-merchant',
+    phone: '156****7098',
+    role: 'merchant',
+    name: '上海某某贸易',
+    id_card: null,
+    merchant_type: '企业月结客户',
+    address: '上海市宝山区钢贸园',
+    avatar: null,
+    status: 'active',
+    created_at: '2026-05-20T11:20:00+10:00',
+  },
+  {
+    id: 'demo-user-disabled',
+    phone: '139****4488',
+    role: 'owner',
+    name: '王师傅',
+    id_card: '3101**********88',
+    merchant_type: null,
+    address: '苏州市太仓市',
+    avatar: null,
+    status: 'disabled',
+    created_at: '2026-05-22T16:45:00+10:00',
+  },
+]
 
 export default function AdminUsers() {
   const [users, setUsers] = useState<User[]>([])
@@ -88,11 +130,11 @@ export default function AdminUsers() {
 
   const getRoleColor = (role: string) => {
     const colors: Record<string, string> = {
-      owner: 'bg-primary',
-      merchant: 'bg-emerald-500',
-      admin: 'bg-indigo-500'
+      owner: 'bg-blue-500',
+      merchant: 'bg-green-500',
+      admin: 'bg-purple-500'
     }
-    return colors[role] || 'bg-slate-500'
+    return colors[role] || 'bg-gray-500'
   }
 
   const getStatusText = (status: string) => {
@@ -105,10 +147,10 @@ export default function AdminUsers() {
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      active: 'bg-emerald-500',
+      active: 'bg-green-500',
       disabled: 'bg-red-500'
     }
-    return colors[status] || 'bg-slate-500'
+    return colors[status] || 'bg-gray-500'
   }
 
   const handleChangeStatus = (user: User) => {
@@ -165,51 +207,22 @@ export default function AdminUsers() {
     }
   }
 
-  return (
-    <View className="min-h-screen bg-background">
-      {/* 导航菜单 */}
-      <View className="bg-white shadow-sm">
-        <View className="px-4 py-3">
-          <View className="flex gap-2">
-            <Button
-              size="sm"
-              className="bg-primary"
-            >
-              <Text className="text-xs">用户管理</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/admin/vehicles/index' })}
-            >
-              <Text className="text-xs">车辆审核</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/admin/orders/index' })}
-            >
-              <Text className="text-xs">订单管理</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/admin/commission/index' })}
-            >
-              <Text className="text-xs">佣金审核</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/admin/stats/index' })}
-            >
-              <Text className="text-xs">数据统计</Text>
-            </Button>
-          </View>
-        </View>
-      </View>
+  const displayUsers = users.length > 0 ? users : demoUsers
 
-      <View className="px-4 py-4">
+  return (
+    <AppPageShell
+      title="用户管理"
+      subtitle="RecoRouter 运营端"
+      right={
+        <View className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center">
+          <Users size={20} color="#0062FF" strokeWidth={2.3} />
+        </View>
+      }
+      bottom={<BottomNav type="admin" active="users" />}
+      scroll={false}
+      contentClassName="space-y-3"
+    >
+      <View>
         <Card className="bg-white rounded-lg shadow-sm">
           <CardHeader>
             <CardTitle className="text-lg font-semibold">
@@ -222,7 +235,7 @@ export default function AdminUsers() {
               <Button
                 size="sm"
                 variant={filterRole === '' ? 'default' : 'outline'}
-                className={filterRole === '' ? 'bg-primary' : ''}
+                className={filterRole === '' ? 'bg-blue-500' : ''}
                 onClick={() => setFilterRole('')}
               >
                 <Text className="text-xs">全部</Text>
@@ -230,7 +243,7 @@ export default function AdminUsers() {
               <Button
                 size="sm"
                 variant={filterRole === 'owner' ? 'default' : 'outline'}
-                className={filterRole === 'owner' ? 'bg-primary' : ''}
+                className={filterRole === 'owner' ? 'bg-blue-500' : ''}
                 onClick={() => setFilterRole('owner')}
               >
                 <Text className="text-xs">车主</Text>
@@ -238,7 +251,7 @@ export default function AdminUsers() {
               <Button
                 size="sm"
                 variant={filterRole === 'merchant' ? 'default' : 'outline'}
-                className={filterRole === 'merchant' ? 'bg-primary' : ''}
+                className={filterRole === 'merchant' ? 'bg-blue-500' : ''}
                 onClick={() => setFilterRole('merchant')}
               >
                 <Text className="text-xs">需求方</Text>
@@ -249,14 +262,14 @@ export default function AdminUsers() {
               <View className="text-center py-8">
                 <Text className="block text-gray-500 text-sm">加载中...</Text>
               </View>
-            ) : users.length === 0 ? (
+            ) : displayUsers.length === 0 ? (
               <View className="text-center py-8">
                 <Text className="block text-gray-500 text-sm">暂无用户</Text>
               </View>
             ) : (
               <View className="space-y-3">
-                {users.map((user) => (
-                  <View key={user.id} className="bg-muted rounded-lg p-4">
+                {displayUsers.map((user) => (
+                  <View key={user.id} className="bg-gray-50 rounded-lg p-4">
                     <View className="flex justify-between items-start mb-3">
                       <View className="flex-1">
                         <Text className="block font-medium text-base mb-1">
@@ -278,7 +291,8 @@ export default function AdminUsers() {
                       <Button
                         size="sm"
                         variant="outline"
-                        className={user.status === 'active' ? 'text-red-500 border-red-500' : 'text-emerald-500 border-emerald-500'}
+                        className={user.status === 'active' ? 'text-red-500 border-red-500' : 'text-green-500 border-green-500'}
+                        disabled={user.id.startsWith('demo-')}
                         onClick={() => handleChangeStatus(user)}
                       >
                         <Text className="text-xs">
@@ -342,14 +356,14 @@ export default function AdminUsers() {
               </Text>
               <View className="flex gap-3">
                 <Button
-                  className="flex-1 bg-muted"
+                  className="flex-1 bg-gray-200"
                   onClick={handleCloseStatusDialog}
                   disabled={loading}
                 >
                   <Text>取消</Text>
                 </Button>
                 <Button
-                  className={`flex-1 ${selectedUser.status === 'active' ? 'bg-red-500' : 'bg-emerald-500'}`}
+                  className={`flex-1 ${selectedUser.status === 'active' ? 'bg-red-500' : 'bg-green-500'}`}
                   onClick={handleConfirmStatusChange}
                   disabled={loading}
                 >
@@ -360,6 +374,6 @@ export default function AdminUsers() {
           </DialogContent>
         </Dialog>
       )}
-    </View>
+    </AppPageShell>
   )
 }

@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import Taro, { usePullDownRefresh, useReachBottom } from '@tarojs/taro'
-import { View, Text, ScrollView } from '@tarojs/components'
+import { View, Text } from '@tarojs/components'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import { Bell, CircleX, DollarSign, ShieldCheck, CircleCheck } from 'lucide-react-taro'
 import { Network } from '@/network'
 
@@ -18,6 +20,38 @@ interface Notification {
   is_read: boolean
   created_at: string
 }
+
+const demoNotifications: Notification[] = [
+  {
+    id: 'demo-notification-1',
+    user_id: 'demo-user',
+    type: 'order_accepted',
+    title: '订单已被承运方接单',
+    content: '沪A·9231 已确认上海宝山至杭州萧山线路，预计 42 分钟后到场。',
+    related_order_id: 'demo-order-1',
+    is_read: false,
+    created_at: '2026-05-26T09:20:00+10:00',
+  },
+  {
+    id: 'demo-notification-2',
+    user_id: 'demo-user',
+    type: 'payment_received',
+    title: '运费支付已确认',
+    content: '订单 R240526-018 尾款 ¥2,860.00 已入账，可在订单中心查看明细。',
+    related_order_id: 'demo-order-2',
+    is_read: false,
+    created_at: '2026-05-26T08:45:00+10:00',
+  },
+  {
+    id: 'demo-notification-3',
+    user_id: 'demo-user',
+    type: 'commission_confirmed',
+    title: '佣金审核通过',
+    content: '平台服务费已完成审核，车辆状态已恢复为可接单。',
+    is_read: true,
+    created_at: '2026-05-25T18:30:00+10:00',
+  },
+]
 
 export default function Notifications() {
   const [notifications, setNotifications] = useState<Notification[]>([])
@@ -156,6 +190,10 @@ export default function Notifications() {
 
   // 点击通知跳转
   const handleNotificationClick = (notification: Notification) => {
+    if (notification.id.startsWith('demo-')) {
+      return
+    }
+
     // 标记为已读
     if (!notification.is_read) {
       handleMarkAsRead(notification.id)
@@ -196,7 +234,7 @@ export default function Notifications() {
       case 'fare_confirmed':
         return { icon: DollarSign, color: '#22c55e', bgColor: '#dcfce7' }
       case 'payment_received':
-        return { icon: DollarSign, color: '#0062ff', bgColor: '#dbeafe' }
+        return { icon: DollarSign, color: '#3b82f6', bgColor: '#dbeafe' }
       case 'commission_confirmed':
         return { icon: ShieldCheck, color: '#8b5cf6', bgColor: '#ede9fe' }
       case 'order_completed':
@@ -231,41 +269,43 @@ export default function Notifications() {
 
     // 设置导航栏标题
     Taro.setNavigationBarTitle({
-      title: '通知消息'
+      title: '通知中心'
     })
   }, [])
 
+  const hasRealNotifications = notifications.length > 0
+  const displayNotifications = hasRealNotifications ? notifications : demoNotifications
+  const displayUnreadCount = hasRealNotifications
+    ? unreadCount
+    : demoNotifications.filter((notification) => !notification.is_read).length
+
   return (
-    <View className="min-h-screen bg-background">
-      {/* 顶部操作栏 */}
-      <View className="bg-white px-4 py-3 flex items-center justify-between border-b border-border sticky top-0 z-10">
-        <View className="flex items-center">
-          <Bell size={20} color="#0062ff" />
-          <Text className="block text-base font-semibold ml-2">
-            通知消息
-          </Text>
-          {unreadCount > 0 && (
-            <Badge className="ml-2 bg-red-500 text-white">
-              <Text className="text-xs">{unreadCount}</Text>
-            </Badge>
-          )}
-        </View>
-        {unreadCount > 0 && (
+    <AppPageShell
+      title="通知中心"
+      subtitle="RecoRouter 通知消息"
+      bottom={<BottomNav type="common" active="messages" />}
+      scroll={false}
+      contentClassName="space-y-3"
+      right={displayUnreadCount > 0 ? (
+        <View className="flex items-center gap-2">
+          <Badge className="bg-red-500">
+            <Text className="text-white text-xs">{displayUnreadCount}</Text>
+          </Badge>
           <Button
             size="sm"
             variant="outline"
-            className="text-primary border-primary"
+            className="h-9 rounded-full border-blue-100 bg-blue-50 px-3 shadow-none"
+            disabled={!hasRealNotifications}
             onClick={handleMarkAllAsRead}
           >
-            <Text className="text-xs">全部已读</Text>
+            <Text className="text-xs font-bold text-blue-600">全部已读</Text>
           </Button>
-        )}
-      </View>
-
+        </View>
+      ) : undefined}
+    >
       {/* 通知列表 */}
-      <ScrollView scrollY className="flex-1">
-        <View className="p-4 space-y-3">
-          {notifications.map(notification => {
+      <View className="space-y-3">
+          {displayNotifications.map(notification => {
             const { icon: Icon, color, bgColor } = getNotificationTypeStyle(notification.type)
             const timeText = formatTime(notification.created_at)
 
@@ -312,7 +352,7 @@ export default function Notifications() {
             )
           })}
 
-          {!loading && notifications.length === 0 && (
+          {!loading && displayNotifications.length === 0 && (
             <View className="flex flex-col items-center justify-center py-20">
               <Bell size={48} color="#9ca3af" />
               <Text className="block text-sm text-gray-500 mt-4">
@@ -336,9 +376,8 @@ export default function Notifications() {
               </Text>
             </View>
           )}
-        </View>
-      </ScrollView>
-    </View>
+      </View>
+    </AppPageShell>
   )
 }
 

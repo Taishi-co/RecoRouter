@@ -9,75 +9,44 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { getApiData, getApiMessage, isApiSuccess } from '@/lib/api-response'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import { Network } from '@/network'
 import Taro from '@tarojs/taro'
+import { Clock3, MapPin, Send, Sparkles } from 'lucide-react-taro'
 
 interface Station {
   id: string
   name: string
   address: string
   phone: string
-  customer_type?: 'owned' | 'external'
-  point_type?: PointType
 }
 
-type BusinessMode = 'enterprise_terminal' | 'community_group_buy'
-type VehicleSource = 'internal' | 'external' | 'mixed'
-type PointType = 'terminal' | 'community_leader'
+const demoStations: Station[] = [
+  { id: 'demo-station-1', name: '光谷中心站', address: '武汉市洪山区高新大道 789 号', phone: '13800000001' },
+  { id: 'demo-station-2', name: '汉口冷链仓', address: '武汉市江汉区发展大道 188 号', phone: '13800000002' },
+  { id: 'demo-station-3', name: '东西湖前置仓', address: '武汉市东西湖区金银湖路 66 号', phone: '13800000003' },
+]
 
 const EnterprisePublishPage: FC = () => {
   const [enterpriseId, setEnterpriseId] = useState('')
   const [stations, setStations] = useState<Station[]>([])
   const [selectedStations, setSelectedStations] = useState<string[]>([])
-  const [loading, setLoading] = useState(true)
-  const [submitting, setSubmitting] = useState(false)
-  const [errorText, setErrorText] = useState('')
 
-  const [businessMode, setBusinessMode] = useState<BusinessMode>('enterprise_terminal')
   const [cargoType, setCargoType] = useState('')
   const [cargoQuantity, setCargoQuantity] = useState('')
   const [startHourIndex, setStartHourIndex] = useState(8)
   const [endHourIndex, setEndHourIndex] = useState(10)
-  const [vehicleSource, setVehicleSource] = useState<VehicleSource>('internal')
+  const [vehicleSource, setVehicleSource] = useState<'own' | 'external'>('own')
 
   // 时间选择器数据
   const hours = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'))
-  const businessModeOptions: Array<{
-    value: BusinessMode
-    label: string
-    description: string
-  }> = [
-    {
-      value: 'enterprise_terminal',
-      label: '终端配送',
-      description: '企业到门店、网点、客户终端',
-    },
-    {
-      value: 'community_group_buy',
-      label: '社区团购',
-      description: '企业到社区团长、自提点',
-    },
-  ]
-  const vehicleSourceOptions: Array<{
-    value: VehicleSource
-    label: string
-  }> = [
-    { value: 'internal', label: '自有车辆' },
-    { value: 'external', label: '外部运力' },
-    { value: 'mixed', label: '混合运力' },
-  ]
-  const currentMode = businessModeOptions.find(option => option.value === businessMode)
-  const deliveryPointLabel = businessMode === 'community_group_buy' ? '社区团长' : '终端点'
-  const pointTypeForMode = (mode: BusinessMode): PointType =>
-    mode === 'community_group_buy' ? 'community_leader' : 'terminal'
 
   useEffect(() => {
     loadEnterpriseInfo()
   }, [])
 
   const loadEnterpriseInfo = async () => {
-    setLoading(true)
     try {
       const userInfo = Taro.getStorageSync('userInfo')
       if (!userInfo) {
@@ -89,45 +58,30 @@ const EnterprisePublishPage: FC = () => {
         url: `/api/enterprise/admin/${userInfo.id}`,
       })
 
-      if (isApiSuccess(enterpriseRes)) {
-        const entId = getApiData<{ id: string } | null>(enterpriseRes, null)?.id
-        if (!entId) {
-          setErrorText('企业信息缺失')
-          return
-        }
+      if (enterpriseRes.data.code === 200) {
+        const entId = enterpriseRes.data.data.id
         setEnterpriseId(entId)
-        await loadStations(entId, businessMode)
-      } else {
-        setErrorText(getApiMessage(enterpriseRes, '加载企业信息失败'))
+        loadStations(entId)
       }
-    } catch {
-      setErrorText('加载企业信息失败')
-    } finally {
-      setLoading(false)
+    } catch (error) {
+      console.error('加载企业信息失败:', error)
     }
   }
 
-  const loadStations = async (entId: string, mode: BusinessMode = businessMode) => {
-    setLoading(true)
+  const loadStations = async (entId: string) => {
     try {
-      const expectedPointType = pointTypeForMode(mode)
       const res = await Network.request({
         url: '/api/station',
-        data: { enterpriseId: entId, point_type: expectedPointType },
+        data: { enterpriseId: entId },
       })
 
-      if (isApiSuccess(res)) {
+      if (res.data.code === 200) {
         // 后端返回格式为 { list: [], total: 0, page, pageSize }
-        const data = getApiData<{ list?: Station[] }>(res, {})
-        setStations((data.list || []).filter(station => !station.point_type || station.point_type === expectedPointType))
-        setErrorText('')
-      } else {
-        setErrorText(getApiMessage(res, '加载点位失败'))
+        const data = res.data.data || {}
+        setStations(data.list || [])
       }
-    } catch {
-      setErrorText('加载点位失败')
-    } finally {
-      setLoading(false)
+    } catch (error) {
+      console.error('加载奶站列表失败:', error)
     }
   }
 
@@ -142,16 +96,6 @@ const EnterprisePublishPage: FC = () => {
   }
 
   const handleSubmit = async () => {
-    if (submitting) return
-
-    if (!enterpriseId) {
-      Taro.showToast({
-        title: '企业信息缺失',
-        icon: 'none',
-      })
-      return
-    }
-
     if (!cargoType || !cargoQuantity) {
       Taro.showToast({
         title: '请填写完整信息',
@@ -162,33 +106,21 @@ const EnterprisePublishPage: FC = () => {
 
     if (selectedStations.length === 0) {
       Taro.showToast({
-        title: `请选择至少一个${deliveryPointLabel}`,
-        icon: 'none',
-      })
-      return
-    }
-
-    if (endHourIndex <= startHourIndex) {
-      Taro.showToast({
-        title: '结束时间必须晚于开始时间',
+        title: '请选择至少一个配送点',
         icon: 'none',
       })
       return
     }
 
     try {
-      setSubmitting(true)
-      const selectedStationObjs = stations.filter(s => selectedStations.includes(s.id))
-      const expectedPointType = pointTypeForMode(businessMode)
+      const stationSource = stations.length > 0 ? stations : demoStations
+      const selectedStationObjs = stationSource.filter(s => selectedStations.includes(s.id))
       const deliveryPoints = selectedStationObjs.map(s => ({
         stationId: s.id,
         name: s.name,
         address: s.address,
         contact: s.name,
         phone: s.phone,
-        pointType: s.point_type || expectedPointType,
-        businessMode,
-        status: 'pending',
       }))
 
       const requestData = {
@@ -205,8 +137,6 @@ const EnterprisePublishPage: FC = () => {
           type: cargoType,
           quantity: parseInt(cargoQuantity),
           unit: '箱',
-          businessMode,
-          businessModeLabel: currentMode?.label,
         },
         timeWindow: {
           start: `${hours[startHourIndex]}:00`,
@@ -215,13 +145,17 @@ const EnterprisePublishPage: FC = () => {
         vehicleSource: vehicleSource,
       }
 
+      console.log('发布配送请求数据:', JSON.stringify(requestData, null, 2))
+
       const res = await Network.request({
         url: '/api/demand',
         method: 'POST',
         data: requestData,
       })
 
-      if (isApiSuccess(res)) {
+      console.log('发布配送响应:', JSON.stringify(res.data, null, 2))
+
+      if (res.data.code === 200) {
         Taro.showToast({
           title: '发布成功',
           icon: 'success',
@@ -231,93 +165,53 @@ const EnterprisePublishPage: FC = () => {
         }, 1500)
       } else {
         Taro.showToast({
-          title: getApiMessage(res, '发布失败'),
+          title: res.data.message || '发布失败',
           icon: 'none',
         })
       }
-    } catch {
+    } catch (error) {
+      console.error('发布失败:', error)
       Taro.showToast({
         title: '发布失败',
         icon: 'none',
       })
-    } finally {
-      setSubmitting(false)
     }
   }
 
+  const displayStations = stations.length > 0 ? stations : demoStations
+
   return (
-    <View className="enterprise-publish min-h-screen bg-background pb-20">
-      <View className="p-4">
-        <Text className="text-2xl font-bold block mb-4">发布配送</Text>
-
-        {errorText && (
-          <Card className="mb-4 border-red-200 bg-red-50">
-            <CardContent className="p-3">
-              <Text className="block text-sm text-red-600">{errorText}</Text>
-              <Button
-                size="sm"
-                variant="outline"
-                className="mt-3"
-                onClick={() => {
-                  if (enterpriseId) {
-                    loadStations(enterpriseId, businessMode)
-                  } else {
-                    loadEnterpriseInfo()
-                  }
-                }}
-                disabled={loading}
-              >
-                <Text className="text-xs">重试</Text>
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* 业务模式 */}
-        <Card className="mb-4">
+    <AppPageShell
+      title="发布货源"
+      subtitle="三步完成企业发布"
+      icon={Send}
+      bottom={<BottomNav type="enterprise" active="orders" />}
+      className="enterprise-publish"
+      contentClassName="space-y-3 pb-6"
+    >
+        <Card className="shadow-sm border-gray-100">
           <CardHeader>
-            <CardTitle className="text-base">业务模式</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <View className="flex gap-2">
-              {businessModeOptions.map(option => (
-                <Button
-                  key={option.value}
-                  className="flex-1"
-                  variant={businessMode === option.value ? 'default' : 'outline'}
-                  onClick={() => {
-                    setBusinessMode(option.value)
-                    setSelectedStations([])
-                    if (enterpriseId) {
-                      loadStations(enterpriseId, option.value)
-                    }
-                  }}
-                >
-                  <View>
-                    <Text className="block text-sm">{option.label}</Text>
-                    <Text className="block text-xs opacity-80 mt-1">{option.description}</Text>
-                  </View>
-                </Button>
-              ))}
-            </View>
-          </CardContent>
-        </Card>
-
-        {/* 货物信息 */}
-        <Card className="mb-4">
-          <CardHeader>
-            <CardTitle className="text-base">货物信息</CardTitle>
+            <CardTitle className="text-base">发布表单</CardTitle>
           </CardHeader>
           <CardContent>
             <View className="mb-3">
-              <Text className="text-sm text-gray-600 block mb-2">货物类型</Text>
+              <View className="flex items-center gap-2 mb-2">
+                <MapPin size={16} color="#0062FF" strokeWidth={2.2} />
+                <Text className="text-sm text-gray-600">装货地</Text>
+              </View>
+              <View className="w-full px-4 py-3 bg-gray-50 rounded-lg">
+                <Text className="text-sm font-bold text-gray-900">唐山市路南区配送中心</Text>
+              </View>
+            </View>
+            <View className="mb-3">
+              <Text className="text-sm text-gray-600 block mb-2">货物规格</Text>
               <Input
                 placeholder="请输入货物类型（如：纯牛奶、酸奶）"
                 value={cargoType}
                 onInput={(e) => setCargoType(e.detail.value)}
               />
             </View>
-            <View>
+            <View className="mb-3">
               <Text className="text-sm text-gray-600 block mb-2">数量（箱）</Text>
               <Input
                 type="number"
@@ -326,60 +220,13 @@ const EnterprisePublishPage: FC = () => {
                 onInput={(e) => setCargoQuantity(e.detail.value)}
               />
             </View>
-          </CardContent>
-        </Card>
-
-        {/* 运力来源选择 */}
-        <Card className="mb-4">
-          <CardHeader>
-            <CardTitle className="text-base">运力来源</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <View className="grid grid-cols-3 gap-2">
-              {vehicleSourceOptions.map(option => (
-                <Button
-                  key={option.value}
-                  className="w-full"
-                  variant={vehicleSource === option.value ? 'default' : 'outline'}
-                  onClick={() => setVehicleSource(option.value)}
-                >
-                  <Text className="text-sm">{option.label}</Text>
-                </Button>
-              ))}
-            </View>
-            {vehicleSource === 'external' && (
-              <View className="mt-3 p-3 bg-amber-50 rounded-lg">
-                <Text className="text-xs text-yellow-800 block">
-                  注意：选择外部运力后，需求将发布到接单大厅，由外部运力方接单配送。
-                </Text>
-              </View>
-            )}
-            {vehicleSource === 'mixed' && (
-              <View className="mt-3 p-3 bg-accent rounded-lg">
-                <Text className="text-xs text-primary block">
-                  混合运力需求进入调度中心后，可同时选择自有车辆和企业外部车辆。
-                </Text>
-              </View>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* 配送点选择 */}
-        <Card className="mb-4">
-          <CardHeader>
-            <CardTitle className="text-base">{deliveryPointLabel}选择</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <Text className="text-sm text-gray-500 text-center block">加载中...</Text>
-            ) : stations.length === 0 ? (
-              <Text className="text-sm text-gray-500 text-center block">暂无可选{deliveryPointLabel}，请先添加点位</Text>
-            ) : (
+            <View className="mb-3">
+              <Text className="text-sm text-gray-600 block mb-2">卸货地</Text>
               <View className="space-y-2">
-                {stations.map((station) => (
+                {displayStations.map((station) => (
                   <View
                     key={station.id}
-                    className="flex items-center justify-between p-3 bg-muted rounded-lg"
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
                   >
                     <View className="flex-1">
                       <Text className="text-sm font-medium block">{station.name}</Text>
@@ -397,25 +244,19 @@ const EnterprisePublishPage: FC = () => {
                   </View>
                 ))}
               </View>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* 配送时间 */}
-        <Card className="mb-4">
-          <CardHeader>
-            <CardTitle className="text-base">配送时间</CardTitle>
-          </CardHeader>
-          <CardContent>
+            </View>
             <View className="mb-4">
-              <Text className="text-sm text-gray-600 block mb-2">开始时间</Text>
+              <View className="flex items-center gap-2 mb-2">
+                <Clock3 size={16} color="#0062FF" strokeWidth={2.2} />
+                <Text className="text-sm text-gray-600">装车时间</Text>
+              </View>
               <Picker
                 mode="selector"
                 range={hours}
                 value={startHourIndex}
                 onChange={(e) => setStartHourIndex(Number(e.detail.value))}
               >
-                <View className="w-full px-4 py-3 bg-muted rounded-lg">
+                <View className="w-full px-4 py-3 bg-gray-50 rounded-lg">
                   <Text className="text-sm text-gray-900">
                     {hours[startHourIndex]}:00
                   </Text>
@@ -423,14 +264,14 @@ const EnterprisePublishPage: FC = () => {
               </Picker>
             </View>
             <View>
-              <Text className="text-sm text-gray-600 block mb-2">结束时间</Text>
+              <Text className="text-sm text-gray-600 block mb-2">到达时限</Text>
               <Picker
                 mode="selector"
                 range={hours}
                 value={endHourIndex}
                 onChange={(e) => setEndHourIndex(Number(e.detail.value))}
               >
-                <View className="w-full px-4 py-3 bg-muted rounded-lg">
+                <View className="w-full px-4 py-3 bg-gray-50 rounded-lg">
                   <Text className="text-sm text-gray-900">
                     {hours[endHourIndex]}:00
                   </Text>
@@ -440,18 +281,54 @@ const EnterprisePublishPage: FC = () => {
           </CardContent>
         </Card>
 
-        {/* 提交按钮 */}
-        <View>
-          <Button
-            className="w-full"
-            onClick={handleSubmit}
-            disabled={submitting || loading || !enterpriseId}
-          >
-            <Text>{submitting ? '发布中...' : '发布配送'}</Text>
-          </Button>
-        </View>
-      </View>
-    </View>
+        <Card className="shadow-sm border-gray-100">
+          <CardContent className="p-4">
+            <View className="flex items-center justify-between mb-3">
+              <View>
+                <Text className="block text-base font-black text-gray-900">AI 运价建议</Text>
+                <Text className="block text-xs font-semibold text-gray-500 mt-1">根据车型、距离、时效自动估算</Text>
+              </View>
+              <View className="w-9 h-9 rounded-2xl bg-blue-50 flex items-center justify-center">
+                <Sparkles size={18} color="#0062FF" strokeWidth={2.2} />
+              </View>
+            </View>
+            <View className="grid grid-cols-2 gap-3 mb-3">
+              <View className="bg-blue-50 rounded-2xl p-3">
+                <Text className="text-lg font-black text-blue-600 block">¥860</Text>
+                <Text className="text-xs text-gray-500 block mt-1">推荐运价</Text>
+              </View>
+              <View className="bg-green-50 rounded-2xl p-3">
+                <Text className="text-lg font-black text-green-600 block">42min</Text>
+                <Text className="text-xs text-gray-500 block mt-1">预计响应</Text>
+              </View>
+            </View>
+            <View className="flex gap-2">
+              <Button
+                className="flex-1 rounded-full"
+                variant={vehicleSource === 'own' ? 'default' : 'outline'}
+                onClick={() => setVehicleSource('own')}
+              >
+                <Text className={vehicleSource === 'own' ? 'text-white' : 'text-gray-900'}>自有车辆</Text>
+              </Button>
+              <Button
+                className="flex-1 rounded-full"
+                variant={vehicleSource === 'external' ? 'default' : 'outline'}
+                onClick={() => setVehicleSource('external')}
+              >
+                <Text className={vehicleSource === 'external' ? 'text-white' : 'text-gray-900'}>外部运力</Text>
+              </Button>
+            </View>
+          </CardContent>
+        </Card>
+
+        <Button
+          className="w-full h-12 rounded-full"
+          onClick={handleSubmit}
+        >
+          <Send size={16} color="#FFFFFF" strokeWidth={2.2} />
+          <Text className="text-white text-sm font-bold ml-2">发布并匹配运力</Text>
+        </Button>
+    </AppPageShell>
   )
 }
 

@@ -35,12 +35,12 @@ The Rust API runs embedded migrations on startup.
 The repository has two production workflows:
 
 - `.github/workflows/deploy-prod.yml`
-  - Trigger: push to `main`, or manual `workflow_dispatch`.
+  - Trigger: backend/deploy changes on `main`, or manual `workflow_dispatch`.
   - Builds `/tmp/recorouter-docker-release.tar.gz`.
   - Builds the Rust API binary on the GitHub Linux runner.
   - Uploads it to the server.
   - Runs `deploy/install-docker-release.sh`; the server builds only the lightweight runtime Docker image, health-checks a candidate container, then restarts production.
-  - Verifies `https://car.shcxyz.site/` and `/api/health`.
+  - Verifies `https://car.shcxyz.site/api/health`.
 - `.github/workflows/publish-miniapp.yml`
   - Trigger: manual `workflow_dispatch`, or push to `main` when repository variable `WEAPP_UPLOAD_ON_MAIN=true`.
   - Packages source without local env/key/build artifacts.
@@ -87,10 +87,9 @@ deploy/make-docker-release.sh
 
 This creates `/tmp/recorouter-docker-release.tar.gz` containing:
 
-- `dist-web/`
 - `deploy/`
 
-By default the package contains `server-rust/` and lets the server build the
+By default the package contains `server/` and lets the server build the
 Docker image. In GitHub Actions, `BUILD_RUST_BINARY=1` builds the Rust binary on
 the Linux runner and packages `recorouter-api` plus migrations; the server then
 builds only the small runtime image and restarts the container. `BUILD_DOCKER_IMAGE=1`
@@ -118,7 +117,7 @@ local smoke test. Do not upload that tarball to the Linux server.
 This creates `/tmp/recorouter-release.tar.gz` containing:
 
 - `recorouter-api`
-- `dist-web/`
+- `migrations/`
 - `deploy/`
 
 ## Install on the server
@@ -139,5 +138,5 @@ ssh root@62.234.29.88 'mkdir -p /tmp/recorouter-install && tar -xzf /tmp/recorou
 If the certificate is missing, issue it with:
 
 ```bash
-certbot certonly --webroot -w /opt/recorouter/current/dist-web -d car.shcxyz.site
+certbot certonly --webroot -w /var/www/html -d car.shcxyz.site
 ```

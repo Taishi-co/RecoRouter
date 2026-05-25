@@ -3,7 +3,10 @@ import { View, Text } from '@tarojs/components'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import Taro from '@tarojs/taro'
+import { ClipboardList } from 'lucide-react-taro'
 import { Network } from '@/network'
 
 interface Demand {
@@ -49,6 +52,83 @@ interface Order {
   complete_time: string | null
   created_at: string
 }
+
+const demoOrders: Order[] = [
+  {
+    id: 'demo-order-pending',
+    demand_id: 'demo-demand-1',
+    demand: {
+      id: 'demo-demand-1',
+      cargo_name: '冷链奶品配送',
+      cargo_type: 'fresh',
+      weight: 1800,
+      volume: 12,
+      pickup_address: '武汉东西湖中心仓',
+      delivery_address: '江汉区前进四路门店',
+      pickup_time: '2026-05-26T14:30:00+10:00',
+    },
+    vehicle_id: null,
+    vehicle: null,
+    merchant_id: 'demo-merchant-1',
+    merchant: {
+      id: 'demo-merchant-1',
+      username: '武汉鲜配商贸',
+      phone: '156****7098',
+    },
+    owner_id: null,
+    owner: null,
+    status: 'pending',
+    pickup_photo_key: null,
+    delivery_photo_key: null,
+    delivery_proof_key: null,
+    cancel_reason: null,
+    cancel_time: null,
+    accept_time: null,
+    complete_time: null,
+    created_at: '2026-05-26T09:10:00+10:00',
+  },
+  {
+    id: 'demo-order-transit',
+    demand_id: 'demo-demand-2',
+    demand: {
+      id: 'demo-demand-2',
+      cargo_name: '商超日配补货',
+      cargo_type: 'normal',
+      weight: 3200,
+      volume: 18,
+      pickup_address: '汉阳四新配送站',
+      delivery_address: '武昌徐东商圈',
+      pickup_time: '2026-05-26T10:00:00+10:00',
+    },
+    vehicle_id: 'demo-vehicle-1',
+    vehicle: {
+      id: 'demo-vehicle-1',
+      vehicle_type: '9.6m 厢式货车',
+      license_plate: '鄂A·7K21',
+    },
+    merchant_id: 'demo-merchant-2',
+    merchant: {
+      id: 'demo-merchant-2',
+      username: '上海某某贸易',
+      phone: '138****2651',
+    },
+    owner_id: 'demo-owner-1',
+    owner: {
+      id: 'demo-owner-1',
+      username: '张师傅',
+      phone: '138****6621',
+    },
+    status: 'in_transit',
+    pickup_photo_key: null,
+    delivery_photo_key: null,
+    delivery_proof_key: null,
+    cancel_reason: null,
+    cancel_time: null,
+    accept_time: '2026-05-26T09:30:00+10:00',
+    complete_time: null,
+    created_at: '2026-05-26T08:45:00+10:00',
+  },
+]
 
 export default function AdminOrders() {
   const [orders, setOrders] = useState<Order[]>([])
@@ -122,13 +202,13 @@ export default function AdminOrders() {
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      pending: 'bg-amber-500',
-      accepted: 'bg-primary',
+      pending: 'bg-orange-500',
+      accepted: 'bg-blue-500',
       in_transit: 'bg-cyan-500',
-      completed: 'bg-emerald-500',
+      completed: 'bg-green-500',
       cancelled: 'bg-red-500'
     }
-    return colors[status] || 'bg-slate-500'
+    return colors[status] || 'bg-gray-500'
   }
 
   const getCargoTypeText = (type: string) => {
@@ -147,61 +227,35 @@ export default function AdminOrders() {
   const getCargoTypeColor = (type: string) => {
     switch (type) {
       case 'normal':
-        return 'bg-primary'
+        return 'bg-blue-500'
       case 'fresh':
-        return 'bg-emerald-500'
+        return 'bg-green-500'
       case 'fragile':
-        return 'bg-amber-500'
+        return 'bg-orange-500'
       default:
-        return 'bg-slate-500'
+        return 'bg-gray-500'
     }
   }
 
-  return (
-    <View className="min-h-screen bg-background">
-      {/* 导航菜单 */}
-      <View className="bg-white shadow-sm">
-        <View className="px-4 py-3">
-          <View className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/admin/users/index' })}
-            >
-              <Text className="text-xs">用户管理</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/admin/vehicles/index' })}
-            >
-              <Text className="text-xs">车辆审核</Text>
-            </Button>
-            <Button
-              size="sm"
-              className="bg-primary"
-            >
-              <Text className="text-xs">订单管理</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/admin/commission/index' })}
-            >
-              <Text className="text-xs">佣金审核</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/admin/stats/index' })}
-            >
-              <Text className="text-xs">数据统计</Text>
-            </Button>
-          </View>
-        </View>
-      </View>
+  const filteredDemoOrders = filterStatus
+    ? demoOrders.filter((order) => order.status === filterStatus)
+    : demoOrders
+  const displayOrders = orders.length > 0 ? orders : filteredDemoOrders
 
-      <View className="px-4 py-4">
+  return (
+    <AppPageShell
+      title="订单管理"
+      subtitle="RecoRouter 运营端"
+      right={
+        <View className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center">
+          <ClipboardList size={20} color="#0062FF" strokeWidth={2.3} />
+        </View>
+      }
+      bottom={<BottomNav type="admin" active="orders" />}
+      scroll={false}
+      contentClassName="space-y-3"
+    >
+      <View>
         <Card className="bg-white rounded-lg shadow-sm">
           <CardHeader>
             <CardTitle className="text-lg font-semibold">
@@ -214,7 +268,7 @@ export default function AdminOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === '' ? 'default' : 'outline'}
-                className={filterStatus === '' ? 'bg-primary' : ''}
+                className={filterStatus === '' ? 'bg-blue-500' : ''}
                 onClick={() => setFilterStatus('')}
               >
                 <Text className="text-xs">全部</Text>
@@ -222,7 +276,7 @@ export default function AdminOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === 'pending' ? 'default' : 'outline'}
-                className={filterStatus === 'pending' ? 'bg-primary' : ''}
+                className={filterStatus === 'pending' ? 'bg-blue-500' : ''}
                 onClick={() => setFilterStatus('pending')}
               >
                 <Text className="text-xs">待接单</Text>
@@ -230,7 +284,7 @@ export default function AdminOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === 'accepted' ? 'default' : 'outline'}
-                className={filterStatus === 'accepted' ? 'bg-primary' : ''}
+                className={filterStatus === 'accepted' ? 'bg-blue-500' : ''}
                 onClick={() => setFilterStatus('accepted')}
               >
                 <Text className="text-xs">已接单</Text>
@@ -238,7 +292,7 @@ export default function AdminOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === 'in_transit' ? 'default' : 'outline'}
-                className={filterStatus === 'in_transit' ? 'bg-primary' : ''}
+                className={filterStatus === 'in_transit' ? 'bg-blue-500' : ''}
                 onClick={() => setFilterStatus('in_transit')}
               >
                 <Text className="text-xs">运输中</Text>
@@ -246,7 +300,7 @@ export default function AdminOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === 'completed' ? 'default' : 'outline'}
-                className={filterStatus === 'completed' ? 'bg-primary' : ''}
+                className={filterStatus === 'completed' ? 'bg-blue-500' : ''}
                 onClick={() => setFilterStatus('completed')}
               >
                 <Text className="text-xs">已完成</Text>
@@ -254,7 +308,7 @@ export default function AdminOrders() {
               <Button
                 size="sm"
                 variant={filterStatus === 'cancelled' ? 'default' : 'outline'}
-                className={filterStatus === 'cancelled' ? 'bg-primary' : ''}
+                className={filterStatus === 'cancelled' ? 'bg-blue-500' : ''}
                 onClick={() => setFilterStatus('cancelled')}
               >
                 <Text className="text-xs">已取消</Text>
@@ -265,14 +319,14 @@ export default function AdminOrders() {
               <View className="text-center py-8">
                 <Text className="block text-gray-500 text-sm">加载中...</Text>
               </View>
-            ) : orders.length === 0 ? (
+            ) : displayOrders.length === 0 ? (
               <View className="text-center py-8">
                 <Text className="block text-gray-500 text-sm">暂无订单</Text>
               </View>
             ) : (
               <View className="space-y-3">
-                {orders.map((order) => (
-                  <View key={order.id} className="bg-muted rounded-lg p-4">
+                {displayOrders.map((order) => (
+                  <View key={order.id} className="bg-gray-50 rounded-lg p-4">
                     <View className="flex justify-between items-start mb-3">
                       <View className="flex-1">
                         <Text className="block font-medium text-base mb-1">
@@ -349,21 +403,21 @@ export default function AdminOrders() {
                       )}
                     </View>
                     {order.accept_time && (
-                      <View className="mt-2 pt-2 border-t border-border">
+                      <View className="mt-2 pt-2 border-t border-gray-200">
                         <Text className="text-xs text-gray-500">
                           接单时间: {new Date(order.accept_time).toLocaleString()}
                         </Text>
                       </View>
                     )}
                     {order.complete_time && (
-                      <View className="mt-2 pt-2 border-t border-border">
+                      <View className="mt-2 pt-2 border-t border-gray-200">
                         <Text className="text-xs text-gray-500">
                           完成时间: {new Date(order.complete_time).toLocaleString()}
                         </Text>
                       </View>
                     )}
                     {order.cancel_reason && (
-                      <View className="mt-2 pt-2 border-t border-border">
+                      <View className="mt-2 pt-2 border-t border-gray-200">
                         <Text className="text-xs text-gray-500">
                           取消原因: {order.cancel_reason}
                         </Text>
@@ -379,6 +433,6 @@ export default function AdminOrders() {
           </CardContent>
         </Card>
       </View>
-    </View>
+    </AppPageShell>
   )
 }

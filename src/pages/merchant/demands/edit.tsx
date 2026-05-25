@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { MapPin, TriangleAlert } from 'lucide-react-taro'
+import { MapPin, Pencil, TriangleAlert } from 'lucide-react-taro'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import { Network } from '@/network'
 
 interface Demand {
@@ -411,43 +413,13 @@ export default function EditDemand() {
   }
 
   return (
-    <View className="min-h-screen bg-background">
-      {/* 导航菜单 */}
-      <View className="bg-white shadow-sm">
-        <View className="px-4 py-3">
-          <View className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateBack()}
-            >
-              <Text className="text-xs">返回</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/merchant/demands/list' })}
-            >
-              <Text className="text-xs">我的需求</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/merchant/orders/index' })}
-            >
-              <Text className="text-xs">订单管理</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/merchant/profile/index' })}
-            >
-              <Text className="text-xs">我的</Text>
-            </Button>
-          </View>
-        </View>
-      </View>
-
+    <AppPageShell
+      title="编辑需求"
+      subtitle="RecoRouter 商户小程序"
+      icon={Pencil}
+      contentClassName="space-y-3"
+      bottom={<BottomNav type="merchant" active="publish" />}
+    >
       {/* 加载状态 */}
       {loading && (
         <View className="flex flex-col items-center justify-center p-8">
@@ -469,10 +441,10 @@ export default function EditDemand() {
       {/* 正常显示 */}
       {!loading && !error && (
         <>
-          <Card className="bg-white rounded-lg shadow-sm m-4">
+          <Card className="bg-white rounded-lg shadow-sm">
             <CardHeader>
               <CardTitle className="text-lg font-semibold">
-                编辑需求
+                编辑需求表单
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -481,7 +453,7 @@ export default function EditDemand() {
               <Label className="block text-sm font-medium mb-2">
                 <Text className="text-red-500">*</Text>货品名称
               </Label>
-              <View className="bg-muted rounded-lg px-4 py-3">
+              <View className="bg-gray-50 rounded-lg px-4 py-3">
                 <Input
                   className="w-full bg-transparent"
                   placeholder="如：新鲜蔬菜"
@@ -507,13 +479,13 @@ export default function EditDemand() {
                   >
                     <View className={`px-4 py-2 rounded-lg border ${
                       formData.cargo_type === type.value
-                        ? 'border-primary bg-accent'
-                        : 'border-border bg-white'
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 bg-white'
                     }`}
                     >
                       <Text className={`text-sm ${
                         formData.cargo_type === type.value
-                          ? 'text-primary font-medium'
+                          ? 'text-blue-500 font-medium'
                           : 'text-gray-700'
                       }`}
                       >
@@ -530,7 +502,7 @@ export default function EditDemand() {
                 <Label className="block text-sm font-medium mb-2">
                   <Text className="text-red-500">*</Text>重量（公斤）
                 </Label>
-                <View className="bg-muted rounded-lg px-4 py-3">
+                <View className="bg-gray-50 rounded-lg px-4 py-3">
                   <Input
                     className="w-full bg-transparent"
                     placeholder="如：30"
@@ -544,7 +516,7 @@ export default function EditDemand() {
                 <Label className="block text-sm font-medium mb-2">
                   <Text className="text-red-500">*</Text>体积（立方米）
                 </Label>
-                <View className="bg-muted rounded-lg px-4 py-3">
+                <View className="bg-gray-50 rounded-lg px-4 py-3">
                   <Input
                     className="w-full bg-transparent"
                     placeholder="如：0.3"
@@ -564,7 +536,7 @@ export default function EditDemand() {
               </Label>
               <Button
                 size="sm"
-                className="w-full bg-primary"
+                className="w-full bg-blue-500"
                 onClick={handleChoosePhotos}
                 disabled={(formData.cargo_photos?.length || 0) >= 1}
               >
@@ -581,7 +553,7 @@ export default function EditDemand() {
                       <Image
                         src={photo}
                         mode="aspectFill"
-                        className="w-full h-24 rounded-lg bg-muted"
+                        className="w-full h-24 rounded-lg bg-gray-200"
                         onClick={() => handlePreviewPhoto(index)}
                       />
                       <View
@@ -609,7 +581,7 @@ export default function EditDemand() {
                   value={formData.pickup_time && formData.pickup_time.includes(' ') ? formData.pickup_time.split(' ')[0] : ''}
                   onChange={handlePickupDateSelect}
                 >
-                  <View className="flex-1 bg-muted rounded-lg px-4 py-3 flex items-center justify-between">
+                  <View className="flex-1 bg-gray-50 rounded-lg px-4 py-3 flex items-center justify-between">
                     <Text className={`text-sm ${formData.pickup_time ? 'text-gray-900' : 'text-gray-400'}`}>
                       {formData.pickup_time && formData.pickup_time.includes(' ') ? formData.pickup_time.split(' ')[0] : '选择日期'}
                     </Text>
@@ -621,7 +593,7 @@ export default function EditDemand() {
                   value={formData.pickup_time && formData.pickup_time.includes(' ') ? formData.pickup_time.split(' ')[1].slice(0, 5) : ''}
                   onChange={handlePickupTimeSelect}
                 >
-                  <View className="flex-1 bg-muted rounded-lg px-4 py-3 flex items-center justify-between">
+                  <View className="flex-1 bg-gray-50 rounded-lg px-4 py-3 flex items-center justify-between">
                     <Text className={`text-sm ${formData.pickup_time ? 'text-gray-900' : 'text-gray-400'}`}>
                       {formData.pickup_time && formData.pickup_time.includes(' ') ? formData.pickup_time.split(' ')[1].slice(0, 5) : '选择时间'}
                     </Text>
@@ -636,7 +608,7 @@ export default function EditDemand() {
                 <Text className="text-red-500">*</Text>取货地址
               </Label>
               <View className="flex gap-2">
-                <View className="flex-1 bg-muted rounded-lg px-4 py-3">
+                <View className="flex-1 bg-gray-50 rounded-lg px-4 py-3">
                   <Input
                     className="w-full bg-transparent"
                     placeholder="请选择取货地址"
@@ -646,7 +618,7 @@ export default function EditDemand() {
                 </View>
                 <Button
                   size="sm"
-                  className="bg-primary px-4"
+                  className="bg-blue-500 px-4"
                   onClick={() => setShowAddressPicker('pickup')}
                   disabled={addressBooks.length === 0}
                 >
@@ -667,7 +639,7 @@ export default function EditDemand() {
                 <Text className="text-red-500">*</Text>送货地址
               </Label>
               <View className="flex gap-2">
-                <View className="flex-1 bg-muted rounded-lg px-4 py-3">
+                <View className="flex-1 bg-gray-50 rounded-lg px-4 py-3">
                   <Input
                     className="w-full bg-transparent"
                     placeholder="请选择送货地址"
@@ -677,7 +649,7 @@ export default function EditDemand() {
                 </View>
                 <Button
                   size="sm"
-                  className="bg-primary px-4"
+                  className="bg-blue-500 px-4"
                   onClick={() => setShowAddressPicker('delivery')}
                   disabled={addressBooks.length === 0}
                 >
@@ -695,7 +667,7 @@ export default function EditDemand() {
 
             {/* 距离估算 */}
             {estimatedDistance !== null && (
-              <View className="bg-emerald-50 rounded-lg p-3">
+              <View className="bg-green-50 rounded-lg p-3">
                 <Text className="block text-sm font-medium text-green-900">
                   距离估算：{estimatedDistance} 公里
                 </Text>
@@ -706,7 +678,7 @@ export default function EditDemand() {
               <Label className="block text-sm font-medium mb-2">
                 备注（选填）
               </Label>
-              <View className="bg-muted rounded-lg px-4 py-3">
+              <View className="bg-gray-50 rounded-lg px-4 py-3">
                 <Input
                   className="w-full bg-transparent"
                   placeholder="如：请提前10分钟联系"
@@ -717,7 +689,7 @@ export default function EditDemand() {
             </View>
 
             <Button
-              className="w-full bg-primary"
+              className="w-full bg-blue-500"
               onClick={handleSubmit}
               disabled={submitting}
             >
@@ -746,7 +718,7 @@ export default function EditDemand() {
               addressBooks.map((address) => (
                 <View
                   key={address.id}
-                  className="bg-muted rounded-lg p-3"
+                  className="bg-gray-50 rounded-lg p-3"
                   onClick={() => handleSelectAddress(address)}
                 >
                   <View className="flex items-start gap-2">
@@ -760,7 +732,7 @@ export default function EditDemand() {
                       </Text>
                       {address.is_default && (
                         <View className="inline-block mt-1">
-                          <Text className="text-xs text-primary">默认</Text>
+                          <Text className="text-xs text-blue-500">默认</Text>
                         </View>
                       )}
                     </View>
@@ -781,6 +753,6 @@ export default function EditDemand() {
       </Dialog>
       </>
       )}
-    </View>
+    </AppPageShell>
   )
 }

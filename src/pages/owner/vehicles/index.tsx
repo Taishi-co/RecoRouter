@@ -8,6 +8,8 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import { Network } from '@/network'
 
 interface Vehicle {
@@ -38,6 +40,57 @@ interface Vehicle {
   can_toggle_availability: boolean
   availability_control_reason: string | null
 }
+
+const demoVehicles: Vehicle[] = [
+  {
+    id: 'demo-vehicle-1',
+    vehicle_type: '8.6m 冷链无人车',
+    license_plate: '沪A·D2688',
+    load_capacity: 1200,
+    volume: 8.6,
+    battery_life: 220,
+    has_cold_chain: true,
+    status: 'pending',
+    is_available: true,
+    photos: null,
+    remarks: null,
+    created_at: '2026-05-26T08:00:00+10:00',
+    base_price: 80,
+    base_distance: 5,
+    price_per_km: 4.8,
+    is_available_for_rent: true,
+    current_renter_id: null,
+    rent_start_date: null,
+    rent_end_date: null,
+    ownership_type: 'owned',
+    can_toggle_availability: false,
+    availability_control_reason: '演示车辆',
+  },
+  {
+    id: 'demo-vehicle-2',
+    vehicle_type: '9.6m 厢式无人货车',
+    license_plate: '苏E·A9156',
+    load_capacity: 1800,
+    volume: 12.4,
+    battery_life: 260,
+    has_cold_chain: false,
+    status: 'active',
+    is_available: true,
+    photos: null,
+    remarks: null,
+    created_at: '2026-05-25T16:10:00+10:00',
+    base_price: 68,
+    base_distance: 4,
+    price_per_km: 3.6,
+    is_available_for_rent: false,
+    current_renter_id: null,
+    rent_start_date: null,
+    rent_end_date: null,
+    ownership_type: 'rented',
+    can_toggle_availability: false,
+    availability_control_reason: '演示车辆不可切换',
+  },
+]
 
 export default function OwnerVehicles() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
@@ -476,15 +529,15 @@ export default function OwnerVehicles() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'active':
-        return 'bg-emerald-500'
+        return 'bg-green-500'
       case 'inactive':
-        return 'bg-slate-500'
+        return 'bg-gray-500'
       case 'pending':
-        return 'bg-amber-500'
+        return 'bg-yellow-500'
       case 'rejected':
         return 'bg-red-500'
       default:
-        return 'bg-slate-500'
+        return 'bg-gray-500'
     }
   }
 
@@ -503,87 +556,37 @@ export default function OwnerVehicles() {
     }
   }
 
-  return (
-    <View className="min-h-screen bg-background">
-      {/* 导航菜单 */}
-      <View className="bg-white shadow-sm">
-        <View className="px-4 py-3">
-          <View className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/owner/demands/index' })}
-            >
-              <Text className="text-xs">接单大厅</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/owner/orders/index' })}
-            >
-              <Text className="text-xs">订单管理</Text>
-            </Button>
-            <Button
-              size="sm"
-              className="bg-primary"
-            >
-              <Text className="text-xs">车辆管理</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/owner/profile/index' })}
-            >
-              <Text className="text-xs">我的</Text>
-            </Button>
-          </View>
-        </View>
-      </View>
+  const visibleVehicles = vehicles.length > 0 ? vehicles : demoVehicles
+  const usingDemoVehicles = vehicles.length === 0
 
-      <View className="px-4 py-4">
+  return (
+    <AppPageShell
+      title="我的车辆"
+      subtitle="RecoRouter 运力端"
+      contentClassName="space-y-4"
+      bottom={<BottomNav type="owner" active="vehicles" />}
+    >
         {/* 车辆列表 */}
-        <Card className="bg-white rounded-lg shadow-sm mb-4">
-          <CardHeader className="flex flex-row items-center justify-between">
+        <Card className="bg-white rounded-lg shadow-sm">
+          <CardHeader>
             <CardTitle className="text-lg font-semibold">
               我的车辆
             </CardTitle>
-            <View className="flex gap-2">
-              <Button
-                size="sm"
-                className="bg-emerald-500"
-                onClick={() => Taro.navigateTo({ url: '/pages/owner/vehicle-map/index' })}
-              >
-                <Text>地图</Text>
-              </Button>
-              <Button
-                size="sm"
-                className="bg-primary"
-                onClick={handleAddVehicle}
-              >
-                <Text>注册车辆</Text>
-              </Button>
-            </View>
           </CardHeader>
           <CardContent>
-            {vehicles.length === 0 ? (
-              <View className="text-center py-8">
-                <Text className="block text-gray-500 text-sm mb-4">
-                  您还没有注册车辆
+            {usingDemoVehicles && (
+              <View className="bg-blue-50 rounded-lg p-3 mb-3">
+                <Text className="block text-xs text-blue-700">
+                  暂无真实车辆，以下为设计稿演示车辆
                 </Text>
-                <Button
-                  className="bg-primary"
-                  onClick={handleAddVehicle}
-                >
-                  <Text>注册车辆</Text>
-                </Button>
               </View>
-            ) : (
+            )}
               <View className="space-y-3">
-                {vehicles.map((vehicle) => {
+                {visibleVehicles.map((vehicle) => {
                   const vehiclePhotos = parsePhotoUrls(vehicle.photos)
                   return (
                     <Collapsible key={vehicle.id}>
-                      <View className="bg-muted rounded-lg overflow-hidden">
+                      <View className="bg-gray-50 rounded-lg overflow-hidden">
                         {/* 收起状态：核心信息 */}
                         <CollapsibleTrigger>
                           <View className="p-4">
@@ -595,7 +598,7 @@ export default function OwnerVehicles() {
                                   </Text>
                                   {/* 核心状态标签 */}
                                   <View className="flex items-center gap-1 flex-wrap">
-                                    <Badge className={vehicle.ownership_type === 'owned' ? 'bg-primary' : 'bg-indigo-600'}>
+                                    <Badge className={vehicle.ownership_type === 'owned' ? 'bg-blue-600' : 'bg-purple-600'}>
                                       <Text className="text-white text-xs">
                                         {vehicle.ownership_type === 'owned' ? '自有' : '租赁'}
                                       </Text>
@@ -611,7 +614,7 @@ export default function OwnerVehicles() {
                                       </Badge>
                                     )}
                                     {vehicle.status === 'active' && (
-                                      <Badge className={vehicle.is_available ? 'bg-emerald-500' : 'bg-slate-500'}>
+                                      <Badge className={vehicle.is_available ? 'bg-green-500' : 'bg-gray-500'}>
                                         <Text className="text-white text-xs">
                                           {vehicle.is_available ? '出车中' : '已出车'}
                                         </Text>
@@ -643,7 +646,7 @@ export default function OwnerVehicles() {
                                 {vehicle.ownership_type === 'owned' && !vehicle.current_renter_id && (
                                   <Button
                                     size="sm"
-                                    className="bg-primary"
+                                    className="bg-blue-500"
                                     onClick={(e) => {
                                       e.stopPropagation()
                                       console.log('✓✓✓ 设置租赁按钮点击！vehicleId:', vehicle.id)
@@ -680,7 +683,7 @@ export default function OwnerVehicles() {
                               <View className="flex items-center gap-2 mt-3">
                                 <Button
                                   size="sm"
-                                  className="bg-primary"
+                                  className="bg-blue-500"
                                   onClick={(e) => {
                                     e.stopPropagation()
                                     handleEditVehicle(vehicle)
@@ -690,7 +693,7 @@ export default function OwnerVehicles() {
                                 </Button>
                                 <Button
                                   size="sm"
-                                  className="bg-emerald-500"
+                                  className="bg-green-500"
                                   onClick={(e) => {
                                     e.stopPropagation()
                                     handleResubmit(vehicle.id)
@@ -705,7 +708,7 @@ export default function OwnerVehicles() {
 
                         {/* 展开状态：完整详情 */}
                         <CollapsibleContent>
-                          <View className="px-4 pb-4 border-t border-border pt-3">
+                          <View className="px-4 pb-4 border-t border-gray-200 pt-3">
                             {/* 规格参数 */}
                             <View className="mb-3 p-3 bg-white rounded-lg">
                               <Text className="text-xs font-medium text-gray-700 mb-2 block">
@@ -730,7 +733,7 @@ export default function OwnerVehicles() {
                                 <Text className="text-xs font-medium text-gray-700 mb-2 block">
                                   💰 定价信息
                                 </Text>
-                                <Text className="text-xs text-primary">
+                                <Text className="text-xs text-blue-600">
                                   起步¥{vehicle.base_price || 20}（{vehicle.base_distance || 3}公里）+ ¥{vehicle.price_per_km || 2}/公里
                                 </Text>
                               </View>
@@ -743,12 +746,12 @@ export default function OwnerVehicles() {
                                   📋 租赁状态
                                 </Text>
                                 {vehicle.is_available_for_rent && !vehicle.current_renter_id && (
-                                  <Text className="text-xs text-emerald-600">
+                                  <Text className="text-xs text-green-600">
                                     ✓ 可租赁
                                   </Text>
                                 )}
                                 {vehicle.current_renter_id && (
-                                  <Text className="text-xs text-amber-600">
+                                  <Text className="text-xs text-orange-600">
                                     ⚠️ 已出租
                                   </Text>
                                 )}
@@ -762,8 +765,8 @@ export default function OwnerVehicles() {
 
                             {/* 租赁到期信息 */}
                             {vehicle.current_renter_id && vehicle.rent_end_date && (
-                              <View className="mb-3 p-3 bg-amber-50 rounded-lg">
-                                <Text className="text-xs text-amber-600">
+                              <View className="mb-3 p-3 bg-orange-50 rounded-lg">
+                                <Text className="text-xs text-orange-600">
                                   ⚠️ 车辆已租出，到期时间：{vehicle.rent_end_date.split('T')[0]}
                                 </Text>
                               </View>
@@ -781,7 +784,7 @@ export default function OwnerVehicles() {
                                       key={idx}
                                       src={photoUrl}
                                       mode="aspectFill"
-                                      className="w-20 h-20 rounded-lg bg-muted"
+                                      className="w-20 h-20 rounded-lg bg-gray-200"
                                       onClick={() => Taro.previewImage({
                                         current: idx,
                                         urls: vehiclePhotos
@@ -815,6 +818,10 @@ export default function OwnerVehicles() {
                   )
                 })}
               </View>
+            {!showAddForm && !showEditForm && (
+              <Button className="w-full bg-blue-500 mt-4" onClick={handleAddVehicle}>
+                <Text>添加车辆</Text>
+              </Button>
             )}
           </CardContent>
         </Card>
@@ -833,7 +840,7 @@ export default function OwnerVehicles() {
                   <Label className="block text-sm font-medium mb-2">
                     <Text className="text-red-500">*</Text>车型
                   </Label>
-                  <View className="bg-muted rounded-lg px-4 py-3">
+                  <View className="bg-gray-50 rounded-lg px-4 py-3">
                     <Input
                       className="w-full bg-transparent"
                       placeholder="如：小型无人配送车"
@@ -847,7 +854,7 @@ export default function OwnerVehicles() {
                   <Label className="block text-sm font-medium mb-2">
                     <Text className="text-red-500">*</Text>车牌号
                   </Label>
-                  <View className="bg-muted rounded-lg px-4 py-3">
+                  <View className="bg-gray-50 rounded-lg px-4 py-3">
                     <Input
                       className="w-full bg-transparent"
                       placeholder="如：京A12345"
@@ -861,7 +868,7 @@ export default function OwnerVehicles() {
                   <Label className="block text-sm font-medium mb-2">
                     <Text className="text-red-500">*</Text>载重（公斤）
                   </Label>
-                  <View className="bg-muted rounded-lg px-4 py-3">
+                  <View className="bg-gray-50 rounded-lg px-4 py-3">
                     <Input
                       className="w-full bg-transparent"
                       placeholder="如：50"
@@ -876,7 +883,7 @@ export default function OwnerVehicles() {
                   <Label className="block text-sm font-medium mb-2">
                     <Text className="text-red-500">*</Text>体积（立方米）
                   </Label>
-                  <View className="bg-muted rounded-lg px-4 py-3">
+                  <View className="bg-gray-50 rounded-lg px-4 py-3">
                     <Input
                       className="w-full bg-transparent"
                       placeholder="如：0.5"
@@ -891,7 +898,7 @@ export default function OwnerVehicles() {
                   <Label className="block text-sm font-medium mb-2">
                     <Text className="text-red-500">*</Text>续航（公里）
                   </Label>
-                  <View className="bg-muted rounded-lg px-4 py-3">
+                  <View className="bg-gray-50 rounded-lg px-4 py-3">
                     <Input
                       className="w-full bg-transparent"
                       placeholder="如：100"
@@ -922,8 +929,8 @@ export default function OwnerVehicles() {
                   <Label className="block text-base font-semibold mb-3">
                     💰 定价设置
                   </Label>
-                  <View className="bg-accent p-3 rounded-lg mb-3">
-                    <Text className="block text-xs text-primary">
+                  <View className="bg-blue-50 p-3 rounded-lg mb-3">
+                    <Text className="block text-xs text-blue-600">
                       运费计算公式：起步价 + (总距离 - 起步公里数) × 每公里运价
                     </Text>
                   </View>
@@ -932,7 +939,7 @@ export default function OwnerVehicles() {
                     <Label className="block text-sm font-medium mb-2">
                       起步价（元）
                     </Label>
-                    <View className="bg-muted rounded-lg px-4 py-3">
+                    <View className="bg-gray-50 rounded-lg px-4 py-3">
                       <Input
                         className="w-full bg-transparent"
                         placeholder="默认 20 元"
@@ -948,7 +955,7 @@ export default function OwnerVehicles() {
                     <Label className="block text-sm font-medium mb-2">
                       起步公里数（公里）
                     </Label>
-                    <View className="bg-muted rounded-lg px-4 py-3">
+                    <View className="bg-gray-50 rounded-lg px-4 py-3">
                       <Input
                         className="w-full bg-transparent"
                         placeholder="默认 3 公里"
@@ -964,7 +971,7 @@ export default function OwnerVehicles() {
                     <Label className="block text-sm font-medium mb-2">
                       每公里运价（元）
                     </Label>
-                    <View className="bg-muted rounded-lg px-4 py-3">
+                    <View className="bg-gray-50 rounded-lg px-4 py-3">
                       <Input
                         className="w-full bg-transparent"
                         placeholder="默认 2 元/公里"
@@ -977,11 +984,11 @@ export default function OwnerVehicles() {
                   </View>
 
                   {/* 运费计算预览 */}
-                  <View className="bg-emerald-50 p-3 rounded-lg mt-3">
+                  <View className="bg-green-50 p-3 rounded-lg mt-3">
                     <Text className="block text-sm font-medium text-green-700 mb-2">
                       📊 运费计算预览
                     </Text>
-                    <Text className="block text-xs text-emerald-600">
+                    <Text className="block text-xs text-green-600">
                       示例：距离 10 公里 → 运费 = {formData.base_price || 20} + (10 - {formData.base_distance || 3}) × {formData.price_per_km || 2} =
                       {((parseFloat(formData.base_price) || 20) + (10 - (parseFloat(formData.base_distance) || 3)) * (parseFloat(formData.price_per_km) || 2)).toFixed(2)} 元
                     </Text>
@@ -1000,7 +1007,7 @@ export default function OwnerVehicles() {
                           <Image
                             src={url}
                             mode="aspectFill"
-                            className="w-20 h-20 rounded-lg bg-muted"
+                            className="w-20 h-20 rounded-lg bg-gray-200"
                             onClick={() => Taro.previewImage({
                               current: index,
                               urls: photoUrls
@@ -1034,13 +1041,13 @@ export default function OwnerVehicles() {
 
                 <View className="flex gap-3 pt-2">
                   <Button
-                    className="flex-1 bg-muted"
+                    className="flex-1 bg-gray-200"
                     onClick={handleCancelAdd}
                   >
                     <Text>取消</Text>
                   </Button>
                   <Button
-                    className="flex-1 bg-primary"
+                    className="flex-1 bg-blue-500"
                     onClick={handleSubmit}
                     disabled={loading}
                   >
@@ -1066,7 +1073,7 @@ export default function OwnerVehicles() {
                   <Label className="block text-sm font-medium mb-2">
                     <Text className="text-red-500">*</Text>车型
                   </Label>
-                  <View className="bg-muted rounded-lg px-4 py-3">
+                  <View className="bg-gray-50 rounded-lg px-4 py-3">
                     <Input
                       className="w-full bg-transparent"
                       placeholder="如：小型无人配送车"
@@ -1080,7 +1087,7 @@ export default function OwnerVehicles() {
                   <Label className="block text-sm font-medium mb-2">
                     <Text className="text-red-500">*</Text>车牌号
                   </Label>
-                  <View className="bg-muted rounded-lg px-4 py-3">
+                  <View className="bg-gray-50 rounded-lg px-4 py-3">
                     <Input
                       className="w-full bg-transparent"
                       placeholder="如：京A12345"
@@ -1094,7 +1101,7 @@ export default function OwnerVehicles() {
                   <Label className="block text-sm font-medium mb-2">
                     <Text className="text-red-500">*</Text>载重（公斤）
                   </Label>
-                  <View className="bg-muted rounded-lg px-4 py-3">
+                  <View className="bg-gray-50 rounded-lg px-4 py-3">
                     <Input
                       className="w-full bg-transparent"
                       placeholder="如：50"
@@ -1109,7 +1116,7 @@ export default function OwnerVehicles() {
                   <Label className="block text-sm font-medium mb-2">
                     <Text className="text-red-500">*</Text>体积（立方米）
                   </Label>
-                  <View className="bg-muted rounded-lg px-4 py-3">
+                  <View className="bg-gray-50 rounded-lg px-4 py-3">
                     <Input
                       className="w-full bg-transparent"
                       placeholder="如：0.5"
@@ -1124,7 +1131,7 @@ export default function OwnerVehicles() {
                   <Label className="block text-sm font-medium mb-2">
                     <Text className="text-red-500">*</Text>续航（公里）
                   </Label>
-                  <View className="bg-muted rounded-lg px-4 py-3">
+                  <View className="bg-gray-50 rounded-lg px-4 py-3">
                     <Input
                       className="w-full bg-transparent"
                       placeholder="如：100"
@@ -1155,8 +1162,8 @@ export default function OwnerVehicles() {
                   <Label className="block text-base font-semibold mb-3">
                     💰 定价设置
                   </Label>
-                  <View className="bg-accent p-3 rounded-lg mb-3">
-                    <Text className="block text-xs text-primary">
+                  <View className="bg-blue-50 p-3 rounded-lg mb-3">
+                    <Text className="block text-xs text-blue-600">
                       运费计算公式：起步价 + (总距离 - 起步公里数) × 每公里运价
                     </Text>
                   </View>
@@ -1165,7 +1172,7 @@ export default function OwnerVehicles() {
                     <Label className="block text-sm font-medium mb-2">
                       起步价（元）
                     </Label>
-                    <View className="bg-muted rounded-lg px-4 py-3">
+                    <View className="bg-gray-50 rounded-lg px-4 py-3">
                       <Input
                         className="w-full bg-transparent"
                         placeholder="默认 20 元"
@@ -1181,7 +1188,7 @@ export default function OwnerVehicles() {
                     <Label className="block text-sm font-medium mb-2">
                       起步公里数（公里）
                     </Label>
-                    <View className="bg-muted rounded-lg px-4 py-3">
+                    <View className="bg-gray-50 rounded-lg px-4 py-3">
                       <Input
                         className="w-full bg-transparent"
                         placeholder="默认 3 公里"
@@ -1197,7 +1204,7 @@ export default function OwnerVehicles() {
                     <Label className="block text-sm font-medium mb-2">
                       每公里运价（元）
                     </Label>
-                    <View className="bg-muted rounded-lg px-4 py-3">
+                    <View className="bg-gray-50 rounded-lg px-4 py-3">
                       <Input
                         className="w-full bg-transparent"
                         placeholder="默认 2 元/公里"
@@ -1210,11 +1217,11 @@ export default function OwnerVehicles() {
                   </View>
 
                   {/* 运费计算预览 */}
-                  <View className="bg-emerald-50 p-3 rounded-lg mt-3">
+                  <View className="bg-green-50 p-3 rounded-lg mt-3">
                     <Text className="block text-sm font-medium text-green-700 mb-2">
                       📊 运费计算预览
                     </Text>
-                    <Text className="block text-xs text-emerald-600">
+                    <Text className="block text-xs text-green-600">
                       示例：距离 10 公里 → 运费 = {formData.base_price || 20} + (10 - {formData.base_distance || 3}) × {formData.price_per_km || 2} =
                       {((parseFloat(formData.base_price) || 20) + (10 - (parseFloat(formData.base_distance) || 3)) * (parseFloat(formData.price_per_km) || 2)).toFixed(2)} 元
                     </Text>
@@ -1233,7 +1240,7 @@ export default function OwnerVehicles() {
                           <Image
                             src={url}
                             mode="aspectFill"
-                            className="w-20 h-20 rounded-lg bg-muted"
+                            className="w-20 h-20 rounded-lg bg-gray-200"
                             onClick={() => Taro.previewImage({
                               current: index,
                               urls: photoUrls
@@ -1267,13 +1274,13 @@ export default function OwnerVehicles() {
 
                 <View className="flex gap-3 pt-2">
                   <Button
-                    className="flex-1 bg-muted"
+                    className="flex-1 bg-gray-200"
                     onClick={handleCancelEdit}
                   >
                     <Text>取消</Text>
                   </Button>
                   <Button
-                    className="flex-1 bg-primary"
+                    className="flex-1 bg-blue-500"
                     onClick={handleUpdateVehicle}
                     disabled={loading}
                   >
@@ -1284,7 +1291,6 @@ export default function OwnerVehicles() {
             </CardContent>
           </Card>
         )}
-      </View>
-    </View>
+    </AppPageShell>
   )
 }

@@ -4,7 +4,9 @@ import { View, Text } from '@tarojs/components'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ArrowLeft, Phone } from 'lucide-react-taro'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
+import { Phone } from 'lucide-react-taro'
 import { Network } from '@/network'
 
 export default function ChangePhone() {
@@ -12,10 +14,6 @@ export default function ChangePhone() {
   const [newPhone, setNewPhone] = useState('')
   const [countdown, setCountdown] = useState(0)
   const [loading, setLoading] = useState(false)
-
-  const handleBack = () => {
-    Taro.navigateBack()
-  }
 
   const sendSmsCode = async (phone: string) => {
     if (!/^1[3-9]\d{9}$/.test(phone)) {
@@ -146,24 +144,19 @@ export default function ChangePhone() {
   }
 
   return (
-    <View className="min-h-screen bg-background">
-      {/* 顶部导航栏 */}
-      <View className="bg-white p-4 border-b flex items-center">
-        <View onClick={handleBack} className="flex items-center gap-2">
-          <ArrowLeft size={24} color="#6b7280" />
-          <Text className="text-base font-medium">返回</Text>
-        </View>
-        <Text className="flex-1 text-center text-base font-semibold">修改手机号</Text>
-        <View style={{ width: 60 }} />
-      </View>
-
+    <AppPageShell
+      title="更换手机号"
+      subtitle="RecoRouter 运力端"
+      contentClassName="space-y-4"
+      bottom={<BottomNav type="owner" active="profile" />}
+    >
       {/* 修改手机号表单 */}
-      <Card className="m-4">
+      <Card>
         <CardContent className="p-4 space-y-4">
           {/* 第一步说明 */}
           <View className="text-center py-4">
             <View className="flex justify-center mb-2">
-              <Phone size={32} color="#0062ff" />
+              <Phone size={32} color="#3b82f6" />
             </View>
             <Text className="text-base font-medium">绑定新手机号</Text>
             <Text className="text-xs text-gray-500 mt-1">
@@ -174,7 +167,7 @@ export default function ChangePhone() {
           {/* 新手机号输入 */}
           <View>
             <Text className="block text-sm font-medium mb-2">新手机号</Text>
-            <View className="bg-muted rounded-xl px-4 py-3">
+            <View className="bg-gray-50 rounded-xl px-4 py-3">
               <Input
                 className="w-full bg-transparent"
                 type="number"
@@ -190,7 +183,7 @@ export default function ChangePhone() {
           <View>
             <Text className="block text-sm font-medium mb-2">验证码</Text>
             <View className="flex gap-2">
-              <View className="flex-1 bg-muted rounded-xl px-4 py-3">
+              <View className="flex-1 bg-gray-50 rounded-xl px-4 py-3">
                 <Input
                   className="w-full bg-transparent"
                   type="number"
@@ -217,15 +210,15 @@ export default function ChangePhone() {
       </Card>
 
       {/* 确认修改按钮 */}
-      <View className="m-4">
+      <View>
         <Button
-          className="w-full bg-primary text-white"
+          className="w-full bg-blue-500 text-white"
           onClick={handleNextStep}
           disabled={loading}
         >
-          <Text>{loading ? '修改中...' : '确认修改'}</Text>
+          <Text>{loading ? '修改中...' : '确认更换'}</Text>
         </Button>
       </View>
-    </View>
+    </AppPageShell>
   )
 }

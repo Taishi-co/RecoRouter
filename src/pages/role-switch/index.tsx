@@ -4,7 +4,9 @@ import Taro from '@tarojs/taro'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Truck, Package, Check, Plus } from 'lucide-react-taro'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
+import { Truck, Package, Check, Plus, User } from 'lucide-react-taro'
 import { Network } from '@/network'
 
 interface UserRole {
@@ -222,52 +224,58 @@ export default function RoleSwitch() {
   }
 
   const getRoleIcon = (role: string) => {
-    return role === 'owner' ? <Truck size={24} color="#0062ff" /> : <Package size={24} color="#10b981" />
+    return role === 'owner' ? <Truck size={24} color="#3b82f6" /> : <Package size={24} color="#10b981" />
   }
 
-  const getRoleColor = (role: string) => {
-    return role === 'owner' ? '#0062ff' : '#10b981'
+  const getRoleBadgeClass = (role: string) => {
+    if (role === 'owner') return 'bg-blue-500'
+    if (role === 'merchant') return 'bg-green-500'
+    if (role === 'admin') return 'bg-purple-500'
+    return 'bg-gray-500'
   }
 
   const hasOwnerRole = roles.some(r => r.role === 'owner')
   const hasMerchantRole = roles.some(r => r.role === 'merchant')
 
   return (
-    <View className="min-h-screen bg-background">
-      {/* 头部 */}
-      <View className="bg-white p-4 border-b border-border">
-        <Text className="text-xl font-bold text-gray-900 block">角色管理</Text>
-        <Text className="block text-sm text-gray-500 mt-1">管理和切换您的角色</Text>
-      </View>
-
+    <AppPageShell
+      title="角色管理"
+      subtitle="RecoRouter 角色管理"
+      right={
+        <View className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center">
+          <User size={20} color="#0062FF" strokeWidth={2.3} />
+        </View>
+      }
+      bottom={<BottomNav type="common" active="profile" />}
+      scroll={false}
+      contentClassName="space-y-4"
+    >
       {/* 用户信息 */}
       {userInfo && (
-        <View className="mx-4 mt-4">
-          <Card className="p-4">
-            <View className="flex items-center">
-              <View className="w-12 h-12 rounded-full bg-primary flex items-center justify-center mr-3">
-                <Text className="text-white text-lg font-bold">
-                  {userInfo.name?.charAt(0) || '用'}
-                </Text>
-              </View>
-              <View className="flex-1">
-                <Text className="block text-base font-semibold text-gray-900">
-                  {userInfo.name || '用户'}
-                </Text>
-                <Text className="block text-sm text-gray-500">
-                  {userInfo.phone}
-                </Text>
-              </View>
-              <Badge className={`bg-[${getRoleColor(userInfo.role)}]`}>
-                <Text className="text-white text-xs">{getRoleLabel(userInfo.role)}</Text>
-              </Badge>
+        <Card className="p-4">
+          <View className="flex items-center">
+            <View className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center mr-3">
+              <Text className="text-white text-lg font-bold">
+                {userInfo.name?.charAt(0) || '用'}
+              </Text>
             </View>
-          </Card>
-        </View>
+            <View className="flex-1">
+              <Text className="block text-base font-semibold text-gray-900">
+                {userInfo.name || '用户'}
+              </Text>
+              <Text className="block text-sm text-gray-500">
+                {userInfo.phone}
+              </Text>
+            </View>
+            <Badge className={getRoleBadgeClass(userInfo.role)}>
+              <Text className="text-white text-xs">{getRoleLabel(userInfo.role)}</Text>
+            </Badge>
+          </View>
+        </Card>
       )}
 
       {/* 角色列表 */}
-      <View className="mx-4 mt-4">
+      <View>
         <Text className="block text-base font-semibold text-gray-900 mb-3">我的角色</Text>
 
         {loading ? (
@@ -283,11 +291,11 @@ export default function RoleSwitch() {
             {roles.map((roleItem) => (
               <Card
                 key={roleItem.id}
-                className={`p-4 ${roleItem.is_active ? 'border-2 border-primary' : ''}`}
+                className={`p-4 ${roleItem.is_active ? 'border-2 border-blue-500' : ''}`}
               >
                 <View className="flex items-center justify-between">
                   <View className="flex items-center">
-                    <View className="mr-3" style={{ color: getRoleColor(roleItem.role) }}>
+                    <View className="mr-3">
                       {getRoleIcon(roleItem.role)}
                     </View>
                     <View>
@@ -300,7 +308,7 @@ export default function RoleSwitch() {
                     </View>
                   </View>
                   {roleItem.is_active ? (
-                    <Badge className="bg-emerald-500">
+                    <Badge className="bg-green-500">
                       <View className="flex items-center">
                         <Check size={12} color="#ffffff" className="mr-1" />
                         <Text className="text-white text-xs">已激活</Text>
@@ -322,19 +330,19 @@ export default function RoleSwitch() {
       </View>
 
       {/* 添加角色 */}
-      <View className="mx-4 mt-4">
+      <View>
         <Text className="block text-base font-semibold text-gray-900 mb-3">添加角色</Text>
 
         <View className="space-y-3">
           {!hasOwnerRole && (
             <Card
-              className="p-4 cursor-pointer active:bg-muted"
+              className="p-4 cursor-pointer active:bg-gray-50"
               onClick={() => handleCreateRole('owner')}
             >
               <View className="flex items-center justify-between">
                 <View className="flex items-center">
-                  <View className="mr-3" style={{ color: '#0062ff' }}>
-                    <Truck size={24} color="#0062ff" />
+                  <View className="mr-3">
+                    <Truck size={24} color="#3b82f6" />
                   </View>
                   <View>
                     <Text className="block text-base font-semibold text-gray-900">
@@ -352,12 +360,12 @@ export default function RoleSwitch() {
 
           {!hasMerchantRole && (
             <Card
-              className="p-4 cursor-pointer active:bg-muted"
+              className="p-4 cursor-pointer active:bg-gray-50"
               onClick={() => handleCreateRole('merchant')}
             >
               <View className="flex items-center justify-between">
                 <View className="flex items-center">
-                  <View className="mr-3" style={{ color: '#10b981' }}>
+                  <View className="mr-3">
                     <Package size={24} color="#10b981" />
                   </View>
                   <View>
@@ -383,13 +391,13 @@ export default function RoleSwitch() {
       </View>
 
       {/* 说明 */}
-      <View className="mx-4 mt-4 mb-4">
-        <Card className="p-4 bg-accent">
-          <Text className="block text-sm text-primary">
+      <View>
+        <Card className="p-4 bg-blue-50">
+          <Text className="block text-sm text-blue-700">
             说明：一个账号可以同时拥有多个角色。切换角色后，页面和功能会根据当前角色展示不同的内容。
           </Text>
         </Card>
       </View>
-    </View>
+    </AppPageShell>
   )
 }

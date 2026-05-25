@@ -8,7 +8,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
-import { Plus, Pencil, Save, FileText } from 'lucide-react-taro'
+import { ClipboardList, Plus, Pencil, Save, FileText } from 'lucide-react-taro'
+import { AppPageShell } from '@/components/layout/app-page-shell'
+import { BottomNav } from '@/components/layout/bottom-nav'
 import { Network } from '@/network'
 // import { useNotificationPolling } from '@/hooks/useNotificationPolling'
 
@@ -28,6 +30,48 @@ interface Demand {
   is_from_schedule?: boolean
 }
 
+const demoDemands: Demand[] = [
+  {
+    id: 'demo-demand-1',
+    cargo_name: '上海宝山 → 杭州萧山',
+    cargo_type: 'normal',
+    weight: 3200,
+    volume: 18,
+    pickup_time: '2026-05-26T09:00:00+10:00',
+    pickup_address: '上海宝山钢贸园 3 号门',
+    delivery_address: '杭州萧山中心仓 B 区',
+    remarks: '钢材零担，需尾板车',
+    status: 'accepted',
+    created_at: '2026-05-25T18:30:00+10:00',
+  },
+  {
+    id: 'demo-demand-2',
+    cargo_name: '苏州太仓 → 宁波北仑',
+    cargo_type: 'fresh',
+    weight: 2600,
+    volume: 16,
+    pickup_time: '2026-05-26T14:30:00+10:00',
+    pickup_address: '太仓港区冷链仓',
+    delivery_address: '宁波北仑码头服务站',
+    remarks: '冷链恒温，优先同城返程车',
+    status: 'in_transit',
+    created_at: '2026-05-25T20:10:00+10:00',
+  },
+  {
+    id: 'demo-demand-3',
+    cargo_name: '嘉兴 → 常州',
+    cargo_type: 'fragile',
+    weight: 1800,
+    volume: 12,
+    pickup_time: '2026-05-27T08:00:00+10:00',
+    pickup_address: '嘉兴南湖工业园',
+    delivery_address: '常州武进仓储中心',
+    remarks: '易碎包装，需避震车厢',
+    status: 'completed',
+    created_at: '2026-05-24T11:05:00+10:00',
+  },
+]
+
 export default function DemandsList() {
   const [demands, setDemands] = useState<Demand[]>([])
   const [showCancelDialog, setShowCancelDialog] = useState(false)
@@ -36,6 +80,7 @@ export default function DemandsList() {
   const [cancelReason, setCancelReason] = useState('')
   const [templateName, setTemplateName] = useState('')
   const [loading, setLoading] = useState(false)
+  const visibleDemands = demands.length > 0 ? demands : demoDemands
 
   // 启用通知轮询（暂时注释，避免白屏问题）
   // useNotificationPolling(30000) // 每30秒检查一次新通知
@@ -292,30 +337,30 @@ export default function DemandsList() {
   const getCargoTypeColor = (type: string) => {
     switch (type) {
       case 'normal':
-        return 'bg-primary'
+        return 'bg-blue-500'
       case 'fresh':
-        return 'bg-emerald-500'
+        return 'bg-green-500'
       case 'fragile':
-        return 'bg-amber-500'
+        return 'bg-orange-500'
       default:
-        return 'bg-slate-500'
+        return 'bg-gray-500'
     }
   }
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending':
-        return 'bg-primary'
+        return 'bg-blue-500'
       case 'accepted':
-        return 'bg-emerald-500'
+        return 'bg-green-500'
       case 'in_transit':
-        return 'bg-amber-500'
+        return 'bg-orange-500'
       case 'completed':
         return 'bg-gray-400'
       case 'cancelled':
         return 'bg-red-500'
       default:
-        return 'bg-slate-500'
+        return 'bg-gray-500'
     }
   }
 
@@ -337,66 +382,27 @@ export default function DemandsList() {
   }
 
   return (
-    <View className="min-h-screen bg-background">
-      {/* 导航菜单 */}
-      <View className="bg-white shadow-sm">
-        <View className="px-4 py-3">
-          <View className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/merchant/demands/publish' })}
-            >
-              <Text className="text-xs">发布需求</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/merchant/orders/index' })}
-            >
-              <Text className="text-xs">订单管理</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/merchant/stats/index' })}
-            >
-              <Text className="text-xs">数据统计</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => Taro.navigateTo({ url: '/pages/merchant/profile/index' })}
-            >
-              <Text className="text-xs">我的</Text>
-            </Button>
-          </View>
-        </View>
-      </View>
-
-      <View className="px-4 py-4">
-        <Card className="bg-white rounded-lg shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between">
+    <AppPageShell
+      title="需求列表"
+      subtitle="RecoRouter 商户小程序"
+      icon={ClipboardList}
+      contentClassName="space-y-3"
+      bottom={<BottomNav type="merchant" active="publish" />}
+    >
+      <Card className="bg-white rounded-lg shadow-sm">
+          <CardHeader>
             <CardTitle className="text-lg font-semibold">
-              我的需求
+              需求卡片
             </CardTitle>
-            <Button
-              size="sm"
-              className="bg-primary"
-              onClick={() => Taro.navigateTo({ url: '/pages/merchant/demands/publish' })}
-            >
-              <Plus size={16} color="#fff" />
-              <Text className="ml-1">发布需求</Text>
-            </Button>
           </CardHeader>
           <CardContent>
-            {demands.length === 0 ? (
+            {visibleDemands.length === 0 ? (
               <View className="text-center py-8">
                 <Text className="block text-gray-500 text-sm mb-4">
                   您还没有发布需求
                 </Text>
                 <Button
-                  className="bg-primary"
+                  className="bg-blue-500"
                   onClick={() => Taro.navigateTo({ url: '/pages/merchant/demands/publish' })}
                 >
                   <Plus size={16} color="#fff" />
@@ -405,8 +411,8 @@ export default function DemandsList() {
               </View>
             ) : (
               <View className="space-y-3">
-                {demands.map((demand) => (
-                  <View key={demand.id} className="bg-muted rounded-lg p-4">
+                {visibleDemands.map((demand) => (
+                  <View key={demand.id} className="bg-gray-50 rounded-lg p-4">
                     <View className="flex justify-between items-start mb-3">
                       <View className="flex-1">
                         <View className="flex items-center gap-2 mb-1">
@@ -414,7 +420,7 @@ export default function DemandsList() {
                             {demand.cargo_name}
                           </Text>
                           {demand.is_from_schedule && (
-                            <Badge className="bg-indigo-500">
+                            <Badge className="bg-purple-500">
                               <Text className="text-white text-xs">定时</Text>
                             </Badge>
                           )}
@@ -439,10 +445,10 @@ export default function DemandsList() {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="border-primary text-primary"
+                            className="border-blue-500 text-blue-500"
                             onClick={() => handleEditDemand(demand)}
                           >
-                            <Pencil size={14} color="#0062ff" />
+                            <Pencil size={14} color="#1890ff" />
                             <Text className="ml-1 text-xs">编辑</Text>
                           </Button>
                           <Button
@@ -505,9 +511,17 @@ export default function DemandsList() {
                 ))}
               </View>
             )}
+            {visibleDemands.length > 0 && (
+              <Button
+                className="w-full bg-blue-500 mt-4"
+                onClick={() => Taro.navigateTo({ url: '/pages/merchant/demands/publish' })}
+              >
+                <Plus size={16} color="#FFFFFF" />
+                <Text className="ml-1 text-white">发布需求</Text>
+              </Button>
+            )}
           </CardContent>
         </Card>
-      </View>
 
       {/* 取消需求弹窗 */}
       <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
@@ -526,7 +540,7 @@ export default function DemandsList() {
               <Label className="block text-sm font-medium mb-2">
                 <Text className="text-red-500">*</Text>取消原因
               </Label>
-              <View className="bg-muted rounded-lg px-4 py-3">
+              <View className="bg-gray-50 rounded-lg px-4 py-3">
                 <Textarea
                   className="w-full"
                   placeholder="请输入取消原因"
@@ -574,7 +588,7 @@ export default function DemandsList() {
               <Label className="block text-sm font-medium mb-2">
                 <Text className="text-red-500">*</Text>模板名称
               </Label>
-              <View className="bg-muted rounded-lg px-4 py-3">
+              <View className="bg-gray-50 rounded-lg px-4 py-3">
                 <Input
                   className="w-full bg-transparent"
                   placeholder="请输入模板名称（如：日常配送）"
@@ -585,7 +599,7 @@ export default function DemandsList() {
               </View>
             </View>
 
-            <View className="bg-muted rounded-lg p-3">
+            <View className="bg-gray-50 rounded-lg p-3">
               <Text className="block text-xs text-gray-600 mb-2">
                 需求信息：
               </Text>
@@ -608,7 +622,7 @@ export default function DemandsList() {
                 <Text>取消</Text>
               </Button>
               <Button
-                className="bg-primary"
+                className="bg-blue-500"
                 onClick={handleConfirmSaveTemplate}
                 disabled={loading}
               >
@@ -618,6 +632,6 @@ export default function DemandsList() {
           </View>
         </DialogContent>
       </Dialog>
-    </View>
+    </AppPageShell>
   )
 }
