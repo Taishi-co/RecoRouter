@@ -9,6 +9,11 @@ const sqlDirs = [
   'server-rust/migrations',
 ]
 
+const immutableSqlxMigrations = new Set([
+  // Already-applied SQLx migrations must not be rewritten; later migrations clean up final state.
+  'server-rust/migrations/0001_init.sql',
+])
+
 const stripSqlComments = (source) =>
   source
     .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -30,6 +35,8 @@ if (/\.references\s*\(/.test(schema)) {
 }
 
 for (const file of sqlFiles) {
+  if (immutableSqlxMigrations.has(file)) continue
+
   const source = stripSqlComments(read(file))
   if (/\bREFERENCES\b/i.test(source)) {
     violations.push(`${file} contains SQL REFERENCES definitions`)
@@ -41,7 +48,7 @@ for (const file of sqlFiles) {
 
 const initFiles = [
   'server/database/init/01-schema.sql',
-  'server-rust/migrations/0001_init.sql',
+  'server-rust/migrations/0005_merchant_enterprise_no_physical_constraints.sql',
 ]
 
 const requiredIndexes = [

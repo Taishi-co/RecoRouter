@@ -24,11 +24,8 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS demands (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  merchant_id text,
-  owner_id text,
-  enterprise_id text,
-  enterprise_demand_id text,
-  demand_source text DEFAULT 'merchant',
+  merchant_id text REFERENCES users(id) ON DELETE CASCADE,
+  owner_id text REFERENCES users(id) ON DELETE SET NULL,
   template_id text,
   schedule_id text,
   cargo_name text,
@@ -63,7 +60,7 @@ CREATE TABLE IF NOT EXISTS demands (
 
 CREATE TABLE IF NOT EXISTS vehicles (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  owner_id text,
+  owner_id text REFERENCES users(id) ON DELETE CASCADE,
   enterprise_id text,
   vehicle_code text,
   vehicle_type text,
@@ -79,7 +76,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
   has_cold_chain boolean DEFAULT false,
   is_available boolean DEFAULT true,
   is_available_for_rent boolean DEFAULT false,
-  current_renter_id text,
+  current_renter_id text REFERENCES users(id) ON DELETE SET NULL,
   current_location text,
   usage_mode text,
   rental_status text,
@@ -109,13 +106,10 @@ CREATE TABLE IF NOT EXISTS vehicles (
 
 CREATE TABLE IF NOT EXISTS orders (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  demand_id text,
-  vehicle_id text,
-  merchant_id text,
-  enterprise_id text,
-  enterprise_demand_id text,
-  order_source text DEFAULT 'merchant',
-  owner_id text,
+  demand_id text CONSTRAINT orders_demand_id_demands_id_fk REFERENCES demands(id) ON DELETE CASCADE,
+  vehicle_id text REFERENCES vehicles(id) ON DELETE SET NULL,
+  merchant_id text CONSTRAINT orders_merchant_id_users_id_fk REFERENCES users(id) ON DELETE CASCADE,
+  owner_id text CONSTRAINT orders_owner_id_users_id_fk REFERENCES users(id) ON DELETE SET NULL,
   status text DEFAULT 'pending',
   pickup_photo_key text,
   delivery_photo_key text,
@@ -149,9 +143,9 @@ CREATE TABLE IF NOT EXISTS orders (
 
 CREATE TABLE IF NOT EXISTS cancellation_requests (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  order_id text,
-  requestor_id text,
-  responder_id text,
+  order_id text REFERENCES orders(id) ON DELETE CASCADE,
+  requestor_id text REFERENCES users(id) ON DELETE SET NULL,
+  responder_id text REFERENCES users(id) ON DELETE SET NULL,
   reason text,
   status text DEFAULT 'pending',
   response_reason text,
@@ -161,7 +155,7 @@ CREATE TABLE IF NOT EXISTS cancellation_requests (
 
 CREATE TABLE IF NOT EXISTS notifications (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  user_id text,
+  user_id text REFERENCES users(id) ON DELETE CASCADE,
   type text,
   title text,
   content text,
@@ -183,7 +177,7 @@ CREATE TABLE IF NOT EXISTS platform_settings (
 
 CREATE TABLE IF NOT EXISTS address_books (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  user_id text,
+  user_id text REFERENCES users(id) ON DELETE CASCADE,
   address_name text,
   address text,
   latitude numeric,
@@ -196,10 +190,10 @@ CREATE TABLE IF NOT EXISTS address_books (
 
 CREATE TABLE IF NOT EXISTS favorite_routes (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  user_id text,
+  user_id text REFERENCES users(id) ON DELETE CASCADE,
   route_name text,
-  pickup_address_id text,
-  delivery_address_id text,
+  pickup_address_id text REFERENCES address_books(id) ON DELETE SET NULL,
+  delivery_address_id text REFERENCES address_books(id) ON DELETE SET NULL,
   pickup_address_name text,
   pickup_address text,
   pickup_lat numeric,
@@ -217,7 +211,7 @@ CREATE TABLE IF NOT EXISTS favorite_routes (
 
 CREATE TABLE IF NOT EXISTS demand_templates (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  user_id text,
+  user_id text REFERENCES users(id) ON DELETE CASCADE,
   template_name text,
   cargo_name text,
   cargo_type text DEFAULT 'normal',
@@ -240,8 +234,8 @@ CREATE TABLE IF NOT EXISTS demand_templates (
 
 CREATE TABLE IF NOT EXISTS demand_schedules (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  user_id text,
-  template_id text,
+  user_id text REFERENCES users(id) ON DELETE CASCADE,
+  template_id text REFERENCES demand_templates(id) ON DELETE CASCADE,
   schedule_name text,
   schedule_type text,
   interval_days integer,
@@ -260,8 +254,8 @@ CREATE TABLE IF NOT EXISTS demand_schedules (
 
 CREATE TABLE IF NOT EXISTS demand_publish_logs (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  schedule_id text,
-  demand_id text,
+  schedule_id text REFERENCES demand_schedules(id) ON DELETE CASCADE,
+  demand_id text REFERENCES demands(id) ON DELETE SET NULL,
   publish_time timestamptz,
   publish_type text,
   status text,
@@ -271,7 +265,7 @@ CREATE TABLE IF NOT EXISTS demand_publish_logs (
 
 CREATE TABLE IF NOT EXISTS user_roles (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  user_id text,
+  user_id text REFERENCES users(id) ON DELETE CASCADE,
   role text,
   is_active boolean DEFAULT false,
   status text DEFAULT 'active',
@@ -281,9 +275,9 @@ CREATE TABLE IF NOT EXISTS user_roles (
 
 CREATE TABLE IF NOT EXISTS vehicle_rentals (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  vehicle_id text,
-  owner_id text,
-  renter_id text,
+  vehicle_id text REFERENCES vehicles(id) ON DELETE CASCADE,
+  owner_id text REFERENCES users(id) ON DELETE CASCADE,
+  renter_id text REFERENCES users(id) ON DELETE CASCADE,
   rent_type text,
   rent_start_date timestamptz,
   rent_end_date timestamptz,
@@ -307,9 +301,9 @@ CREATE TABLE IF NOT EXISTS vehicle_rentals (
 
 CREATE TABLE IF NOT EXISTS rental_reminders (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  rental_id text,
-  owner_id text,
-  renter_id text,
+  rental_id text REFERENCES vehicle_rentals(id) ON DELETE CASCADE,
+  owner_id text REFERENCES users(id) ON DELETE SET NULL,
+  renter_id text REFERENCES users(id) ON DELETE SET NULL,
   reminder_type text,
   reminder_channel text,
   is_sent boolean DEFAULT false,
@@ -321,8 +315,8 @@ CREATE TABLE IF NOT EXISTS rental_reminders (
 
 CREATE TABLE IF NOT EXISTS rental_violations (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  rental_id text,
-  user_id text,
+  rental_id text REFERENCES vehicle_rentals(id) ON DELETE CASCADE,
+  user_id text REFERENCES users(id) ON DELETE SET NULL,
   violation_type text,
   overdue_days integer,
   penalty_amount numeric DEFAULT 0,
@@ -336,14 +330,14 @@ CREATE TABLE IF NOT EXISTS enterprises (
   name text,
   type text,
   status text DEFAULT 'active',
-  admin_id text,
+  admin_id text REFERENCES users(id) ON DELETE SET NULL,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz
 );
 
 CREATE TABLE IF NOT EXISTS dairy_stations (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  enterprise_id text,
+  enterprise_id text REFERENCES enterprises(id) ON DELETE CASCADE,
   name text,
   address text,
   location jsonb,
@@ -356,7 +350,7 @@ CREATE TABLE IF NOT EXISTS dairy_stations (
 
 CREATE TABLE IF NOT EXISTS enterprise_demands (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  enterprise_id text,
+  enterprise_id text REFERENCES enterprises(id) ON DELETE CASCADE,
   pickup_point_type text,
   pickup_point_info jsonb,
   delivery_points jsonb,
@@ -384,50 +378,9 @@ CREATE TABLE IF NOT EXISTS sms_codes (
 
 CREATE INDEX IF NOT EXISTS users_phone_idx ON users(phone);
 CREATE INDEX IF NOT EXISTS users_role_idx ON users(role);
-CREATE INDEX IF NOT EXISTS demands_merchant_id_idx ON demands(merchant_id);
-CREATE INDEX IF NOT EXISTS demands_owner_id_idx ON demands(owner_id);
-CREATE INDEX IF NOT EXISTS demands_enterprise_id_idx ON demands(enterprise_id);
-CREATE INDEX IF NOT EXISTS demands_enterprise_demand_id_idx ON demands(enterprise_demand_id);
-CREATE INDEX IF NOT EXISTS demands_source_status_idx ON demands(demand_source, status);
-CREATE INDEX IF NOT EXISTS demands_pickup_time_idx ON demands(pickup_time);
-CREATE INDEX IF NOT EXISTS vehicles_owner_id_idx ON vehicles(owner_id);
-CREATE INDEX IF NOT EXISTS vehicles_current_renter_id_idx ON vehicles(current_renter_id);
-CREATE INDEX IF NOT EXISTS orders_demand_id_idx ON orders(demand_id);
-CREATE INDEX IF NOT EXISTS orders_vehicle_id_idx ON orders(vehicle_id);
-CREATE INDEX IF NOT EXISTS orders_merchant_id_idx ON orders(merchant_id);
-CREATE INDEX IF NOT EXISTS orders_owner_id_idx ON orders(owner_id);
-CREATE INDEX IF NOT EXISTS orders_enterprise_id_idx ON orders(enterprise_id);
-CREATE INDEX IF NOT EXISTS orders_enterprise_demand_id_idx ON orders(enterprise_demand_id);
-CREATE INDEX IF NOT EXISTS orders_source_status_idx ON orders(order_source, status);
 CREATE INDEX IF NOT EXISTS orders_status_idx ON orders(status);
 CREATE INDEX IF NOT EXISTS demands_status_idx ON demands(status);
 CREATE INDEX IF NOT EXISTS vehicles_status_idx ON vehicles(status);
-CREATE INDEX IF NOT EXISTS cancellation_requests_order_id_idx ON cancellation_requests(order_id);
-CREATE INDEX IF NOT EXISTS cancellation_requests_requestor_id_idx ON cancellation_requests(requestor_id);
-CREATE INDEX IF NOT EXISTS cancellation_requests_responder_id_idx ON cancellation_requests(responder_id);
-CREATE INDEX IF NOT EXISTS notifications_user_id_created_at_idx ON notifications(user_id, created_at);
-CREATE INDEX IF NOT EXISTS address_books_user_id_idx ON address_books(user_id);
-CREATE INDEX IF NOT EXISTS favorite_routes_user_id_idx ON favorite_routes(user_id);
-CREATE INDEX IF NOT EXISTS favorite_routes_pickup_address_id_idx ON favorite_routes(pickup_address_id);
-CREATE INDEX IF NOT EXISTS favorite_routes_delivery_address_id_idx ON favorite_routes(delivery_address_id);
-CREATE INDEX IF NOT EXISTS demand_templates_user_id_idx ON demand_templates(user_id);
-CREATE INDEX IF NOT EXISTS demand_schedules_user_id_idx ON demand_schedules(user_id);
-CREATE INDEX IF NOT EXISTS demand_schedules_template_id_idx ON demand_schedules(template_id);
-CREATE INDEX IF NOT EXISTS demand_schedules_status_next_publish_idx ON demand_schedules(status, next_publish_time);
-CREATE INDEX IF NOT EXISTS demand_publish_logs_schedule_id_idx ON demand_publish_logs(schedule_id);
-CREATE INDEX IF NOT EXISTS demand_publish_logs_demand_id_idx ON demand_publish_logs(demand_id);
-CREATE INDEX IF NOT EXISTS user_roles_user_id_status_idx ON user_roles(user_id, status);
-CREATE INDEX IF NOT EXISTS vehicle_rentals_vehicle_status_idx ON vehicle_rentals(vehicle_id, status);
-CREATE INDEX IF NOT EXISTS vehicle_rentals_owner_status_idx ON vehicle_rentals(owner_id, status);
-CREATE INDEX IF NOT EXISTS vehicle_rentals_renter_status_idx ON vehicle_rentals(renter_id, status);
-CREATE INDEX IF NOT EXISTS rental_reminders_rental_id_idx ON rental_reminders(rental_id);
-CREATE INDEX IF NOT EXISTS rental_reminders_owner_id_idx ON rental_reminders(owner_id);
-CREATE INDEX IF NOT EXISTS rental_reminders_renter_id_idx ON rental_reminders(renter_id);
-CREATE INDEX IF NOT EXISTS rental_violations_rental_id_idx ON rental_violations(rental_id);
-CREATE INDEX IF NOT EXISTS rental_violations_user_id_idx ON rental_violations(user_id);
-CREATE INDEX IF NOT EXISTS enterprises_admin_id_idx ON enterprises(admin_id);
-CREATE INDEX IF NOT EXISTS dairy_stations_enterprise_id_idx ON dairy_stations(enterprise_id);
-CREATE INDEX IF NOT EXISTS enterprise_demands_enterprise_id_idx ON enterprise_demands(enterprise_id);
 
 DO $$
 DECLARE
