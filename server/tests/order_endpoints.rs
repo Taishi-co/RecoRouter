@@ -366,6 +366,13 @@ async fn order_lifecycle_matches_legacy_payment_and_commission_flow() {
     assert_eq!(list_status, StatusCode::OK);
     assert_eq!(list_body["message"], "查询成功");
     assert_eq!(list_body["data"][0]["id"], order_id);
+    assert_eq!(list_body["data"][0]["demand"]["cargo_name"], "冰鲜肉");
+    assert_eq!(list_body["data"][0]["demand"]["pickup_address"], "上海仓");
+    assert_eq!(list_body["data"][0]["vehicle"]["vehicle_type"], "冷链车");
+    assert_eq!(list_body["data"][0]["vehicle"]["plate_number"], "沪O12345");
+    assert_eq!(list_body["data"][0]["vehicle"]["license_plate"], "沪O12345");
+    assert_eq!(list_body["data"][0]["owner"]["name"], "车主一");
+    assert_eq!(list_body["data"][0]["merchant"]["name"], "货主一");
 
     let (get_status, get_body) = get_json(&context.app, &format!("/api/orders/{order_id}")).await;
     assert_eq!(get_status, StatusCode::OK);

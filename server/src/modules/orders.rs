@@ -277,25 +277,73 @@ async fn list_orders<S>(
 where
     S: Storage,
 {
-    let mut builder =
-        QueryBuilder::<Postgres>::new("SELECT row_to_json(order_row) FROM (SELECT * FROM orders");
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT order_payload
+        FROM (
+            SELECT
+                to_jsonb(o) || jsonb_build_object(
+                    'demand', CASE
+                        WHEN d.id IS NULL THEN NULL
+                        ELSE to_jsonb(d)
+                    END,
+                    'vehicle', CASE
+                        WHEN v.id IS NULL THEN NULL
+                        ELSE to_jsonb(v) || jsonb_build_object(
+                            'brand', COALESCE(v.vehicle_type, ''),
+                            'model', COALESCE(v.vehicle_code, v.vehicle_type, ''),
+                            'plate_number', v.license_plate
+                        )
+                    END,
+                    'owner', CASE
+                        WHEN owner_user.id IS NULL THEN NULL
+                        ELSE jsonb_build_object(
+                            'id', owner_user.id,
+                            'name', owner_user.name,
+                            'phone', owner_user.phone
+                        )
+                    END,
+                    'merchant', CASE
+                        WHEN merchant_user.id IS NULL THEN NULL
+                        ELSE jsonb_build_object(
+                            'id', merchant_user.id,
+                            'name', merchant_user.name,
+                            'phone', merchant_user.phone
+                        )
+                    END,
+                    'cancellation_status', latest_cancel.status
+                ) AS order_payload
+            FROM orders o
+            LEFT JOIN demands d ON d.id = o.demand_id
+            LEFT JOIN vehicles v ON v.id = o.vehicle_id
+            LEFT JOIN users owner_user ON owner_user.id = o.owner_id
+            LEFT JOIN users merchant_user ON merchant_user.id = o.merchant_id
+            LEFT JOIN LATERAL (
+                SELECT cr.status
+                FROM cancellation_requests cr
+                WHERE cr.order_id = o.id
+                ORDER BY cr.created_at DESC
+                LIMIT 1
+            ) latest_cancel ON true
+        "#,
+    );
     let mut has_where = false;
     if let Some(owner_id) = non_empty(query.owner_id) {
         push_where(&mut builder, &mut has_where);
-        builder.push("owner_id = ");
+        builder.push("o.owner_id = ");
         builder.push_bind(owner_id);
     }
     if let Some(merchant_id) = non_empty(query.merchant_id) {
         push_where(&mut builder, &mut has_where);
-        builder.push("merchant_id = ");
+        builder.push("o.merchant_id = ");
         builder.push_bind(merchant_id);
     }
     if let Some(status) = non_empty(query.status) {
         push_where(&mut builder, &mut has_where);
-        builder.push("status = ");
+        builder.push("o.status = ");
         builder.push_bind(status);
     }
-    builder.push(" ORDER BY created_at DESC) order_row");
+    builder.push(" ORDER BY o.created_at DESC, o.id DESC) order_row");
 
     let orders = builder
         .build_query_scalar::<Value>()

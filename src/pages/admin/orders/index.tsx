@@ -53,83 +53,6 @@ interface Order {
   created_at: string
 }
 
-const demoOrders: Order[] = [
-  {
-    id: 'demo-order-pending',
-    demand_id: 'demo-demand-1',
-    demand: {
-      id: 'demo-demand-1',
-      cargo_name: '冷链奶品配送',
-      cargo_type: 'fresh',
-      weight: 1800,
-      volume: 12,
-      pickup_address: '武汉东西湖中心仓',
-      delivery_address: '江汉区前进四路门店',
-      pickup_time: '2026-05-26T14:30:00+10:00',
-    },
-    vehicle_id: null,
-    vehicle: null,
-    merchant_id: 'demo-merchant-1',
-    merchant: {
-      id: 'demo-merchant-1',
-      username: '武汉鲜配商贸',
-      phone: '156****7098',
-    },
-    owner_id: null,
-    owner: null,
-    status: 'pending',
-    pickup_photo_key: null,
-    delivery_photo_key: null,
-    delivery_proof_key: null,
-    cancel_reason: null,
-    cancel_time: null,
-    accept_time: null,
-    complete_time: null,
-    created_at: '2026-05-26T09:10:00+10:00',
-  },
-  {
-    id: 'demo-order-transit',
-    demand_id: 'demo-demand-2',
-    demand: {
-      id: 'demo-demand-2',
-      cargo_name: '商超日配补货',
-      cargo_type: 'normal',
-      weight: 3200,
-      volume: 18,
-      pickup_address: '汉阳四新配送站',
-      delivery_address: '武昌徐东商圈',
-      pickup_time: '2026-05-26T10:00:00+10:00',
-    },
-    vehicle_id: 'demo-vehicle-1',
-    vehicle: {
-      id: 'demo-vehicle-1',
-      vehicle_type: '9.6m 厢式货车',
-      license_plate: '鄂A·7K21',
-    },
-    merchant_id: 'demo-merchant-2',
-    merchant: {
-      id: 'demo-merchant-2',
-      username: '上海某某贸易',
-      phone: '138****2651',
-    },
-    owner_id: 'demo-owner-1',
-    owner: {
-      id: 'demo-owner-1',
-      username: '张师傅',
-      phone: '138****6621',
-    },
-    status: 'in_transit',
-    pickup_photo_key: null,
-    delivery_photo_key: null,
-    delivery_proof_key: null,
-    cancel_reason: null,
-    cancel_time: null,
-    accept_time: '2026-05-26T09:30:00+10:00',
-    complete_time: null,
-    created_at: '2026-05-26T08:45:00+10:00',
-  },
-]
-
 export default function AdminOrders() {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(false)
@@ -237,10 +160,7 @@ export default function AdminOrders() {
     }
   }
 
-  const filteredDemoOrders = filterStatus
-    ? demoOrders.filter((order) => order.status === filterStatus)
-    : demoOrders
-  const displayOrders = orders.length > 0 ? orders : filteredDemoOrders
+  const displayOrders = orders
 
   return (
     <AppPageShell

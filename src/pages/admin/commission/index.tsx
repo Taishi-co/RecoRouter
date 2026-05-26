@@ -34,41 +34,6 @@ interface CommissionData {
   commissionOrders: CommissionOrder[]
 }
 
-const demoCommissionData: CommissionData = {
-  summary: {
-    totalCommission: 18420,
-    confirmedCommission: 15160,
-    pendingCommission: 3260,
-    totalOrders: 36,
-  },
-  commissionOrders: [
-    {
-      id: 'demo-commission-paid',
-      cargoName: '社区团购晨配',
-      farePrice: 2860,
-      commissionAmount: 286,
-      commissionStatus: 'paid',
-      fareStatus: 'paid',
-      completedTime: '2026-05-25T17:10:00+10:00',
-      paymentTime: '2026-05-25T18:30:00+10:00',
-      ownerName: '张师傅',
-      status: 'completed',
-    },
-    {
-      id: 'demo-commission-unpaid',
-      cargoName: '冷链奶品配送',
-      farePrice: 3260,
-      commissionAmount: 326,
-      commissionStatus: 'unpaid',
-      fareStatus: 'paid',
-      completedTime: '2026-05-26T08:45:00+10:00',
-      paymentTime: '2026-05-26T09:00:00+10:00',
-      ownerName: '李师傅',
-      status: 'completed',
-    },
-  ],
-}
-
 export default function AdminCommission() {
   const [pendingOrders, setPendingOrders] = useState<CommissionOrder[]>([])
   const [summaryData, setSummaryData] = useState<CommissionData | null>(null)
@@ -179,10 +144,8 @@ export default function AdminCommission() {
     }
   }
 
-  const displaySummaryData = summaryData || demoCommissionData
-  const displayPendingOrders = pendingOrders.length > 0
-    ? pendingOrders
-    : demoCommissionData.commissionOrders.filter((order) => order.commissionStatus === 'unpaid')
+  const displaySummaryData = summaryData
+  const displayPendingOrders = pendingOrders
 
   return (
     <AppPageShell
@@ -315,7 +278,6 @@ export default function AdminCommission() {
                         <Button
                           size="sm"
                           className="w-full bg-green-500"
-                          disabled={order.id.startsWith('demo-')}
                           onClick={() => handleConfirmCommission(order.id)}
                         >
                           <Text className="text-xs">确认收到佣金</Text>
@@ -329,7 +291,7 @@ export default function AdminCommission() {
           </Card>
 
           {/* 佣金订单列表 */}
-          {displaySummaryData.commissionOrders.length > 0 && (
+          {displaySummaryData && displaySummaryData.commissionOrders.length > 0 && (
             <Card className="bg-white rounded-lg shadow-sm">
               <CardHeader>
                 <CardTitle className="text-lg font-semibold">佣金订单明细</CardTitle>

@@ -31,48 +31,6 @@ interface ExternalOrder {
   estimated_fare?: number
 }
 
-const demoOrders: ExternalOrder[] = [
-  {
-    id: 'demo-order-1',
-    cargo_name: '冷链乳品补货',
-    cargo_type: '冷链 · 12吨',
-    weight: 12000,
-    volume: 36,
-    pickup_time: '2026-05-26 10:30',
-    pickup_address: '武汉东西湖配送中心',
-    delivery_address: '汉口北冷链仓',
-    status: 'pending',
-    estimated_distance: 28,
-    estimated_fare: 860,
-  },
-  {
-    id: 'demo-order-2',
-    cargo_name: '商超夜间补货',
-    cargo_type: '普货 · 8吨',
-    weight: 8000,
-    volume: 24,
-    pickup_time: '2026-05-26 20:00',
-    pickup_address: '光谷中心站',
-    delivery_address: '江汉路商圈',
-    status: 'pending',
-    estimated_distance: 42,
-    estimated_fare: 1180,
-  },
-  {
-    id: 'demo-order-3',
-    cargo_name: '返程整车货源',
-    cargo_type: '整车 · 18吨',
-    weight: 18000,
-    volume: 50,
-    pickup_time: '2026-05-27 08:30',
-    pickup_address: '孝感云梦仓',
-    delivery_address: '武汉白沙洲',
-    status: 'pending',
-    estimated_distance: 74,
-    estimated_fare: 1680,
-  },
-]
-
 const EnterpriseOrderHallPage: FC = () => {
   const [orders, setOrders] = useState<ExternalOrder[]>([])
   const [loading, setLoading] = useState(true)
@@ -83,6 +41,7 @@ const EnterpriseOrderHallPage: FC = () => {
   const [showVehicleDialog, setShowVehicleDialog] = useState(false)
   const [keyword, setKeyword] = useState('')
   const [activeFilter, setActiveFilter] = useState('nearby')
+  const today = new Date().toISOString().slice(0, 10)
 
   useEffect(() => {
     loadEnterpriseInfo()
@@ -222,14 +181,14 @@ const EnterpriseOrderHallPage: FC = () => {
     return colorMap[status] || 'bg-gray-500'
   }
 
-  const displayOrders = orders.length > 0 ? orders : demoOrders
+  const displayOrders = orders
   const filteredOrders = displayOrders.filter((order) => {
     const matchedKeyword = keyword.trim()
       ? `${order.cargo_name}${order.cargo_type}${order.pickup_address}${order.delivery_address}`.includes(keyword.trim())
       : true
     if (!matchedKeyword) return false
     if (activeFilter === 'high') return (order.estimated_fare || 0) >= 1000
-    if (activeFilter === 'today') return order.pickup_time.includes('2026-05-26') || order.pickup_time.includes('今日')
+    if (activeFilter === 'today') return order.pickup_time.includes(today) || order.pickup_time.includes('今日')
     return true
   })
 
@@ -275,7 +234,7 @@ const EnterpriseOrderHallPage: FC = () => {
           可接订单: {displayOrders.filter(o => o.status === 'pending').length} 单
         </Text>
         <Text className="text-sm font-semibold text-gray-600">
-          可用车辆: {availableVehicles.length || 3} 辆
+          可用车辆: {availableVehicles.length} 辆
         </Text>
       </View>
 
@@ -324,7 +283,7 @@ const EnterpriseOrderHallPage: FC = () => {
                     <View>
                       <Text className="text-xs text-gray-500 block">预计运费</Text>
                       <Text className="text-xl font-black text-orange-600 block">
-                        ¥{order.estimated_fare ? order.estimated_fare.toFixed(0) : '860'}
+                        {order.estimated_fare ? `¥${order.estimated_fare.toFixed(0)}` : '待估算'}
                       </Text>
                     </View>
                     {order.status === 'pending' && (
