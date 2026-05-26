@@ -138,12 +138,14 @@ export default function MerchantProfile() {
     try {
       const savedUserInfo = Taro.getStorageSync('userInfo')
       if (!savedUserInfo) {
+        setUserInfo(null)
         Taro.showToast({
           title: '请先登录',
           icon: 'none'
         })
         return
       }
+      setUserInfo(savedUserInfo)
 
       const res = await Network.request({
         url: '/api/auth/user-info',
@@ -309,20 +311,22 @@ export default function MerchantProfile() {
         </Card>
 
         {/* 退出登录 */}
-        <Card className="bg-white rounded-lg shadow-sm mb-4">
-          <CardContent className="p-0">
-            <View
-              className="flex items-center justify-between px-4 py-4 active:bg-gray-50"
-              onClick={handleLogout}
-            >
-              <View className="flex items-center gap-3">
-                <LogOut size={20} color="#ef4444" />
-                <Text className="block text-sm text-red-500">退出登录</Text>
+        {userInfo && (
+          <Card className="bg-white rounded-lg shadow-sm mb-4">
+            <CardContent className="p-0">
+              <View
+                className="flex items-center justify-between px-4 py-4 active:bg-gray-50"
+                onClick={handleLogout}
+              >
+                <View className="flex items-center gap-3">
+                  <LogOut size={20} color="#ef4444" />
+                  <Text className="block text-sm text-red-500">退出登录</Text>
+                </View>
+                <Text className="block text-gray-400 text-sm">›</Text>
               </View>
-              <Text className="block text-gray-400 text-sm">›</Text>
-            </View>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
         {/* 版本信息 */}
         <View className="text-center py-4">

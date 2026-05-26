@@ -52,6 +52,8 @@ export default function RoleSwitch() {
     const user = Taro.getStorageSync('userInfo')
     if (user) {
       setUserInfo(user)
+    } else {
+      setUserInfo(null)
     }
     return user
   }
@@ -267,6 +269,7 @@ export default function RoleSwitch() {
 
   const hasOwnerRole = roles.some(r => r.role === 'owner')
   const hasMerchantRole = roles.some(r => r.role === 'merchant')
+  const isLoggedIn = Boolean(userInfo?.id)
   const renderBottomNav = () => {
     if (userInfo?.role === 'merchant') return <BottomNav type="merchant" active="profile" />
     if (userInfo?.role === 'owner') return <BottomNav type="owner" active="profile" />
@@ -310,156 +313,177 @@ export default function RoleSwitch() {
         </Card>
       )}
 
-      {/* 角色列表 */}
-      <View>
-        <Text className="block text-base font-semibold text-gray-900 mb-3">我的角色</Text>
+      {!isLoggedIn && (
+        <Card className="p-6 text-center">
+          <Text className="block text-base font-semibold text-gray-900 mb-2">请先登录</Text>
+          <Text className="block text-sm text-gray-500 mb-4">
+            登录后可查看角色、切换身份和管理账号
+          </Text>
+          <Button
+            className="w-full bg-primary"
+            onClick={() => Taro.reLaunch({ url: '/pages/index/index' })}
+          >
+            <Text className="text-white text-sm font-semibold">去登录 / 注册</Text>
+          </Button>
+        </Card>
+      )}
 
-        {loading ? (
-          <View className="text-center py-8">
-            <Text className="block text-gray-500">加载中...</Text>
-          </View>
-        ) : roles.length === 0 ? (
-          <Card className="p-6 text-center">
-            <Text className="block text-gray-500">暂无角色</Text>
-          </Card>
-        ) : (
+      {/* 角色列表 */}
+      {isLoggedIn && (
+        <View>
+          <Text className="block text-base font-semibold text-gray-900 mb-3">我的角色</Text>
+
+          {loading ? (
+            <View className="text-center py-8">
+              <Text className="block text-gray-500">加载中...</Text>
+            </View>
+          ) : roles.length === 0 ? (
+            <Card className="p-6 text-center">
+              <Text className="block text-gray-500">暂无角色</Text>
+            </Card>
+          ) : (
+            <View className="space-y-3">
+              {roles.map((roleItem) => (
+                <Card
+                  key={roleItem.id}
+                  className={`p-4 ${roleItem.is_active ? 'border-2 border-blue-500' : ''}`}
+                >
+                  <View className="flex items-center justify-between">
+                    <View className="flex items-center">
+                      <View className="mr-3">
+                        {getRoleIcon(roleItem.role)}
+                      </View>
+                      <View>
+                        <Text className="block text-base font-semibold text-gray-900">
+                          {getRoleLabel(roleItem.role)}
+                        </Text>
+                        <Text className="block text-sm text-gray-500">
+                          {roleItem.is_active ? '当前使用' : '未激活'}
+                        </Text>
+                      </View>
+                    </View>
+                    {roleItem.is_active ? (
+                      <View className="flex flex-col items-end gap-2">
+                        <Badge className="bg-green-500">
+                          <View className="flex items-center">
+                            <Check size={12} color="#ffffff" className="mr-1" />
+                            <Text className="text-white text-xs">已激活</Text>
+                          </View>
+                        </Badge>
+                        <Button
+                          size="sm"
+                          onClick={() => Taro.reLaunch({ url: getRoleLandingUrl(roleItem.role) })}
+                        >
+                          <Text className="text-sm">{getRoleEntryLabel(roleItem.role)}</Text>
+                        </Button>
+                      </View>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => handleSwitchRole(roleItem.id)}
+                      >
+                        <Text className="text-sm">切换</Text>
+                      </Button>
+                    )}
+                  </View>
+                </Card>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* 添加角色 */}
+      {isLoggedIn && (
+        <View>
+          <Text className="block text-base font-semibold text-gray-900 mb-3">添加角色</Text>
+
           <View className="space-y-3">
-            {roles.map((roleItem) => (
+            {!hasOwnerRole && (
               <Card
-                key={roleItem.id}
-                className={`p-4 ${roleItem.is_active ? 'border-2 border-blue-500' : ''}`}
+                className="p-4 cursor-pointer active:bg-gray-50"
+                onClick={() => handleCreateRole('owner')}
               >
                 <View className="flex items-center justify-between">
                   <View className="flex items-center">
                     <View className="mr-3">
-                      {getRoleIcon(roleItem.role)}
+                      <Truck size={24} color="#3b82f6" />
                     </View>
                     <View>
                       <Text className="block text-base font-semibold text-gray-900">
-                        {getRoleLabel(roleItem.role)}
+                        运力方（车主）
                       </Text>
                       <Text className="block text-sm text-gray-500">
-                        {roleItem.is_active ? '当前使用' : '未激活'}
+                        注册车辆，接单运输
                       </Text>
                     </View>
                   </View>
-                  {roleItem.is_active ? (
-                    <View className="flex flex-col items-end gap-2">
-                      <Badge className="bg-green-500">
-                        <View className="flex items-center">
-                          <Check size={12} color="#ffffff" className="mr-1" />
-                          <Text className="text-white text-xs">已激活</Text>
-                        </View>
-                      </Badge>
-                      <Button
-                        size="sm"
-                        onClick={() => Taro.reLaunch({ url: getRoleLandingUrl(roleItem.role) })}
-                      >
-                        <Text className="text-sm">{getRoleEntryLabel(roleItem.role)}</Text>
-                      </Button>
-                    </View>
-                  ) : (
-                    <Button
-                      size="sm"
-                      onClick={() => handleSwitchRole(roleItem.id)}
-                    >
-                      <Text className="text-sm">切换</Text>
-                    </Button>
-                  )}
+                  <Plus size={20} color="#6b7280" />
                 </View>
               </Card>
-            ))}
+            )}
+
+            {!hasMerchantRole && (
+              <Card
+                className="p-4 cursor-pointer active:bg-gray-50"
+                onClick={() => handleCreateRole('merchant')}
+              >
+                <View className="flex items-center justify-between">
+                  <View className="flex items-center">
+                    <View className="mr-3">
+                      <Package size={24} color="#10b981" />
+                    </View>
+                    <View>
+                      <Text className="block text-base font-semibold text-gray-900">
+                        需求方（租户）
+                      </Text>
+                      <Text className="block text-sm text-gray-500">
+                        发布需求，租赁车辆
+                      </Text>
+                    </View>
+                  </View>
+                  <Plus size={20} color="#6b7280" />
+                </View>
+              </Card>
+            )}
+
+            {hasOwnerRole && hasMerchantRole && (
+              <Card className="p-6 text-center">
+                <Text className="block text-gray-500">您已拥有所有角色</Text>
+              </Card>
+            )}
           </View>
-        )}
-      </View>
-
-      {/* 添加角色 */}
-      <View>
-        <Text className="block text-base font-semibold text-gray-900 mb-3">添加角色</Text>
-
-        <View className="space-y-3">
-          {!hasOwnerRole && (
-            <Card
-              className="p-4 cursor-pointer active:bg-gray-50"
-              onClick={() => handleCreateRole('owner')}
-            >
-              <View className="flex items-center justify-between">
-                <View className="flex items-center">
-                  <View className="mr-3">
-                    <Truck size={24} color="#3b82f6" />
-                  </View>
-                  <View>
-                    <Text className="block text-base font-semibold text-gray-900">
-                      运力方（车主）
-                    </Text>
-                    <Text className="block text-sm text-gray-500">
-                      注册车辆，接单运输
-                    </Text>
-                  </View>
-                </View>
-                <Plus size={20} color="#6b7280" />
-              </View>
-            </Card>
-          )}
-
-          {!hasMerchantRole && (
-            <Card
-              className="p-4 cursor-pointer active:bg-gray-50"
-              onClick={() => handleCreateRole('merchant')}
-            >
-              <View className="flex items-center justify-between">
-                <View className="flex items-center">
-                  <View className="mr-3">
-                    <Package size={24} color="#10b981" />
-                  </View>
-                  <View>
-                    <Text className="block text-base font-semibold text-gray-900">
-                      需求方（租户）
-                    </Text>
-                    <Text className="block text-sm text-gray-500">
-                      发布需求，租赁车辆
-                    </Text>
-                  </View>
-                </View>
-                <Plus size={20} color="#6b7280" />
-              </View>
-            </Card>
-          )}
-
-          {hasOwnerRole && hasMerchantRole && (
-            <Card className="p-6 text-center">
-              <Text className="block text-gray-500">您已拥有所有角色</Text>
-            </Card>
-          )}
         </View>
-      </View>
+      )}
 
       {/* 账号操作 */}
-      <View>
-        <Text className="block text-base font-semibold text-gray-900 mb-3">账号操作</Text>
+      {isLoggedIn && (
+        <View>
+          <Text className="block text-base font-semibold text-gray-900 mb-3">账号操作</Text>
 
-        <Card
-          className="p-4 cursor-pointer active:bg-gray-50"
-          onClick={handleLogout}
-        >
-          <View className="flex items-center justify-between">
-            <View className="flex items-center">
-              <View className="mr-3">
-                <LogOut size={24} color="#ef4444" />
+          <Card
+            className="p-4 cursor-pointer active:bg-gray-50"
+            onClick={handleLogout}
+          >
+            <View className="flex items-center justify-between">
+              <View className="flex items-center">
+                <View className="mr-3">
+                  <LogOut size={24} color="#ef4444" />
+                </View>
+                <View>
+                  <Text className="block text-base font-semibold text-red-500">
+                    退出登录
+                  </Text>
+                  <Text className="block text-sm text-gray-500">
+                    清除当前账号并返回登录页
+                  </Text>
+                </View>
               </View>
-              <View>
-                <Text className="block text-base font-semibold text-red-500">
-                  退出登录
-                </Text>
-                <Text className="block text-sm text-gray-500">
-                  清除当前账号并返回登录页
-                </Text>
-              </View>
+              <Text className="block text-gray-400 text-sm">›</Text>
             </View>
-            <Text className="block text-gray-400 text-sm">›</Text>
-          </View>
-        </Card>
-      </View>
+          </Card>
+        </View>
+      )}
 
       {/* 说明 */}
       <View>
