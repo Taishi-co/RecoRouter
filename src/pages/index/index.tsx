@@ -8,7 +8,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { AppPageShell } from '@/components/layout/app-page-shell'
 import { BottomNav } from '@/components/layout/bottom-nav'
 import { Network } from '@/network'
-import Taro from '@tarojs/taro'
+import Taro, { useDidShow } from '@tarojs/taro'
+import { getRoleLandingUrl } from '@/lib/role-navigation'
 import { Truck, Package, Check, Clock, Shield, User } from 'lucide-react-taro'
 
 interface Statistics {
@@ -164,11 +165,19 @@ export default function Index() {
   const [name, setName] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
 
-  useEffect(() => {
+  const refreshCurrentUser = () => {
     setCurrentUser(getStoredAuthUser())
+  }
+
+  useEffect(() => {
+    refreshCurrentUser()
     loadStatistics()
     loadLatestInfo()
   }, [])
+
+  useDidShow(() => {
+    refreshCurrentUser()
+  })
 
   useEffect(() => {
     if (showAuthDialog && mode === 'register' && step === 'form') {
@@ -377,15 +386,7 @@ export default function Index() {
 
   const switchTabByRole = (userRole: string) => {
     setShowAuthDialog(false)
-    if (userRole === 'owner') {
-      Taro.redirectTo({ url: '/pages/owner/demands/index' })
-    } else if (userRole === 'merchant') {
-      Taro.redirectTo({ url: '/pages/merchant/demands/index' })
-    } else if (userRole === 'admin') {
-      Taro.redirectTo({ url: '/pages/admin/users/index' })
-    } else if (userRole === 'enterprise_admin' || userRole === 'enterprise') {
-      Taro.redirectTo({ url: '/pages/enterprise/index/index' })
-    }
+    Taro.redirectTo({ url: getRoleLandingUrl(userRole) })
   }
 
   const openAuthDialog = (authMode: 'login' | 'register') => {
@@ -397,6 +398,92 @@ export default function Index() {
     setShowAuthDialog(true)
   }
 
+  const getRoleLabel = (userRole: string) => {
+    if (userRole === 'owner') return '运力方（车主）'
+    if (userRole === 'merchant') return '需求方'
+    if (userRole === 'admin') return '运营端'
+    if (userRole === 'enterprise_admin' || userRole === 'enterprise') return '企业端'
+    return '用户'
+  }
+
+  const renderBottomNav = () => {
+    if (currentUser?.role === 'merchant') {
+      return <BottomNav type="merchant" active="publish" />
+    }
+
+    if (currentUser?.role === 'owner') {
+      return <BottomNav type="owner" active="demands" />
+    }
+
+    if (currentUser?.role === 'admin') {
+      return <BottomNav type="admin" active="users" />
+    }
+
+    if (currentUser?.role === 'enterprise_admin' || currentUser?.role === 'enterprise') {
+      return <BottomNav type="enterprise" active="home" />
+    }
+
+    return <BottomNav type="common" active="home" />
+  }
+
+  const renderRoleActions = () => {
+    if (!currentUser) return null
+
+    if (currentUser.role === 'merchant') {
+      return (
+        <>
+          <Button className="flex-1 h-11 rounded-full bg-primary shadow-none" onClick={() => Taro.navigateTo({ url: '/pages/merchant/demands/publish' })}>
+            <Text className="text-sm font-bold text-white">发布需求</Text>
+          </Button>
+          <Button className="flex-1 h-11 rounded-full bg-blue-50 shadow-none" variant="outline" onClick={() => Taro.redirectTo({ url: '/pages/merchant/demands/list' })}>
+            <Text className="text-sm font-bold text-blue-600">我的需求</Text>
+          </Button>
+        </>
+      )
+    }
+
+    if (currentUser.role === 'owner') {
+      return (
+        <>
+          <Button className="flex-1 h-11 rounded-full bg-primary shadow-none" onClick={() => Taro.redirectTo({ url: '/pages/owner/demands/index' })}>
+            <Text className="text-sm font-bold text-white">接需求</Text>
+          </Button>
+          <Button className="flex-1 h-11 rounded-full bg-blue-50 shadow-none" variant="outline" onClick={() => Taro.redirectTo({ url: '/pages/owner/orders/index' })}>
+            <Text className="text-sm font-bold text-blue-600">我的订单</Text>
+          </Button>
+        </>
+      )
+    }
+
+    if (currentUser.role === 'enterprise_admin' || currentUser.role === 'enterprise') {
+      return (
+        <>
+          <Button className="flex-1 h-11 rounded-full bg-primary shadow-none" onClick={() => Taro.redirectTo({ url: '/pages/enterprise/publish/index' })}>
+            <Text className="text-sm font-bold text-white">发布配送</Text>
+          </Button>
+          <Button className="flex-1 h-11 rounded-full bg-blue-50 shadow-none" variant="outline" onClick={() => Taro.redirectTo({ url: '/pages/enterprise/dispatch/index' })}>
+            <Text className="text-sm font-bold text-blue-600">调度中心</Text>
+          </Button>
+        </>
+      )
+    }
+
+    if (currentUser.role === 'admin') {
+      return (
+        <>
+          <Button className="flex-1 h-11 rounded-full bg-primary shadow-none" onClick={() => Taro.redirectTo({ url: '/pages/admin/users/index' })}>
+            <Text className="text-sm font-bold text-white">用户管理</Text>
+          </Button>
+          <Button className="flex-1 h-11 rounded-full bg-blue-50 shadow-none" variant="outline" onClick={() => Taro.redirectTo({ url: '/pages/admin/orders/index' })}>
+            <Text className="text-sm font-bold text-blue-600">订单管理</Text>
+          </Button>
+        </>
+      )
+    }
+
+    return null
+  }
+
   const displayStatistics = statistics || demoStatistics
   const displayLatestInfo = latestInfo || demoLatestInfo
 
@@ -405,7 +492,7 @@ export default function Index() {
       <AppPageShell
         title="RecoRouter 首页"
         subtitle="智能运力撮合 · 共享运营平台"
-        bottom={<BottomNav type="common" active="home" />}
+        bottom={renderBottomNav()}
         scroll={false}
         contentClassName="space-y-3"
         right={
@@ -428,6 +515,42 @@ export default function Index() {
           )
         }
       >
+        {currentUser ? (
+          <Card className="bg-white rounded-lg shadow-sm">
+            <CardContent className="p-4">
+              <View className="mb-3">
+                <Text className="block text-sm font-semibold text-gray-500">当前账号</Text>
+                <Text className="block text-lg font-black text-gray-900 mt-1">
+                  {currentUser.name || currentUser.phone}
+                </Text>
+                <Text className="block text-xs font-semibold text-blue-600 mt-1">
+                  {getRoleLabel(currentUser.role)}
+                </Text>
+              </View>
+              <View className="flex gap-3" style={{ display: 'flex', gap: '12px' }}>
+                {renderRoleActions()}
+              </View>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="bg-white rounded-lg shadow-sm">
+            <CardContent className="p-4">
+              <View className="mb-3">
+                <Text className="block text-lg font-black text-gray-900">登录后开始使用</Text>
+                <Text className="block text-sm text-gray-500 mt-1">需求方发布需求，车主接需求，企业端调度配送。</Text>
+              </View>
+              <View className="flex gap-3" style={{ display: 'flex', gap: '12px' }}>
+                <Button className="flex-1 h-11 rounded-full bg-primary shadow-none" onClick={() => openAuthDialog('login')}>
+                  <Text className="text-sm font-bold text-white">登录</Text>
+                </Button>
+                <Button className="flex-1 h-11 rounded-full bg-blue-50 shadow-none" variant="outline" onClick={() => openAuthDialog('register')}>
+                  <Text className="text-sm font-bold text-blue-600">注册</Text>
+                </Button>
+              </View>
+            </CardContent>
+          </Card>
+        )}
+
         {/* 数据统计卡片 */}
         <View>
           <Card className="bg-white rounded-lg shadow-md mb-4">

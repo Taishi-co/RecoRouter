@@ -38,6 +38,25 @@ export const getPageHeaderPaddingTop = () => {
   return Math.max(24, top + 12)
 }
 
+export const getPageHeaderPaddingRight = () => {
+  if (isH5()) return 16
+
+  try {
+    const info = Taro.getSystemInfoSync() as any
+    const menuButton = Taro.getMenuButtonBoundingClientRect()
+    const windowWidth = toNumber(info.windowWidth || info.screenWidth)
+    const menuLeft = toNumber(menuButton.left)
+
+    if (windowWidth > 0 && menuLeft > 0) {
+      return Math.max(16, windowWidth - menuLeft + 12)
+    }
+  } catch {
+    return 16
+  }
+
+  return 16
+}
+
 export const getFixedBottomPadding = (fallback: number) => {
   if (isH5()) return fallback
 

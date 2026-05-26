@@ -8,6 +8,7 @@ import { AppPageShell } from '@/components/layout/app-page-shell'
 import { BottomNav } from '@/components/layout/bottom-nav'
 import { Truck, Package, Check, Plus, User, LogOut } from 'lucide-react-taro'
 import { Network } from '@/network'
+import { getRoleLandingUrl } from '@/lib/role-navigation'
 
 interface UserRole {
   id: string
@@ -150,10 +151,10 @@ export default function RoleSwitch() {
           icon: 'success'
         })
 
-        // 延迟跳转到首页
+        // 延迟跳转到当前角色的工作台
         setTimeout(() => {
           Taro.reLaunch({
-            url: '/pages/index/index'
+            url: getRoleLandingUrl(updatedUserInfo.role)
           })
         }, 1500)
       } else {
@@ -229,6 +230,13 @@ export default function RoleSwitch() {
         Taro.removeStorageSync('userInfo')
         Taro.removeStorageSync('token')
         Taro.removeStorageSync('lastRoleSwitchTime')
+        setUserInfo(null)
+        setRoles([])
+        if (typeof window !== 'undefined') {
+          Object.keys(window.sessionStorage)
+            .filter((key) => key.startsWith('recorouter-bottom-nav:'))
+            .forEach((key) => window.sessionStorage.removeItem(key))
+        }
         Taro.reLaunch({
           url: '/pages/index/index'
         })
@@ -251,8 +259,19 @@ export default function RoleSwitch() {
     return 'bg-gray-500'
   }
 
+  const getRoleEntryLabel = (role: string) => {
+    if (role === 'merchant') return '发布需求'
+    if (role === 'owner') return '接需求'
+    return '进入'
+  }
+
   const hasOwnerRole = roles.some(r => r.role === 'owner')
   const hasMerchantRole = roles.some(r => r.role === 'merchant')
+  const renderBottomNav = () => {
+    if (userInfo?.role === 'merchant') return <BottomNav type="merchant" active="profile" />
+    if (userInfo?.role === 'owner') return <BottomNav type="owner" active="profile" />
+    return <BottomNav type="common" active="profile" />
+  }
 
   return (
     <AppPageShell
@@ -263,7 +282,7 @@ export default function RoleSwitch() {
           <User size={20} color="#0062FF" strokeWidth={2.3} />
         </View>
       }
-      bottom={<BottomNav type="common" active="profile" />}
+      bottom={renderBottomNav()}
       scroll={false}
       contentClassName="space-y-4"
     >
@@ -325,12 +344,20 @@ export default function RoleSwitch() {
                     </View>
                   </View>
                   {roleItem.is_active ? (
-                    <Badge className="bg-green-500">
-                      <View className="flex items-center">
-                        <Check size={12} color="#ffffff" className="mr-1" />
-                        <Text className="text-white text-xs">已激活</Text>
-                      </View>
-                    </Badge>
+                    <View className="flex flex-col items-end gap-2">
+                      <Badge className="bg-green-500">
+                        <View className="flex items-center">
+                          <Check size={12} color="#ffffff" className="mr-1" />
+                          <Text className="text-white text-xs">已激活</Text>
+                        </View>
+                      </Badge>
+                      <Button
+                        size="sm"
+                        onClick={() => Taro.reLaunch({ url: getRoleLandingUrl(roleItem.role) })}
+                      >
+                        <Text className="text-sm">{getRoleEntryLabel(roleItem.role)}</Text>
+                      </Button>
+                    </View>
                   ) : (
                     <Button
                       size="sm"
