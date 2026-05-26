@@ -1,6 +1,8 @@
 import { Text, View } from '@tarojs/components'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { getFixedBottomPadding } from '@/lib/safe-area'
+import { IS_H5_ENV } from '@/presets/env'
 
 interface Action {
   label: string
@@ -17,7 +19,7 @@ interface FixedActionBarProps {
 export const FixedActionBar = ({ actions, className }: FixedActionBarProps) => (
   <View
     className={cn('fixed inset-x-0 bottom-0 z-50 bg-transparent px-4 pt-3 pointer-events-none', className)}
-    style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
+    style={{ paddingBottom: IS_H5_ENV ? 'max(16px, env(safe-area-inset-bottom))' : `${getFixedBottomPadding(16)}px` }}
   >
     <View className="pointer-events-auto mx-auto flex max-w-sm gap-3">
       {actions.map((action) => (

@@ -228,7 +228,7 @@ export default function OwnerCancellations() {
       title="取消订单"
       subtitle="RecoRouter 运力端"
       contentClassName="space-y-3"
-      bottom={<BottomNav type="owner" active="home" />}
+      bottom={<BottomNav type="owner" active="orders" />}
     >
       <Card className="bg-white rounded-lg shadow-sm">
         <CardHeader>

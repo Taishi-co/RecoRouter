@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { AppPageShell } from '@/components/layout/app-page-shell'
 import { BottomNav } from '@/components/layout/bottom-nav'
-import { Truck, Package, Check, Plus, User } from 'lucide-react-taro'
+import { Truck, Package, Check, Plus, User, LogOut } from 'lucide-react-taro'
 import { Network } from '@/network'
 
 interface UserRole {
@@ -219,6 +219,23 @@ export default function RoleSwitch() {
     })
   }
 
+  const handleLogout = () => {
+    Taro.showModal({
+      title: '确认退出',
+      content: '确定要退出登录吗？',
+      success: (res) => {
+        if (!res.confirm) return
+
+        Taro.removeStorageSync('userInfo')
+        Taro.removeStorageSync('token')
+        Taro.removeStorageSync('lastRoleSwitchTime')
+        Taro.reLaunch({
+          url: '/pages/index/index'
+        })
+      }
+    })
+  }
+
   const getRoleLabel = (role: string) => {
     return role === 'owner' ? '运力方（车主）' : '需求方（租户）'
   }
@@ -388,6 +405,33 @@ export default function RoleSwitch() {
             </Card>
           )}
         </View>
+      </View>
+
+      {/* 账号操作 */}
+      <View>
+        <Text className="block text-base font-semibold text-gray-900 mb-3">账号操作</Text>
+
+        <Card
+          className="p-4 cursor-pointer active:bg-gray-50"
+          onClick={handleLogout}
+        >
+          <View className="flex items-center justify-between">
+            <View className="flex items-center">
+              <View className="mr-3">
+                <LogOut size={24} color="#ef4444" />
+              </View>
+              <View>
+                <Text className="block text-base font-semibold text-red-500">
+                  退出登录
+                </Text>
+                <Text className="block text-sm text-gray-500">
+                  清除当前账号并返回登录页
+                </Text>
+              </View>
+            </View>
+            <Text className="block text-gray-400 text-sm">›</Text>
+          </View>
+        </Card>
       </View>
 
       {/* 说明 */}

@@ -240,7 +240,7 @@ export default function RouteMap() {
         title="路线地图"
         subtitle="RecoRouter 商户小程序"
         icon={Route}
-        bottom={<BottomNav type="merchant" active="map" />}
+        bottom={<BottomNav type="merchant" active="demands" />}
       >
         <View className="flex items-center justify-center py-12">
           <Text className="text-gray-500">加载中...</Text>
@@ -255,7 +255,7 @@ export default function RouteMap() {
         title="路线地图"
         subtitle="RecoRouter 商户小程序"
         icon={Route}
-        bottom={<BottomNav type="merchant" active="map" />}
+        bottom={<BottomNav type="merchant" active="demands" />}
       >
       <View className="flex flex-col items-center justify-center py-12">
         <Text className="text-red-500 text-lg font-medium mt-4">线路信息加载失败</Text>
@@ -275,7 +275,7 @@ export default function RouteMap() {
       subtitle={routeInfo.route_name}
       icon={Route}
       contentClassName="space-y-3"
-      bottom={<BottomNav type="merchant" active="map" />}
+      bottom={<BottomNav type="merchant" active="demands" />}
     >
       {/* 地图区域 */}
       {isMiniApp ? (

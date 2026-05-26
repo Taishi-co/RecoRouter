@@ -2,6 +2,7 @@ import type { ComponentType, PropsWithChildren, ReactNode } from 'react'
 import { ScrollView, Text, View } from '@tarojs/components'
 import { Bell } from 'lucide-react-taro'
 import { cn } from '@/lib/utils'
+import { getPageHeaderPaddingTop } from '@/lib/safe-area'
 
 type ShellIcon = ComponentType<any>
 
@@ -31,6 +32,7 @@ export const AppPageShell = ({
   scroll = true,
   children,
 }: AppPageShellProps) => {
+  const headerPaddingTop = getPageHeaderPaddingTop()
   const content = (
     <View
       className={cn('box-border overflow-x-hidden mx-4 py-3 flex flex-col gap-3', contentClassName)}
@@ -51,7 +53,10 @@ export const AppPageShell = ({
       className={cn('min-h-screen w-full max-w-full overflow-x-hidden flex flex-col bg-gray-50 text-gray-900', className)}
       style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden' }}
     >
-      <View className={cn('bg-white px-4 pt-6 pb-3 overflow-hidden', headerClassName)}>
+      <View
+        className={cn('bg-white px-4 pb-3 overflow-hidden', headerClassName)}
+        style={{ paddingTop: `${headerPaddingTop}px` }}
+      >
         <View className="flex items-center justify-between gap-3" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
           <View className="min-w-0 flex-1" style={{ flex: '1 1 0', minWidth: 0 }}>
             <Text className="block text-xl font-black text-gray-900 leading-tight">

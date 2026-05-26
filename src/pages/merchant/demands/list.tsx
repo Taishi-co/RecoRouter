@@ -387,7 +387,7 @@ export default function DemandsList() {
       subtitle="RecoRouter 商户小程序"
       icon={ClipboardList}
       contentClassName="space-y-3"
-      bottom={<BottomNav type="merchant" active="publish" />}
+      bottom={<BottomNav type="merchant" active="demands" />}
     >
       <Card className="bg-white rounded-lg shadow-sm">
           <CardHeader>

@@ -13,9 +13,9 @@ export default function MerchantDemands() {
   return (
     <AppPageShell
       title="需求管理"
-      subtitle="正在打开需求列表"
+      subtitle="正在打开我的需求"
       icon={ClipboardList}
-      bottom={<BottomNav type="merchant" active="orders" />}
+      bottom={<BottomNav type="merchant" active="demands" />}
       contentClassName="pb-6"
     >
       <Text className="text-sm font-semibold text-gray-500">正在加载...</Text>
