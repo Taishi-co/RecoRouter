@@ -306,14 +306,37 @@ async fn notifications_create_query_count_and_mark_read() {
     assert_eq!(create_body["data"]["related_order_id"], "order-1");
     let notification_id = create_body["data"]["id"].as_str().unwrap();
 
+    let (second_create_status, second_create_body) = post_json(
+        &context.app,
+        "/api/notifications",
+        json!({
+            "userId": user_id,
+            "type": "payment_received",
+            "title": "支付更新",
+            "content": "运费已入账",
+            "relatedOrderId": "order-2"
+        }),
+    )
+    .await;
+    assert_eq!(second_create_status, StatusCode::OK);
+    assert_eq!(second_create_body["message"], "通知创建成功");
+
     let (list_status, list_body) = get_json(
         &context.app,
-        &format!("/api/notifications?user_id={user_id}&unread_only=true"),
+        &format!("/api/notifications?user_id={user_id}&unread_only=true&page=1&limit=1"),
     )
     .await;
     assert_eq!(list_status, StatusCode::OK);
     assert_eq!(list_body["message"], "查询成功");
     assert_eq!(list_body["data"].as_array().unwrap().len(), 1);
+
+    let (second_page_status, second_page_body) = get_json(
+        &context.app,
+        &format!("/api/notifications?user_id={user_id}&unread_only=true&page=2&limit=1"),
+    )
+    .await;
+    assert_eq!(second_page_status, StatusCode::OK);
+    assert_eq!(second_page_body["data"].as_array().unwrap().len(), 1);
 
     let (count_status, count_body) = get_json(
         &context.app,
@@ -321,7 +344,7 @@ async fn notifications_create_query_count_and_mark_read() {
     )
     .await;
     assert_eq!(count_status, StatusCode::OK);
-    assert_eq!(count_body["data"]["unreadCount"], 1);
+    assert_eq!(count_body["data"]["unreadCount"], 2);
 
     let (mark_status, mark_body) = put_json(
         &context.app,
@@ -332,6 +355,14 @@ async fn notifications_create_query_count_and_mark_read() {
     assert_eq!(mark_status, StatusCode::OK);
     assert_eq!(mark_body["message"], "已标记为已读");
     assert_eq!(mark_body["data"]["is_read"], true);
+
+    let (count_after_mark_status, count_after_mark_body) = get_json(
+        &context.app,
+        &format!("/api/notifications/unread-count?user_id={user_id}"),
+    )
+    .await;
+    assert_eq!(count_after_mark_status, StatusCode::OK);
+    assert_eq!(count_after_mark_body["data"]["unreadCount"], 1);
 
     let (missing_status, missing_body) = put_json(
         &context.app,
