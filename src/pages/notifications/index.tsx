@@ -9,6 +9,8 @@ import { BottomNav } from '@/components/layout/bottom-nav'
 import { Bell, CircleX, DollarSign, ShieldCheck, CircleCheck } from 'lucide-react-taro'
 import { Network } from '@/network'
 
+const PAGE_SIZE = 20
+
 interface Notification {
   id: string
   user_id: string
@@ -21,44 +23,13 @@ interface Notification {
   created_at: string
 }
 
-const demoNotifications: Notification[] = [
-  {
-    id: 'demo-notification-1',
-    user_id: 'demo-user',
-    type: 'order_accepted',
-    title: '订单已被承运方接单',
-    content: '沪A·9231 已确认上海宝山至杭州萧山线路，预计 42 分钟后到场。',
-    related_order_id: 'demo-order-1',
-    is_read: false,
-    created_at: '2026-05-26T09:20:00+10:00',
-  },
-  {
-    id: 'demo-notification-2',
-    user_id: 'demo-user',
-    type: 'payment_received',
-    title: '运费支付已确认',
-    content: '订单 R240526-018 尾款 ¥2,860.00 已入账，可在订单中心查看明细。',
-    related_order_id: 'demo-order-2',
-    is_read: false,
-    created_at: '2026-05-26T08:45:00+10:00',
-  },
-  {
-    id: 'demo-notification-3',
-    user_id: 'demo-user',
-    type: 'commission_confirmed',
-    title: '佣金审核通过',
-    content: '平台服务费已完成审核，车辆状态已恢复为可接单。',
-    is_read: true,
-    created_at: '2026-05-25T18:30:00+10:00',
-  },
-]
-
 export default function Notifications() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
+  const [authMissing, setAuthMissing] = useState(false)
 
   // 获取通知列表
   const loadNotifications = async (pageNum: number = 1, isRefresh: boolean = false) => {
@@ -67,9 +38,14 @@ export default function Notifications() {
     setLoading(true)
     const userInfo = Taro.getStorageSync('userInfo')
     if (!userInfo || !userInfo.id) {
+      setAuthMissing(true)
+      setNotifications([])
+      setUnreadCount(0)
+      setHasMore(false)
       setLoading(false)
       return
     }
+    setAuthMissing(false)
 
     try {
       const res = await Network.request({
@@ -78,14 +54,14 @@ export default function Notifications() {
         data: {
           user_id: userInfo.id,
           page: pageNum,
-          limit: 20
+          limit: PAGE_SIZE
         }
       })
 
       console.log('通知列表响应:', res.data)
 
       if (res.data.code === 200) {
-        const newNotifications = res.data.data || []
+        const newNotifications = (res.data.data || []) as Notification[]
 
         if (isRefresh) {
           setNotifications(newNotifications)
@@ -93,7 +69,8 @@ export default function Notifications() {
           setNotifications(prev => [...prev, ...newNotifications])
         }
 
-        setHasMore(newNotifications.length >= 20)
+        setPage(pageNum)
+        setHasMore(newNotifications.length >= PAGE_SIZE)
       } else {
         Taro.showToast({
           title: res.data.message || '加载失败',
@@ -114,7 +91,12 @@ export default function Notifications() {
   // 获取未读数量
   const loadUnreadCount = async () => {
     const userInfo = Taro.getStorageSync('userInfo')
-    if (!userInfo || !userInfo.id) return
+    if (!userInfo || !userInfo.id) {
+      setAuthMissing(true)
+      setUnreadCount(0)
+      return
+    }
+    setAuthMissing(false)
 
     try {
       const res = await Network.request({
@@ -190,10 +172,6 @@ export default function Notifications() {
 
   // 点击通知跳转
   const handleNotificationClick = (notification: Notification) => {
-    if (notification.id.startsWith('demo-')) {
-      return
-    }
-
     // 标记为已读
     if (!notification.is_read) {
       handleMarkAsRead(notification.id)
@@ -257,7 +235,6 @@ export default function Notifications() {
   useReachBottom(() => {
     if (!loading && hasMore) {
       const nextPage = page + 1
-      setPage(nextPage)
       loadNotifications(nextPage, false)
     }
   })
@@ -273,11 +250,8 @@ export default function Notifications() {
     })
   }, [])
 
-  const hasRealNotifications = notifications.length > 0
-  const displayNotifications = hasRealNotifications ? notifications : demoNotifications
-  const displayUnreadCount = hasRealNotifications
-    ? unreadCount
-    : demoNotifications.filter((notification) => !notification.is_read).length
+  const displayNotifications = notifications
+  const displayUnreadCount = unreadCount
 
   return (
     <AppPageShell
@@ -295,7 +269,7 @@ export default function Notifications() {
             size="sm"
             variant="outline"
             className="h-9 rounded-full border-blue-100 bg-blue-50 px-3 shadow-none"
-            disabled={!hasRealNotifications}
+            disabled={authMissing || unreadCount === 0}
             onClick={handleMarkAllAsRead}
           >
             <Text className="text-xs font-bold text-blue-600">全部已读</Text>
@@ -305,6 +279,14 @@ export default function Notifications() {
     >
       {/* 通知列表 */}
       <View className="space-y-3">
+          {loading && notifications.length === 0 && (
+            <View className="text-center py-12">
+              <Text className="text-sm text-gray-500">
+                加载中...
+              </Text>
+            </View>
+          )}
+
           {displayNotifications.map(notification => {
             const { icon: Icon, color, bgColor } = getNotificationTypeStyle(notification.type)
             const timeText = formatTime(notification.created_at)
@@ -352,7 +334,22 @@ export default function Notifications() {
             )
           })}
 
-          {!loading && displayNotifications.length === 0 && (
+          {!loading && authMissing && (
+            <View className="flex flex-col items-center justify-center py-20">
+              <Bell size={48} color="#9ca3af" />
+              <Text className="block text-sm text-gray-500 mt-4">
+                请先登录查看通知消息
+              </Text>
+              <Button
+                className="mt-4 rounded-full bg-primary px-6 shadow-none"
+                onClick={() => Taro.redirectTo({ url: '/pages/index/index' })}
+              >
+                <Text className="text-sm font-bold text-white">去登录/注册</Text>
+              </Button>
+            </View>
+          )}
+
+          {!loading && !authMissing && displayNotifications.length === 0 && (
             <View className="flex flex-col items-center justify-center py-20">
               <Bell size={48} color="#9ca3af" />
               <Text className="block text-sm text-gray-500 mt-4">

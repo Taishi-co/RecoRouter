@@ -45,6 +45,8 @@ struct CreateNotificationRequest {
 struct NotificationQuery {
     user_id: String,
     unread_only: Option<String>,
+    page: Option<i64>,
+    limit: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -98,42 +100,29 @@ where
     S: Storage,
 {
     let unread_only = query.unread_only.as_deref() == Some("true");
-    let notifications = if unread_only {
-        sqlx::query_scalar::<_, Value>(
-            r#"
-            SELECT row_to_json(notification_row)
-            FROM (
-                SELECT *
-                FROM notifications
-                WHERE user_id = $1
-                  AND is_read = false
-                ORDER BY created_at DESC
-                LIMIT 50
-            ) notification_row
-            "#,
-        )
-        .bind(&query.user_id)
-        .fetch_all(&state.db)
-        .await
-        .map_err(|err| ApiError::BadRequest(format!("查询通知失败: {err}")))?
-    } else {
-        sqlx::query_scalar::<_, Value>(
-            r#"
-            SELECT row_to_json(notification_row)
-            FROM (
-                SELECT *
-                FROM notifications
-                WHERE user_id = $1
-                ORDER BY created_at DESC
-                LIMIT 50
-            ) notification_row
-            "#,
-        )
-        .bind(&query.user_id)
-        .fetch_all(&state.db)
-        .await
-        .map_err(|err| ApiError::BadRequest(format!("查询通知失败: {err}")))?
-    };
+    let page = query.page.unwrap_or(1).max(1);
+    let limit = query.limit.unwrap_or(20).clamp(1, 50);
+    let offset = (page - 1) * limit;
+    let notifications = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT row_to_json(notification_row)
+        FROM (
+            SELECT *
+            FROM notifications
+            WHERE user_id = $1
+              AND ($2::boolean = false OR is_read = false)
+            ORDER BY created_at DESC, id DESC
+            LIMIT $3 OFFSET $4
+        ) notification_row
+        "#,
+    )
+    .bind(&query.user_id)
+    .bind(unread_only)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("查询通知失败: {err}")))?;
 
     Ok(ok("查询成功", notifications))
 }
