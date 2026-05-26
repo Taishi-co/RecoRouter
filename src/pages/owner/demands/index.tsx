@@ -34,43 +34,6 @@ interface Demand {
   }
 }
 
-const demoDemands: Demand[] = [
-  {
-    id: 'demo-demand-1',
-    cargo_name: '冷链鲜奶配送',
-    cargo_type: 'refrigerated',
-    weight: 820,
-    volume: 3.2,
-    pickup_time: '2026-05-26T08:30:00+10:00',
-    pickup_address: '宝山城市仓 · 1号月台',
-    delivery_address: '萧山中心站 · 北门',
-    remarks: '需全程温控 2-8°C，优先派冷链车',
-    status: 'pending',
-    created_at: '2026-05-26T07:45:00+10:00',
-    merchant_id: 'demo-merchant',
-    estimated_distance: 168,
-    merchant: {
-      phone: '13800000000',
-      name: '演示商户',
-    },
-  },
-  {
-    id: 'demo-demand-2',
-    cargo_name: '社区补货专线',
-    cargo_type: 'normal',
-    weight: 460,
-    volume: 2.1,
-    pickup_time: '2026-05-26T14:30:00+10:00',
-    pickup_address: '苏州前置仓',
-    delivery_address: '昆山周市店群',
-    remarks: '三点卸货，需司机电话回执',
-    status: 'pending',
-    created_at: '2026-05-26T11:20:00+10:00',
-    merchant_id: 'demo-merchant',
-    estimated_distance: 42,
-  },
-]
-
 export default function OwnerDemands() {
   const [demands, setDemands] = useState<Demand[]>([])
   const [loading, setLoading] = useState(false)
@@ -145,8 +108,7 @@ export default function OwnerDemands() {
     loadDemands()
   }
 
-  const visibleDemands = demands.length > 0 ? demands : demoDemands
-  const usingDemoDemands = !loading && demands.length === 0
+  const visibleDemands = demands
 
   return (
     <AppPageShell
@@ -178,14 +140,11 @@ export default function OwnerDemands() {
               </View>
             ) : (
               <View className="space-y-3">
-                {usingDemoDemands && (
-                  <View className="bg-blue-50 rounded-lg p-3">
-                    <Text className="block text-xs text-blue-700">
-                      暂无真实待接单需求，以下为设计稿演示数据
-                    </Text>
+                {visibleDemands.length === 0 ? (
+                  <View className="text-center py-8">
+                    <Text className="block text-gray-500 text-sm">暂无待接单需求</Text>
                   </View>
-                )}
-                {visibleDemands.map((demand) => (
+                ) : visibleDemands.map((demand) => (
                   <View key={demand.id} className="bg-gray-50 rounded-lg p-4">
                     <View className="flex justify-between items-start mb-3">
                       <View className="flex-1">

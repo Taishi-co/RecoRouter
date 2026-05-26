@@ -30,28 +30,6 @@ interface RouteInfo {
   use_count: number
 }
 
-const demoRouteInfo: RouteInfo = {
-  id: 'demo-route-1',
-  route_name: '上海宝山 → 杭州萧山',
-  pickup_address: {
-    id: 'demo-address-1',
-    address_name: '宝山钢贸园',
-    address: '上海市宝山区铁山路 588 号',
-    latitude: 31.405221,
-    longitude: 121.489102,
-  },
-  delivery_address: {
-    id: 'demo-address-2',
-    address_name: '萧山中心仓',
-    address: '杭州市萧山区建设四路 1688 号',
-    latitude: 30.176124,
-    longitude: 120.26432,
-  },
-  estimated_distance: 168,
-  estimated_fare: 1680,
-  use_count: 31,
-}
-
 export default function RouteMap() {
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null)
   const [markers, setMarkers] = useState<any[]>([])
@@ -111,11 +89,11 @@ export default function RouteMap() {
         console.log('[RouteMap] 线路信息:', data)
         applyRouteInfo(data)
       } else {
-        applyRouteInfo(demoRouteInfo)
+        setLoading(false)
       }
     } catch (error) {
       console.error('[RouteMap] 解析线路信息失败:', error)
-      applyRouteInfo(demoRouteInfo)
+      setLoading(false)
     }
   }, [])
 

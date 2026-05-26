@@ -40,35 +40,35 @@ interface Statistics {
   }
 }
 
-const demoStats: Statistics = {
+const emptyStats: Statistics = {
   users: {
-    total: 168,
-    owner: 92,
-    merchant: 70,
-    active: 154,
-    disabled: 14,
+    total: 0,
+    owner: 0,
+    merchant: 0,
+    active: 0,
+    disabled: 0,
   },
   orders: {
-    total: 328,
-    pending: 18,
-    accepted: 26,
-    in_transit: 34,
-    completed: 238,
-    cancelled: 12,
+    total: 0,
+    pending: 0,
+    accepted: 0,
+    in_transit: 0,
+    completed: 0,
+    cancelled: 0,
   },
   vehicles: {
-    total: 86,
-    pending: 9,
-    active: 68,
-    inactive: 9,
+    total: 0,
+    pending: 0,
+    active: 0,
+    inactive: 0,
   },
   demands: {
-    total: 246,
-    pending: 22,
-    accepted: 35,
-    in_transit: 31,
-    completed: 146,
-    cancelled: 12,
+    total: 0,
+    pending: 0,
+    accepted: 0,
+    in_transit: 0,
+    completed: 0,
+    cancelled: 0,
   },
 }
 
@@ -121,7 +121,7 @@ export default function AdminStats() {
     }
   }
 
-  const displayStats = stats || demoStats
+  const displayStats = stats || emptyStats
 
   return (
     <AppPageShell

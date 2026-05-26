@@ -23,45 +23,6 @@ interface User {
   created_at: string
 }
 
-const demoUsers: User[] = [
-  {
-    id: 'demo-user-owner',
-    phone: '138****6621',
-    role: 'owner',
-    name: '张师傅',
-    id_card: '4201**********21',
-    merchant_type: null,
-    address: '武汉市东西湖区',
-    avatar: null,
-    status: 'active',
-    created_at: '2026-05-18T09:30:00+10:00',
-  },
-  {
-    id: 'demo-user-merchant',
-    phone: '156****7098',
-    role: 'merchant',
-    name: '上海某某贸易',
-    id_card: null,
-    merchant_type: '企业月结客户',
-    address: '上海市宝山区钢贸园',
-    avatar: null,
-    status: 'active',
-    created_at: '2026-05-20T11:20:00+10:00',
-  },
-  {
-    id: 'demo-user-disabled',
-    phone: '139****4488',
-    role: 'owner',
-    name: '王师傅',
-    id_card: '3101**********88',
-    merchant_type: null,
-    address: '苏州市太仓市',
-    avatar: null,
-    status: 'disabled',
-    created_at: '2026-05-22T16:45:00+10:00',
-  },
-]
-
 export default function AdminUsers() {
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(false)
@@ -207,7 +168,7 @@ export default function AdminUsers() {
     }
   }
 
-  const displayUsers = users.length > 0 ? users : demoUsers
+  const displayUsers = users
 
   return (
     <AppPageShell
@@ -292,7 +253,6 @@ export default function AdminUsers() {
                         size="sm"
                         variant="outline"
                         className={user.status === 'active' ? 'text-red-500 border-red-500' : 'text-green-500 border-green-500'}
-                        disabled={user.id.startsWith('demo-')}
                         onClick={() => handleChangeStatus(user)}
                       >
                         <Text className="text-xs">

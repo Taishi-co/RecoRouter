@@ -44,9 +44,11 @@ interface Order {
   }
   vehicle?: {
     id: string
-    brand: string
-    model: string
-    plate_number: string
+    brand?: string
+    model?: string
+    plate_number?: string
+    vehicle_type?: string
+    license_plate?: string
     status: string
   }
 }
@@ -105,29 +107,7 @@ export default function OwnerOrders() {
       console.log('订单列表响应:', res.data)
 
       if (res.data.code === 200) {
-        const orderList = res.data.data || []
-
-        // 为每个订单查询需求详情
-        const ordersWithDetails = await Promise.all(
-          orderList.map(async (order: Order) => {
-            try {
-              const demandRes = await Network.request({
-                url: `/api/demands/${order.demand_id}`,
-                method: 'GET'
-              })
-
-              if (demandRes.data.code === 200 && demandRes.data.data) {
-                order.demand = demandRes.data.data
-              }
-            } catch (error) {
-              console.error('查询需求详情失败:', error)
-            }
-
-            return order
-          })
-        )
-
-        setOrders(ordersWithDetails)
+        setOrders(res.data.data || [])
       } else {
         Taro.showToast({
           title: res.data.message || '加载失败',

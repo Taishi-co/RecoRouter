@@ -36,53 +36,6 @@ interface Vehicle {
   owner?: VehicleOwner
 }
 
-const demoVehicles: Vehicle[] = [
-  {
-    id: 'demo-vehicle-pending',
-    owner_id: 'demo-owner-1',
-    vehicle_type: '9.6m 厢式货车',
-    license_plate: '鄂A·7K21',
-    load_capacity: 9600,
-    volume: 52,
-    battery_life: 420,
-    has_cold_chain: false,
-    operation_area: null,
-    available_hours: null,
-    status: 'pending',
-    photos: null,
-    remarks: null,
-    created_at: '2026-05-26T08:30:00+10:00',
-    owner: {
-      id: 'demo-owner-1',
-      phone: '138****6621',
-      role: 'owner',
-      name: '张师傅',
-    },
-  },
-  {
-    id: 'demo-vehicle-active',
-    owner_id: 'demo-owner-2',
-    vehicle_type: '冷藏车 8.6m',
-    license_plate: '沪A·R8821',
-    load_capacity: 12000,
-    volume: 46,
-    battery_life: 380,
-    has_cold_chain: true,
-    operation_area: null,
-    available_hours: null,
-    status: 'active',
-    photos: null,
-    remarks: null,
-    created_at: '2026-05-24T14:10:00+10:00',
-    owner: {
-      id: 'demo-owner-2',
-      phone: '156****7098',
-      role: 'owner',
-      name: '李师傅',
-    },
-  },
-]
-
 export default function AdminVehicles() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [loading, setLoading] = useState(false)
@@ -279,10 +232,7 @@ export default function AdminVehicles() {
     }
   }
 
-  const filteredDemoVehicles = filterStatus
-    ? demoVehicles.filter((vehicle) => vehicle.status === filterStatus)
-    : demoVehicles
-  const displayVehicles = vehicles.length > 0 ? vehicles : filteredDemoVehicles
+  const displayVehicles = vehicles
 
   return (
     <AppPageShell
@@ -395,7 +345,6 @@ export default function AdminVehicles() {
                             <Button
                               size="sm"
                               className="bg-green-500"
-                              disabled={vehicle.id.startsWith('demo-')}
                               onClick={() => handleReview(vehicle)}
                             >
                               <Text className="text-xs">审核</Text>

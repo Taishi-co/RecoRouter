@@ -30,76 +30,12 @@ interface DemandTemplate {
   updated_at: string
 }
 
-const demoTemplates: DemandTemplate[] = [
-  {
-    id: 'demo-template-1',
-    user_id: 'demo',
-    template_name: '宝山钢贸园 → 萧山仓',
-    cargo_name: '钢卷零担',
-    cargo_type: 'normal',
-    weight: 3200,
-    volume: 18,
-    pickup_address: '上海宝山钢贸园',
-    pickup_lat: 31.405,
-    pickup_lng: 121.489,
-    delivery_address: '杭州萧山中心仓',
-    delivery_lat: 30.176,
-    delivery_lng: 120.264,
-    remarks: '9.6m 厢式车 · 常跑路线',
-    is_default: true,
-    use_count: 31,
-    created_at: '2026-05-20T09:00:00+10:00',
-    updated_at: '2026-05-25T09:00:00+10:00',
-  },
-  {
-    id: 'demo-template-2',
-    user_id: 'demo',
-    template_name: '太仓码头 → 昆山仓',
-    cargo_name: '港口短驳',
-    cargo_type: 'fresh',
-    weight: 2400,
-    volume: 14,
-    pickup_address: '太仓港区',
-    pickup_lat: 31.631,
-    pickup_lng: 121.191,
-    delivery_address: '昆山周市仓',
-    delivery_lat: 31.399,
-    delivery_lng: 120.999,
-    remarks: '冷链优先 · 短驳高频',
-    is_default: false,
-    use_count: 18,
-    created_at: '2026-05-18T09:00:00+10:00',
-    updated_at: '2026-05-24T09:00:00+10:00',
-  },
-  {
-    id: 'demo-template-3',
-    user_id: 'demo',
-    template_name: '无锡厂区 → 宁波北仑',
-    cargo_name: '托盘货',
-    cargo_type: 'fragile',
-    weight: 1800,
-    volume: 12,
-    pickup_address: '无锡惠山厂区',
-    pickup_lat: 31.681,
-    pickup_lng: 120.298,
-    delivery_address: '宁波北仑码头',
-    delivery_lat: 29.899,
-    delivery_lng: 121.844,
-    remarks: '防震包装 · 港口线路',
-    is_default: false,
-    use_count: 12,
-    created_at: '2026-05-16T09:00:00+10:00',
-    updated_at: '2026-05-23T09:00:00+10:00',
-  },
-]
-
 export default function DemandTemplates() {
   const [templates, setTemplates] = useState<DemandTemplate[]>([])
   const [loading, setLoading] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [deletingTemplate, setDeletingTemplate] = useState<DemandTemplate | null>(null)
-  const visibleTemplates = templates.length > 0 ? templates : demoTemplates
-  const isUsingDemoTemplates = templates.length === 0
+  const visibleTemplates = templates
 
   useEffect(() => {
     loadTemplates()
@@ -316,16 +252,14 @@ export default function DemandTemplates() {
                       <ArrowRight size={14} color="#ffffff" />
                       <Text className="ml-1 text-xs text-white">使用</Text>
                     </Button>
-                    {!isUsingDemoTemplates && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="border-red-500 text-red-500"
-                        onClick={() => handleDeleteTemplate(template)}
-                      >
-                        <Trash2 size={14} color="#ef4444" />
-                      </Button>
-                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-red-500 text-red-500"
+                      onClick={() => handleDeleteTemplate(template)}
+                    >
+                      <Trash2 size={14} color="#ef4444" />
+                    </Button>
                   </View>
                 </View>
               </CardContent>

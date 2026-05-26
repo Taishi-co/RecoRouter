@@ -25,31 +25,8 @@ interface Station {
   created_at: string
 }
 
-const DEMO_STATIONS: Station[] = [
-  {
-    id: 'demo-station-1',
-    name: '光谷中心奶站',
-    address: '武汉市洪山区关山大道 332 号',
-    phone: '027-8812 6601',
-    location: { lat: 30.502322, lng: 114.40524 },
-    status: 'active',
-    customer_type: 'owned',
-    created_at: '2026-05-01',
-  },
-  {
-    id: 'demo-station-2',
-    name: '江汉社区配送点',
-    address: '武汉市江汉区建设大道 188 号',
-    phone: '027-8529 1023',
-    location: { lat: 30.596, lng: 114.269 },
-    status: 'active',
-    customer_type: 'external',
-    created_at: '2026-05-08',
-  },
-]
-
 const EnterpriseStationsPage: FC = () => {
-  const [stations, setStations] = useState<Station[]>(DEMO_STATIONS)
+  const [stations, setStations] = useState<Station[]>([])
   const [loading, setLoading] = useState(false)
   const [keyword, setKeyword] = useState('')
   const [enterpriseId, setEnterpriseId] = useState('')
@@ -71,7 +48,7 @@ const EnterpriseStationsPage: FC = () => {
       const userInfo = Taro.getStorageSync('userInfo')
       
       if (!userInfo) {
-        setStations(DEMO_STATIONS)
+        setStations([])
         setLoading(false)
         return
       }
@@ -85,12 +62,12 @@ const EnterpriseStationsPage: FC = () => {
         setEnterpriseId(entId)
         loadStations(entId)
       } else {
-        setStations(DEMO_STATIONS)
+        setStations([])
         setLoading(false)
       }
     } catch (error) {
       console.error('加载企业信息失败:', error)
-      setStations(DEMO_STATIONS)
+      setStations([])
       setLoading(false)
     }
   }
@@ -114,14 +91,14 @@ const EnterpriseStationsPage: FC = () => {
 
       if (res.data.code === 200) {
         const list = res.data.data?.list || []
-        setStations(list.length > 0 ? list : DEMO_STATIONS)
+        setStations(list)
       } else {
         console.error('返回码不是200:', res.data.code, res.data.message)
-        setStations(DEMO_STATIONS)
+        setStations([])
       }
     } catch (error) {
       console.error('加载奶站列表失败:', error)
-      setStations(DEMO_STATIONS)
+      setStations([])
       Taro.showToast({
         title: '加载失败',
         icon: 'none',

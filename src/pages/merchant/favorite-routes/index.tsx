@@ -28,75 +28,6 @@ interface FavoriteRoute {
   created_at: string
 }
 
-const demoFavoriteRoutes: FavoriteRoute[] = [
-  {
-    id: 'demo-route-1',
-    route_name: '上海宝山 → 杭州萧山',
-    pickup_address: {
-      id: 'demo-address-1',
-      address_name: '宝山钢贸园',
-      address: '上海市宝山区铁山路 588 号',
-      latitude: 31.405221,
-      longitude: 121.489102,
-    },
-    delivery_address: {
-      id: 'demo-address-2',
-      address_name: '萧山中心仓',
-      address: '杭州市萧山区建设四路 1688 号',
-      latitude: 30.176124,
-      longitude: 120.26432,
-    },
-    estimated_distance: 168,
-    estimated_fare: 1680,
-    use_count: 31,
-    created_at: '2026-05-20T09:00:00+10:00',
-  },
-  {
-    id: 'demo-route-2',
-    route_name: '苏州太仓 → 昆山周市',
-    pickup_address: {
-      id: 'demo-address-3',
-      address_name: '太仓码头',
-      address: '苏州市太仓港区滨江大道',
-      latitude: 31.631102,
-      longitude: 121.191211,
-    },
-    delivery_address: {
-      id: 'demo-address-4',
-      address_name: '昆山周市仓',
-      address: '昆山市周市镇康庄路 88 号',
-      latitude: 31.399003,
-      longitude: 120.999238,
-    },
-    estimated_distance: 42,
-    estimated_fare: 620,
-    use_count: 18,
-    created_at: '2026-05-18T09:00:00+10:00',
-  },
-  {
-    id: 'demo-route-3',
-    route_name: '无锡惠山 → 宁波北仑',
-    pickup_address: {
-      id: 'demo-address-5',
-      address_name: '无锡惠山厂区',
-      address: '无锡市惠山区洛社镇工业园',
-      latitude: 31.6811,
-      longitude: 120.2982,
-    },
-    delivery_address: {
-      id: 'demo-address-6',
-      address_name: '宁波北仑码头',
-      address: '宁波市北仑区港东大道 99 号',
-      latitude: 29.899118,
-      longitude: 121.844011,
-    },
-    estimated_distance: 296,
-    estimated_fare: 2860,
-    use_count: 12,
-    created_at: '2026-05-16T09:00:00+10:00',
-  },
-]
-
 export default function FavoriteRoutes() {
   const [routes, setRoutes] = useState<FavoriteRoute[]>([])
   const [addresses, setAddresses] = useState<Address[]>([])
@@ -110,8 +41,7 @@ export default function FavoriteRoutes() {
     estimated_distance: '',
     estimated_fare: ''
   })
-  const visibleRoutes = routes.length > 0 ? routes : demoFavoriteRoutes
-  const isUsingDemoRoutes = routes.length === 0
+  const visibleRoutes = routes
 
   useEffect(() => {
     loadRoutes()
@@ -533,24 +463,20 @@ export default function FavoriteRoutes() {
                   >
                     <Navigation size={16} color="#ffffff" />
                   </Button>
-                  {!isUsingDemoRoutes && (
-                    <Button
-                      size="sm"
-                      className="bg-amber-500"
-                      onClick={() => handleEdit(route)}
-                    >
-                      <FilePen size={16} color="#ffffff" />
-                    </Button>
-                  )}
-                  {!isUsingDemoRoutes && (
-                    <Button
-                      size="sm"
-                      className="bg-red-500"
-                      onClick={() => handleDelete(route.id)}
-                    >
-                      <Trash2 size={16} color="#ffffff" />
-                    </Button>
-                  )}
+                  <Button
+                    size="sm"
+                    className="bg-amber-500"
+                    onClick={() => handleEdit(route)}
+                  >
+                    <FilePen size={16} color="#ffffff" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="bg-red-500"
+                    onClick={() => handleDelete(route.id)}
+                  >
+                    <Trash2 size={16} color="#ffffff" />
+                  </Button>
                 </View>
               </View>
 

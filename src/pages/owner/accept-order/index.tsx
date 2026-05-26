@@ -43,41 +43,6 @@ interface Demand {
   cargo_description?: string
 }
 
-const demoAcceptDemand: Demand = {
-  id: 'demo-demand-1',
-  cargo_name: '冷链鲜奶配送',
-  pickup_address: '宝山城市仓 · 1号月台',
-  pickup_lat: '31.4053',
-  pickup_lng: '121.4890',
-  delivery_address: '萧山中心站 · 北门',
-  delivery_lat: '30.1838',
-  delivery_lng: '120.2647',
-  pickup_time: '2026-05-26T08:30:00+10:00',
-  weight: '820',
-  volume: '3.2',
-  cargo_description: '演示需求：需全程温控 2-8°C',
-}
-
-const demoAcceptVehicles: Vehicle[] = [
-  {
-    id: 'demo-vehicle-1',
-    vehicle_type: '8.6m 冷链无人车',
-    license_plate: '沪A·D2688',
-    load_capacity: 1200,
-    volume: 8.6,
-    battery_life: 220,
-    has_cold_chain: true,
-    status: 'active',
-    is_available: true,
-    trip_status: 'idle',
-    base_price: 80,
-    base_distance: 5,
-    price_per_km: 4.8,
-    ownership_type: 'owned',
-    current_renter_id: null,
-  },
-]
-
 export default function AcceptOrder() {
   const [demandId, setDemandId] = useState<string>('')
   const [selectedDemand, setSelectedDemand] = useState<Demand | null>(null)
@@ -99,17 +64,16 @@ export default function AcceptOrder() {
       setDemandId(params.demandId)
       loadDemandDetail(params.demandId)
       loadVehicles()
+    } else {
+      Taro.showToast({
+        title: '缺少需求参数',
+        icon: 'none'
+      })
     }
   }, [])
 
   // 加载需求详情
   const loadDemandDetail = async (id: string) => {
-    if (id.startsWith('demo-')) {
-      setSelectedDemand(demoAcceptDemand)
-      await fetchRouteData(demoAcceptDemand)
-      return
-    }
-
     try {
       const res = await Network.request({
         url: `/api/demands/${id}`
@@ -124,11 +88,15 @@ export default function AcceptOrder() {
           await fetchRouteData(res.data.data)
         }
       } else {
-        setSelectedDemand(demoAcceptDemand)
+        setSelectedDemand(null)
+        Taro.showToast({
+          title: res.data.message || '加载需求失败',
+          icon: 'none'
+        })
       }
     } catch (error) {
       console.error('加载需求详情失败:', error)
-      setSelectedDemand(demoAcceptDemand)
+      setSelectedDemand(null)
       Taro.showToast({
         title: '加载需求失败',
         icon: 'none'
@@ -173,11 +141,11 @@ export default function AcceptOrder() {
         })
 
         console.log('可用车辆列表:', availableVehicles)
-        setVehicles(availableVehicles.length > 0 ? availableVehicles : demoAcceptVehicles)
+        setVehicles(availableVehicles)
       }
     } catch (error) {
       console.error('加载车辆列表失败:', error)
-      setVehicles(demoAcceptVehicles)
+      setVehicles([])
     }
   }
 

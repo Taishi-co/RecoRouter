@@ -46,69 +46,6 @@ interface RentalRecord {
   owners?: UserInfo
 }
 
-const demoRenterRecords: RentalRecord[] = [
-  {
-    id: 'demo-rental-renter-1',
-    vehicle_id: 'demo-vehicle-1',
-    owner_id: 'demo-owner-1',
-    renter_id: 'demo-renter-1',
-    rent_type: 'monthly',
-    rent_start_date: '2026-05-20',
-    rent_end_date: '2026-06-20',
-    deposit_amount: 5000,
-    contract_signed: true,
-    rent_paid: true,
-    deposit_paid: true,
-    status: 'active',
-    notes: '宝山服务站取车，GPS 已接入。',
-    created_at: '2026-05-18',
-    confirmed_by_owner: true,
-    confirmed_at: '2026-05-19',
-    vehicles: {
-      id: 'demo-vehicle-1',
-      license_plate: '沪A·R8821',
-      vehicle_type: 'large_truck',
-      load_capacity: 32000,
-    },
-    owners: {
-      id: 'demo-owner-1',
-      name: '张师傅',
-      phone: '138****6621',
-    },
-  },
-]
-
-const demoOwnerRecords: RentalRecord[] = [
-  {
-    id: 'demo-rental-owner-1',
-    vehicle_id: 'demo-vehicle-2',
-    owner_id: 'demo-owner-2',
-    renter_id: 'demo-renter-2',
-    rent_type: 'monthly',
-    rent_start_date: '2026-05-28',
-    rent_end_date: '2026-06-28',
-    deposit_amount: 3000,
-    contract_signed: false,
-    rent_paid: false,
-    deposit_paid: true,
-    status: 'pending',
-    notes: '待确认取车时间。',
-    created_at: '2026-05-26',
-    confirmed_by_owner: false,
-    vehicles: {
-      id: 'demo-vehicle-2',
-      license_plate: '鄂A·7K21',
-      vehicle_type: 'medium_truck',
-      load_capacity: 9600,
-    },
-    renters: {
-      id: 'demo-renter-2',
-      name: '上海某某贸易',
-      phone: '156****7098',
-    },
-  },
-]
-
 export default function RentalsHistory() {
   const [loading, setLoading] = useState(false)
   const [asRenter, setAsRenter] = useState<RentalRecord[]>([])
@@ -323,8 +260,8 @@ export default function RentalsHistory() {
     )
   }
 
-  const displayAsRenter = asRenter.length > 0 ? asRenter : demoRenterRecords
-  const displayAsOwner = asOwner.length > 0 ? asOwner : demoOwnerRecords
+  const displayAsRenter = asRenter
+  const displayAsOwner = asOwner
 
   return (
     <AppPageShell

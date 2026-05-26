@@ -34,45 +34,23 @@ interface StatsData {
   }>
 }
 
-const demoStats: StatsData = {
-  total_demands: 126,
+const emptyStats: StatsData = {
+  total_demands: 0,
   status_counts: {
-    pending: 12,
-    accepted: 18,
-    in_transit: 8,
-    completed: 36,
-    cancelled: 3,
+    pending: 0,
+    accepted: 0,
+    in_transit: 0,
+    completed: 0,
+    cancelled: 0,
   },
   cargo_type_counts: {
-    normal: 78,
-    fresh: 24,
-    fragile: 18,
+    normal: 0,
+    fresh: 0,
+    fragile: 0,
   },
-  total_weight: 268.5,
-  total_volume: 940,
-  recent_demands: [
-    {
-      id: 'demo-demand-1',
-      cargo_name: '上海 → 杭州 31单',
-      cargo_type: 'normal',
-      status: 'completed',
-      created_at: '2026-05-25T09:00:00+10:00',
-    },
-    {
-      id: 'demo-demand-2',
-      cargo_name: '苏州 → 宁波 18单',
-      cargo_type: 'fresh',
-      status: 'in_transit',
-      created_at: '2026-05-24T09:00:00+10:00',
-    },
-    {
-      id: 'demo-demand-3',
-      cargo_name: '嘉兴 → 常州 12单',
-      cargo_type: 'fragile',
-      status: 'accepted',
-      created_at: '2026-05-23T09:00:00+10:00',
-    },
-  ],
+  total_weight: 0,
+  total_volume: 0,
+  recent_demands: [],
 }
 
 export default function MerchantStats() {
@@ -195,7 +173,7 @@ export default function MerchantStats() {
     )
   }
 
-  const displayStats = stats || demoStats
+  const displayStats = stats || emptyStats
 
   return (
     <AppPageShell

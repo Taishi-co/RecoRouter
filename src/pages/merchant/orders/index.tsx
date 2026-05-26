@@ -45,9 +45,11 @@ interface Order {
   }
   vehicle?: {
     id: string
-    brand: string
-    model: string
-    plate_number: string
+    brand?: string
+    model?: string
+    plate_number?: string
+    vehicle_type?: string
+    license_plate?: string
     status: string
   }
   owner?: {
@@ -57,135 +59,6 @@ interface Order {
   }
 }
 
-const demoOrders: Order[] = [
-  {
-    id: 'demo-order-1',
-    demand_id: 'demo-demand-1',
-    vehicle_id: 'demo-vehicle-1',
-    merchant_id: 'demo',
-    owner_id: 'demo-owner-1',
-    status: 'in_transit',
-    payment_status: 'unpaid',
-    pickup_time: '2026-05-26 08:00:00',
-    accept_time: '2026-05-25 19:10:00',
-    complete_time: null,
-    cancel_reason: null,
-    cancel_time: null,
-    fare_price: 1680,
-    merchant_confirmed: true,
-    confirm_time: '2026-05-25 19:25:00',
-    created_at: '2026-05-25T18:30:00+10:00',
-    demand: {
-      id: 'demo-demand-1',
-      cargo_name: '沪A·9231 司机已到场',
-      cargo_type: 'normal',
-      weight: 3200,
-      volume: 18,
-      pickup_time: '2026-05-26 08:00:00',
-      pickup_address: '上海宝山钢贸园',
-      delivery_address: '杭州萧山中心仓',
-      remarks: '钢卷运输',
-      status: 'in_transit',
-    },
-    vehicle: {
-      id: 'demo-vehicle-1',
-      brand: '福田',
-      model: '9.6m 厢式货车',
-      plate_number: '沪A·9231',
-      status: 'busy',
-    },
-    owner: {
-      id: 'demo-owner-1',
-      name: '张师傅',
-      phone: '13800001234',
-    },
-  },
-  {
-    id: 'demo-order-2',
-    demand_id: 'demo-demand-2',
-    vehicle_id: 'demo-vehicle-2',
-    merchant_id: 'demo',
-    owner_id: 'demo-owner-2',
-    status: 'accepted',
-    payment_status: 'unpaid',
-    pickup_time: '2026-05-26 14:30:00',
-    accept_time: '2026-05-25 20:20:00',
-    complete_time: null,
-    cancel_reason: null,
-    cancel_time: null,
-    fare_price: null,
-    merchant_confirmed: false,
-    confirm_time: null,
-    created_at: '2026-05-25T20:10:00+10:00',
-    demand: {
-      id: 'demo-demand-2',
-      cargo_name: '苏E·5518 预计42分钟到达',
-      cargo_type: 'fresh',
-      weight: 2600,
-      volume: 16,
-      pickup_time: '2026-05-26 14:30:00',
-      pickup_address: '太仓港区冷链仓',
-      delivery_address: '宁波北仑码头服务站',
-      remarks: '冷链恒温',
-      status: 'accepted',
-    },
-    vehicle: {
-      id: 'demo-vehicle-2',
-      brand: '江淮',
-      model: '冷藏车 8.6m',
-      plate_number: '苏E·5518',
-      status: 'busy',
-    },
-    owner: {
-      id: 'demo-owner-2',
-      name: '李师傅',
-      phone: '13900005678',
-    },
-  },
-  {
-    id: 'demo-order-3',
-    demand_id: 'demo-demand-3',
-    vehicle_id: 'demo-vehicle-3',
-    merchant_id: 'demo',
-    owner_id: 'demo-owner-3',
-    status: 'payment_confirmed',
-    payment_status: 'paid',
-    pickup_time: '2026-05-25 09:00:00',
-    accept_time: '2026-05-24 18:00:00',
-    complete_time: '2026-05-25 16:30:00',
-    cancel_reason: null,
-    cancel_time: null,
-    fare_price: 2420,
-    merchant_confirmed: true,
-    confirm_time: '2026-05-24 18:20:00',
-    created_at: '2026-05-24T11:05:00+10:00',
-    demand: {
-      id: 'demo-demand-3',
-      cargo_name: '浙B·8840 待支付尾款',
-      cargo_type: 'fragile',
-      weight: 1800,
-      volume: 12,
-      pickup_time: '2026-05-25 09:00:00',
-      pickup_address: '嘉兴南湖工业园',
-      delivery_address: '常州武进仓储中心',
-      remarks: '易碎包装',
-      status: 'completed',
-    },
-    vehicle: {
-      id: 'demo-vehicle-3',
-      brand: '东风',
-      model: '13.5m 平板车',
-      plate_number: '浙B·8840',
-      status: 'available',
-    },
-    owner: {
-      id: 'demo-owner-3',
-      name: '王师傅',
-      phone: '13700004321',
-    },
-  },
-]
-
 export default function MerchantOrders() {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(false)
@@ -194,7 +67,6 @@ export default function MerchantOrders() {
   const [showRequestCancelDialog, setShowRequestCancelDialog] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [cancelReason, setCancelReason] = useState('')
-  const visibleOrders = orders.length > 0 ? orders : demoOrders
 
   // 启用通知轮询
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -243,51 +115,7 @@ export default function MerchantOrders() {
       console.log('订单列表响应:', res.data)
 
       if (res.data.code === 200) {
-        const orderList = res.data.data || []
-
-        // 为每个订单查询需求详情和取消申请状态
-        const ordersWithDetails = await Promise.all(
-          orderList.map(async (order: Order) => {
-            try {
-              const demandRes = await Network.request({
-                url: `/api/demands/${order.demand_id}?id=${order.demand_id}`,
-                method: 'GET'
-              })
-
-              if (demandRes.data.code === 200 && demandRes.data.data) {
-                order.demand = demandRes.data.data
-              }
-            } catch (error) {
-              console.error('查询需求详情失败:', error)
-            }
-
-            // 查询取消申请状态（仅针对已接单且已确认运费的订单）
-            if (order.status === 'accepted' && order.merchant_confirmed) {
-              try {
-                const cancelRes = await Network.request({
-                  url: '/api/cancellations/pending',
-                  method: 'GET',
-                  data: { owner_id: order.owner_id }
-                })
-
-                if (cancelRes.data.code === 200 && cancelRes.data.data) {
-                  const cancelRequest = cancelRes.data.data.find(
-                    (req: any) => req.order_id === order.id
-                  )
-                  if (cancelRequest) {
-                    order.cancellation_status = cancelRequest.status
-                  }
-                }
-              } catch (error) {
-                console.error('查询取消申请状态失败:', error)
-              }
-            }
-
-            return order
-          })
-        )
-
-        setOrders(ordersWithDetails)
+        setOrders(res.data.data || [])
       } else {
         Taro.showToast({
           title: res.data.message || '加载失败',
@@ -630,7 +458,7 @@ export default function MerchantOrders() {
               <View className="text-center py-8">
                 <Text className="block text-gray-500 text-sm">加载中...</Text>
               </View>
-            ) : visibleOrders.length === 0 ? (
+            ) : orders.length === 0 ? (
               <View className="text-center py-8">
                 <Text className="block text-gray-500 text-sm mb-4">暂无订单</Text>
                 <Button
@@ -642,7 +470,7 @@ export default function MerchantOrders() {
               </View>
             ) : (
               <View className="space-y-3">
-                {visibleOrders.map((order) => (
+                {orders.map((order) => (
                   <View key={order.id} className="bg-gray-50 rounded-lg p-4">
                     <View className="flex justify-between items-start mb-3">
                       <View className="flex-1">

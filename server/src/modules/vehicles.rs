@@ -25,6 +25,7 @@ where
             "/api/vehicles",
             get(list_vehicles::<S>).post(create_vehicle::<S>),
         )
+        .route("/api/vehicles/locations", get(vehicle_locations::<S>))
         .route("/api/vehicles/upload-photo", post(upload_photo::<S>))
         .route(
             "/api/vehicles/:id",
@@ -47,6 +48,11 @@ where
 struct VehicleQuery {
     owner_id: Option<String>,
     user_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct VehicleLocationQuery {
+    owner_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -305,6 +311,71 @@ where
     S: Storage,
 {
     Ok(ok("查询成功", fetch_vehicle(&state.db, &id).await?))
+}
+
+async fn vehicle_locations<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<VehicleLocationQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let mut builder = sqlx::QueryBuilder::new(
+        r#"
+        SELECT jsonb_build_object(
+            'id', COALESCE(NULLIF(license_plate, ''), NULLIF(vehicle_code, ''), id),
+            'vehicleId', id,
+            'manufacturer', COALESCE(NULLIF(vehicle_type, ''), 'vehicle'),
+            'latitude', latitude,
+            'longitude', longitude,
+            'speed', 0,
+            'heading', 0,
+            'status', COALESCE(NULLIF(trip_status, ''), NULLIF(status, ''), 'idle'),
+            'battery', COALESCE(battery_life, 0),
+            'mileage', COALESCE(today_distance, 0),
+            'timestamp', COALESCE(updated_at, created_at)
+        )
+        FROM (
+            SELECT
+                *,
+                CASE
+                    WHEN operation_area->>'latitude' ~ '^-?[0-9]+(\.[0-9]+)?$'
+                        THEN (operation_area->>'latitude')::float8
+                    WHEN operation_area->>'lat' ~ '^-?[0-9]+(\.[0-9]+)?$'
+                        THEN (operation_area->>'lat')::float8
+                    ELSE NULL
+                END AS latitude,
+                CASE
+                    WHEN operation_area->>'longitude' ~ '^-?[0-9]+(\.[0-9]+)?$'
+                        THEN (operation_area->>'longitude')::float8
+                    WHEN operation_area->>'lng' ~ '^-?[0-9]+(\.[0-9]+)?$'
+                        THEN (operation_area->>'lng')::float8
+                    ELSE NULL
+                END AS longitude
+            FROM vehicles
+        "#,
+    );
+    if let Some(owner_id) = non_empty(query.owner_id) {
+        builder.push(" WHERE owner_id = ");
+        builder.push_bind(owner_id.clone());
+        builder.push(" OR current_renter_id = ");
+        builder.push_bind(owner_id);
+    }
+    builder.push(
+        r#"
+        ) located_vehicles
+        WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+        ORDER BY updated_at DESC NULLS LAST, created_at DESC
+        "#,
+    );
+
+    let locations = builder
+        .build_query_scalar::<Value>()
+        .fetch_all(&state.db)
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("查询车辆定位失败: {err}")))?;
+
+    Ok(ok("查询成功", locations))
 }
 
 async fn update_vehicle<S>(

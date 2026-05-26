@@ -41,57 +41,6 @@ interface Vehicle {
   availability_control_reason: string | null
 }
 
-const demoVehicles: Vehicle[] = [
-  {
-    id: 'demo-vehicle-1',
-    vehicle_type: '8.6m 冷链无人车',
-    license_plate: '沪A·D2688',
-    load_capacity: 1200,
-    volume: 8.6,
-    battery_life: 220,
-    has_cold_chain: true,
-    status: 'pending',
-    is_available: true,
-    photos: null,
-    remarks: null,
-    created_at: '2026-05-26T08:00:00+10:00',
-    base_price: 80,
-    base_distance: 5,
-    price_per_km: 4.8,
-    is_available_for_rent: true,
-    current_renter_id: null,
-    rent_start_date: null,
-    rent_end_date: null,
-    ownership_type: 'owned',
-    can_toggle_availability: false,
-    availability_control_reason: '演示车辆',
-  },
-  {
-    id: 'demo-vehicle-2',
-    vehicle_type: '9.6m 厢式无人货车',
-    license_plate: '苏E·A9156',
-    load_capacity: 1800,
-    volume: 12.4,
-    battery_life: 260,
-    has_cold_chain: false,
-    status: 'active',
-    is_available: true,
-    photos: null,
-    remarks: null,
-    created_at: '2026-05-25T16:10:00+10:00',
-    base_price: 68,
-    base_distance: 4,
-    price_per_km: 3.6,
-    is_available_for_rent: false,
-    current_renter_id: null,
-    rent_start_date: null,
-    rent_end_date: null,
-    ownership_type: 'rented',
-    can_toggle_availability: false,
-    availability_control_reason: '演示车辆不可切换',
-  },
-]
-
 export default function OwnerVehicles() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [showAddForm, setShowAddForm] = useState(false)
@@ -556,8 +505,7 @@ export default function OwnerVehicles() {
     }
   }
 
-  const visibleVehicles = vehicles.length > 0 ? vehicles : demoVehicles
-  const usingDemoVehicles = vehicles.length === 0
+  const visibleVehicles = vehicles
 
   return (
     <AppPageShell
@@ -574,13 +522,11 @@ export default function OwnerVehicles() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {usingDemoVehicles && (
-              <View className="bg-blue-50 rounded-lg p-3 mb-3">
-                <Text className="block text-xs text-blue-700">
-                  暂无真实车辆，以下为设计稿演示车辆
-                </Text>
+            {visibleVehicles.length === 0 ? (
+              <View className="text-center py-8">
+                <Text className="block text-gray-500 text-sm">暂无车辆</Text>
               </View>
-            )}
+            ) : (
               <View className="space-y-3">
                 {visibleVehicles.map((vehicle) => {
                   const vehiclePhotos = parsePhotoUrls(vehicle.photos)
@@ -818,6 +764,7 @@ export default function OwnerVehicles() {
                   )
                 })}
               </View>
+            )}
             {!showAddForm && !showEditForm && (
               <Button className="w-full bg-blue-500 mt-4" onClick={handleAddVehicle}>
                 <Text>添加车辆</Text>

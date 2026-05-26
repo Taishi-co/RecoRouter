@@ -43,61 +43,6 @@ interface FormData {
   end_time: string
 }
 
-const demoSchedules: DemandSchedule[] = [
-  {
-    id: 'demo-schedule-1',
-    user_id: 'demo',
-    template_id: 'demo-template-1',
-    template_name: '宝山钢贸园 → 萧山仓',
-    schedule_name: '08:00 宝山装货 2车',
-    schedule_type: 'day',
-    base_date: '2026-05-26',
-    base_time: '08:00:00',
-    end_time: null,
-    status: 'active',
-    next_publish_time: '2026-05-27 08:00:00',
-    last_published_at: '2026-05-26 08:00:00',
-    published_count: 18,
-    created_at: '2026-05-10T09:00:00+10:00',
-    updated_at: '2026-05-25T09:00:00+10:00',
-  },
-  {
-    id: 'demo-schedule-2',
-    user_id: 'demo',
-    template_id: 'demo-template-2',
-    template_name: '张家港补货',
-    schedule_name: '14:30 张家港补货 1车',
-    schedule_type: 'week',
-    base_date: '2026-05-25',
-    base_time: '14:30:00',
-    end_time: null,
-    status: 'active',
-    next_publish_time: '2026-05-27 14:30:00',
-    last_published_at: '2026-05-20 14:30:00',
-    published_count: 9,
-    created_at: '2026-05-08T09:00:00+10:00',
-    updated_at: '2026-05-24T09:00:00+10:00',
-  },
-  {
-    id: 'demo-schedule-3',
-    user_id: 'demo',
-    template_id: 'demo-template-3',
-    template_name: '夜间专线',
-    schedule_name: '20:00 夜间专线 3车',
-    schedule_type: 'interval',
-    interval_days: 2,
-    base_date: '2026-05-24',
-    base_time: '20:00:00',
-    end_time: null,
-    status: 'paused',
-    next_publish_time: '2026-05-28 20:00:00',
-    last_published_at: '2026-05-24 20:00:00',
-    published_count: 6,
-    created_at: '2026-05-05T09:00:00+10:00',
-    updated_at: '2026-05-23T09:00:00+10:00',
-  },
-]
-
 export default function DemandSchedules() {
   const [schedules, setSchedules] = useState<DemandSchedule[]>([])
   const [templates, setTemplates] = useState<DemandTemplate[]>([])
@@ -117,8 +62,7 @@ export default function DemandSchedules() {
   const [submitting, setSubmitting] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [deletingSchedule, setDeletingSchedule] = useState<DemandSchedule | null>(null)
-  const visibleSchedules = schedules.length > 0 ? schedules : demoSchedules
-  const isUsingDemoSchedules = schedules.length === 0
+  const visibleSchedules = schedules
 
   useEffect(() => {
     loadSchedules()
@@ -512,7 +456,6 @@ export default function DemandSchedules() {
                       size="sm"
                       variant="outline"
                       onClick={() => handleToggleActive(schedule)}
-                      disabled={isUsingDemoSchedules}
                     >
                       {schedule.status === 'active' ? (
                         <Pause size={14} color="#6b7280" />
@@ -524,7 +467,6 @@ export default function DemandSchedules() {
                       size="sm"
                       variant="outline"
                       onClick={() => handleEditSchedule(schedule)}
-                      disabled={isUsingDemoSchedules}
                     >
                       <Pencil size={14} color="#6b7280" />
                     </Button>
@@ -532,7 +474,7 @@ export default function DemandSchedules() {
                       size="sm"
                       variant="outline"
                       onClick={() => handlePublishNow(schedule)}
-                      disabled={isUsingDemoSchedules || (isPublishing && publishingScheduleId === schedule.id)}
+                      disabled={isPublishing && publishingScheduleId === schedule.id}
                     >
                       <Zap size={14} color="#f59e0b" />
                     </Button>
@@ -541,7 +483,6 @@ export default function DemandSchedules() {
                       variant="outline"
                       className="border-red-500 text-red-500"
                       onClick={() => handleDeleteSchedule(schedule)}
-                      disabled={isUsingDemoSchedules}
                     >
                       <Trash2 size={14} color="#ef4444" />
                     </Button>
