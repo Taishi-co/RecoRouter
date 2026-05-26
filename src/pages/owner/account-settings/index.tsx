@@ -30,6 +30,16 @@ export default function AccountSettings() {
   const loadUserInfo = async () => {
     try {
       const storedUserInfo = Taro.getStorageSync('userInfo')
+      if (!storedUserInfo || !storedUserInfo.id) {
+        setUserInfo(null)
+        Taro.showToast({
+          title: '请先登录',
+          icon: 'none'
+        })
+        return
+      }
+      setUserInfo(storedUserInfo)
+
       const res = await Network.request({
         url: '/api/account-settings/profile',
         method: 'GET',
@@ -189,15 +199,17 @@ export default function AccountSettings() {
       </Card>
 
       {/* 退出登录 */}
-      <View>
-        <Button
-          className="w-full bg-red-500 text-white"
-          onClick={handleLogout}
-        >
-          <LogOut size={20} color="#ffffff" className="mr-2" />
-          <Text>退出登录</Text>
-        </Button>
-      </View>
+      {userInfo && (
+        <View>
+          <Button
+            className="w-full bg-red-500 text-white"
+            onClick={handleLogout}
+          >
+            <LogOut size={20} color="#ffffff" className="mr-2" />
+            <Text>退出登录</Text>
+          </Button>
+        </View>
+      )}
     </AppPageShell>
   )
 }
