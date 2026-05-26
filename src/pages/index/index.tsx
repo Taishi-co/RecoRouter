@@ -62,60 +62,26 @@ interface AuthUserInfo {
   token?: string
 }
 
-const demoStatistics: Statistics = {
+const emptyStatistics: Statistics = {
   orders: {
-    total: 128,
-    completed: 96,
-    in_transit: 18,
+    total: 0,
+    completed: 0,
+    in_transit: 0,
   },
   vehicles: {
-    total: 73,
-    active: 58,
+    total: 0,
+    active: 0,
   },
   demands: {
-    total: 42,
-    pending: 12,
+    total: 0,
+    pending: 0,
   },
   recentOrders: [],
 }
 
-const demoLatestInfo: LatestInfo = {
-  latestDemands: [
-    {
-      id: 'demo-demand-1',
-      cargoName: '冷链奶品配送',
-      cargoType: 'perishable',
-      pickupAddress: '武汉东西湖中心仓',
-      deliveryAddress: '江汉区前进四路门店',
-      merchantPhone: '138****2651',
-      createdAt: '2026-05-26T08:20:00+10:00',
-    },
-    {
-      id: 'demo-demand-2',
-      cargoName: '商超日配补货',
-      cargoType: 'normal',
-      pickupAddress: '汉阳四新配送站',
-      deliveryAddress: '武昌徐东商圈',
-      merchantPhone: '156****7098',
-      createdAt: '2026-05-26T09:10:00+10:00',
-    },
-  ],
-  completedOrders: [
-    {
-      id: 'demo-order-1',
-      cargoName: '社区团购晨配',
-      ownerPhone: '鄂A·7K21',
-      farePrice: 286,
-      completedTime: '2026-05-26T07:50:00+10:00',
-    },
-    {
-      id: 'demo-order-2',
-      cargoName: '校园餐饮补给',
-      ownerPhone: '鄂A·9M32',
-      farePrice: 338,
-      completedTime: '2026-05-26T08:35:00+10:00',
-    },
-  ],
+const emptyLatestInfo: LatestInfo = {
+  latestDemands: [],
+  completedOrders: [],
 }
 
 const persistAuthSession = (userInfo: AuthUserInfo) => {
@@ -484,8 +450,8 @@ export default function Index() {
     return null
   }
 
-  const displayStatistics = statistics || demoStatistics
-  const displayLatestInfo = latestInfo || demoLatestInfo
+  const displayStatistics = statistics || emptyStatistics
+  const displayLatestInfo = latestInfo || emptyLatestInfo
 
   return (
     <>

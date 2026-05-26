@@ -52,28 +52,6 @@ interface CreateRentalRequest {
   renter_id: string
 }
 
-const demoRentalVehicle: Vehicle = {
-  id: 'demo-rental-1',
-  license_plate: '沪A·R8821',
-  vehicle_type: 'large_truck',
-  load_capacity: 32000,
-  volume: 62,
-  battery_life: 420,
-  has_cold_chain: false,
-  photos: [],
-  owners: {
-    id: 'demo-owner-1',
-    name: '上海锐驰车队',
-    phone: '13800001234',
-  },
-  is_available_for_rent: true,
-  rent_monthly_price: 22800,
-  rent_yearly_price: 246000,
-  rent_deposit: 5000,
-  contact_phone: '13800001234',
-  contact_wechat: 'recocar-demo',
-}
-
 export default function VehicleRentalsDetail() {
   const router = useRouter()
   const { vehicleId } = router.params
@@ -96,7 +74,11 @@ export default function VehicleRentalsDetail() {
     if (vehicleId) {
       loadVehicleDetail()
     } else {
-      setVehicle(demoRentalVehicle)
+      Taro.showToast({
+        title: '缺少车辆参数',
+        icon: 'none'
+      })
+      setVehicle(null)
     }
   }, [vehicleId])
 
@@ -118,7 +100,7 @@ export default function VehicleRentalsDetail() {
       if (res.data.code === 200) {
         setVehicle(res.data.data)
       } else {
-        setVehicle(demoRentalVehicle)
+        setVehicle(null)
         Taro.showToast({
           title: res.data.message || '加载失败',
           icon: 'none'
@@ -126,7 +108,7 @@ export default function VehicleRentalsDetail() {
       }
     } catch (error) {
       console.error('加载车辆详情失败:', error)
-      setVehicle(demoRentalVehicle)
+      setVehicle(null)
       Taro.showToast({
         title: '加载失败，请重试',
         icon: 'none'

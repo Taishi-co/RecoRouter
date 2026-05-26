@@ -19,6 +19,5 @@ pub mod platform;
 pub mod rental_reminders;
 pub mod station;
 pub mod user_roles;
-pub mod vehicle_mock;
 pub mod vehicle_rentals;
 pub mod vehicles;

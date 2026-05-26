@@ -21,16 +21,16 @@ interface DemandStats {
   total: number
 }
 
-const DEMO_ENTERPRISE_STATS: DemandStats = {
-  pending: 18,
-  in_transit: 27,
-  completed: 64,
-  cancelled: 2,
-  total: 109,
+const emptyEnterpriseStats: DemandStats = {
+  pending: 0,
+  in_transit: 0,
+  completed: 0,
+  cancelled: 0,
+  total: 0,
 }
 
 const EnterpriseHomePage: FC = () => {
-  const [stats, setStats] = useState<DemandStats | null>(DEMO_ENTERPRISE_STATS)
+  const [stats, setStats] = useState<DemandStats | null>(emptyEnterpriseStats)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -41,7 +41,7 @@ const EnterpriseHomePage: FC = () => {
     try {
       const userInfo = Taro.getStorageSync('userInfo')
       if (!userInfo) {
-        setStats(DEMO_ENTERPRISE_STATS)
+        setStats(emptyEnterpriseStats)
         return
       }
 
@@ -62,14 +62,14 @@ const EnterpriseHomePage: FC = () => {
         if (statsRes.data.code === 200) {
           setStats(statsRes.data.data)
         } else {
-          setStats(DEMO_ENTERPRISE_STATS)
+          setStats(emptyEnterpriseStats)
         }
       } else {
-        setStats(DEMO_ENTERPRISE_STATS)
+        setStats(emptyEnterpriseStats)
       }
     } catch (error) {
       console.error('加载仪表盘数据失败:', error)
-      setStats(DEMO_ENTERPRISE_STATS)
+      setStats(emptyEnterpriseStats)
     } finally {
       setLoading(false)
     }

@@ -38,81 +38,10 @@ interface Vehicle {
   application_status: string | null
 }
 
-const demoRentalVehicles: Vehicle[] = [
-  {
-    id: 'demo-rental-1',
-    license_plate: '沪A·R8821',
-    vehicle_type: 'van',
-    load_capacity: 12000,
-    volume: 45,
-    battery_life: 380,
-    has_cold_chain: false,
-    photos: [],
-    owners: {
-      id: 'demo-owner-1',
-      name: '上海锐驰车队',
-      phone: '13800001234',
-    },
-    is_available_for_rent: true,
-    rent_monthly_price: 14400,
-    rent_yearly_price: 158000,
-    rent_deposit: 5000,
-    contact_phone: '13800001234',
-    contact_wechat: 'recocar-demo',
-    has_applied: false,
-    application_status: null,
-  },
-  {
-    id: 'demo-rental-2',
-    license_plate: '苏E·P5518',
-    vehicle_type: 'large_truck',
-    load_capacity: 32000,
-    volume: 62,
-    battery_life: 420,
-    has_cold_chain: false,
-    photos: [],
-    owners: {
-      id: 'demo-owner-2',
-      name: '苏州好运车队',
-      phone: '13900005678',
-    },
-    is_available_for_rent: true,
-    rent_monthly_price: 22800,
-    rent_yearly_price: 246000,
-    rent_deposit: 8000,
-    contact_phone: '13900005678',
-    has_applied: true,
-    application_status: 'pending',
-  },
-  {
-    id: 'demo-rental-3',
-    license_plate: '浙B·C8620',
-    vehicle_type: 'small_truck',
-    load_capacity: 8600,
-    volume: 38,
-    battery_life: 320,
-    has_cold_chain: true,
-    photos: [],
-    owners: {
-      id: 'demo-owner-3',
-      name: '宁波冷链联盟',
-      phone: '13700004321',
-    },
-    is_available_for_rent: true,
-    rent_monthly_price: 27600,
-    rent_yearly_price: 298000,
-    rent_deposit: 9000,
-    contact_phone: '13700004321',
-    contact_wechat: 'cold-demo',
-    has_applied: false,
-    application_status: null,
-  },
-]
-
 export default function VehicleRentals() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [loading, setLoading] = useState(false)
-  const visibleVehicles = vehicles.length > 0 ? vehicles : demoRentalVehicles
+  const visibleVehicles = vehicles
 
   useDidShow(() => {
     loadVehicles()

@@ -8,7 +8,7 @@ use crate::{
         account_settings, address_books, admin, auth, cancellations, demand_schedules,
         demand_templates, demands, enterprise, enterprise_demands, enterprise_vehicles, fare,
         favorite_routes, health, home, notifications, orders, platform, rental_reminders, station,
-        user_roles, vehicle_mock, vehicle_rentals, vehicles,
+        user_roles, vehicle_rentals, vehicles,
     },
     storage::Storage,
 };
@@ -53,7 +53,6 @@ where
         .merge(station::router::<S>())
         .merge(enterprise_vehicles::router::<S>())
         .merge(enterprise_demands::router::<S>())
-        .merge(vehicle_mock::router::<S>())
         .merge(vehicle_rentals::router::<S>())
         .merge(rental_reminders::router::<S>())
         .merge(vehicles::router::<S>())

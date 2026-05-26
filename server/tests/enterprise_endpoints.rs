@@ -535,7 +535,7 @@ async fn enterprise_station_and_enterprise_vehicle_routes_match_legacy_shapes() 
 }
 
 #[tokio::test]
-async fn enterprise_demand_and_mock_routes_match_legacy_shapes() {
+async fn enterprise_demand_and_vehicle_location_routes_match_legacy_shapes() {
     let Some(context) = TestContext::new().await else {
         return;
     };
@@ -670,11 +670,11 @@ async fn enterprise_demand_and_mock_routes_match_legacy_shapes() {
         r#"
         INSERT INTO vehicles (
             id, owner_id, enterprise_id, vehicle_code, vehicle_type,
-            load_capacity, volume, status, trip_status, usage_mode
+            load_capacity, volume, operation_area, status, trip_status, usage_mode
         )
         VALUES
-            ('v1', $1, $2, 'V1', '无人配送车', 500, 10, 'active', 'idle', 'external'),
-            ('v2', $1, $2, 'V2', '无人配送车', 500, 10, 'active', 'idle', 'external')
+            ('v1', $1, $2, 'V1', '无人配送车', 500, 10, '{"latitude":39.6304,"longitude":118.1802}'::jsonb, 'active', 'idle', 'external'),
+            ('v2', $1, $2, 'V2', '无人配送车', 500, 10, '{"lat":39.6500,"lng":118.2000}'::jsonb, 'active', 'idle', 'external')
         "#,
     )
     .bind(&admin_id)
@@ -700,15 +700,17 @@ async fn enterprise_demand_and_mock_routes_match_legacy_shapes() {
     .expect("vehicle trip status count should fetch");
     assert_eq!(in_transit_vehicle_count, 2);
 
-    let (mock_status, mock_body) = get_json(&context.app, "/api/mock/vehicles/all").await;
-    assert_eq!(mock_status, StatusCode::OK);
-    assert_eq!(mock_body["message"], "success");
-    assert!(mock_body["data"].as_array().unwrap().len() >= 2);
-
-    let (trajectory_status, trajectory_body) =
-        get_json(&context.app, "/api/mock/vehicles/trajectories").await;
-    assert_eq!(trajectory_status, StatusCode::OK);
-    assert!(trajectory_body["data"].is_object());
+    let (location_status, location_body) = get_json(
+        &context.app,
+        &format!("/api/vehicles/locations?owner_id={admin_id}"),
+    )
+    .await;
+    assert_eq!(location_status, StatusCode::OK);
+    assert_eq!(location_body["message"], "查询成功");
+    assert_eq!(location_body["data"].as_array().unwrap().len(), 2);
+    assert_eq!(location_body["data"][0]["manufacturer"], "无人配送车");
+    assert!(location_body["data"][0]["latitude"].is_number());
+    assert!(location_body["data"][0]["longitude"].is_number());
 
     context.cleanup().await;
 }

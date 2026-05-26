@@ -22,12 +22,6 @@ interface Station {
   phone: string
 }
 
-const demoStations: Station[] = [
-  { id: 'demo-station-1', name: '光谷中心站', address: '武汉市洪山区高新大道 789 号', phone: '13800000001' },
-  { id: 'demo-station-2', name: '汉口冷链仓', address: '武汉市江汉区发展大道 188 号', phone: '13800000002' },
-  { id: 'demo-station-3', name: '东西湖前置仓', address: '武汉市东西湖区金银湖路 66 号', phone: '13800000003' },
-]
-
 const EnterprisePublishPage: FC = () => {
   const [enterpriseId, setEnterpriseId] = useState('')
   const [stations, setStations] = useState<Station[]>([])
@@ -113,8 +107,7 @@ const EnterprisePublishPage: FC = () => {
     }
 
     try {
-      const stationSource = stations.length > 0 ? stations : demoStations
-      const selectedStationObjs = stationSource.filter(s => selectedStations.includes(s.id))
+      const selectedStationObjs = stations.filter(s => selectedStations.includes(s.id))
       const deliveryPoints = selectedStationObjs.map(s => ({
         stationId: s.id,
         name: s.name,
@@ -178,7 +171,7 @@ const EnterprisePublishPage: FC = () => {
     }
   }
 
-  const displayStations = stations.length > 0 ? stations : demoStations
+  const displayStations = stations
 
   return (
     <AppPageShell

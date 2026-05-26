@@ -30,48 +30,6 @@ interface Demand {
   is_from_schedule?: boolean
 }
 
-const demoDemands: Demand[] = [
-  {
-    id: 'demo-demand-1',
-    cargo_name: '上海宝山 → 杭州萧山',
-    cargo_type: 'normal',
-    weight: 3200,
-    volume: 18,
-    pickup_time: '2026-05-26T09:00:00+10:00',
-    pickup_address: '上海宝山钢贸园 3 号门',
-    delivery_address: '杭州萧山中心仓 B 区',
-    remarks: '钢材零担，需尾板车',
-    status: 'accepted',
-    created_at: '2026-05-25T18:30:00+10:00',
-  },
-  {
-    id: 'demo-demand-2',
-    cargo_name: '苏州太仓 → 宁波北仑',
-    cargo_type: 'fresh',
-    weight: 2600,
-    volume: 16,
-    pickup_time: '2026-05-26T14:30:00+10:00',
-    pickup_address: '太仓港区冷链仓',
-    delivery_address: '宁波北仑码头服务站',
-    remarks: '冷链恒温，优先同城返程车',
-    status: 'in_transit',
-    created_at: '2026-05-25T20:10:00+10:00',
-  },
-  {
-    id: 'demo-demand-3',
-    cargo_name: '嘉兴 → 常州',
-    cargo_type: 'fragile',
-    weight: 1800,
-    volume: 12,
-    pickup_time: '2026-05-27T08:00:00+10:00',
-    pickup_address: '嘉兴南湖工业园',
-    delivery_address: '常州武进仓储中心',
-    remarks: '易碎包装，需避震车厢',
-    status: 'completed',
-    created_at: '2026-05-24T11:05:00+10:00',
-  },
-]
-
 export default function DemandsList() {
   const [demands, setDemands] = useState<Demand[]>([])
   const [showCancelDialog, setShowCancelDialog] = useState(false)
@@ -80,7 +38,7 @@ export default function DemandsList() {
   const [cancelReason, setCancelReason] = useState('')
   const [templateName, setTemplateName] = useState('')
   const [loading, setLoading] = useState(false)
-  const visibleDemands = demands.length > 0 ? demands : demoDemands
+  const visibleDemands = demands
 
   // 启用通知轮询（暂时注释，避免白屏问题）
   // useNotificationPolling(30000) // 每30秒检查一次新通知

@@ -27,23 +27,8 @@ interface StatsData {
   }>
 }
 
-const DEMO_STATS: StatsData = {
-  todayOrders: 18,
-  monthOrders: 326,
-  totalDistance: 248,
-  avgDeliveryTime: 36,
-  vehicleUsageRate: 82,
-  activeVehicles: 24,
-  totalVehicles: 29,
-  stationStats: [
-    { stationName: '光谷中心奶站', orderCount: 46 },
-    { stationName: '江汉社区站', orderCount: 31 },
-    { stationName: '洪山商超点', orderCount: 24 },
-  ],
-}
-
 const EnterpriseStatsPage: FC = () => {
-  const [stats, setStats] = useState<StatsData | null>(DEMO_STATS)
+  const [stats, setStats] = useState<StatsData | null>(null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -55,7 +40,7 @@ const EnterpriseStatsPage: FC = () => {
     try {
       const userInfo = Taro.getStorageSync('userInfo')
       if (!userInfo) {
-        setStats(DEMO_STATS)
+        setStats(null)
         return
       }
 
@@ -74,12 +59,12 @@ const EnterpriseStatsPage: FC = () => {
         if (res.data.code === 200) {
           setStats(res.data.data)
         } else {
-          setStats(DEMO_STATS)
+          setStats(null)
         }
       }
     } catch (error) {
       console.error('加载统计失败:', error)
-      setStats(DEMO_STATS)
+      setStats(null)
     } finally {
       setLoading(false)
     }

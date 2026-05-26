@@ -19,36 +19,6 @@ interface Address {
   is_default: boolean
 }
 
-const demoAddresses: Address[] = [
-  {
-    id: 'demo-address-1',
-    address_name: '宝山钢贸园',
-    address: '上海市宝山区铁山路 588 号 3 号门',
-    latitude: 31.405221,
-    longitude: 121.489102,
-    address_type: 'work',
-    is_default: true,
-  },
-  {
-    id: 'demo-address-2',
-    address_name: '萧山中心仓',
-    address: '杭州市萧山区建设四路 1688 号 B 区',
-    latitude: 30.176124,
-    longitude: 120.26432,
-    address_type: 'other',
-    is_default: false,
-  },
-  {
-    id: 'demo-address-3',
-    address_name: '宁波北仑码头',
-    address: '宁波市北仑区港东大道 99 号',
-    latitude: 29.899118,
-    longitude: 121.844011,
-    address_type: 'other',
-    is_default: false,
-  },
-]
-
 export default function AddressBooks() {
   const [addresses, setAddresses] = useState<Address[]>([])
   const [loading, setLoading] = useState(false)
@@ -63,8 +33,7 @@ export default function AddressBooks() {
     showLocationInput: false
   })
   const [isMiniApp, setIsMiniApp] = useState(false)
-  const visibleAddresses = addresses.length > 0 ? addresses : demoAddresses
-  const isUsingDemoAddresses = addresses.length === 0
+  const visibleAddresses = addresses
 
   useEffect(() => {
     const env = Taro.getEnv()
@@ -487,7 +456,7 @@ export default function AddressBooks() {
                   )}
                 </View>
                 <View className="flex gap-1">
-                  {!isUsingDemoAddresses && !address.is_default && (
+                  {!address.is_default && (
                     <Button
                       size="sm"
                       className="bg-amber-500 px-2"
@@ -496,15 +465,13 @@ export default function AddressBooks() {
                       <Text className="text-xs">设为默认</Text>
                     </Button>
                   )}
-                  {!isUsingDemoAddresses && (
-                    <Button
-                      size="sm"
-                      className="bg-red-500 px-2"
-                      onClick={() => handleDelete(address.id)}
-                    >
-                      <Trash2 size={14} color="#ffffff" />
-                    </Button>
-                  )}
+                  <Button
+                    size="sm"
+                    className="bg-red-500 px-2"
+                    onClick={() => handleDelete(address.id)}
+                  >
+                    <Trash2 size={14} color="#ffffff" />
+                  </Button>
                 </View>
               </View>
 

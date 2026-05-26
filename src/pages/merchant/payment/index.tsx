@@ -22,20 +22,6 @@ interface PaymentInfo {
   cargoName?: string
 }
 
-const demoPaymentInfo: PaymentInfo = {
-  orderId: 'PAY-20260526-018',
-  farePrice: 8426,
-  commissionAmount: 0,
-  ownerName: 'RecoRouter 企业月结账户',
-  ownerPhone: '400-800-2026',
-  paymentQr: '',
-  paymentStatus: 'paid',
-  status: 'payment_confirmed',
-  pickupAddress: '上海宝山钢贸园',
-  deliveryAddress: '杭州萧山中心仓',
-  cargoName: '13.5m 平板车 · 钢卷运输',
-}
-
 export default function MerchantPayment() {
   const [paymentInfo, setPaymentInfo] = useState<PaymentInfo | null>(null)
   const [loading, setLoading] = useState(false)
@@ -166,7 +152,23 @@ export default function MerchantPayment() {
     )
   }
 
-  const displayPaymentInfo = paymentInfo || demoPaymentInfo
+  if (!paymentInfo) {
+    return (
+      <AppPageShell
+        title="支付结算"
+        subtitle="RecoRouter 商户小程序"
+        icon={Wallet}
+        contentClassName="space-y-3"
+        bottom={<BottomNav type="merchant" active="orders" />}
+      >
+        <View className="flex items-center justify-center py-12">
+          <Text className="text-gray-500">暂无付款信息</Text>
+        </View>
+      </AppPageShell>
+    )
+  }
+
+  const displayPaymentInfo = paymentInfo
 
   return (
     <AppPageShell

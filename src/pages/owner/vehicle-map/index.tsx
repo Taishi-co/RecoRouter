@@ -14,7 +14,7 @@ const isMiniApp = currentEnv === Taro.ENV_TYPE.WEAPP || currentEnv === Taro.ENV_
 
 interface VehicleLocation {
   id: string
-  manufacturer: 'neolix' | 'ninebot'
+  manufacturer: string
   latitude: number
   longitude: number
   speed: number
@@ -24,33 +24,6 @@ interface VehicleLocation {
   mileage: number
   timestamp: string
 }
-
-const demoVehicleLocations: VehicleLocation[] = [
-  {
-    id: '沪A·D2688',
-    manufacturer: 'neolix',
-    latitude: 31.4053,
-    longitude: 121.4890,
-    speed: 32.5,
-    heading: 86,
-    status: 'online',
-    battery: 78,
-    mileage: 126.4,
-    timestamp: '2026-05-26T08:30:00+10:00',
-  },
-  {
-    id: '苏E·A9156',
-    manufacturer: 'ninebot',
-    latitude: 31.2989,
-    longitude: 120.5853,
-    speed: 0,
-    heading: 12,
-    status: 'idle',
-    battery: 91,
-    mileage: 88.2,
-    timestamp: '2026-05-26T08:35:00+10:00',
-  },
-]
 
 export default function VehicleMap() {
   const [vehicles, setVehicles] = useState<VehicleLocation[]>([])
@@ -63,24 +36,19 @@ export default function VehicleMap() {
   const loadVehicleLocations = async () => {
     setLoading(true)
     try {
-      // 并行请求位置数据和轨迹数据
-      const [locationRes, trajectoryRes] = await Promise.all([
-        Network.request({
-          url: '/api/mock/vehicles/all',
-          method: 'GET'
-        }),
-        Network.request({
-          url: '/api/mock/vehicles/trajectories',
-          method: 'GET'
-        })
-      ])
+      const userInfo = Taro.getStorageSync('userInfo')
+      const query = userInfo?.id ? `?owner_id=${encodeURIComponent(userInfo.id)}` : ''
+      const locationRes = await Network.request({
+        url: `/api/vehicles/locations${query}`,
+        method: 'GET'
+      })
 
       console.log('车辆位置数据:', locationRes.data)
-      console.log('车辆轨迹数据:', trajectoryRes.data)
 
       if (locationRes.data.code === 200) {
         const vehicleData = locationRes.data.data || []
         setVehicles(vehicleData)
+        setTrajectories({})
 
         // 如果有车辆数据，设置地图中心为第一辆车的位置
         if (vehicleData.length > 0) {
@@ -89,10 +57,6 @@ export default function VehicleMap() {
             longitude: vehicleData[0].longitude
           })
         }
-      }
-
-      if (trajectoryRes.data.code === 200) {
-        setTrajectories(trajectoryRes.data.data || {})
       }
     } catch (error) {
       console.error('加载车辆位置失败:', error)
@@ -177,11 +141,12 @@ export default function VehicleMap() {
     const names: Record<string, string> = {
       neolix: '新石器',
       ninebot: '九识',
+      vehicle: '车辆',
     }
     return names[manufacturer] || manufacturer
   }
 
-  const mapVehicles = vehicles.length > 0 ? vehicles : demoVehicleLocations
+  const mapVehicles = vehicles
 
   // 生成地图标记点
   const markers = mapVehicles.map((vehicle, index) => ({
@@ -345,14 +310,11 @@ export default function VehicleMap() {
               </View>
             ) : (
               <View className="space-y-3">
-                {vehicles.length === 0 && (
-                  <View className="bg-blue-50 rounded-lg p-3">
-                    <Text className="block text-xs text-blue-700">
-                      暂无实时定位，以下为演示车辆热区
-                    </Text>
+                {mapVehicles.length === 0 ? (
+                  <View className="text-center py-8">
+                    <Text className="block text-gray-500 text-sm">暂无实时定位车辆</Text>
                   </View>
-                )}
-                {mapVehicles.map((vehicle) => (
+                ) : mapVehicles.map((vehicle) => (
                   <View
                     key={vehicle.id}
                     className="bg-gray-50 rounded-lg p-3"

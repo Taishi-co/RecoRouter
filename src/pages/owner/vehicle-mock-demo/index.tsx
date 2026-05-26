@@ -10,7 +10,7 @@ import { Network } from '@/network'
 
 interface UnifiedVehicle {
   id: string
-  manufacturer: 'neolix' | 'ninebot'
+  manufacturer: string
   latitude: number
   longitude: number
   speed: number
@@ -26,16 +26,18 @@ export default function VehicleMockDemo() {
   const [loading, setLoading] = useState(false)
   const [lastUpdate, setLastUpdate] = useState<string>('')
 
-  // 加载模拟数据
-  const loadMockVehicles = async () => {
+  // 加载车辆实时定位数据
+  const loadVehicleLocations = async () => {
     setLoading(true)
     try {
+      const userInfo = Taro.getStorageSync('userInfo')
+      const query = userInfo?.id ? `?owner_id=${encodeURIComponent(userInfo.id)}` : ''
       const res = await Network.request({
-        url: '/api/mock/vehicles/all',
+        url: `/api/vehicles/locations${query}`,
         method: 'GET'
       })
 
-      console.log('车机模拟数据:', res.data)
+      console.log('车辆定位数据:', res.data)
 
       if (res.data.code === 200) {
         setVehicles(res.data.data || [])
@@ -51,7 +53,7 @@ export default function VehicleMockDemo() {
         })
       }
     } catch (error) {
-      console.error('加载模拟数据失败:', error)
+      console.error('加载车辆定位失败:', error)
       Taro.showToast({
         title: '网络错误',
         icon: 'none'
@@ -63,7 +65,7 @@ export default function VehicleMockDemo() {
 
   // 页面加载时获取数据
   useEffect(() => {
-    loadMockVehicles()
+    loadVehicleLocations()
   }, [])
 
   // 获取状态对应的颜色
@@ -97,13 +99,14 @@ export default function VehicleMockDemo() {
     const names: Record<string, string> = {
       neolix: '新石器',
       ninebot: '九识',
+      vehicle: '车辆',
     }
     return names[manufacturer] || manufacturer
   }
 
   return (
     <AppPageShell
-      title="模拟数据与照片"
+      title="车辆定位数据"
       subtitle="RecoRouter 运力端"
       contentClassName="space-y-4"
       bottom={<BottomNav type="owner" active="vehicles" />}
@@ -120,10 +123,10 @@ export default function VehicleMockDemo() {
               </Text>
             )}
             <Text className="block text-xs text-blue-700 mb-1">
-              • 模拟新石器（Neolix）和九识（Ninebot）无人车实时位置数据
+              • 展示后端返回的真实车辆定位数据
             </Text>
             <Text className="block text-xs text-blue-700 mb-1">
-              • 后端每5秒自动推送随机车辆位置更新
+              • 仅显示数据库中已记录经纬度的车辆
             </Text>
             <Text className="block text-xs text-blue-700">
               • 点击&quot;刷新数据&quot;按钮可手动获取最新数据
@@ -134,7 +137,7 @@ export default function VehicleMockDemo() {
         {/* 车辆列表 */}
         <View className="space-y-4">
           <Text className="block text-sm font-medium text-gray-700 mb-2">
-            模拟车辆列表 ({vehicles.length} 台)
+            车辆列表 ({vehicles.length} 台)
           </Text>
 
           {loading ? (
@@ -227,10 +230,10 @@ export default function VehicleMockDemo() {
 
         <Button
           className="w-full bg-blue-500"
-          onClick={loadMockVehicles}
+          onClick={loadVehicleLocations}
           disabled={loading}
         >
-          <Text>{loading ? '生成中...' : '一键生成演示车辆'}</Text>
+          <Text>{loading ? '刷新中...' : '刷新车辆'}</Text>
         </Button>
 
         {/* JSON数据展示 */}
