@@ -58,6 +58,7 @@ const adminItems: BottomNavItem[] = [
   { key: 'vehicles', label: '车辆', icon: Truck, url: '/pages/admin/vehicles/index' },
   { key: 'orders', label: '订单', icon: ClipboardList, url: '/pages/admin/orders/index' },
   { key: 'stats', label: '统计', icon: ChartNoAxesCombined, url: '/pages/admin/stats/index' },
+  { key: 'profile', label: '我的', icon: User, url: '/pages/admin/settings/index' },
 ]
 
 const commonItems: BottomNavItem[] = [
