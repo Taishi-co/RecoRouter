@@ -87,6 +87,7 @@ docker run -d \
   --env-file "$ENV_FILE" \
   -p "127.0.0.1:$CANDIDATE_API_PORT:$API_PORT" \
   -v "$UPLOAD_VOLUME:/app/uploads" \
+  -v "$ENV_DIR:$ENV_DIR:ro" \
   "$IMAGE_REF"
 
 for _ in $(seq 1 30); do
@@ -113,6 +114,7 @@ docker run -d \
   --env-file "$ENV_FILE" \
   -p "127.0.0.1:$API_PORT:$API_PORT" \
   -v "$UPLOAD_VOLUME:/app/uploads" \
+  -v "$ENV_DIR:$ENV_DIR:ro" \
   "$IMAGE_REF"
 docker tag "$IMAGE_REF" "recorouter-api:latest"
 
