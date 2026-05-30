@@ -239,6 +239,58 @@ async fn insert_completed_paid_order(pool: &PgPool, owner_id: &str, merchant_id:
     .expect("order should be inserted")
 }
 
+async fn insert_transport_completed_paid_order(
+    pool: &PgPool,
+    owner_id: &str,
+    merchant_id: &str,
+) -> String {
+    let demand_id: String = sqlx::query_scalar(
+        r#"
+        INSERT INTO demands (
+            merchant_id, cargo_name, pickup_address, delivery_address, status, fare_price
+        )
+        VALUES ($1, '待确认冷链货物', 'A', 'B', 'transport_completed', 123.45)
+        RETURNING id
+        "#,
+    )
+    .bind(merchant_id)
+    .fetch_one(pool)
+    .await
+    .expect("demand should be inserted");
+    let vehicle_id: String = sqlx::query_scalar(
+        r#"
+        INSERT INTO vehicles (
+            owner_id, vehicle_type, license_plate, status, trip_status,
+            load_capacity, volume, battery_life
+        )
+        VALUES ($1, '冷链车', 'WALLET-2', 'active', 'busy', 1000, 20, 300)
+        RETURNING id
+        "#,
+    )
+    .bind(owner_id)
+    .fetch_one(pool)
+    .await
+    .expect("vehicle should be inserted");
+
+    sqlx::query_scalar(
+        r#"
+        INSERT INTO orders (
+            demand_id, vehicle_id, merchant_id, owner_id, status,
+            fare_price, payment_status, commission_amount, commission_payment_status
+        )
+        VALUES ($1, $2, $3, $4, 'transport_completed', 123.45, 'paid', 0, 'unpaid')
+        RETURNING id
+        "#,
+    )
+    .bind(demand_id)
+    .bind(vehicle_id)
+    .bind(merchant_id)
+    .bind(owner_id)
+    .fetch_one(pool)
+    .await
+    .expect("order should be inserted")
+}
+
 #[tokio::test]
 async fn completed_order_credit_helper_is_idempotent() {
     let Some(ctx) = TestContext::new().await else {
@@ -254,6 +306,38 @@ async fn completed_order_credit_helper_is_idempotent() {
     credit_completed_order_income(&ctx.pool, &order_id)
         .await
         .expect("second credit should be idempotent");
+
+    let (_status, body) = request_json(
+        &ctx.app,
+        "GET",
+        &format!("/api/owner-wallet/{owner_id}"),
+        None,
+    )
+    .await;
+
+    assert_eq!(body["data"]["summary"]["availableBalanceCents"], 12345);
+    assert_eq!(body["data"]["summary"]["lifetimeIncomeCents"], 12345);
+
+    ctx.cleanup().await;
+}
+
+#[tokio::test]
+async fn payment_confirm_endpoint_credits_wallet_income() {
+    let Some(ctx) = TestContext::new().await else {
+        return;
+    };
+    let owner_id = insert_user(&ctx.pool, "18000000011", "owner", "运力E").await;
+    let merchant_id = insert_user(&ctx.pool, "18000000012", "merchant", "需求方E").await;
+    let order_id = insert_transport_completed_paid_order(&ctx.pool, &owner_id, &merchant_id).await;
+
+    let (status, _body) = request_json(
+        &ctx.app,
+        "PUT",
+        &format!("/api/orders/{order_id}/payment-confirm"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
 
     let (_status, body) = request_json(
         &ctx.app,
