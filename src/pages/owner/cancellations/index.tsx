@@ -65,9 +65,8 @@ export default function OwnerCancellations() {
     setLoading(true)
     try {
       const res = await Network.request({
-        url: '/api/cancellations/pending',
-        method: 'GET',
-        data: { owner_id: userInfo.id }
+        url: `/api/cancellations/pending?owner_id=${encodeURIComponent(userInfo.id)}`,
+        method: 'GET'
       })
 
       console.log('取消申请列表响应:', res.data)
