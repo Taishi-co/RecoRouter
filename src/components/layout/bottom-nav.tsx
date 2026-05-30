@@ -41,7 +41,7 @@ const ownerItems: BottomNavItem[] = [
   { key: 'demands', label: '接需求', icon: ClipboardList, url: '/pages/owner/demands/index' },
   { key: 'vehicles', label: '车辆', icon: Truck, url: '/pages/owner/vehicles/index' },
   { key: 'orders', label: '订单', icon: ReceiptText, url: '/pages/owner/orders/index' },
-  { key: 'revenue', label: '收益', icon: Wallet, url: '/pages/owner/profile/revenue-stats/index' },
+  { key: 'revenue', label: '钱包', icon: Wallet, url: '/pages/owner/wallet/index' },
   { key: 'profile', label: '我的', icon: User, url: '/pages/owner/profile/index' },
 ]
 

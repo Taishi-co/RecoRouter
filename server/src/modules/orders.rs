@@ -1261,6 +1261,7 @@ async fn finalize_completed_order(
     increment_credit_score(pool, order.owner_id.as_deref()).await?;
     let requester_id = resolve_order_requester_id(pool, order).await?;
     increment_credit_score(pool, requester_id.as_deref()).await?;
+    crate::modules::owner_wallet::credit_completed_order_income(pool, &order.id).await?;
 
     create_notification(
         pool,

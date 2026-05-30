@@ -8,7 +8,7 @@ import { AppPageShell } from '@/components/layout/app-page-shell'
 import { BottomNav } from '@/components/layout/bottom-nav'
 import Taro from '@tarojs/taro'
 import { Network } from '@/network'
-import { Camera, Settings, MessageCircle, LogOut, CreditCard, Bell, MapPin, Route, DollarSign, Clock, Users, FileText } from 'lucide-react-taro'
+import { Camera, Settings, MessageCircle, LogOut, CreditCard, Bell, MapPin, Route, DollarSign, Clock, Users, FileText, Wallet } from 'lucide-react-taro'
 
 interface UserInfo {
   id: string
@@ -348,6 +348,16 @@ export default function OwnerProfile() {
               <View className="flex items-center gap-3">
                 <Route size={20} color="#3b82f6" />
                 <Text className="block text-sm">常用线路</Text>
+              </View>
+              <Text className="block text-gray-400 text-sm">›</Text>
+            </View>
+            <View
+              className="flex items-center justify-between px-4 py-4 border-b border-gray-100 active:bg-gray-50"
+              onClick={() => Taro.navigateTo({ url: '/pages/owner/wallet/index' })}
+            >
+              <View className="flex items-center gap-3">
+                <Wallet size={20} color="#2563eb" />
+                <Text className="block text-sm">运力钱包</Text>
               </View>
               <Text className="block text-gray-400 text-sm">›</Text>
             </View>

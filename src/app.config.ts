@@ -21,6 +21,7 @@ export default typeof definePageConfig === 'function'
         'pages/owner/cancellations/index',    // 车主端-处理取消申请
         'pages/owner/commission-payment/index',// 车主端-佣金支付
         'pages/owner/stats/index',             // 车主端-统计
+        'pages/owner/wallet/index',            // 车主端-运力钱包
         'pages/owner/profile/index',           // 车主端-我的
         'pages/owner/profile/revenue-stats/index', // 车主端-收益统计
         'pages/owner/account-settings/index',  // 车主端-账号设置
@@ -83,6 +84,7 @@ export default typeof definePageConfig === 'function'
         'pages/owner/cancellations/index',    // 车主端-处理取消申请
         'pages/owner/commission-payment/index',// 车主端-佣金支付
         'pages/owner/stats/index',             // 车主端-统计
+        'pages/owner/wallet/index',            // 车主端-运力钱包
         'pages/owner/profile/index',           // 车主端-我的
         'pages/owner/profile/revenue-stats/index', // 车主端-收益统计
         'pages/owner/account-settings/index',  // 车主端-账号设置

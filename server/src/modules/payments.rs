@@ -1,30 +1,12 @@
-use std::{
-    fmt, fs,
-    str::FromStr,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{fmt, str::FromStr};
 
-use aes_gcm::{
-    aead::{Aead, Payload},
-    Aes256Gcm, KeyInit, Nonce,
-};
 use axum::{
     extract::{Path, State},
     routing::post,
     Json, Router,
 };
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use rand::{distributions::Alphanumeric, rngs::OsRng, Rng};
-use rsa::{
-    pkcs1::DecodeRsaPrivateKey,
-    pkcs1v15::SigningKey,
-    pkcs8::DecodePrivateKey,
-    signature::{RandomizedSigner, SignatureEncoding},
-    RsaPrivateKey,
-};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sha2::Sha256;
 use sqlx::{FromRow, PgPool};
 
 use crate::{
@@ -33,14 +15,16 @@ use crate::{
     error::{ApiError, ApiResult},
     response::{ok, ApiEnvelope},
     storage::Storage,
+    wechat_pay::{
+        decrypt_wechat_notification, exchange_miniapp_login_code, random_token, sign_message,
+        truncate_chars, unix_timestamp, unix_timestamp_millis, wechat_authorization,
+        with_wechat_headers, with_wechat_json_headers, WechatNotifyBody, WechatPayMerchantConfig,
+    },
 };
 
-const DEFAULT_WECHAT_MCH_ID: &str = "1746295681";
 const WECHAT_JSAPI_URL: &str = "https://api.mch.weixin.qq.com/v3/pay/transactions/jsapi";
 const WECHAT_QUERY_URL_PREFIX: &str =
     "https://api.mch.weixin.qq.com/v3/pay/transactions/out-trade-no";
-const WECHAT_CODE2SESSION_URL: &str = "https://api.weixin.qq.com/sns/jscode2session";
-const WECHAT_USER_AGENT: &str = "RecoRouter/1.0";
 
 pub fn router<S>() -> Router<AppState<S>>
 where
@@ -215,26 +199,6 @@ struct WechatQueryResponse {
 }
 
 #[derive(Debug, Deserialize)]
-struct Code2SessionResponse {
-    openid: Option<String>,
-    errcode: Option<i64>,
-    errmsg: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct WechatNotifyBody {
-    resource: WechatNotifyResource,
-}
-
-#[derive(Debug, Deserialize)]
-struct WechatNotifyResource {
-    algorithm: String,
-    ciphertext: String,
-    associated_data: Option<String>,
-    nonce: String,
-}
-
-#[derive(Debug, Deserialize)]
 struct WechatNotifyTransaction {
     out_trade_no: String,
     trade_state: String,
@@ -242,12 +206,8 @@ struct WechatNotifyTransaction {
 }
 
 struct WechatPayConfig {
-    app_id: String,
-    mch_id: String,
-    mch_serial_no: String,
-    private_key: RsaPrivateKey,
+    merchant: WechatPayMerchantConfig,
     notify_url: String,
-    miniapp_secret: Option<String>,
 }
 
 async fn create_prepay<S>(
@@ -401,7 +361,7 @@ async fn wechat_notify<S>(
 where
     S: Storage,
 {
-    let transaction = decrypt_wechat_notification(&body.resource)?;
+    let transaction = decrypt_wechat_notification::<WechatNotifyTransaction>(&body.resource)?;
     if transaction.trade_state == "SUCCESS" {
         let payment = fetch_payment_by_out_trade_no(&state.db, &transaction.out_trade_no).await?;
         let business_type = payment.business_type.parse::<PaymentBusinessType>()?;
@@ -615,30 +575,7 @@ async fn resolve_wechat_openid(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| ApiError::BadRequest("缺少微信登录凭证".to_string()))?;
-    let secret = config
-        .miniapp_secret
-        .as_deref()
-        .ok_or_else(|| ApiError::BadRequest("缺少 WECHAT_MINIAPP_SECRET 配置".to_string()))?;
-    let url = format!(
-        "{WECHAT_CODE2SESSION_URL}?appid={}&secret={}&js_code={}&grant_type=authorization_code",
-        config.app_id, secret, login_code
-    );
-    let text = reqwest::get(url)
-        .await
-        .map_err(|err| ApiError::BadRequest(format!("微信登录凭证换取失败: {err}")))?
-        .text()
-        .await
-        .map_err(|err| ApiError::BadRequest(format!("微信登录响应读取失败: {err}")))?;
-    let response: Code2SessionResponse = serde_json::from_str(&text)
-        .map_err(|err| ApiError::BadRequest(format!("微信登录响应解析失败: {err}")))?;
-    response.openid.ok_or_else(|| {
-        ApiError::BadRequest(format!(
-            "微信登录凭证无效: {}",
-            response
-                .errmsg
-                .unwrap_or_else(|| response.errcode.unwrap_or_default().to_string())
-        ))
-    })
+    exchange_miniapp_login_code(&config.merchant, login_code).await
 }
 
 async fn wechat_create_jsapi_prepay(
@@ -658,8 +595,8 @@ async fn wechat_create_jsapi_prepay(
     };
     let description = truncate_chars(&description, 127);
     let body = json!({
-        "appid": config.app_id,
-        "mchid": config.mch_id,
+        "appid": config.merchant.app_id,
+        "mchid": config.merchant.mch_id,
         "description": description,
         "out_trade_no": out_trade_no,
         "notify_url": config.notify_url,
@@ -672,7 +609,12 @@ async fn wechat_create_jsapi_prepay(
         }
     })
     .to_string();
-    let authorization = wechat_authorization(config, "POST", "/v3/pay/transactions/jsapi", &body)?;
+    let authorization = wechat_authorization(
+        &config.merchant,
+        "POST",
+        "/v3/pay/transactions/jsapi",
+        &body,
+    )?;
     let response = with_wechat_json_headers(
         reqwest::Client::new().post(WECHAT_JSAPI_URL),
         &authorization,
@@ -702,12 +644,12 @@ async fn wechat_query_order(
 ) -> ApiResult<WechatQueryResponse> {
     let path = format!(
         "/v3/pay/transactions/out-trade-no/{out_trade_no}?mchid={}",
-        config.mch_id
+        config.merchant.mch_id
     );
-    let authorization = wechat_authorization(config, "GET", &path, "")?;
+    let authorization = wechat_authorization(&config.merchant, "GET", &path, "")?;
     let url = format!(
         "{WECHAT_QUERY_URL_PREFIX}/{out_trade_no}?mchid={}",
-        config.mch_id
+        config.merchant.mch_id
     );
     let response = with_wechat_headers(reqwest::Client::new().get(url), &authorization)
         .send()
@@ -727,23 +669,6 @@ async fn wechat_query_order(
         .map_err(|err| ApiError::BadRequest(format!("微信查单失败: {response_text}; {err}")))
 }
 
-fn with_wechat_headers(
-    builder: reqwest::RequestBuilder,
-    authorization: &str,
-) -> reqwest::RequestBuilder {
-    builder
-        .header("Authorization", authorization)
-        .header("Accept", "application/json")
-        .header("User-Agent", WECHAT_USER_AGENT)
-}
-
-fn with_wechat_json_headers(
-    builder: reqwest::RequestBuilder,
-    authorization: &str,
-) -> reqwest::RequestBuilder {
-    with_wechat_headers(builder, authorization).header("Content-Type", "application/json")
-}
-
 fn build_wechat_client_payload(
     config: &WechatPayConfig,
     prepay_id: &str,
@@ -753,12 +678,12 @@ fn build_wechat_client_payload(
     let package = format!("prepay_id={prepay_id}");
     let message = format!(
         "{}\n{}\n{}\n{}\n",
-        config.app_id, time_stamp, nonce_str, package
+        config.merchant.app_id, time_stamp, nonce_str, package
     );
-    let pay_sign = sign_message(&config.private_key, &message)?;
+    let pay_sign = sign_message(&config.merchant.private_key, &message)?;
 
     Ok(WechatJsapiClientPayload::new(
-        config.app_id.clone(),
+        config.merchant.app_id.clone(),
         time_stamp,
         nonce_str,
         package,
@@ -766,113 +691,13 @@ fn build_wechat_client_payload(
     ))
 }
 
-fn wechat_authorization(
-    config: &WechatPayConfig,
-    method: &str,
-    path_and_query: &str,
-    body: &str,
-) -> ApiResult<String> {
-    let timestamp = unix_timestamp().to_string();
-    let nonce_str = random_token(24);
-    let message = format!("{method}\n{path_and_query}\n{timestamp}\n{nonce_str}\n{body}\n");
-    let signature = sign_message(&config.private_key, &message)?;
-
-    Ok(format!(
-        "WECHATPAY2-SHA256-RSA2048 mchid=\"{}\",nonce_str=\"{}\",signature=\"{}\",timestamp=\"{}\",serial_no=\"{}\"",
-        config.mch_id, nonce_str, signature, timestamp, config.mch_serial_no
-    ))
-}
-
-fn sign_message(private_key: &RsaPrivateKey, message: &str) -> ApiResult<String> {
-    let signing_key = SigningKey::<Sha256>::new(private_key.clone());
-    let signature = signing_key.sign_with_rng(&mut OsRng, message.as_bytes());
-    Ok(BASE64.encode(signature.to_bytes()))
-}
-
-fn decrypt_wechat_notification(
-    resource: &WechatNotifyResource,
-) -> ApiResult<WechatNotifyTransaction> {
-    if resource.algorithm != "AEAD_AES_256_GCM" {
-        return Err(ApiError::BadRequest(
-            "微信支付通知加密算法不支持".to_string(),
-        ));
-    }
-
-    let api_v3_key = read_trimmed("WECHAT_PAY_API_V3_KEY")
-        .ok_or_else(|| ApiError::BadRequest("缺少 WECHAT_PAY_API_V3_KEY 配置".to_string()))?;
-    if api_v3_key.as_bytes().len() != 32 {
-        return Err(ApiError::BadRequest(
-            "WECHAT_PAY_API_V3_KEY 必须为32字节".to_string(),
-        ));
-    }
-    if resource.nonce.as_bytes().len() != 12 {
-        return Err(ApiError::BadRequest("微信支付通知 nonce 无效".to_string()));
-    }
-
-    let ciphertext = BASE64
-        .decode(resource.ciphertext.as_bytes())
-        .map_err(|err| ApiError::BadRequest(format!("微信支付通知密文解析失败: {err}")))?;
-    let cipher = Aes256Gcm::new_from_slice(api_v3_key.as_bytes())
-        .map_err(|err| ApiError::BadRequest(format!("微信支付通知密钥无效: {err}")))?;
-    let plaintext = cipher
-        .decrypt(
-            Nonce::from_slice(resource.nonce.as_bytes()),
-            Payload {
-                msg: &ciphertext,
-                aad: resource
-                    .associated_data
-                    .as_deref()
-                    .unwrap_or_default()
-                    .as_bytes(),
-            },
-        )
-        .map_err(|_| ApiError::BadRequest("微信支付通知解密失败".to_string()))?;
-
-    serde_json::from_slice(&plaintext)
-        .map_err(|err| ApiError::BadRequest(format!("微信支付通知内容解析失败: {err}")))
-}
-
 fn new_out_trade_no() -> String {
     format!("RR{}{}", unix_timestamp_millis(), random_token(6))
 }
 
-fn random_token(len: usize) -> String {
-    rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(len)
-        .map(char::from)
-        .collect()
-}
-
-fn unix_timestamp() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-}
-
-fn unix_timestamp_millis() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-}
-
-fn truncate_chars(value: &str, max_chars: usize) -> String {
-    value.chars().take(max_chars).collect()
-}
-
 impl WechatPayConfig {
     fn from_env() -> ApiResult<Self> {
-        let app_id = read_trimmed("WECHAT_PAY_APPID")
-            .or_else(|| read_trimmed("WECHAT_MINIAPP_APPID"))
-            .ok_or_else(|| ApiError::BadRequest("缺少 WECHAT_PAY_APPID 配置".to_string()))?;
-        let mch_id =
-            read_trimmed("WECHAT_PAY_MCH_ID").unwrap_or_else(|| DEFAULT_WECHAT_MCH_ID.to_string());
-        let mch_serial_no = read_trimmed("WECHAT_PAY_MCH_SERIAL_NO").ok_or_else(|| {
-            ApiError::BadRequest("缺少 WECHAT_PAY_MCH_SERIAL_NO 配置".to_string())
-        })?;
-        let private_key = load_wechat_private_key()?;
+        let merchant = WechatPayMerchantConfig::from_env()?;
         let notify_url = read_trimmed("WECHAT_PAY_NOTIFY_URL")
             .or_else(|| {
                 read_trimmed("PUBLIC_BASE_URL").map(|base| {
@@ -882,31 +707,10 @@ impl WechatPayConfig {
             .ok_or_else(|| ApiError::BadRequest("缺少 WECHAT_PAY_NOTIFY_URL 配置".to_string()))?;
 
         Ok(Self {
-            app_id,
-            mch_id,
-            mch_serial_no,
-            private_key,
+            merchant,
             notify_url,
-            miniapp_secret: read_trimmed("WECHAT_MINIAPP_SECRET"),
         })
     }
-}
-
-fn load_wechat_private_key() -> ApiResult<RsaPrivateKey> {
-    let pem = if let Some(value) = read_trimmed("WECHAT_PAY_PRIVATE_KEY") {
-        value.replace("\\n", "\n")
-    } else if let Some(path) = read_trimmed("WECHAT_PAY_PRIVATE_KEY_PATH") {
-        fs::read_to_string(path)
-            .map_err(|err| ApiError::BadRequest(format!("读取微信支付私钥失败: {err}")))?
-    } else {
-        return Err(ApiError::BadRequest(
-            "缺少 WECHAT_PAY_PRIVATE_KEY 或 WECHAT_PAY_PRIVATE_KEY_PATH 配置".to_string(),
-        ));
-    };
-
-    RsaPrivateKey::from_pkcs8_pem(&pem)
-        .or_else(|_| RsaPrivateKey::from_pkcs1_pem(&pem))
-        .map_err(|err| ApiError::BadRequest(format!("微信支付私钥格式不正确: {err}")))
 }
 
 impl fmt::Display for PaymentProvider {
@@ -919,8 +723,9 @@ impl fmt::Display for PaymentProvider {
 mod tests {
     use super::{
         decrypt_wechat_notification, new_out_trade_no, with_wechat_json_headers, PaymentProvider,
-        WechatJsapiClientPayload, WechatNotifyResource, WECHAT_JSAPI_URL,
+        WechatJsapiClientPayload, WECHAT_JSAPI_URL,
     };
+    use crate::wechat_pay::WechatNotifyResource;
 
     #[test]
     fn provider_parser_reserves_future_channels() {
@@ -1007,6 +812,6 @@ mod tests {
             nonce: "ignored".to_string(),
         };
 
-        assert!(decrypt_wechat_notification(&resource).is_err());
+        assert!(decrypt_wechat_notification::<serde_json::Value>(&resource).is_err());
     }
 }
