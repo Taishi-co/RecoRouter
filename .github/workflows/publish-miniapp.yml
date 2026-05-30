@@ -13,6 +13,8 @@ on:
       - project.config.json
       - deploy/make-miniapp-source-release.sh
       - deploy/upload-miniapp.sh
+      - scripts/bump-miniapp-version.mjs
+      - scripts/bump-miniapp-version.test.mjs
       - .github/workflows/publish-miniapp.yml
   workflow_dispatch:
     inputs:
@@ -35,6 +37,9 @@ concurrency:
   group: recorouter-miniapp-${{ github.ref }}
   cancel-in-progress: false
 
+permissions:
+  contents: write
+
 jobs:
   publish:
     if: ${{ github.event_name == 'workflow_dispatch' || vars.WEAPP_UPLOAD_ON_MAIN == 'true' }}
@@ -51,6 +56,25 @@ jobs:
       TARO_APP_WEAPP_APPID: ${{ vars.TARO_APP_WEAPP_APPID }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Bump miniapp patch version
+        id: miniapp-version
+        run: |
+          set -euo pipefail
+          version="$(node scripts/bump-miniapp-version.mjs)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "MINIAPP_UPLOAD_VERSION=$version" >> "$GITHUB_ENV"
+          echo "MINIAPP_UPLOAD_DESC=RecoRouter ${MINIAPP_PLATFORM} ${version}" >> "$GITHUB_ENV"
+
+      - name: Commit miniapp version bump
+        if: ${{ github.ref_type == 'branch' }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "chore: bump miniapp version to $MINIAPP_UPLOAD_VERSION [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
 
       - name: Build miniapp source package
         run: deploy/make-miniapp-source-release.sh
@@ -79,7 +103,7 @@ jobs:
           set -euo pipefail
           remote="$SERVER_USER@$SERVER_HOST"
           upload_cmd='cat > /tmp/recorouter-miniapp-source.tar.gz.tmp && mv /tmp/recorouter-miniapp-source.tar.gz.tmp /tmp/recorouter-miniapp-source.tar.gz'
-          remote_cmd="TARO_APP_WEAPP_APPID='$TARO_APP_WEAPP_APPID' MINIAPP_PLATFORM='$MINIAPP_PLATFORM' PROJECT_DOMAIN='$PROJECT_DOMAIN' GITHUB_RUN_NUMBER='$GITHUB_RUN_NUMBER' bash /tmp/recorouter-miniapp-install/deploy/upload-miniapp.sh /tmp/recorouter-miniapp-source.tar.gz"
+          remote_cmd="TARO_APP_WEAPP_APPID='$TARO_APP_WEAPP_APPID' MINIAPP_PLATFORM='$MINIAPP_PLATFORM' PROJECT_DOMAIN='$PROJECT_DOMAIN' MINIAPP_UPLOAD_VERSION='$MINIAPP_UPLOAD_VERSION' MINIAPP_UPLOAD_DESC='$MINIAPP_UPLOAD_DESC' bash /tmp/recorouter-miniapp-install/deploy/upload-miniapp.sh /tmp/recorouter-miniapp-source.tar.gz"
           install_cmd="mkdir -p /tmp/recorouter-miniapp-install && rm -rf /tmp/recorouter-miniapp-install/* && tar -xzf /tmp/recorouter-miniapp-source.tar.gz -C /tmp/recorouter-miniapp-install && $remote_cmd"
           if [ -n "${SERVER_SSH_KEY:-}" ]; then
             ssh -T -p "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -i ~/.ssh/recorouter_deploy_key "$remote" "$upload_cmd" < /tmp/recorouter-miniapp-source.tar.gz

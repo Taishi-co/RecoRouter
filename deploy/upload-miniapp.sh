@@ -52,9 +52,7 @@ EOF
     DEFAULT_VERSION="$(
       node - <<'NODE'
 const pkg = require('./package.json')
-const parts = String(pkg.version || '1.0.0').split('.')
-const run = process.env.GITHUB_RUN_NUMBER || new Date().toISOString().replace(/\D/g, '').slice(0, 12)
-console.log(`${parts[0] || '1'}.${parts[1] || '0'}.${run}`)
+console.log(String(pkg.version || '1.0.0'))
 NODE
     )"
     export MINIAPP_UPLOAD_VERSION="${MINIAPP_UPLOAD_VERSION:-$DEFAULT_VERSION}"
