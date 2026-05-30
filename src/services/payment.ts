@@ -115,12 +115,7 @@ async function invokePlatformPayment(
   clientPayload: unknown,
 ): Promise<void> {
   if (provider === 'wechat') {
-    const payloadRecord = requireRecord(clientPayload, '微信支付参数异常')
-    if (isSandboxPaymentPayload(payloadRecord)) {
-      await confirmSandboxPayment(payloadRecord)
-      return
-    }
-    const payload = toWechatPaymentPayload(payloadRecord)
+    const payload = toWechatPaymentPayload(clientPayload)
     await Taro.requestPayment(payload)
     return
   }
@@ -160,25 +155,6 @@ function toWechatPaymentPayload(
     package: requireString(payload, 'package'),
     signType: 'RSA',
     paySign: requireString(payload, 'paySign'),
-  }
-}
-
-function isSandboxPaymentPayload(payload: Record<string, unknown>): boolean {
-  return payload.sandbox === true || readString(payload, 'mode') === 'sandbox'
-}
-
-async function confirmSandboxPayment(payload: Record<string, unknown>): Promise<void> {
-  const amountCents = readNumber(payload, 'amountCents') || 0
-  const amountText = amountCents > 0 ? `¥${(amountCents / 100).toFixed(2)}` : '当前金额'
-  const result = await Taro.showModal({
-    title: '沙箱支付',
-    content: `${amountText} 将模拟支付成功，不会真实扣款。`,
-    confirmText: '模拟成功',
-    cancelText: '取消',
-  })
-
-  if (!result.confirm) {
-    throw new Error('已取消沙箱支付')
   }
 }
 
