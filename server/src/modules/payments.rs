@@ -40,6 +40,7 @@ const WECHAT_JSAPI_URL: &str = "https://api.mch.weixin.qq.com/v3/pay/transaction
 const WECHAT_QUERY_URL_PREFIX: &str =
     "https://api.mch.weixin.qq.com/v3/pay/transactions/out-trade-no";
 const WECHAT_CODE2SESSION_URL: &str = "https://api.weixin.qq.com/sns/jscode2session";
+const WECHAT_USER_AGENT: &str = "RecoRouter/1.0";
 
 pub fn router<S>() -> Router<AppState<S>>
 where
@@ -672,18 +673,24 @@ async fn wechat_create_jsapi_prepay(
     })
     .to_string();
     let authorization = wechat_authorization(config, "POST", "/v3/pay/transactions/jsapi", &body)?;
-    let response_text = reqwest::Client::new()
-        .post(WECHAT_JSAPI_URL)
-        .header("Authorization", authorization)
-        .header("Accept", "application/json")
-        .header("Content-Type", "application/json")
-        .body(body)
-        .send()
-        .await
-        .map_err(|err| ApiError::BadRequest(format!("微信预下单请求失败: {err}")))?
+    let response = with_wechat_json_headers(
+        reqwest::Client::new().post(WECHAT_JSAPI_URL),
+        &authorization,
+    )
+    .body(body)
+    .send()
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("微信预下单请求失败: {err}")))?;
+    let status = response.status();
+    let response_text = response
         .text()
         .await
         .map_err(|err| ApiError::BadRequest(format!("微信预下单响应读取失败: {err}")))?;
+    if !status.is_success() {
+        return Err(ApiError::BadRequest(format!(
+            "微信预下单失败: {response_text}"
+        )));
+    }
     let response: WechatPrepayResponse = serde_json::from_str(&response_text)
         .map_err(|err| ApiError::BadRequest(format!("微信预下单失败: {response_text}; {err}")))?;
     Ok(response.prepay_id)
@@ -702,18 +709,39 @@ async fn wechat_query_order(
         "{WECHAT_QUERY_URL_PREFIX}/{out_trade_no}?mchid={}",
         config.mch_id
     );
-    let response_text = reqwest::Client::new()
-        .get(url)
-        .header("Authorization", authorization)
-        .header("Accept", "application/json")
+    let response = with_wechat_headers(reqwest::Client::new().get(url), &authorization)
         .send()
         .await
-        .map_err(|err| ApiError::BadRequest(format!("微信查单请求失败: {err}")))?
+        .map_err(|err| ApiError::BadRequest(format!("微信查单请求失败: {err}")))?;
+    let status = response.status();
+    let response_text = response
         .text()
         .await
         .map_err(|err| ApiError::BadRequest(format!("微信查单响应读取失败: {err}")))?;
+    if !status.is_success() {
+        return Err(ApiError::BadRequest(format!(
+            "微信查单失败: {response_text}"
+        )));
+    }
     serde_json::from_str(&response_text)
         .map_err(|err| ApiError::BadRequest(format!("微信查单失败: {response_text}; {err}")))
+}
+
+fn with_wechat_headers(
+    builder: reqwest::RequestBuilder,
+    authorization: &str,
+) -> reqwest::RequestBuilder {
+    builder
+        .header("Authorization", authorization)
+        .header("Accept", "application/json")
+        .header("User-Agent", WECHAT_USER_AGENT)
+}
+
+fn with_wechat_json_headers(
+    builder: reqwest::RequestBuilder,
+    authorization: &str,
+) -> reqwest::RequestBuilder {
+    with_wechat_headers(builder, authorization).header("Content-Type", "application/json")
 }
 
 fn build_wechat_client_payload(
@@ -890,8 +918,8 @@ impl fmt::Display for PaymentProvider {
 #[cfg(test)]
 mod tests {
     use super::{
-        decrypt_wechat_notification, new_out_trade_no, PaymentProvider, WechatJsapiClientPayload,
-        WechatNotifyResource,
+        decrypt_wechat_notification, new_out_trade_no, with_wechat_json_headers, PaymentProvider,
+        WechatJsapiClientPayload, WechatNotifyResource, WECHAT_JSAPI_URL,
     };
 
     #[test]
@@ -938,6 +966,36 @@ mod tests {
         assert_eq!(payload.package, "prepay_id=wx-prepay");
         assert_eq!(payload.sign_type, "RSA");
         assert_eq!(payload.pay_sign, "signed-value");
+    }
+
+    #[test]
+    fn wechat_payment_requests_include_required_http_headers() {
+        let request = with_wechat_json_headers(
+            reqwest::Client::new().post(WECHAT_JSAPI_URL),
+            "WECHATPAY2-SHA256-RSA2048 test",
+        )
+        .build()
+        .unwrap();
+        let headers = request.headers();
+
+        assert_eq!(
+            headers.get("authorization").unwrap().to_str().unwrap(),
+            "WECHATPAY2-SHA256-RSA2048 test"
+        );
+        assert_eq!(
+            headers.get("accept").unwrap().to_str().unwrap(),
+            "application/json"
+        );
+        assert_eq!(
+            headers.get("content-type").unwrap().to_str().unwrap(),
+            "application/json"
+        );
+        assert!(headers
+            .get("user-agent")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("RecoRouter"));
     }
 
     #[test]
