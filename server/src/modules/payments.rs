@@ -524,18 +524,8 @@ async fn mark_payment_success(
 
     match business_type {
         PaymentBusinessType::OrderFare => {
-            sqlx::query(
-                r#"
-                UPDATE orders
-                SET payment_status = 'paid',
-                    payment_time = now(),
-                    updated_at = now()
-                WHERE id = $1
-                "#,
-            )
-            .bind(&payment.business_id)
-            .execute(pool)
-            .await?;
+            crate::modules::orders::settle_order_fare_payment_success(pool, &payment.business_id)
+                .await?;
         }
         PaymentBusinessType::OrderCommission => {
             sqlx::query(

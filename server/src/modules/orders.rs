@@ -682,6 +682,94 @@ where
     Ok(ok("收款已确认，请向平台支付撮合佣金", updated))
 }
 
+pub async fn settle_order_fare_payment_success(pool: &PgPool, order_id: &str) -> ApiResult<()> {
+    let order = fetch_order(pool, order_id).await?;
+
+    sqlx::query(
+        r#"
+        UPDATE orders
+        SET payment_status = 'paid',
+            payment_time = COALESCE(payment_time, now()),
+            updated_at = now()
+        WHERE id = $1
+        "#,
+    )
+    .bind(order_id)
+    .execute(pool)
+    .await?;
+
+    if order.status.as_deref() != Some("transport_completed") {
+        return Ok(());
+    }
+
+    if !has_payable_commission(order.commission_amount) {
+        sqlx::query(
+            r#"
+            UPDATE orders
+            SET status = 'completed',
+                commission_amount = COALESCE(commission_amount, 0),
+                commission_payment_status = 'not_required',
+                payment_confirm_time = COALESCE(payment_confirm_time, now()),
+                actual_complete_time = COALESCE(actual_complete_time, now()),
+                updated_at = now()
+            WHERE id = $1
+            "#,
+        )
+        .bind(order_id)
+        .execute(pool)
+        .await?;
+
+        finalize_completed_order(
+            pool,
+            &order,
+            "order_completed",
+            "运费已到账",
+            "需求方已通过微信支付运费，订单已自动完成并入账运力钱包。信用积分 +2",
+        )
+        .await?;
+
+        return Ok(());
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE orders
+        SET status = 'payment_confirmed',
+            payment_confirm_time = COALESCE(payment_confirm_time, now()),
+            updated_at = now()
+        WHERE id = $1
+        "#,
+    )
+    .bind(order_id)
+    .execute(pool)
+    .await?;
+
+    update_demand_status(pool, order.demand_id.as_deref(), "payment_confirmed").await?;
+    create_notification(
+        pool,
+        order.owner_id.as_deref(),
+        "payment_received",
+        "运费已到账",
+        "需求方已通过微信支付运费，请继续处理平台佣金。",
+        Some(&order.id),
+        order.demand_id.as_deref(),
+    )
+    .await;
+    let requester_id = resolve_order_requester_id(pool, &order).await?;
+    create_notification(
+        pool,
+        requester_id.as_deref(),
+        "payment_received",
+        "运费支付成功",
+        "您的微信支付已确认，订单已进入后续结算流程。",
+        Some(&order.id),
+        order.demand_id.as_deref(),
+    )
+    .await;
+
+    Ok(())
+}
+
 async fn payment_info<S>(
     State(state): State<AppState<S>>,
     Path(id): Path<String>,

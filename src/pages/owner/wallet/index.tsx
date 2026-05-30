@@ -23,6 +23,7 @@ export default function OwnerWalletPage() {
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [binding, setBinding] = useState(false)
+  const [syncingWithdrawalId, setSyncingWithdrawalId] = useState('')
 
   useDidShow(() => {
     loadWallet()
@@ -94,7 +95,7 @@ export default function OwnerWalletPage() {
       setAmount('')
       await loadWallet()
       Taro.showToast({
-        title: result.withdrawal.status === 'pending_manual' ? '已进入人工处理' : '提现已提交',
+        title: withdrawalToastTitle(result.withdrawal.status),
         icon: 'success',
       })
     } catch (error) {
@@ -105,6 +106,33 @@ export default function OwnerWalletPage() {
       await loadWallet()
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleSyncWithdrawal = async (withdrawalId: string) => {
+    if (syncingWithdrawalId) return
+
+    setSyncingWithdrawalId(withdrawalId)
+    try {
+      let result = await syncOwnerWithdrawal(withdrawalId)
+      if (result.transferPayload) {
+        await confirmWechatMerchantTransfer(result.transferPayload)
+        result = await syncOwnerWithdrawal(withdrawalId)
+      }
+
+      await loadWallet()
+      Taro.showToast({
+        title: withdrawalToastTitle(result.withdrawal.status),
+        icon: 'success',
+      })
+    } catch (error) {
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '同步失败',
+        icon: 'none',
+      })
+      await loadWallet()
+    } finally {
+      setSyncingWithdrawalId('')
     }
   }
 
@@ -180,7 +208,7 @@ export default function OwnerWalletPage() {
             </Button>
           </View>
           <Text className="block text-xs text-gray-500 mt-2">
-            单笔范围 {formatMoney(availability?.minAmountCents || 100)} - {formatMoney(availability?.maxAmountCents || 199999)}
+            单笔范围 {formatMoney(availability?.minAmountCents || 1)} - {formatMoney(availability?.maxAmountCents || 199999)}
           </Text>
         </CardContent>
       </Card>
@@ -210,6 +238,20 @@ export default function OwnerWalletPage() {
                       <Text className="text-xs">{statusText(item.status)}</Text>
                     </Badge>
                   </View>
+                  {canSyncWithdrawal(item) && (
+                    <View className="flex justify-end mt-3">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleSyncWithdrawal(item.id)}
+                        disabled={syncingWithdrawalId === item.id}
+                      >
+                        <Text className="text-xs">
+                          {syncingWithdrawalId === item.id ? '处理中' : syncButtonText(item)}
+                        </Text>
+                      </Button>
+                    </View>
+                  )}
                 </View>
               ))}
             </View>
@@ -283,6 +325,8 @@ function statusText(status: string) {
   switch (status) {
     case 'pending_manual':
       return '人工处理中'
+    case 'pending_retry':
+      return '待重试'
     case 'waiting_user_confirm':
       return '待确认'
     case 'transferring':
@@ -306,10 +350,50 @@ function statusBadgeClass(status: string) {
     case 'closed':
       return 'bg-red-50 text-red-700 px-2 py-1'
     case 'pending_manual':
+    case 'pending_retry':
       return 'bg-amber-50 text-amber-700 px-2 py-1'
     default:
       return 'bg-blue-50 text-blue-700 px-2 py-1'
   }
+}
+
+function withdrawalToastTitle(status: string) {
+  switch (status) {
+    case 'pending_manual':
+      return '已进入人工处理'
+    case 'pending_retry':
+      return '待充值后原单重试'
+    case 'waiting_user_confirm':
+      return '请确认收款'
+    case 'success':
+      return '提现已到账'
+    default:
+      return '提现已提交'
+  }
+}
+
+function canSyncWithdrawal(item: { provider: string; status: string; failReason?: string | null }) {
+  if (item.provider !== 'wechat') return false
+  return ['pending_retry', 'waiting_user_confirm', 'transferring'].includes(item.status)
+    || (item.status === 'pending_manual' && isRetryableWechatFailReason(item.failReason))
+}
+
+function syncButtonText(item: { status: string; failReason?: string | null }) {
+  if (item.status === 'pending_retry' || isRetryableWechatFailReason(item.failReason)) {
+    return '原单重试'
+  }
+  return '同步状态'
+}
+
+function isRetryableWechatFailReason(reason?: string | null) {
+  return !!reason && [
+    'NOT_ENOUGH',
+    'SYSTEM_ERROR',
+    'FREQUENCY_LIMIT',
+    'FREQUENCY_LIMITED',
+    'FREQUENCY_LIMIT_EXCEED',
+    'RATELIMIT_EXCEEDED',
+  ].some(code => reason.includes(code))
 }
 
 function ledgerText(entryType: string) {

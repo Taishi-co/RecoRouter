@@ -215,6 +215,7 @@ struct WechatTransferNotification {
 enum TransferStartResult {
     Started(WechatTransferResponse),
     ManualFallback(String),
+    PendingRetry(String),
     PendingSync(String),
 }
 
@@ -360,6 +361,9 @@ where
             TransferStartResult::ManualFallback(reason) => {
                 mark_withdrawal_manual_fallback(&state.db, &withdrawal_id, &reason).await?;
             }
+            TransferStartResult::PendingRetry(reason) => {
+                mark_withdrawal_pending_retry(&state.db, &withdrawal_id, &reason).await?;
+            }
             TransferStartResult::PendingSync(reason) => {
                 update_withdrawal_failure_note(&state.db, &withdrawal_id, &reason).await?;
             }
@@ -382,17 +386,22 @@ where
     let withdrawal = fetch_withdrawal(&state.db, &id).await?;
     if withdrawal.provider == "wechat" && !is_local_terminal_status(&withdrawal.status) {
         if let Ok(config) = WechatTransferConfig::from_env() {
-            if let Ok(response) = wechat_query_transfer_bill(&config, &withdrawal.out_bill_no).await
-            {
-                apply_wechat_transfer_state(
-                    &state.db,
-                    &withdrawal.out_bill_no,
-                    &response.state,
-                    response.transfer_bill_no.as_deref(),
-                    response.package_info.as_deref(),
-                    None,
-                )
-                .await?;
+            if should_retry_transfer_create(&withdrawal) {
+                retry_wechat_transfer_bill(&state.db, &config, &withdrawal).await?;
+            } else {
+                if let Ok(response) =
+                    wechat_query_transfer_bill(&config, &withdrawal.out_bill_no).await
+                {
+                    apply_wechat_transfer_state(
+                        &state.db,
+                        &withdrawal.out_bill_no,
+                        &response.state,
+                        response.transfer_bill_no.as_deref(),
+                        response.package_info.as_deref(),
+                        None,
+                    )
+                    .await?;
+                }
             }
         }
     }
@@ -638,7 +647,7 @@ async fn load_wallet_summary(pool: &PgPool, owner_id: &str) -> ApiResult<WalletS
         SELECT COALESCE(SUM(amount_cents), 0)::bigint
         FROM owner_withdrawals
         WHERE owner_id = $1
-          AND status IN ('pending_manual', 'waiting_user_confirm', 'transferring')
+          AND status IN ('pending_manual', 'pending_retry', 'waiting_user_confirm', 'transferring')
         "#,
     )
     .bind(owner_id)
@@ -912,20 +921,137 @@ async fn wechat_create_transfer_bill(
         .await
         .map_err(|err| ApiError::BadRequest(format!("微信转账响应读取失败: {err}")))?;
     if !status.is_success() {
-        if status.as_u16() == 400 || status.as_u16() == 403 {
-            return Ok(TransferStartResult::ManualFallback(format!(
-                "微信自动提现不可用: {response_text}"
-            )));
-        }
-        return Ok(TransferStartResult::PendingSync(format!(
-            "微信转账状态待确认: {response_text}"
-        )));
+        return Ok(classify_transfer_error_response(
+            status.as_u16(),
+            &response_text,
+        ));
     }
 
     let response: WechatTransferResponse = serde_json::from_str(&response_text).map_err(|err| {
         ApiError::BadRequest(format!("微信转账响应解析失败: {response_text}; {err}"))
     })?;
     Ok(TransferStartResult::Started(response))
+}
+
+async fn retry_wechat_transfer_bill(
+    pool: &PgPool,
+    config: &WechatTransferConfig,
+    withdrawal: &WithdrawalRow,
+) -> ApiResult<()> {
+    let account = fetch_active_wechat_account(pool, &withdrawal.owner_id, &config.merchant.app_id)
+        .await?
+        .ok_or_else(|| ApiError::BadRequest("请先绑定微信收款账号".to_string()))?;
+
+    match wechat_create_transfer_bill(
+        config,
+        &withdrawal.id,
+        &withdrawal.out_bill_no,
+        withdrawal.amount_cents,
+        &account,
+    )
+    .await?
+    {
+        TransferStartResult::Started(response) => {
+            apply_wechat_transfer_state(
+                pool,
+                &withdrawal.out_bill_no,
+                &response.state,
+                response.transfer_bill_no.as_deref(),
+                response.package_info.as_deref(),
+                None,
+            )
+            .await?;
+        }
+        TransferStartResult::ManualFallback(reason) => {
+            mark_withdrawal_manual_fallback(pool, &withdrawal.id, &reason).await?;
+        }
+        TransferStartResult::PendingRetry(reason) => {
+            mark_withdrawal_pending_retry(pool, &withdrawal.id, &reason).await?;
+        }
+        TransferStartResult::PendingSync(reason) => {
+            update_withdrawal_failure_note(pool, &withdrawal.id, &reason).await?;
+        }
+    }
+
+    Ok(())
+}
+
+fn classify_transfer_error_response(status: u16, response_text: &str) -> TransferStartResult {
+    let (code, message) = parse_wechat_error(response_text);
+    let display = match (&code, &message) {
+        (Some(code), Some(message)) => format!("{code}: {message}"),
+        (Some(code), None) => code.clone(),
+        (None, Some(message)) => message.clone(),
+        (None, None) => response_text.to_string(),
+    };
+
+    if code
+        .as_deref()
+        .map(is_retryable_transfer_error_code)
+        .unwrap_or(false)
+        || status == 429
+        || status >= 500
+    {
+        return TransferStartResult::PendingRetry(format!(
+            "微信自动提现待原单号重试: {display}。充值或稍后可用原单号重试，请勿更换商户单号"
+        ));
+    }
+
+    if status == 400 || status == 403 {
+        return TransferStartResult::ManualFallback(format!("微信自动提现不可用: {display}"));
+    }
+
+    TransferStartResult::PendingSync(format!("微信转账状态待确认: {display}"))
+}
+
+fn parse_wechat_error(response_text: &str) -> (Option<String>, Option<String>) {
+    let Ok(value) = serde_json::from_str::<Value>(response_text) else {
+        return (None, None);
+    };
+    let code = value
+        .get("code")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    let message = value
+        .get("message")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    (code, message)
+}
+
+fn is_retryable_transfer_error_code(code: &str) -> bool {
+    matches!(
+        code,
+        "NOT_ENOUGH"
+            | "SYSTEM_ERROR"
+            | "FREQUENCY_LIMIT"
+            | "FREQUENCY_LIMITED"
+            | "FREQUENCY_LIMIT_EXCEED"
+            | "RATELIMIT_EXCEEDED"
+    )
+}
+
+fn should_retry_transfer_create(withdrawal: &WithdrawalRow) -> bool {
+    withdrawal.status == "pending_retry"
+        || (withdrawal.status == "pending_manual"
+            && withdrawal
+                .fail_reason
+                .as_deref()
+                .map(contains_retryable_transfer_error_code)
+                .unwrap_or(false))
+}
+
+fn contains_retryable_transfer_error_code(reason: &str) -> bool {
+    [
+        "NOT_ENOUGH",
+        "SYSTEM_ERROR",
+        "FREQUENCY_LIMIT",
+        "FREQUENCY_LIMITED",
+        "FREQUENCY_LIMIT_EXCEED",
+        "RATELIMIT_EXCEEDED",
+    ]
+    .iter()
+    .any(|code| reason.contains(code))
 }
 
 async fn wechat_query_transfer_bill(
@@ -1038,6 +1164,28 @@ async fn mark_withdrawal_manual_fallback(
     .bind(reason)
     .execute(pool)
     .await?;
+    Ok(())
+}
+
+async fn mark_withdrawal_pending_retry(
+    pool: &PgPool,
+    withdrawal_id: &str,
+    reason: &str,
+) -> ApiResult<()> {
+    sqlx::query(
+        r#"
+        UPDATE owner_withdrawals
+        SET status = 'pending_retry',
+            fail_reason = $2,
+            updated_at = now()
+        WHERE id = $1
+        "#,
+    )
+    .bind(withdrawal_id)
+    .bind(reason)
+    .execute(pool)
+    .await?;
+
     Ok(())
 }
 
@@ -1165,7 +1313,7 @@ impl WechatTransferConfig {
 }
 
 fn transfer_limits() -> ApiResult<(i64, i64)> {
-    let min = read_i64_env("WECHAT_TRANSFER_MIN_AMOUNT_CENTS", 100)?;
+    let min = read_i64_env("WECHAT_TRANSFER_MIN_AMOUNT_CENTS", 1)?;
     let max = read_i64_env("WECHAT_TRANSFER_MAX_AMOUNT_CENTS", 199_999)?;
     if min <= 0 || max < min {
         return Err(ApiError::BadRequest(
@@ -1298,8 +1446,9 @@ fn push_where(builder: &mut QueryBuilder<Postgres>, has_where: &mut bool) {
 #[cfg(test)]
 mod tests {
     use super::{
-        default_transfer_scene_id, map_wechat_state_to_withdrawal_status, money_to_cents,
-        new_out_bill_no, transfer_scene_report_infos, transfer_user_recv_perception,
+        classify_transfer_error_response, default_transfer_scene_id,
+        map_wechat_state_to_withdrawal_status, money_to_cents, new_out_bill_no,
+        transfer_scene_report_infos, transfer_user_recv_perception, TransferStartResult,
     };
 
     #[test]
@@ -1355,5 +1504,21 @@ mod tests {
 
         assert_eq!(infos.len(), 1);
         assert_eq!(infos[0].info_content, "冷链运输服务");
+    }
+
+    #[test]
+    fn not_enough_transfer_error_keeps_original_bill_retryable() {
+        let result = classify_transfer_error_response(
+            403,
+            r#"{"code":"NOT_ENOUGH","message":"商户运营账户资金不足，充值后可以原单号发起重试，请勿更换商户单号"}"#,
+        );
+
+        match result {
+            TransferStartResult::PendingRetry(reason) => {
+                assert!(reason.contains("NOT_ENOUGH"));
+                assert!(reason.contains("原单号"));
+            }
+            _ => panic!("NOT_ENOUGH should keep the original out_bill_no retryable"),
+        }
     }
 }
