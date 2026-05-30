@@ -84,7 +84,7 @@ Configure the transfer verifier and no-password threshold in WeChat merchant pla
 RecoRouter defaults to:
 
 ```text
-WECHAT_TRANSFER_MIN_AMOUNT_CENTS=100
+WECHAT_TRANSFER_MIN_AMOUNT_CENTS=1
 WECHAT_TRANSFER_MAX_AMOUNT_CENTS=199999
 ```
 

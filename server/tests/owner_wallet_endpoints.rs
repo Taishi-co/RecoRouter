@@ -10,7 +10,11 @@ use sqlx::{postgres::PgPoolOptions, PgPool};
 use tower::ServiceExt;
 
 use recorouter_api::{
-    config::Config, modules::owner_wallet::credit_completed_order_income, storage::LocalStorage,
+    config::Config,
+    modules::{
+        orders::settle_order_fare_payment_success, owner_wallet::credit_completed_order_income,
+    },
+    storage::LocalStorage,
 };
 
 struct TestContext {
@@ -349,6 +353,106 @@ async fn payment_confirm_endpoint_credits_wallet_income() {
 
     assert_eq!(body["data"]["summary"]["availableBalanceCents"], 12345);
     assert_eq!(body["data"]["summary"]["lifetimeIncomeCents"], 12345);
+
+    ctx.cleanup().await;
+}
+
+#[tokio::test]
+async fn wechat_fare_payment_success_completes_zero_commission_order_and_credits_wallet() {
+    let Some(ctx) = TestContext::new().await else {
+        return;
+    };
+    let owner_id = insert_user(&ctx.pool, "18000000021", "owner", "运力F").await;
+    let merchant_id = insert_user(&ctx.pool, "18000000022", "merchant", "需求方F").await;
+    let order_id = insert_transport_completed_paid_order(&ctx.pool, &owner_id, &merchant_id).await;
+    sqlx::query(
+        r#"
+        UPDATE orders
+        SET payment_status = 'unpaid',
+            payment_time = NULL,
+            commission_amount = 0,
+            commission_payment_status = 'unpaid'
+        WHERE id = $1
+        "#,
+    )
+    .bind(&order_id)
+    .execute(&ctx.pool)
+    .await
+    .expect("order should be reset to unpaid");
+
+    settle_order_fare_payment_success(&ctx.pool, &order_id)
+        .await
+        .expect("wechat fare payment settlement should succeed");
+
+    let order_status: (String, String, String) = sqlx::query_as(
+        "SELECT status, payment_status, commission_payment_status FROM orders WHERE id = $1",
+    )
+    .bind(&order_id)
+    .fetch_one(&ctx.pool)
+    .await
+    .expect("order should fetch");
+    assert_eq!(order_status.0, "completed");
+    assert_eq!(order_status.1, "paid");
+    assert_eq!(order_status.2, "not_required");
+
+    let (_status, body) = request_json(
+        &ctx.app,
+        "GET",
+        &format!("/api/owner-wallet/{owner_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(body["data"]["summary"]["availableBalanceCents"], 12345);
+
+    ctx.cleanup().await;
+}
+
+#[tokio::test]
+async fn wechat_fare_payment_success_moves_commission_order_without_owner_receipt_confirm() {
+    let Some(ctx) = TestContext::new().await else {
+        return;
+    };
+    let owner_id = insert_user(&ctx.pool, "18000000023", "owner", "运力G").await;
+    let merchant_id = insert_user(&ctx.pool, "18000000024", "merchant", "需求方G").await;
+    let order_id = insert_transport_completed_paid_order(&ctx.pool, &owner_id, &merchant_id).await;
+    sqlx::query(
+        r#"
+        UPDATE orders
+        SET payment_status = 'unpaid',
+            payment_time = NULL,
+            commission_amount = 8,
+            commission_payment_status = 'unpaid'
+        WHERE id = $1
+        "#,
+    )
+    .bind(&order_id)
+    .execute(&ctx.pool)
+    .await
+    .expect("order should be reset to unpaid with commission");
+
+    settle_order_fare_payment_success(&ctx.pool, &order_id)
+        .await
+        .expect("wechat fare payment settlement should succeed");
+
+    let order_status: (String, String, String) = sqlx::query_as(
+        "SELECT status, payment_status, commission_payment_status FROM orders WHERE id = $1",
+    )
+    .bind(&order_id)
+    .fetch_one(&ctx.pool)
+    .await
+    .expect("order should fetch");
+    assert_eq!(order_status.0, "payment_confirmed");
+    assert_eq!(order_status.1, "paid");
+    assert_eq!(order_status.2, "unpaid");
+
+    let (_status, body) = request_json(
+        &ctx.app,
+        "GET",
+        &format!("/api/owner-wallet/{owner_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(body["data"]["summary"]["availableBalanceCents"], 0);
 
     ctx.cleanup().await;
 }

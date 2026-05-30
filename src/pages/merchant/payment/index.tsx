@@ -104,7 +104,7 @@ export default function MerchantPayment() {
       const isPaid = result.status === 'paid' || result.paymentStatus === 'paid'
 
       Taro.showToast({
-        title: isPaid ? '支付成功，等待确认' : '支付已发起，稍后同步',
+        title: isPaid ? '支付成功' : '支付已发起，稍后同步',
         icon: isPaid ? 'success' : 'none',
       })
 
