@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { View, Text, Image } from '@tarojs/components'
+import { View, Text } from '@tarojs/components'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { AppPageShell } from '@/components/layout/app-page-shell'
 import { BottomNav } from '@/components/layout/bottom-nav'
 import Taro from '@tarojs/taro'
 import { Network } from '@/network'
+import { startOrderPayment } from '@/services/payment'
 
 interface CommissionInfo {
   orderId: string
@@ -69,51 +70,35 @@ export default function CommissionPayment() {
     }
   }
 
-  const handleMarkCommissionPayment = async () => {
+  const handlePayCommission = async () => {
     if (!commissionInfo) return
 
-    Taro.showModal({
-      title: '确认已支付佣金',
-      content: '确认已向平台支付撮合佣金？提交后等待平台审核。',
-      success: async (res) => {
-        if (res.confirm) {
-          setMarking(true)
+    setMarking(true)
 
-          try {
-            const response = await Network.request({
-              url: `/api/orders/${commissionInfo.orderId}/commission-payment-marked`,
-              method: 'PUT'
-            })
+    try {
+      const result = await startOrderPayment({
+        orderId: commissionInfo.orderId,
+        businessType: 'order_commission',
+      })
+      const isPaid = result.status === 'paid' || result.commissionPaymentStatus === 'paid'
 
-            console.log('标记付佣金响应:', response.data)
+      Taro.showToast({
+        title: isPaid ? '佣金支付已提交' : '支付已发起，稍后同步',
+        icon: isPaid ? 'success' : 'none'
+      })
 
-            if (response.data.code === 200) {
-              Taro.showToast({
-                title: '已提交佣金支付，等待平台审核',
-                icon: 'success'
-              })
-
-              setTimeout(() => {
-                Taro.navigateBack()
-              }, 1500)
-            } else {
-              Taro.showToast({
-                title: response.data.message || '操作失败',
-                icon: 'none'
-              })
-            }
-          } catch (error) {
-            console.error('标记付佣金失败:', error)
-            Taro.showToast({
-              title: '网络错误，请重试',
-              icon: 'none'
-            })
-          } finally {
-            setMarking(false)
-          }
-        }
-      }
-    })
+      setTimeout(() => {
+        Taro.navigateBack()
+      }, 1500)
+    } catch (error) {
+      console.error('佣金支付失败:', error)
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '支付失败，请重试',
+        icon: 'none'
+      })
+    } finally {
+      setMarking(false)
+    }
   }
 
   if (loading) {
@@ -158,38 +143,23 @@ export default function CommissionPayment() {
           </CardContent>
         </Card>
 
-        {/* 收款码卡片 */}
-        {commissionInfo?.platformPaymentQr && (
-          <Card className="bg-white rounded-lg shadow-sm mb-4">
-            <CardHeader>
-              <CardTitle className="text-base font-semibold">
-                平台收款码
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <View className="flex flex-col items-center">
-                <View className="w-48 h-48 bg-gray-100 rounded-lg overflow-hidden mb-3">
-                  <Image
-                    src={commissionInfo.platformPaymentQr}
-                    className="w-full h-full"
-                    mode="aspectFit"
-                  />
-                </View>
-                <View className="bg-blue-50 rounded-lg p-3 w-full mb-3">
-                  <Text className="block text-xs text-blue-800 mb-1">
-                    转账备注：
-                  </Text>
-                  <Text className="block text-sm font-mono text-blue-900 break-all">
-                    订单号：{commissionInfo.orderId}
-                  </Text>
-                </View>
-                <Text className="block text-xs text-gray-500 text-center">
-                  请使用备注信息转账，便于核对
-                </Text>
-              </View>
-            </CardContent>
-          </Card>
-        )}
+        <Card className="bg-white rounded-lg shadow-sm mb-4">
+          <CardHeader>
+            <CardTitle className="text-base font-semibold">
+              平台微信支付
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <View className="space-y-2">
+              <Text className="block text-sm text-gray-700">
+                佣金支付将通过平台统一支付单完成，支付结果由服务端向支付渠道同步。
+              </Text>
+              <Text className="block text-xs text-gray-500">
+                支付金额：¥{commissionInfo?.commissionAmount || 0}
+              </Text>
+            </View>
+          </CardContent>
+        </Card>
 
         {/* 操作按钮 */}
         {commissionInfo?.status === 'payment_confirmed' && (
@@ -197,11 +167,11 @@ export default function CommissionPayment() {
             <CardContent className="p-4">
               <Button
                 className="w-full bg-blue-500"
-                onClick={handleMarkCommissionPayment}
+                onClick={handlePayCommission}
                 disabled={marking}
               >
                 <Text className="text-sm">
-                  {marking ? '提交中...' : '我已支付佣金'}
+                  {marking ? '支付中...' : '立即微信支付'}
                 </Text>
               </Button>
             </CardContent>
@@ -228,16 +198,16 @@ export default function CommissionPayment() {
           </Text>
           <View className="space-y-1">
             <Text className="block text-xs text-yellow-700">
-              • 佣金支付完成后，订单才算真正完成
+              • 佣金为 0 时无需支付，系统会自动跳过
             </Text>
             <Text className="block text-xs text-yellow-700">
-              • 佣金支付完成后，车辆才能继续接单
-            </Text>
-            <Text className="block text-xs text-yellow-700">
-              • 请务必使用订单号作为转账备注
+              • 佣金支付完成后，订单才会进入平台审核
             </Text>
             <Text className="block text-xs text-yellow-700">
               • 平台审核通过后会自动恢复车辆状态
+            </Text>
+            <Text className="block text-xs text-yellow-700">
+              • 如有疑问，请联系客服
             </Text>
           </View>
         </View>

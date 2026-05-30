@@ -12,8 +12,10 @@ name = "recorouter-api"
 path = "src/main.rs"
 
 [dependencies]
+aes-gcm = "0.10"
 async-trait = "0.1"
 axum = { version = "0.7", features = ["multipart", "macros"] }
+base64 = "0.22"
 bcrypt = "0.15"
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
@@ -25,10 +27,12 @@ percent-encoding = "2"
 rand = "0.8"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+rsa = { version = "0.9", features = ["pem", "sha2"] }
 rust_decimal = { version = "1", features = ["serde-with-str"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha1 = "0.10"
+sha2 = { version = "0.10", features = ["oid"] }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "json", "rust_decimal", "migrate"] }
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "fs"] }

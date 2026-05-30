@@ -1863,7 +1863,7 @@ async fn platform_settings_returns_default_row_and_payment_qr_url() {
         body["data"]["commission_rate"]
             .as_f64()
             .expect("commission rate should be numeric"),
-        5.0
+        0.0
     );
 
     let (update_status, update_body) = put_json(

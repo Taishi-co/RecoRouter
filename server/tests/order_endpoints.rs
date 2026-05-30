@@ -557,6 +557,116 @@ async fn order_lifecycle_matches_legacy_payment_and_commission_flow() {
 }
 
 #[tokio::test]
+async fn zero_commission_order_completes_when_owner_confirms_payment() {
+    let Some(context) = TestContext::new().await else {
+        return;
+    };
+
+    sqlx::query(
+        r#"
+        INSERT INTO platform_settings (id, commission_rate, commission_payment_qr)
+        VALUES ('default', 0, 'platform/qr.png')
+        ON CONFLICT (id) DO UPDATE
+        SET commission_rate = EXCLUDED.commission_rate,
+            commission_payment_qr = EXCLUDED.commission_payment_qr
+        "#,
+    )
+    .execute(&context.pool)
+    .await
+    .expect("platform zero commission should be inserted");
+
+    let merchant_id = insert_user(&context.pool, "13930000013", "merchant", "零佣货主").await;
+    let owner_id = insert_user(&context.pool, "13930000014", "owner", "零佣车主").await;
+    let vehicle_id = insert_vehicle(&context.pool, &owner_id, "沪O00001").await;
+    let demand_id = insert_demand(&context.pool, &merchant_id, "零佣货").await;
+
+    let (create_status, create_body) = post_json(
+        &context.app,
+        "/api/orders",
+        json!({
+            "demand_id": demand_id,
+            "vehicle_id": vehicle_id,
+            "owner_id": owner_id
+        }),
+    )
+    .await;
+    assert_eq!(create_status, StatusCode::OK);
+    let order_id = create_body["data"]["id"].as_str().unwrap().to_string();
+
+    sqlx::query("UPDATE orders SET fare_price = 200 WHERE id = $1")
+        .bind(&order_id)
+        .execute(&context.pool)
+        .await
+        .expect("fare should be set for zero commission flow");
+
+    let (confirm_fare_status, _) = post_json(
+        &context.app,
+        &format!("/api/orders/{order_id}/confirm-fare"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(confirm_fare_status, StatusCode::OK);
+
+    let (start_status, _) = post_json(
+        &context.app,
+        &format!("/api/orders/{order_id}/start-transport"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(start_status, StatusCode::OK);
+
+    let (complete_status, complete_body) = put_json(
+        &context.app,
+        &format!("/api/orders/{order_id}/complete"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(complete_status, StatusCode::OK);
+    assert_eq!(complete_body["data"]["commission_amount"], 0.0);
+    assert_eq!(
+        complete_body["data"]["commission_payment_status"],
+        "not_required"
+    );
+
+    let (mark_payment_status, _) = put_json(
+        &context.app,
+        &format!("/api/orders/{order_id}/payment-marked"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(mark_payment_status, StatusCode::OK);
+
+    let (confirm_payment_status, confirm_payment_body) = put_json(
+        &context.app,
+        &format!("/api/orders/{order_id}/payment-confirm"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(confirm_payment_status, StatusCode::OK);
+    assert_eq!(confirm_payment_body["message"], "收款已确认，订单已完成");
+    assert_eq!(confirm_payment_body["data"]["status"], "completed");
+    assert_eq!(
+        confirm_payment_body["data"]["commission_payment_status"],
+        "not_required"
+    );
+
+    let vehicle_trip_status: String =
+        sqlx::query_scalar("SELECT trip_status FROM vehicles WHERE id = $1")
+            .bind(&vehicle_id)
+            .fetch_one(&context.pool)
+            .await
+            .expect("vehicle trip status should fetch");
+    assert_eq!(vehicle_trip_status, "idle");
+
+    let (pending_status, pending_body) =
+        get_json(&context.app, "/api/orders/commission-pending").await;
+    assert_eq!(pending_status, StatusCode::OK);
+    assert_eq!(pending_body["data"].as_array().unwrap().len(), 0);
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
 async fn order_optional_bodies_and_empty_photo_keys_match_legacy() {
     let Some(context) = TestContext::new().await else {
         return;
