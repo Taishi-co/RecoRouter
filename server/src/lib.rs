@@ -5,3 +5,4 @@ pub mod error;
 pub mod modules;
 pub mod response;
 pub mod storage;
+pub mod wechat_pay;
