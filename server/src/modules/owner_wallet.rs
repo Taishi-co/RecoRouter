@@ -184,12 +184,15 @@ struct WechatTransferConfig {
     scene_id: String,
     notify_url: String,
     recv_perception: String,
-    scene_info_type_1: String,
-    scene_info_content_1: String,
-    scene_info_type_2: String,
-    scene_info_content_2: String,
+    scene_report_infos: Vec<TransferSceneReportInfo>,
     min_amount_cents: i64,
     max_amount_cents: i64,
+}
+
+#[derive(Debug, Serialize)]
+struct TransferSceneReportInfo {
+    info_type: String,
+    info_content: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -876,16 +879,7 @@ async fn wechat_create_transfer_bill(
         "transfer_remark": remark,
         "notify_url": config.notify_url,
         "user_recv_perception": config.recv_perception,
-        "transfer_scene_report_infos": [
-            {
-                "info_type": config.scene_info_type_1,
-                "info_content": config.scene_info_content_1
-            },
-            {
-                "info_type": config.scene_info_type_2,
-                "info_content": config.scene_info_content_2
-            }
-        ],
+        "transfer_scene_report_infos": config.scene_report_infos,
         "user_recv_style": {
             "type": "CONFIRM_PAGE"
         }
@@ -1133,9 +1127,8 @@ impl WechatTransferConfig {
             ));
         }
         let merchant = WechatPayMerchantConfig::from_env()?;
-        let scene_id = read_trimmed("WECHAT_TRANSFER_SCENE_ID").ok_or_else(|| {
-            ApiError::BadRequest("缺少 WECHAT_TRANSFER_SCENE_ID 配置".to_string())
-        })?;
+        let scene_id =
+            read_trimmed("WECHAT_TRANSFER_SCENE_ID").unwrap_or_else(default_transfer_scene_id);
         let notify_url = read_trimmed("WECHAT_TRANSFER_NOTIFY_URL")
             .or_else(|| {
                 read_trimmed("PUBLIC_BASE_URL").map(|base| {
@@ -1152,18 +1145,19 @@ impl WechatTransferConfig {
 
         Ok(Self {
             merchant,
+            recv_perception: transfer_user_recv_perception(
+                &scene_id,
+                read_trimmed("WECHAT_TRANSFER_RECV_PERCEPTION"),
+            ),
+            scene_report_infos: transfer_scene_report_infos(
+                &scene_id,
+                read_trimmed("WECHAT_TRANSFER_SCENE_INFO_TYPE_1"),
+                read_trimmed("WECHAT_TRANSFER_SCENE_INFO_CONTENT_1"),
+                read_trimmed("WECHAT_TRANSFER_SCENE_INFO_TYPE_2"),
+                read_trimmed("WECHAT_TRANSFER_SCENE_INFO_CONTENT_2"),
+            ),
             scene_id,
             notify_url,
-            recv_perception: read_trimmed("WECHAT_TRANSFER_RECV_PERCEPTION")
-                .unwrap_or_else(|| "劳务报酬".to_string()),
-            scene_info_type_1: read_trimmed("WECHAT_TRANSFER_SCENE_INFO_TYPE_1")
-                .unwrap_or_else(|| "岗位类型".to_string()),
-            scene_info_content_1: read_trimmed("WECHAT_TRANSFER_SCENE_INFO_CONTENT_1")
-                .unwrap_or_else(|| "货运司机".to_string()),
-            scene_info_type_2: read_trimmed("WECHAT_TRANSFER_SCENE_INFO_TYPE_2")
-                .unwrap_or_else(|| "报酬说明".to_string()),
-            scene_info_content_2: read_trimmed("WECHAT_TRANSFER_SCENE_INFO_CONTENT_2")
-                .unwrap_or_else(|| "订单运费提现".to_string()),
             min_amount_cents,
             max_amount_cents,
         })
@@ -1205,6 +1199,57 @@ fn manual_fallback_reason(error: Option<&ApiError>) -> String {
     error
         .map(ToString::to_string)
         .unwrap_or_else(|| "自动提现未启用，进入人工处理".to_string())
+}
+
+fn default_transfer_scene_id() -> String {
+    "1009".to_string()
+}
+
+fn transfer_user_recv_perception(scene_id: &str, configured: Option<String>) -> String {
+    if let Some(value) = configured {
+        return value;
+    }
+
+    match scene_id {
+        "1009" => "货款".to_string(),
+        _ => "劳务报酬".to_string(),
+    }
+}
+
+fn transfer_scene_report_infos(
+    scene_id: &str,
+    type_1: Option<String>,
+    content_1: Option<String>,
+    type_2: Option<String>,
+    content_2: Option<String>,
+) -> Vec<TransferSceneReportInfo> {
+    let default_type_1 = match scene_id {
+        "1009" => "采购商品名称",
+        _ => "岗位类型",
+    };
+    let default_content_1 = match scene_id {
+        "1009" => "货运服务",
+        _ => "货运司机",
+    };
+
+    let mut infos = vec![TransferSceneReportInfo {
+        info_type: type_1.unwrap_or_else(|| default_type_1.to_string()),
+        info_content: content_1.unwrap_or_else(|| default_content_1.to_string()),
+    }];
+
+    if let (Some(info_type), Some(info_content)) = (type_2, content_2) {
+        infos.push(TransferSceneReportInfo {
+            info_type,
+            info_content,
+        });
+    } else if scene_id != "1009" {
+        infos.push(TransferSceneReportInfo {
+            info_type: "报酬说明".to_string(),
+            info_content: "订单运费提现".to_string(),
+        });
+    }
+
+    infos
 }
 
 fn map_wechat_state_to_withdrawal_status(state: &str) -> &'static str {
@@ -1252,7 +1297,10 @@ fn push_where(builder: &mut QueryBuilder<Postgres>, has_where: &mut bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::{map_wechat_state_to_withdrawal_status, money_to_cents, new_out_bill_no};
+    use super::{
+        default_transfer_scene_id, map_wechat_state_to_withdrawal_status, money_to_cents,
+        new_out_bill_no, transfer_scene_report_infos, transfer_user_recv_perception,
+    };
 
     #[test]
     fn money_to_cents_rounds_to_integer_cents() {
@@ -1282,5 +1330,30 @@ mod tests {
 
         assert!(value.len() <= 32);
         assert!(value.chars().all(|ch| ch.is_ascii_alphanumeric()));
+    }
+
+    #[test]
+    fn purchase_goods_scene_uses_single_required_report_info() {
+        let infos = transfer_scene_report_infos("1009", None, None, None, None);
+
+        assert_eq!(default_transfer_scene_id(), "1009");
+        assert_eq!(transfer_user_recv_perception("1009", None), "货款");
+        assert_eq!(infos.len(), 1);
+        assert_eq!(infos[0].info_type, "采购商品名称");
+        assert_eq!(infos[0].info_content, "货运服务");
+    }
+
+    #[test]
+    fn custom_second_report_info_is_optional() {
+        let infos = transfer_scene_report_infos(
+            "1009",
+            Some("采购商品名称".to_string()),
+            Some("冷链运输服务".to_string()),
+            Some("报酬说明".to_string()),
+            None,
+        );
+
+        assert_eq!(infos.len(), 1);
+        assert_eq!(infos[0].info_content, "冷链运输服务");
     }
 }

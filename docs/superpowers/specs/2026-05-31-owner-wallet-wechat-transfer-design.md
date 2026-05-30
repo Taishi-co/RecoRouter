@@ -199,16 +199,16 @@ Required environment:
 
 ```text
 WECHAT_TRANSFER_ENABLED=true
-WECHAT_TRANSFER_SCENE_ID=
+WECHAT_TRANSFER_SCENE_ID=1009
 WECHAT_TRANSFER_NOTIFY_URL=
-WECHAT_TRANSFER_RECV_PERCEPTION=劳务报酬
-WECHAT_TRANSFER_SCENE_INFO_TYPE_1=岗位类型
-WECHAT_TRANSFER_SCENE_INFO_CONTENT_1=货运司机
-WECHAT_TRANSFER_SCENE_INFO_TYPE_2=报酬说明
-WECHAT_TRANSFER_SCENE_INFO_CONTENT_2=订单运费提现
+WECHAT_TRANSFER_RECV_PERCEPTION=货款
+WECHAT_TRANSFER_SCENE_INFO_TYPE_1=采购商品名称
+WECHAT_TRANSFER_SCENE_INFO_CONTENT_1=货运服务
 WECHAT_TRANSFER_MIN_AMOUNT_CENTS=100
 WECHAT_TRANSFER_MAX_AMOUNT_CENTS=200000
 ```
+
+The current merchant platform may only show `采购货款 ID:1009` and may not allow adding custom scenes. That is acceptable for this release. For scene `1009`, the backend sends one scene report info by default: `采购商品名称=货运服务`. The older `劳务报酬 / 岗位类型 / 报酬说明` report fields must not be used with scene `1009`.
 
 The existing WeChat Pay variables remain shared:
 

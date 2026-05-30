@@ -20,41 +20,56 @@ Official reference:
 
 - https://pay.wechatpay.cn/doc/v3/merchant/4013740645
 
-## 2. Transfer Initiation Mode
+## 2. API Availability
 
-Open:
+If your merchant platform shows only `采购货款 ID:1009` and does not show a separate `API发起转账` button, use this `商家转账` product page as the source of truth. The project uses the newer `商家转账` API:
 
-`商户平台 > 产品中心 > 运营工具 > 商家转账到零钱 > 前往功能`
+```text
+POST /v3/fund-app/mch-transfer/transfer-bills
+```
 
-Enable `API发起转账`.
+Do not switch to the older batch `商家转账到零钱` API only because the old operation guide mentions `API发起转账`.
 
-Keep `页面发起转账` available if operations wants a manual merchant-platform fallback, but miniapp automatic withdrawal requires API initiation.
+What still must be configured:
+
+- merchant transfer product permission
+- transfer scene ID
+- interface security IP
+- callback URL
+- merchant balance
 
 Official reference:
 
-- https://pay.wechatpay.cn/doc/v3/merchant/4012064803
+- https://pay.wechatpay.cn/doc/v3/merchant/4012716434
 
 ## 3. Transfer Scene
 
-In the Merchant Transfer product settings, create or select the scene used for order fare withdrawals.
-
-Record the scene ID into backend env:
+For this merchant, the visible scene is:
 
 ```text
-WECHAT_TRANSFER_SCENE_ID=
+采购货款
+ID: 1009
+说明：向个人供应商支付货款、采购款、服务费等
 ```
 
-The current backend sends these scene report fields by default:
+This is acceptable for paying carrier owners for transport services if the business can be described as purchasing a service from an individual supplier.
+
+The backend now defaults to:
 
 ```text
-WECHAT_TRANSFER_RECV_PERCEPTION=劳务报酬
-WECHAT_TRANSFER_SCENE_INFO_TYPE_1=岗位类型
-WECHAT_TRANSFER_SCENE_INFO_CONTENT_1=货运司机
-WECHAT_TRANSFER_SCENE_INFO_TYPE_2=报酬说明
-WECHAT_TRANSFER_SCENE_INFO_CONTENT_2=订单运费提现
+WECHAT_TRANSFER_SCENE_ID=1009
+WECHAT_TRANSFER_RECV_PERCEPTION=货款
+WECHAT_TRANSFER_SCENE_INFO_TYPE_1=采购商品名称
+WECHAT_TRANSFER_SCENE_INFO_CONTENT_1=货运服务
 ```
 
-If the WeChat platform shows different required `信息类型` names for the selected scene, update the env values to exactly match WeChat's scene requirements.
+You can omit `WECHAT_TRANSFER_SCENE_ID` if using `1009`, but setting it explicitly is clearer.
+
+Do not configure the old `劳务报酬 / 岗位类型 / 报酬说明` defaults for scene `1009`; WeChat's product document says `采购货款` requires only `采购商品名称`.
+
+Official product reference:
+
+- https://pay.wechatpay.cn/doc/v3/merchant/4012711988
 
 ## 4. API Security IP
 
@@ -129,6 +144,10 @@ After the platform settings above are verified, change to:
 
 ```text
 WECHAT_TRANSFER_ENABLED=true
+WECHAT_TRANSFER_SCENE_ID=1009
+WECHAT_TRANSFER_RECV_PERCEPTION=货款
+WECHAT_TRANSFER_SCENE_INFO_TYPE_1=采购商品名称
+WECHAT_TRANSFER_SCENE_INFO_CONTENT_1=货运服务
 ```
 
 Then restart the backend container so env changes are loaded.
