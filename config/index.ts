@@ -53,8 +53,8 @@ export default defineConfig<'vite'>(async (merge, _env) => {
       return [];
     }
     const miniCIConfig: Record<string, any> = {
-      version: pkg.version,
-      desc: pkg.description,
+      version: process.env.MINIAPP_UPLOAD_VERSION || pkg.version,
+      desc: process.env.MINIAPP_UPLOAD_DESC || pkg.description,
     };
     if (hasWeappConfig) {
       miniCIConfig.weapp = {

@@ -13,6 +13,7 @@
     "build:web": "taro build --type h5",
     "check:merchant-enterprise-boundary": "node scripts/check-merchant-enterprise-boundary.mjs",
     "check:no-physical-fks": "node scripts/check-no-physical-foreign-keys.mjs",
+    "check:miniapp-version": "node --test scripts/bump-miniapp-version.test.mjs",
     "check:registration-security": "node scripts/check-registration-security.mjs",
     "check:sqlx-migration-immutability": "node scripts/check-sqlx-migration-immutability.mjs",
     "dev": "pnpm exec concurrently --kill-others --kill-signal SIGKILL -n web,server -c blue,green \"pnpm dev:web\" \"pnpm dev:server\"",
@@ -32,7 +33,7 @@
     "test:rust-server": "cargo test --manifest-path server/Cargo.toml --lib --bins --tests",
     "test:rust-server:db": "test -n \"$TEST_DATABASE_URL\" && cargo test --manifest-path server/Cargo.toml --lib --bins --tests",
     "tsc": "npx tsc --noEmit --skipLibCheck",
-    "validate": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n lint,tsc,sqlx-migrations -c red,blue,magenta \"pnpm lint:build\" \"pnpm tsc\" \"pnpm check:sqlx-migration-immutability\""
+    "validate": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n lint,tsc,sqlx-migrations,miniapp-version -c red,blue,magenta,cyan \"pnpm lint:build\" \"pnpm tsc\" \"pnpm check:sqlx-migration-immutability\" \"pnpm check:miniapp-version\""
   },
   "lint-staged": {
     "src/**/*.{js,jsx,ts,tsx,css}": [
