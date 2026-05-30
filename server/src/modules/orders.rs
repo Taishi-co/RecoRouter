@@ -488,7 +488,12 @@ where
     .await?
     .flatten();
     let commission_amount =
-        order.fare_price.unwrap_or(0.0) * commission_rate.unwrap_or(5.0) / 100.0;
+        order.fare_price.unwrap_or(0.0) * commission_rate.unwrap_or(0.0) / 100.0;
+    let commission_payment_status = if has_payable_commission(Some(commission_amount)) {
+        "unpaid"
+    } else {
+        "not_required"
+    };
     let pickup_photo_key = non_empty(body.pickup_photo_key);
     let delivery_photo_key = non_empty(body.delivery_photo_key);
 
@@ -497,7 +502,7 @@ where
         UPDATE orders
         SET status = 'transport_completed',
             payment_status = 'unpaid',
-            commission_payment_status = 'unpaid',
+            commission_payment_status = $5,
             commission_amount = $2::numeric,
             transport_completed_time = now(),
             complete_time = now(),
@@ -512,6 +517,7 @@ where
     .bind(commission_amount)
     .bind(pickup_photo_key)
     .bind(delivery_photo_key)
+    .bind(commission_payment_status)
     .fetch_one(&state.db)
     .await
     .map_err(|err| ApiError::BadRequest(format!("完成运输失败: {err}")))?;
@@ -614,6 +620,37 @@ where
         return Err(ApiError::BadRequest("需求方尚未付款".to_string()));
     }
 
+    if !has_payable_commission(order.commission_amount) {
+        let updated = sqlx::query_scalar::<_, Value>(
+            r#"
+            UPDATE orders
+            SET status = 'completed',
+                commission_amount = COALESCE(commission_amount, 0),
+                commission_payment_status = 'not_required',
+                payment_confirm_time = now(),
+                actual_complete_time = now(),
+                updated_at = now()
+            WHERE id = $1
+            RETURNING row_to_json(orders)
+            "#,
+        )
+        .bind(&id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("确认收款失败: {err}")))?;
+
+        finalize_completed_order(
+            &state.db,
+            &order,
+            "order_completed",
+            "订单已完成",
+            "需求方付款已确认，订单已完成，车辆已恢复空闲状态。信用积分 +2",
+        )
+        .await?;
+
+        return Ok(ok("收款已确认，订单已完成", updated));
+    }
+
     let updated = sqlx::query_scalar::<_, Value>(
         r#"
         UPDATE orders
@@ -711,6 +748,9 @@ where
     let order = fetch_order(&state.db, &id).await?;
     if order.status.as_deref() != Some("payment_confirmed") {
         return Err(ApiError::BadRequest("请先确认收款".to_string()));
+    }
+    if !has_payable_commission(order.commission_amount) {
+        return Err(ApiError::BadRequest("该订单无需支付佣金".to_string()));
     }
     if order.commission_payment_status.as_deref() == Some("paid") {
         return Err(ApiError::BadRequest("已标记为已支付佣金".to_string()));
@@ -812,40 +852,17 @@ where
     .await
     .map_err(|err| ApiError::BadRequest(format!("确认佣金失败: {err}")))?;
 
-    update_demand_status(&state.db, order.demand_id.as_deref(), "completed").await?;
-    if let Some(vehicle_id) = order.vehicle_id.as_deref() {
-        sqlx::query("UPDATE vehicles SET trip_status = 'idle', updated_at = now() WHERE id = $1")
-            .bind(vehicle_id)
-            .execute(&state.db)
-            .await?;
-    }
-    increment_credit_score(&state.db, order.owner_id.as_deref()).await?;
-    let requester_id = resolve_order_requester_id(&state.db, &order).await?;
-    increment_credit_score(&state.db, requester_id.as_deref()).await?;
-
-    create_notification(
+    finalize_completed_order(
         &state.db,
-        order.owner_id.as_deref(),
+        &order,
         "commission_confirmed",
         "佣金已审核通过",
         &format!(
             "您支付的佣金¥{:.2}已审核通过，订单已完成，车辆已恢复空闲状态。信用积分 +2",
             order.commission_amount.unwrap_or(0.0)
         ),
-        Some(&order.id),
-        order.demand_id.as_deref(),
     )
-    .await;
-    create_notification(
-        &state.db,
-        requester_id.as_deref(),
-        "order_completed",
-        "订单已完成",
-        "您的订单已完成，感谢使用本平台。信用积分 +2",
-        Some(&order.id),
-        order.demand_id.as_deref(),
-    )
-    .await;
+    .await?;
 
     Ok(ok("佣金已确认，订单完成", updated))
 }
@@ -1226,6 +1243,49 @@ async fn increment_credit_score(pool: &PgPool, user_id: Option<&str>) -> ApiResu
     Ok(())
 }
 
+async fn finalize_completed_order(
+    pool: &PgPool,
+    order: &OrderRow,
+    owner_notification_type: &str,
+    owner_notification_title: &str,
+    owner_notification_content: &str,
+) -> ApiResult<()> {
+    update_demand_status(pool, order.demand_id.as_deref(), "completed").await?;
+    if let Some(vehicle_id) = order.vehicle_id.as_deref() {
+        sqlx::query("UPDATE vehicles SET trip_status = 'idle', updated_at = now() WHERE id = $1")
+            .bind(vehicle_id)
+            .execute(pool)
+            .await?;
+    }
+
+    increment_credit_score(pool, order.owner_id.as_deref()).await?;
+    let requester_id = resolve_order_requester_id(pool, order).await?;
+    increment_credit_score(pool, requester_id.as_deref()).await?;
+
+    create_notification(
+        pool,
+        order.owner_id.as_deref(),
+        owner_notification_type,
+        owner_notification_title,
+        owner_notification_content,
+        Some(&order.id),
+        order.demand_id.as_deref(),
+    )
+    .await;
+    create_notification(
+        pool,
+        requester_id.as_deref(),
+        "order_completed",
+        "订单已完成",
+        "您的订单已完成，感谢使用本平台。信用积分 +2",
+        Some(&order.id),
+        order.demand_id.as_deref(),
+    )
+    .await;
+
+    Ok(())
+}
+
 async fn create_notification(
     pool: &PgPool,
     user_id: Option<&str>,
@@ -1296,10 +1356,12 @@ async fn fetch_commission_rows(
         Some(status) => {
             builder.push(" WHERE o.status = ");
             builder.push_bind(status);
+            builder.push(" AND COALESCE(o.commission_amount, 0) > 0");
             builder.push(" ORDER BY o.commission_payment_time DESC NULLS FIRST");
         }
         None => {
             builder.push(" WHERE o.status IN ('completed', 'commission_pending')");
+            builder.push(" AND COALESCE(o.commission_amount, 0) > 0");
             builder.push(" ORDER BY o.actual_complete_time DESC NULLS LAST");
         }
     }
@@ -1324,4 +1386,21 @@ fn non_empty(value: Option<String>) -> Option<String> {
     value
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn has_payable_commission(amount: Option<f64>) -> bool {
+    amount.unwrap_or(0.0) > 0.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_payable_commission;
+
+    #[test]
+    fn payable_commission_requires_a_positive_amount() {
+        assert!(!has_payable_commission(None));
+        assert!(!has_payable_commission(Some(0.0)));
+        assert!(!has_payable_commission(Some(-1.0)));
+        assert!(has_payable_commission(Some(0.01)));
+    }
 }

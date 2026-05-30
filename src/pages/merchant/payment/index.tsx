@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { View, Text, Image } from '@tarojs/components'
+import { View, Text } from '@tarojs/components'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import Taro from '@tarojs/taro'
@@ -7,6 +7,7 @@ import { Wallet } from 'lucide-react-taro'
 import { AppPageShell } from '@/components/layout/app-page-shell'
 import { BottomNav } from '@/components/layout/bottom-nav'
 import { Network } from '@/network'
+import { startOrderPayment } from '@/services/payment'
 
 interface PaymentInfo {
   orderId: string
@@ -90,51 +91,35 @@ export default function MerchantPayment() {
     }
   }
 
-  const handleMarkPayment = async () => {
+  const handlePayOrder = async () => {
     if (!paymentInfo) return
 
-    Taro.showModal({
-      title: '确认已付款',
-      content: '确认已向运力方支付运费？提交后等待运力方确认。',
-      success: async (res) => {
-        if (res.confirm) {
-          setMarking(true)
+    setMarking(true)
 
-          try {
-            const response = await Network.request({
-              url: `/api/orders/${paymentInfo.orderId}/payment-marked`,
-              method: 'PUT'
-            })
+    try {
+      const result = await startOrderPayment({
+        orderId: paymentInfo.orderId,
+        businessType: 'order_fare',
+      })
+      const isPaid = result.status === 'paid' || result.paymentStatus === 'paid'
 
-            console.log('标记付款响应:', response.data)
+      Taro.showToast({
+        title: isPaid ? '支付成功，等待确认' : '支付已发起，稍后同步',
+        icon: isPaid ? 'success' : 'none',
+      })
 
-            if (response.data.code === 200) {
-              Taro.showToast({
-                title: '已标记为已付款，等待运力方确认',
-                icon: 'success'
-              })
-
-              setTimeout(() => {
-                Taro.navigateBack()
-              }, 1500)
-            } else {
-              Taro.showToast({
-                title: response.data.message || '操作失败',
-                icon: 'none'
-              })
-            }
-          } catch (error) {
-            console.error('标记付款失败:', error)
-            Taro.showToast({
-              title: '网络错误，请重试',
-              icon: 'none'
-            })
-          } finally {
-            setMarking(false)
-          }
-        }
-      }
-    })
+      setTimeout(() => {
+        Taro.navigateBack()
+      }, 1500)
+    } catch (error) {
+      console.error('微信支付失败:', error)
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '支付失败，请重试',
+        icon: 'none'
+      })
+    } finally {
+      setMarking(false)
+    }
   }
 
   if (loading) {
@@ -246,57 +231,23 @@ export default function MerchantPayment() {
           </Card>
         )}
 
-        {/* 收款码卡片 */}
-        {displayPaymentInfo.paymentQr ? (
-          <Card className="bg-white rounded-lg shadow-sm mb-4">
-            <CardHeader>
-              <CardTitle className="text-base font-semibold">
-                收款码
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <View className="flex flex-col items-center">
-                <View className="w-48 h-48 bg-gray-100 rounded-lg overflow-hidden mb-3">
-                  <Image
-                    src={displayPaymentInfo.paymentQr}
-                    className="w-full h-full"
-                    mode="aspectFit"
-                    lazyLoad
-                    onLoad={() => {
-                      console.log('收款码加载成功')
-                    }}
-                    onError={() => {
-                      console.error('收款码加载失败')
-                      Taro.showToast({
-                        title: '收款码加载失败',
-                        icon: 'none'
-                      })
-                    }}
-                  />
-                </View>
-                <Text className="block text-sm text-gray-600 text-center mb-2">
-                  请使用微信扫描上方二维码支付
-                </Text>
-                <Text className="block text-xs text-gray-500 text-center">
-                  支付金额：¥{displayPaymentInfo.farePrice}
-                </Text>
-              </View>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="bg-white rounded-lg shadow-sm mb-4">
-            <CardContent className="p-4">
-              <View className="text-center py-4">
-                <Text className="block text-sm text-orange-600 mb-2">
-                  ⚠️ 运力方暂未上传收款码
-                </Text>
-                <Text className="block text-xs text-gray-500">
-                  请联系运力方获取收款方式
-                </Text>
-              </View>
-            </CardContent>
-          </Card>
-        )}
+        <Card className="bg-white rounded-lg shadow-sm mb-4">
+          <CardHeader>
+            <CardTitle className="text-base font-semibold">
+              微信支付
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <View className="space-y-2">
+              <Text className="block text-sm text-gray-700">
+                运费将通过微信支付进入平台支付单，支付结果由服务端向微信查单同步。
+              </Text>
+              <Text className="block text-xs text-gray-500">
+                支付金额：¥{displayPaymentInfo.farePrice}
+              </Text>
+            </View>
+          </CardContent>
+        </Card>
 
         {/* 操作按钮 */}
         {displayPaymentInfo.status === 'transport_completed' && displayPaymentInfo.paymentStatus === 'unpaid' && (
@@ -304,11 +255,11 @@ export default function MerchantPayment() {
             <CardContent className="p-4">
               <Button
                 className="w-full bg-green-500"
-                onClick={handleMarkPayment}
+                onClick={handlePayOrder}
                 disabled={marking}
               >
                 <Text className="text-sm">
-                  {marking ? '提交中...' : '我已付款'}
+                  {marking ? '支付中...' : '立即微信支付'}
                 </Text>
               </Button>
             </CardContent>
@@ -323,7 +274,7 @@ export default function MerchantPayment() {
                 <View className="flex items-center justify-center mb-2">
                   <Text className="block text-3xl mr-2">✓</Text>
                   <Text className="block text-base font-semibold text-blue-600">
-                    已标记为已付款
+                    运费已支付
                   </Text>
                 </View>
                 <Text className="block text-sm text-gray-600">
@@ -341,10 +292,10 @@ export default function MerchantPayment() {
           </Text>
           <View className="space-y-1">
             <Text className="block text-xs text-blue-700">
-              • 请在完成运输后向运力方支付运费
+              • 请在完成运输后通过微信支付运费
             </Text>
             <Text className="block text-xs text-blue-700">
-              • 扫码支付后请点击&quot;我已付款&quot;按钮
+              • 支付成功后平台会自动同步支付状态
             </Text>
             <Text className="block text-xs text-blue-700">
               • 运力方确认收款后，订单将继续进行

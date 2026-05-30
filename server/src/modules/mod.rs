@@ -15,6 +15,7 @@ pub mod health;
 pub mod home;
 pub mod notifications;
 pub mod orders;
+pub mod payments;
 pub mod platform;
 pub mod rental_reminders;
 pub mod station;

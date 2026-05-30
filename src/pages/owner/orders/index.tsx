@@ -125,13 +125,23 @@ export default function OwnerOrders() {
     }
   }
 
-  const getStatusText = (status: string, payment_status?: string) => {
+  const hasPayableCommission = (order: Order) => {
+    return (order.commission_amount || 0) > 0
+  }
+
+  const getStatusText = (order: Order) => {
+    const status = order.status
+    const payment_status = order.payment_status
+
     // 特殊处理 transport_completed 状态，根据 payment_status 显示不同文本
     if (status === 'transport_completed') {
       if (payment_status === 'paid') {
         return '运输完成（已付款）'
       }
       return '运输完成（待付款）'
+    }
+    if (status === 'payment_confirmed' && !hasPayableCommission(order)) {
+      return '收款已确认'
     }
 
     const statuses: Record<string, string> = {
@@ -540,7 +550,7 @@ export default function OwnerOrders() {
                           )}
                           <Badge className={getStatusColor(order.status, order.payment_status)}>
                             <Text className="text-white text-xs">
-                              {getStatusText(order.status, order.payment_status)}
+                              {getStatusText(order)}
                             </Text>
                           </Badge>
                         </View>
@@ -587,7 +597,7 @@ export default function OwnerOrders() {
                           <Text className="text-xs">确认收款</Text>
                         </Button>
                       )}
-                      {order.status === 'payment_confirmed' && (
+                      {order.status === 'payment_confirmed' && hasPayableCommission(order) && (
                         <Button
                           size="sm"
                           className="bg-purple-500"
