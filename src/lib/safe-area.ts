@@ -1,5 +1,6 @@
 import Taro from '@tarojs/taro'
 import { isH5 } from './platform'
+import { getAppWindowInfo } from './window-info'
 
 const toNumber = (value: unknown) => {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0
@@ -16,7 +17,7 @@ export const getMiniProgramSafeAreaInsets = () => {
   }
 
   try {
-    const info = Taro.getSystemInfoSync() as any
+    const info = getAppWindowInfo()
     const statusBarHeight = toNumber(info.statusBarHeight)
     const safeTop = toNumber(info.safeArea?.top)
     const screenHeight = toNumber(info.screenHeight || info.windowHeight)
@@ -42,7 +43,7 @@ export const getPageHeaderPaddingRight = () => {
   if (isH5()) return 16
 
   try {
-    const info = Taro.getSystemInfoSync() as any
+    const info = getAppWindowInfo()
     const menuButton = Taro.getMenuButtonBoundingClientRect()
     const windowWidth = toNumber(info.windowWidth || info.screenWidth)
     const menuLeft = toNumber(menuButton.left)

@@ -1,5 +1,6 @@
 import Taro from '@tarojs/taro'
 import { canUseDOM, isH5 } from './platform'
+import { getAppWindowInfo } from './window-info'
 
 export type Rect = { left: number; top: number; width: number; height: number }
 
@@ -27,7 +28,7 @@ export const getViewport = () => {
         return { width: window.innerWidth, height: window.innerHeight }
     }
     try {
-        const info = Taro.getSystemInfoSync()
+        const info = getAppWindowInfo()
         return {
             width: toNumber(info.windowWidth),
             height: toNumber(info.windowHeight),

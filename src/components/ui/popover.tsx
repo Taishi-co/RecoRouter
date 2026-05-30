@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils"
 import { Portal } from "@/components/ui/portal"
 import { useKeyboardOffset } from "@/lib/hooks/use-keyboard-offset"
 import { isH5 } from "@/lib/platform"
+import { getAppWindowInfo } from "@/lib/window-info"
 
 const PopoverContext = React.createContext<{
   open?: boolean
@@ -116,7 +117,7 @@ const PopoverContent = React.forwardRef<
                 return { width: window.innerWidth, height: window.innerHeight }
             }
             try {
-                const info = Taro.getSystemInfoSync()
+                const info = getAppWindowInfo()
                 return { width: info.windowWidth, height: info.windowHeight }
             } catch {
                 return { width: 375, height: 667 }
