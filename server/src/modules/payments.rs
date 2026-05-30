@@ -18,8 +18,7 @@ use crate::{
     wechat_pay::{
         decrypt_wechat_notification, exchange_miniapp_login_code, random_token, sign_message,
         truncate_chars, unix_timestamp, unix_timestamp_millis, wechat_authorization,
-        with_wechat_headers, with_wechat_json_headers, WechatNotifyBody,
-        WechatPayMerchantConfig,
+        with_wechat_headers, with_wechat_json_headers, WechatNotifyBody, WechatPayMerchantConfig,
     },
 };
 
@@ -610,8 +609,12 @@ async fn wechat_create_jsapi_prepay(
         }
     })
     .to_string();
-    let authorization =
-        wechat_authorization(&config.merchant, "POST", "/v3/pay/transactions/jsapi", &body)?;
+    let authorization = wechat_authorization(
+        &config.merchant,
+        "POST",
+        "/v3/pay/transactions/jsapi",
+        &body,
+    )?;
     let response = with_wechat_json_headers(
         reqwest::Client::new().post(WECHAT_JSAPI_URL),
         &authorization,

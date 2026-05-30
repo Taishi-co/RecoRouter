@@ -242,9 +242,7 @@ struct Code2SessionResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        decrypt_wechat_notification, with_wechat_json_headers, WechatNotifyResource,
-    };
+    use super::{decrypt_wechat_notification, with_wechat_json_headers, WechatNotifyResource};
 
     #[test]
     fn api_v3_json_requests_include_required_headers() {
