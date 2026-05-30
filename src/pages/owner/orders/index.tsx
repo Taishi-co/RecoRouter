@@ -7,7 +7,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { AppPageShell } from '@/components/layout/app-page-shell'
 import { BottomNav } from '@/components/layout/bottom-nav'
-import Taro from '@tarojs/taro'
+import Taro, { useDidShow } from '@tarojs/taro'
 import { Network } from '@/network'
 import { useNotificationPolling } from '@/hooks/useNotificationPolling'
 
@@ -64,6 +64,7 @@ export default function OwnerOrders() {
   const [pickupImage, setPickupImage] = useState('')
   const [deliveryImage, setDeliveryImage] = useState('')
   const [cancelReason, setCancelReason] = useState('')
+  const [pendingCancellationCount, setPendingCancellationCount] = useState(0)
 
   // 启用通知轮询
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -82,11 +83,48 @@ export default function OwnerOrders() {
       return
     }
     loadOrders()
+    loadPendingCancellationRequests(userInfo.id)
   }, [])
 
   useEffect(() => {
     loadOrders()
   }, [filterStatus])
+
+  useDidShow(() => {
+    const userInfo = Taro.getStorageSync('userInfo')
+    if (userInfo?.role === 'owner' && userInfo.id) {
+      loadPendingCancellationRequests(userInfo.id)
+    }
+  })
+
+  const loadPendingCancellationRequests = async (ownerId?: string) => {
+    const userInfo = ownerId ? { id: ownerId } : Taro.getStorageSync('userInfo')
+    if (!userInfo?.id) {
+      setPendingCancellationCount(0)
+      return
+    }
+
+    try {
+      const res = await Network.request({
+        url: `/api/cancellations/pending?owner_id=${encodeURIComponent(userInfo.id)}`,
+        method: 'GET'
+      })
+
+      if (res.data.code === 200 && Array.isArray(res.data.data)) {
+        setPendingCancellationCount(res.data.data.length)
+      } else {
+        setPendingCancellationCount(0)
+      }
+    } catch (error) {
+      console.error('加载待处理取消申请失败:', error)
+      setPendingCancellationCount(0)
+    }
+  }
+
+  const handleRefresh = () => {
+    loadOrders()
+    loadPendingCancellationRequests()
+  }
 
   const loadOrders = async () => {
     setLoading(true)
@@ -458,7 +496,7 @@ export default function OwnerOrders() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={loadOrders}
+                onClick={handleRefresh}
                 disabled={loading}
               >
                 <Text className="text-xs">刷新</Text>
@@ -503,19 +541,21 @@ export default function OwnerOrders() {
             </View>
 
             {/* 取消申请提示 */}
-            <View
-              className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-3 mb-4"
-              onClick={() => Taro.navigateTo({ url: '/pages/owner/cancellations/index' })}
-            >
-              <View className="flex items-center justify-between">
-                <View className="flex items-center">
-                  <Text className="text-xs text-orange-600">
-                    📋 有需求方申请取消订单，请及时处理
-                  </Text>
+            {pendingCancellationCount > 0 && (
+              <View
+                className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-3 mb-4"
+                onClick={() => Taro.navigateTo({ url: '/pages/owner/cancellations/index' })}
+              >
+                <View className="flex items-center justify-between">
+                  <View className="flex items-center">
+                    <Text className="text-xs text-orange-600">
+                      📋 有 {pendingCancellationCount} 个需求方取消申请，请及时处理
+                    </Text>
+                  </View>
+                  <Text className="text-xs text-orange-500">查看处理 ›</Text>
                 </View>
-                <Text className="text-xs text-orange-500">查看处理 ›</Text>
               </View>
-            </View>
+            )}
 
             {loading ? (
               <View className="text-center py-8">
