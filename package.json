@@ -29,6 +29,7 @@
     "lint:build": "eslint \"src/**/*.{js,jsx,ts,tsx,css}\" --max-warnings=0",
     "lint:fix": "eslint \"src/**/*.{js,jsx,ts,tsx,css}\" --fix",
     "loadtest:backend": "node scripts/loadtest-backend.mjs",
+    "loadtest:backend:readiness": "node scripts/loadtest-backend-readiness.mjs",
     "new": "taro new",
     "preview:tt": "taro build --type tt --preview",
     "preview:weapp": "taro build --type weapp --preview",

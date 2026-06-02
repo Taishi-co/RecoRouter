@@ -13,6 +13,84 @@ The default script only calls safe read endpoints:
 
 It intentionally excludes real WeChat payment, transfer, upload, and write endpoints.
 
+## Full Readiness Load Test
+
+For launch preparation, use the readiness script after the candidate backend is
+deployed:
+
+```bash
+BACKEND_BASE_URL=https://car.shcxyz.site \
+pnpm loadtest:backend:readiness
+```
+
+The readiness script runs a staged load test and writes a formal Markdown report
+plus a JSON evidence file under `reports/loadtest/`.
+
+The default phases are:
+
+- smoke: `/api/health`, `/api/hello`
+- public dashboard reads: home, admin, platform, rental reminder, and location reads
+- core paginated reads: orders, demands, vehicles, admin users, admin orders
+- business filtered reads: owner, merchant, auth user info, notification, wallet, rental, address book, favorite route, demand template, demand schedule, and support reads
+- enterprise reads: enterprise, station, demand, external pending demand, and enterprise vehicle reads
+- safe compute POSTs: fare calculation, distance calculation, pricing validation, cargo analysis, and optional login
+
+The script auto-discovers fixture IDs from list endpoints and dependent list
+endpoints. You can also provide IDs explicitly:
+
+```bash
+BACKEND_BASE_URL=https://car.shcxyz.site \
+LOADTEST_USER_ID=<user_id> \
+LOADTEST_OWNER_ID=<owner_id> \
+LOADTEST_MERCHANT_ID=<merchant_id> \
+LOADTEST_ENTERPRISE_ID=<enterprise_id> \
+LOADTEST_ENTERPRISE_ADMIN_ID=<enterprise_admin_id> \
+LOADTEST_VEHICLE_ID=<vehicle_id> \
+LOADTEST_ENTERPRISE_VEHICLE_ID=<enterprise_vehicle_id> \
+LOADTEST_DEMAND_ID=<demand_id> \
+LOADTEST_ORDER_ID=<order_id> \
+LOADTEST_RENTAL_ID=<rental_id> \
+LOADTEST_ADDRESS_ID=<address_id> \
+LOADTEST_FAVORITE_ROUTE_ID=<favorite_route_id> \
+LOADTEST_DEMAND_TEMPLATE_ID=<demand_template_id> \
+LOADTEST_DEMAND_SCHEDULE_ID=<demand_schedule_id> \
+LOADTEST_STATION_ID=<station_id> \
+pnpm loadtest:backend:readiness
+```
+
+Optional login pressure requires a real test account:
+
+```bash
+LOADTEST_LOGIN_PHONE=<test_phone> \
+LOADTEST_LOGIN_PASSWORD=<test_password> \
+pnpm loadtest:backend:readiness
+```
+
+If a required ID cannot be discovered, that endpoint is marked as skipped in the
+report instead of causing a false failure.
+
+Readiness thresholds default to:
+
+- max error rate: `1%`
+- max overall p95 latency: `5000ms`
+
+Override them if the launch gate uses different SLOs:
+
+```bash
+LOADTEST_MAX_ERROR_RATE=0.005 \
+LOADTEST_MAX_OVERALL_P95_MS=3000 \
+pnpm loadtest:backend:readiness
+```
+
+For a short dry run:
+
+```bash
+BACKEND_BASE_URL=https://car.shcxyz.site \
+LOADTEST_DURATION_SECONDS=10 \
+LOADTEST_CONCURRENCY=2 \
+pnpm loadtest:backend:readiness
+```
+
 ## Run Locally
 
 Start the backend first:
@@ -87,5 +165,7 @@ Do not include these routes in the default load test:
 - `/api/payments/wechat/notify`
 - `/api/owner-wallet/withdraw`
 - `/api/owner-wallet/wechat-transfer/notify`
+- `/api/auth/captcha`
+- `/api/rental-reminders/check-expiry`
 
-Those routes should be tested with a sandbox or mock provider flow focused on idempotency and duplicate callback handling, not raw throughput.
+Those routes should be tested with a sandbox or mock provider flow focused on idempotency, duplicate callback handling, and side-effect safety, not raw throughput.
