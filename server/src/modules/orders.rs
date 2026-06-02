@@ -10,6 +10,7 @@ use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
 use crate::{
     app::AppState,
     error::{ApiError, ApiResult},
+    pagination::Pagination,
     response::{ok, ApiEnvelope},
     storage::Storage,
 };
@@ -70,6 +71,9 @@ struct OrderQuery {
     owner_id: Option<String>,
     merchant_id: Option<String>,
     status: Option<String>,
+    page: Option<i64>,
+    #[serde(rename = "pageSize", alias = "page_size", alias = "limit")]
+    page_size: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -343,7 +347,12 @@ where
         builder.push("o.status = ");
         builder.push_bind(status);
     }
-    builder.push(" ORDER BY o.created_at DESC, o.id DESC) order_row");
+    let pagination = Pagination::from_query(query.page, query.page_size);
+    builder.push(" ORDER BY o.created_at DESC, o.id DESC LIMIT ");
+    builder.push_bind(pagination.limit);
+    builder.push(" OFFSET ");
+    builder.push_bind(pagination.offset);
+    builder.push(") order_row");
 
     let orders = builder
         .build_query_scalar::<Value>()

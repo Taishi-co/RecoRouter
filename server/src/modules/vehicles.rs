@@ -12,6 +12,7 @@ use sqlx::FromRow;
 use crate::{
     app::AppState,
     error::{ApiError, ApiResult},
+    pagination::Pagination,
     response::{ok, ApiEnvelope},
     storage::Storage,
 };
@@ -48,6 +49,9 @@ where
 struct VehicleQuery {
     owner_id: Option<String>,
     user_id: Option<String>,
+    page: Option<i64>,
+    #[serde(rename = "pageSize", alias = "page_size", alias = "limit")]
+    page_size: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -226,51 +230,51 @@ where
     S: Storage,
 {
     let mut vehicles: Vec<(Value, Option<&'static str>)> = Vec::new();
+    let pagination = Pagination::from_query(query.page, query.page_size);
 
     if let Some(owner_id) = non_empty(query.owner_id.clone()) {
-        let owned = sqlx::query_scalar::<_, Value>(
+        let visible = sqlx::query_as::<_, (Value, String)>(
             r#"
-            SELECT row_to_json(vehicle_row)
-            FROM (
-                SELECT *
-                FROM vehicles
-                WHERE owner_id = $1
-                ORDER BY created_at DESC
-            ) vehicle_row
-            "#,
-        )
-        .bind(&owner_id)
-        .fetch_all(&state.db)
-        .await
-        .map_err(|err| ApiError::BadRequest(format!("查询失败: {err}")))?;
-        vehicles.extend(owned.into_iter().map(|vehicle| (vehicle, Some("owned"))));
-
-        let rented = sqlx::query_scalar::<_, Value>(
-            r#"
-            SELECT row_to_json(vehicle_row)
-            FROM (
-                SELECT v.*
+            WITH visible_vehicles AS (
+                SELECT v.*, 0::int AS ownership_rank, 'owned'::text AS ownership_type
+                FROM vehicles v
+                WHERE v.owner_id = $1
+                UNION ALL
+                SELECT v.*, 1::int AS ownership_rank, 'rented'::text AS ownership_type
                 FROM vehicles v
                 INNER JOIN vehicle_rentals r ON r.vehicle_id = v.id
                 WHERE r.renter_id = $1
                   AND r.status = 'active'
-                ORDER BY v.created_at DESC
+            ),
+            deduped_vehicles AS (
+                SELECT DISTINCT ON (id) *
+                FROM visible_vehicles
+                ORDER BY id, ownership_rank ASC, created_at DESC
+            )
+            SELECT to_jsonb(vehicle_row) - 'ownership_rank' - 'ownership_type',
+                   vehicle_row.ownership_type
+            FROM (
+                SELECT *
+                FROM deduped_vehicles
+                ORDER BY created_at DESC, id DESC
+                LIMIT $2 OFFSET $3
             ) vehicle_row
             "#,
         )
         .bind(&owner_id)
+        .bind(pagination.limit)
+        .bind(pagination.offset)
         .fetch_all(&state.db)
         .await
-        .map_err(|err| ApiError::BadRequest(format!("查询租赁记录失败: {err}")))?;
-        for vehicle in rented {
-            let rented_id = vehicle_id(&vehicle);
-            if !vehicles
-                .iter()
-                .any(|(existing, _)| vehicle_id(existing) == rented_id)
-            {
-                vehicles.push((vehicle, Some("rented")));
-            }
-        }
+        .map_err(|err| ApiError::BadRequest(format!("查询失败: {err}")))?;
+        vehicles.extend(visible.into_iter().map(|(vehicle, ownership_type)| {
+            let ownership_type = match ownership_type.as_str() {
+                "owned" => Some("owned"),
+                "rented" => Some("rented"),
+                _ => None,
+            };
+            (vehicle, ownership_type)
+        }));
     } else {
         let all = sqlx::query_scalar::<_, Value>(
             r#"
@@ -278,10 +282,13 @@ where
             FROM (
                 SELECT *
                 FROM vehicles
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id DESC
+                LIMIT $1 OFFSET $2
             ) vehicle_row
             "#,
         )
+        .bind(pagination.limit)
+        .bind(pagination.offset)
         .fetch_all(&state.db)
         .await
         .map_err(|err| ApiError::BadRequest(format!("查询失败: {err}")))?;
@@ -839,10 +846,6 @@ async fn rental_settings_value(pool: &sqlx::PgPool, id: &str) -> ApiResult<Value
     .fetch_optional(pool)
     .await?
     .ok_or_else(|| ApiError::NotFound("车辆不存在".to_string()))
-}
-
-fn vehicle_id(vehicle: &Value) -> Option<&str> {
-    vehicle.get("id").and_then(Value::as_str)
 }
 
 fn vehicle_upload_error(error: ApiError) -> Json<Value> {
