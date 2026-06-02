@@ -27,6 +27,8 @@ mkdir -p "$OUT_DIR"
 cp server/target/release/recorouter-api "$OUT_DIR/recorouter-api"
 cp -R server/migrations "$OUT_DIR/migrations"
 cp -R deploy "$OUT_DIR/deploy"
+mkdir -p "$OUT_DIR/mall-products"
+cp -R src/assets/mall-products/. "$OUT_DIR/mall-products/"
 if [[ "${BUILD_WEB:-1}" == "1" ]]; then
   test -d "$WEB_OUTPUT_ROOT"
   cp -R "$WEB_OUTPUT_ROOT" "$OUT_DIR/dist-web"

@@ -897,6 +897,7 @@ async fn register_auth_user(
     role: &str,
     name: &str,
 ) -> (StatusCode, Value) {
+    let (captcha_id, captcha_code) = auth_captcha_answer(app).await;
     let response = app
         .clone()
         .oneshot(
@@ -908,6 +909,9 @@ async fn register_auth_user(
                     serde_json::json!({
                         "phone": phone,
                         "password": "secret123",
+                        "confirmPassword": "secret123",
+                        "captchaId": captcha_id,
+                        "captchaCode": captcha_code,
                         "name": name,
                         "role": role
                     })
@@ -923,6 +927,38 @@ async fn register_auth_user(
     (status, body)
 }
 
+async fn auth_captcha_answer(app: &Router) -> (String, String) {
+    let (status, body) = get_json(app, "/api/auth/captcha").await;
+    assert_eq!(status, StatusCode::OK);
+    let captcha_id = body["data"]["captchaId"]
+        .as_str()
+        .expect("captcha id should be returned")
+        .to_string();
+    let image = body["data"]["image"]
+        .as_str()
+        .expect("captcha image should be returned");
+    let marker = "font-weight%3D%22700%22%20fill%3D%22%23111827%22%3E";
+    let code: String = image
+        .match_indices(marker)
+        .filter_map(|(index, _)| image[index + marker.len()..].chars().next())
+        .collect();
+    assert_eq!(code.len(), 4, "captcha answer should be visible in SVG");
+
+    (captcha_id, code)
+}
+
+async fn login_auth_user(app: &Router, phone: &str, password: &str) -> (StatusCode, Value) {
+    post_json(
+        app,
+        "/api/auth/login",
+        serde_json::json!({
+            "phone": phone,
+            "password": password
+        }),
+    )
+    .await
+}
+
 async fn post_json(app: &Router, uri: &str, body: Value) -> (StatusCode, Value) {
     let response = app
         .clone()
@@ -936,6 +972,35 @@ async fn post_json(app: &Router, uri: &str, body: Value) -> (StatusCode, Value) 
         )
         .await
         .expect("json request should complete");
+    let status = response.status();
+    let body = optional_body_json(response).await;
+
+    (status, body)
+}
+
+async fn post_json_with_auth(
+    app: &Router,
+    uri: &str,
+    bearer: Option<&str>,
+    body: Value,
+) -> (StatusCode, Value) {
+    let mut builder = Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("content-type", "application/json");
+    if let Some(token) = bearer {
+        builder = builder.header("authorization", format!("Bearer {token}"));
+    }
+
+    let response = app
+        .clone()
+        .oneshot(
+            builder
+                .body(Body::from(body.to_string()))
+                .expect("authenticated json request should build"),
+        )
+        .await
+        .expect("authenticated json request should complete");
     let status = response.status();
     let body = optional_body_json(response).await;
 
@@ -990,6 +1055,27 @@ async fn get_json(app: &Router, uri: &str) -> (StatusCode, Value) {
         )
         .await
         .expect("get request should complete");
+    let status = response.status();
+    let body = optional_body_json(response).await;
+
+    (status, body)
+}
+
+async fn get_json_with_auth(app: &Router, uri: &str, bearer: Option<&str>) -> (StatusCode, Value) {
+    let mut builder = Request::builder().uri(uri);
+    if let Some(token) = bearer {
+        builder = builder.header("authorization", format!("Bearer {token}"));
+    }
+
+    let response = app
+        .clone()
+        .oneshot(
+            builder
+                .body(Body::empty())
+                .expect("authenticated get request should build"),
+        )
+        .await
+        .expect("authenticated get request should complete");
     let status = response.status();
     let body = optional_body_json(response).await;
 
@@ -2107,7 +2193,19 @@ async fn auth_register_and_login_preserve_response_shape() {
     assert_eq!(register_body["data"]["phone"], phone);
     assert_eq!(register_body["data"]["name"], "测试用户");
     assert_eq!(register_body["data"]["role"], "owner");
-    assert_eq!(register_body["data"]["token"], register_body["data"]["id"]);
+    let register_token = register_body["data"]["token"]
+        .as_str()
+        .expect("register token should be returned");
+    assert_ne!(register_token, register_body["data"]["id"]);
+    assert!(register_token.len() >= 32);
+
+    let registered_session_user_id: String =
+        sqlx::query_scalar("SELECT user_id FROM admin_sessions WHERE token = $1")
+            .bind(register_token)
+            .fetch_one(&context.pool)
+            .await
+            .expect("register session should be persisted");
+    assert_eq!(registered_session_user_id, register_body["data"]["id"]);
 
     let login = context
         .app
@@ -2137,7 +2235,170 @@ async fn auth_register_and_login_preserve_response_shape() {
     assert_eq!(login_body["data"]["phone"], phone);
     assert_eq!(login_body["data"]["name"], "测试用户");
     assert_eq!(login_body["data"]["role"], "owner");
-    assert_eq!(login_body["data"]["token"], login_body["data"]["id"]);
+    let login_token = login_body["data"]["token"]
+        .as_str()
+        .expect("login token should be returned");
+    assert_ne!(login_token, login_body["data"]["id"]);
+    assert_ne!(login_token, register_token);
+
+    let login_session_user_id: String =
+        sqlx::query_scalar("SELECT user_id FROM admin_sessions WHERE token = $1")
+            .bind(login_token)
+            .fetch_one(&context.pool)
+            .await
+            .expect("login session should be persisted");
+    assert_eq!(login_session_user_id, login_body["data"]["id"]);
+
+    let (logout_status, logout_body) = post_json_with_auth(
+        &context.app,
+        "/api/auth/logout",
+        Some(login_token),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(logout_status, StatusCode::OK);
+    assert_eq!(logout_body["message"], "退出登录成功");
+
+    let revoked_at: Option<chrono::DateTime<chrono::Utc>> =
+        sqlx::query_scalar("SELECT revoked_at FROM admin_sessions WHERE token = $1")
+            .bind(login_token)
+            .fetch_one(&context.pool)
+            .await
+            .expect("revoked login session should remain readable");
+    assert!(revoked_at.is_some());
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
+async fn core_admin_routes_require_active_admin_bearer_session() {
+    let Some(context) = auth_test_context().await else {
+        return;
+    };
+
+    let admin_password = bcrypt::hash("secret123", 10).expect("test password should hash");
+    let admin_id: String = sqlx::query_scalar(
+        r#"
+        INSERT INTO users (phone, password, role, name, status)
+        VALUES ('13900000111', $1, 'admin', '后台管理员', 'active')
+        RETURNING id
+        "#,
+    )
+    .bind(admin_password)
+    .fetch_one(&context.pool)
+    .await
+    .expect("admin user should insert");
+
+    let (admin_login_status, admin_login_body) =
+        login_auth_user(&context.app, "13900000111", "secret123").await;
+    assert_eq!(admin_login_status, StatusCode::OK);
+    assert_eq!(admin_login_body["data"]["id"], admin_id);
+    let admin_token = admin_login_body["data"]["token"]
+        .as_str()
+        .expect("admin token should be returned")
+        .to_string();
+
+    let (_, owner_body) =
+        register_auth_user(&context.app, "13900000112", "owner", "非管理员").await;
+    let owner_token = owner_body["data"]["token"]
+        .as_str()
+        .expect("owner token should be returned");
+
+    let (missing_status, missing_body) = get_json(&context.app, "/api/admin/users").await;
+    assert_eq!(missing_status, StatusCode::UNAUTHORIZED);
+    assert_eq!(missing_body["message"], "缺少登录凭证");
+
+    let (invalid_status, invalid_body) =
+        get_json_with_auth(&context.app, "/api/admin/users", Some("not-a-session")).await;
+    assert_eq!(invalid_status, StatusCode::UNAUTHORIZED);
+    assert_eq!(invalid_body["message"], "登录已失效");
+
+    let (non_admin_status, non_admin_body) =
+        get_json_with_auth(&context.app, "/api/admin/users", Some(owner_token)).await;
+    assert_eq!(non_admin_status, StatusCode::FORBIDDEN);
+    assert_eq!(non_admin_body["message"], "需要管理员权限");
+
+    let (admin_status, admin_body) =
+        get_json_with_auth(&context.app, "/api/admin/users", Some(&admin_token)).await;
+    assert_eq!(admin_status, StatusCode::OK);
+    assert_eq!(admin_body["message"], "查询成功");
+
+    let (wallet_missing_status, wallet_missing_body) =
+        get_json(&context.app, "/api/admin/owner-withdrawals").await;
+    assert_eq!(wallet_missing_status, StatusCode::UNAUTHORIZED);
+    assert_eq!(wallet_missing_body["message"], "缺少登录凭证");
+
+    let (wallet_admin_status, wallet_admin_body) = get_json_with_auth(
+        &context.app,
+        "/api/admin/owner-withdrawals",
+        Some(&admin_token),
+    )
+    .await;
+    assert_eq!(wallet_admin_status, StatusCode::OK);
+    assert_eq!(wallet_admin_body["message"], "查询成功");
+
+    let (manual_invalid_status, manual_invalid_body) = post_json_with_auth(
+        &context.app,
+        "/api/admin/owner-withdrawals/missing/manual-complete",
+        Some("not-a-session"),
+        serde_json::json!({ "note": "ignored" }),
+    )
+    .await;
+    assert_eq!(manual_invalid_status, StatusCode::UNAUTHORIZED);
+    assert_eq!(manual_invalid_body["message"], "登录已失效");
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
+async fn disabled_users_cannot_login_or_reuse_admin_sessions() {
+    let Some(context) = auth_test_context().await else {
+        return;
+    };
+
+    sqlx::query(
+        r#"
+        INSERT INTO users (phone, password, role, name, status)
+        VALUES ('13900000113', $1, 'admin', '停用管理员', 'disabled')
+        "#,
+    )
+    .bind(bcrypt::hash("secret123", 10).expect("test password should hash"))
+    .execute(&context.pool)
+    .await
+    .expect("disabled admin user should insert");
+
+    let (disabled_login_status, disabled_login_body) =
+        login_auth_user(&context.app, "13900000113", "secret123").await;
+    assert_eq!(disabled_login_status, StatusCode::UNAUTHORIZED);
+    assert_eq!(disabled_login_body["message"], "账号已被禁用");
+
+    let active_admin_id: String = sqlx::query_scalar(
+        r#"
+        INSERT INTO users (phone, password, role, name, status)
+        VALUES ('13900000114', $1, 'admin', '稍后停用管理员', 'active')
+        RETURNING id
+        "#,
+    )
+    .bind(bcrypt::hash("secret123", 10).expect("test password should hash"))
+    .fetch_one(&context.pool)
+    .await
+    .expect("active admin user should insert");
+
+    let (_, active_login_body) = login_auth_user(&context.app, "13900000114", "secret123").await;
+    let active_token = active_login_body["data"]["token"]
+        .as_str()
+        .expect("active admin token should be returned");
+
+    sqlx::query("UPDATE users SET status = 'disabled' WHERE id = $1")
+        .bind(active_admin_id)
+        .execute(&context.pool)
+        .await
+        .expect("admin user should be disabled");
+
+    let (disabled_session_status, disabled_session_body) =
+        get_json_with_auth(&context.app, "/api/admin/users", Some(active_token)).await;
+    assert_eq!(disabled_session_status, StatusCode::UNAUTHORIZED);
+    assert_eq!(disabled_session_body["message"], "账号已被禁用");
 
     context.cleanup().await;
 }

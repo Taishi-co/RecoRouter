@@ -33,7 +33,6 @@ where
             get(get_vehicle::<S>).put(update_vehicle::<S>),
         )
         .route("/api/vehicles/:id/status", put(update_status::<S>))
-        .route("/api/vehicles/:id/review", post(review_vehicle::<S>))
         .route("/api/vehicles/:id/resubmit", post(resubmit_vehicle::<S>))
         .route(
             "/api/vehicles/:id/availability",
@@ -43,6 +42,13 @@ where
             "/api/vehicles/:id/rental-settings",
             get(get_rental_settings::<S>).put(update_rental_settings::<S>),
         )
+}
+
+pub fn admin_router<S>() -> Router<AppState<S>>
+where
+    S: Storage,
+{
+    Router::new().route("/api/vehicles/:id/review", post(review_vehicle::<S>))
 }
 
 #[derive(Debug, Deserialize)]

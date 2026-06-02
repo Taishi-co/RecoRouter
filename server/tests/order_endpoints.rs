@@ -139,6 +139,15 @@ impl Storage for FailingUrlStorage {
         Ok("unused/key.png".to_string())
     }
 
+    async fn put_key(
+        &self,
+        _bytes: Vec<u8>,
+        key: &str,
+        _content_type: Option<&str>,
+    ) -> Result<String, ApiError> {
+        Ok(key.to_string())
+    }
+
     async fn public_url(&self, _key: &str) -> Result<String, ApiError> {
         Err(ApiError::Storage("signing failed".to_string()))
     }
@@ -208,6 +217,44 @@ async fn request_json(
     (status, json)
 }
 
+async fn request_json_with_auth(
+    app: &Router,
+    method: &str,
+    uri: &str,
+    bearer: &str,
+    body: Option<Value>,
+) -> (StatusCode, Value) {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("authorization", format!("Bearer {bearer}"));
+    if body.is_some() {
+        builder = builder.header("content-type", "application/json");
+    }
+    let response = app
+        .clone()
+        .oneshot(
+            builder
+                .body(Body::from(
+                    body.map(|value| value.to_string()).unwrap_or_default(),
+                ))
+                .expect("authenticated request should build"),
+        )
+        .await
+        .expect("authenticated request should complete");
+    let status = response.status();
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should read");
+    let json = if body.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&body).expect("response body should be json")
+    };
+
+    (status, json)
+}
+
 async fn post_json(app: &Router, uri: &str, body: Value) -> (StatusCode, Value) {
     request_json(app, "POST", uri, Some(body)).await
 }
@@ -216,8 +263,21 @@ async fn put_json(app: &Router, uri: &str, body: Value) -> (StatusCode, Value) {
     request_json(app, "PUT", uri, Some(body)).await
 }
 
+async fn put_json_with_auth(
+    app: &Router,
+    uri: &str,
+    bearer: &str,
+    body: Value,
+) -> (StatusCode, Value) {
+    request_json_with_auth(app, "PUT", uri, bearer, Some(body)).await
+}
+
 async fn get_json(app: &Router, uri: &str) -> (StatusCode, Value) {
     request_json(app, "GET", uri, None).await
+}
+
+async fn get_json_with_auth(app: &Router, uri: &str, bearer: &str) -> (StatusCode, Value) {
+    request_json_with_auth(app, "GET", uri, bearer, None).await
 }
 
 async fn insert_user(pool: &PgPool, phone: &str, role: &str, name: &str) -> String {
@@ -234,6 +294,22 @@ async fn insert_user(pool: &PgPool, phone: &str, role: &str, name: &str) -> Stri
     .fetch_one(pool)
     .await
     .expect("user should be inserted")
+}
+
+async fn insert_session(pool: &PgPool, user_id: &str, token: &str) -> String {
+    sqlx::query(
+        r#"
+        INSERT INTO admin_sessions (token, user_id)
+        VALUES ($1, $2)
+        "#,
+    )
+    .bind(token)
+    .bind(user_id)
+    .execute(pool)
+    .await
+    .expect("session should be inserted");
+
+    token.to_string()
 }
 
 async fn insert_vehicle(pool: &PgPool, owner_id: &str, plate: &str) -> String {
@@ -331,8 +407,14 @@ async fn order_static_commission_routes_are_not_captured_by_id_route() {
         return;
     };
 
+    let admin_id = insert_user(&context.pool, "13930000990", "admin", "佣金管理员").await;
+    let admin_token = insert_session(&context.pool, &admin_id, "orders-admin-session-1").await;
+
+    let (missing_status, _) = get_json(&context.app, "/api/orders/commission-summary").await;
+    assert_eq!(missing_status, StatusCode::UNAUTHORIZED);
+
     let (summary_status, summary_body) =
-        get_json(&context.app, "/api/orders/commission-summary").await;
+        get_json_with_auth(&context.app, "/api/orders/commission-summary", &admin_token).await;
     assert_eq!(summary_status, StatusCode::OK);
     assert_eq!(summary_body["message"], "查询成功");
     assert_eq!(summary_body["data"]["summary"]["totalOrders"], 0);
@@ -345,7 +427,7 @@ async fn order_static_commission_routes_are_not_captured_by_id_route() {
     );
 
     let (pending_status, pending_body) =
-        get_json(&context.app, "/api/orders/commission-pending").await;
+        get_json_with_auth(&context.app, "/api/orders/commission-pending", &admin_token).await;
     assert_eq!(pending_status, StatusCode::OK);
     assert_eq!(pending_body["message"], "查询成功");
     assert_eq!(pending_body["data"].as_array().unwrap().len(), 0);
@@ -374,6 +456,8 @@ async fn order_lifecycle_matches_legacy_payment_and_commission_flow() {
 
     let merchant_id = insert_user(&context.pool, "13930000001", "merchant", "货主一").await;
     let owner_id = insert_user(&context.pool, "13930000002", "owner", "车主一").await;
+    let admin_id = insert_user(&context.pool, "13930000003", "admin", "佣金管理员").await;
+    let admin_token = insert_session(&context.pool, &admin_id, "orders-admin-session-2").await;
     sqlx::query("UPDATE users SET wechat_payment_qr = 'owner/qr.png' WHERE id = $1")
         .bind(&owner_id)
         .execute(&context.pool)
@@ -537,14 +621,14 @@ async fn order_lifecycle_matches_legacy_payment_and_commission_flow() {
     );
 
     let (pending_status, pending_body) =
-        get_json(&context.app, "/api/orders/commission-pending").await;
+        get_json_with_auth(&context.app, "/api/orders/commission-pending", &admin_token).await;
     assert_eq!(pending_status, StatusCode::OK);
     assert_eq!(pending_body["data"][0]["id"], order_id);
     assert_eq!(pending_body["data"][0]["cargoName"], "冰鲜肉");
     assert_eq!(pending_body["data"][0]["ownerName"], "车主一");
 
     let (summary_status, summary_body) =
-        get_json(&context.app, "/api/orders/commission-summary").await;
+        get_json_with_auth(&context.app, "/api/orders/commission-summary", &admin_token).await;
     assert_eq!(summary_status, StatusCode::OK);
     assert_eq!(summary_body["data"]["summary"]["totalCommission"], 8.0);
     assert_eq!(summary_body["data"]["summary"]["pendingCommission"], 8.0);
@@ -557,9 +641,10 @@ async fn order_lifecycle_matches_legacy_payment_and_commission_flow() {
         .await
         .expect("vehicle should be marked busy before final confirmation");
 
-    let (confirm_commission_status, confirm_commission_body) = put_json(
+    let (confirm_commission_status, confirm_commission_body) = put_json_with_auth(
         &context.app,
         &format!("/api/orders/{order_id}/commission-confirm"),
+        &admin_token,
         json!({}),
     )
     .await;
@@ -623,6 +708,8 @@ async fn zero_commission_order_completes_when_owner_confirms_payment() {
 
     let merchant_id = insert_user(&context.pool, "13930000013", "merchant", "零佣货主").await;
     let owner_id = insert_user(&context.pool, "13930000014", "owner", "零佣车主").await;
+    let admin_id = insert_user(&context.pool, "13930000015", "admin", "佣金管理员").await;
+    let admin_token = insert_session(&context.pool, &admin_id, "orders-admin-session-3").await;
     let vehicle_id = insert_vehicle(&context.pool, &owner_id, "沪O00001").await;
     let demand_id = insert_demand(&context.pool, &merchant_id, "零佣货").await;
 
@@ -705,7 +792,7 @@ async fn zero_commission_order_completes_when_owner_confirms_payment() {
     assert_eq!(vehicle_trip_status, "idle");
 
     let (pending_status, pending_body) =
-        get_json(&context.app, "/api/orders/commission-pending").await;
+        get_json_with_auth(&context.app, "/api/orders/commission-pending", &admin_token).await;
     assert_eq!(pending_status, StatusCode::OK);
     assert_eq!(pending_body["data"].as_array().unwrap().len(), 0);
 

@@ -35,7 +35,10 @@ export function resolveMallImageUrl(imageUrl?: string | null) {
   if (imageUrl.startsWith('/') && typeof PROJECT_DOMAIN === 'string' && PROJECT_DOMAIN.length > 0) {
     return `${PROJECT_DOMAIN}${imageUrl}`
   }
-  return imageUrl
+  if (!imageUrl.startsWith('/') && typeof PROJECT_DOMAIN === 'string' && PROJECT_DOMAIN.length > 0) {
+    return `${PROJECT_DOMAIN}/api/uploads/${imageUrl}`
+  }
+  return imageUrl.startsWith('/') ? imageUrl : `/api/uploads/${imageUrl}`
 }
 
 export interface MallCartItem {

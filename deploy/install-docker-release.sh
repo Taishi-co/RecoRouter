@@ -80,6 +80,16 @@ else
   docker build -t "$IMAGE_REF" "$RELEASE_DIR/server"
 fi
 
+if [[ -d "$RELEASE_DIR/mall-products" ]]; then
+  docker run --rm \
+    --network "$DOCKER_NETWORK" \
+    --env-file "$ENV_FILE" \
+    -v "$UPLOAD_VOLUME:/app/uploads" \
+    -v "$RELEASE_DIR/mall-products:/assets/mall-products:ro" \
+    "$IMAGE_REF" \
+    recorouter-api sync-mall-assets /assets/mall-products
+fi
+
 CANDIDATE_NAME="${CONTAINER_NAME}-candidate-$RELEASE_ID"
 docker rm -f "$CANDIDATE_NAME" >/dev/null 2>&1 || true
 docker run -d \

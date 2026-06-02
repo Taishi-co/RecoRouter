@@ -24,10 +24,41 @@ export namespace Network {
         return `${PROJECT_DOMAIN}${url}`
     }
 
+    const sanitizeGetQueryData = (data: unknown): unknown => {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) {
+            return data
+        }
+
+        const sanitizedData: Record<string, unknown> = {}
+
+        Object.entries(data as Record<string, unknown>).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                sanitizedData[key] = value
+            }
+        })
+
+        return sanitizedData
+    }
+
+    const authHeader = () => {
+        const token = Taro.getStorageSync('token')
+        if (typeof token === 'string' && token.trim().length > 0) {
+            return { Authorization: `Bearer ${token}` }
+        }
+        return {}
+    }
+
     export const request: typeof Taro.request = option => {
+        const method = option.method ?? 'GET'
+
         return Taro.request({
             ...option,
             url: createUrl(option.url),
+            data: method.toUpperCase() === 'GET' ? sanitizeGetQueryData(option.data) : option.data,
+            header: {
+                ...authHeader(),
+                ...(option.header || {}),
+            },
         })
     }
 

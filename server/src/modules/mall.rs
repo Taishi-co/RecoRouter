@@ -1,16 +1,16 @@
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     routing::{get, post, put},
-    Json, Router,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
 
 use crate::{
     app::AppState,
     error::{ApiError, ApiResult},
-    response::{ok, ApiEnvelope},
+    response::{ApiEnvelope, ok},
     storage::Storage,
 };
 
@@ -28,7 +28,10 @@ where
             "/api/mall/cart/items/:id",
             put(update_cart_item::<S>).delete(delete_cart_item::<S>),
         )
-        .route("/api/mall/orders", get(list_mall_orders::<S>).post(create_mall_order::<S>))
+        .route(
+            "/api/mall/orders",
+            get(list_mall_orders::<S>).post(create_mall_order::<S>),
+        )
         .route("/api/mall/orders/:id", get(get_mall_order::<S>))
         .route(
             "/api/mall/orders/:id/tracking",
@@ -38,6 +41,32 @@ where
             "/api/mall/orders/:id/after-sales",
             get(list_after_sales::<S>).post(create_after_sale::<S>),
         )
+        .route(
+            "/api/support/sessions",
+            get(list_support_sessions::<S>).post(create_support_session::<S>),
+        )
+        .route(
+            "/api/support/sessions/:id/messages",
+            get(list_support_messages::<S>).post(create_support_message::<S>),
+        )
+        .route(
+            "/api/support/tickets",
+            get(list_support_tickets::<S>).post(create_support_ticket::<S>),
+        )
+        .route("/api/support/tickets/:id", put(update_support_ticket::<S>))
+        .route(
+            "/api/support/knowledge",
+            get(list_knowledge::<S>).post(create_knowledge::<S>),
+        )
+        .route("/api/support/knowledge/:id", put(update_knowledge::<S>))
+        .route("/api/support/metrics", get(support_metrics::<S>))
+}
+
+pub fn admin_router<S>() -> Router<AppState<S>>
+where
+    S: Storage,
+{
+    Router::new()
         .route("/api/admin/mall/overview", get(admin_overview::<S>))
         .route(
             "/api/admin/mall/products",
@@ -70,25 +99,6 @@ where
             "/api/admin/mall/settings",
             get(get_operation_settings::<S>).put(update_operation_settings::<S>),
         )
-        .route(
-            "/api/support/sessions",
-            get(list_support_sessions::<S>).post(create_support_session::<S>),
-        )
-        .route(
-            "/api/support/sessions/:id/messages",
-            get(list_support_messages::<S>).post(create_support_message::<S>),
-        )
-        .route(
-            "/api/support/tickets",
-            get(list_support_tickets::<S>).post(create_support_ticket::<S>),
-        )
-        .route("/api/support/tickets/:id", put(update_support_ticket::<S>))
-        .route(
-            "/api/support/knowledge",
-            get(list_knowledge::<S>).post(create_knowledge::<S>),
-        )
-        .route("/api/support/knowledge/:id", put(update_knowledge::<S>))
-        .route("/api/support/metrics", get(support_metrics::<S>))
 }
 
 #[derive(Debug, Deserialize)]
@@ -329,6 +339,12 @@ struct MallSettingsRow {
     default_delivery_fee_cents: i64,
 }
 
+#[derive(Clone)]
+enum JsonPathSegment {
+    Key(String),
+    Index(usize),
+}
+
 async fn list_categories<S>(
     State(state): State<AppState<S>>,
 ) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
@@ -362,7 +378,8 @@ async fn list_products<S>(
 where
     S: Storage,
 {
-    let products = fetch_products(&state.db, query, true).await?;
+    let mut products = fetch_products(&state.db, query, true).await?;
+    resolve_mall_image_urls_in_list(&state.storage, &mut products).await?;
     Ok(ok("查询成功", products))
 }
 
@@ -373,7 +390,8 @@ async fn admin_list_products<S>(
 where
     S: Storage,
 {
-    let products = fetch_products(&state.db, query, false).await?;
+    let mut products = fetch_products(&state.db, query, false).await?;
+    resolve_mall_image_urls_in_list(&state.storage, &mut products).await?;
     Ok(ok("查询成功", products))
 }
 
@@ -384,7 +402,9 @@ async fn get_product<S>(
 where
     S: Storage,
 {
-    Ok(ok("查询成功", fetch_product_json(&state.db, &id).await?))
+    let mut product = fetch_product_json(&state.db, &id).await?;
+    resolve_mall_image_urls(&state.storage, &mut product).await?;
+    Ok(ok("查询成功", product))
 }
 
 async fn admin_get_product<S>(
@@ -394,7 +414,9 @@ async fn admin_get_product<S>(
 where
     S: Storage,
 {
-    Ok(ok("查询成功", fetch_product_json(&state.db, &id).await?))
+    let mut product = fetch_product_json(&state.db, &id).await?;
+    resolve_mall_image_urls(&state.storage, &mut product).await?;
+    Ok(ok("查询成功", product))
 }
 
 async fn get_cart<S>(
@@ -405,7 +427,9 @@ where
     S: Storage,
 {
     let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
-    Ok(ok("查询成功", cart_payload(&state.db, &user_id).await?))
+    let mut cart = cart_payload(&state.db, &user_id).await?;
+    resolve_mall_image_urls(&state.storage, &mut cart).await?;
+    Ok(ok("查询成功", cart))
 }
 
 async fn upsert_cart_item<S>(
@@ -455,11 +479,12 @@ where
 {
     if let Some(quantity) = body.quantity {
         validate_quantity(quantity)?;
-        let product_id: String = sqlx::query_scalar("SELECT product_id FROM mall_cart_items WHERE id = $1")
-            .bind(&id)
-            .fetch_optional(&state.db)
-            .await?
-            .ok_or_else(|| ApiError::NotFound("购物车项不存在".to_string()))?;
+        let product_id: String =
+            sqlx::query_scalar("SELECT product_id FROM mall_cart_items WHERE id = $1")
+                .bind(&id)
+                .fetch_optional(&state.db)
+                .await?
+                .ok_or_else(|| ApiError::NotFound("购物车项不存在".to_string()))?;
         ensure_product_can_sell(&state.db, &product_id, quantity).await?;
     }
 
@@ -534,7 +559,10 @@ where
     } else {
         settings.default_delivery_fee_cents
     };
-    let coupon_cents = body.coupon_cents.unwrap_or_default().clamp(0, subtotal_cents);
+    let coupon_cents = body
+        .coupon_cents
+        .unwrap_or_default()
+        .clamp(0, subtotal_cents);
     let payable_cents = (subtotal_cents + delivery_fee_cents - coupon_cents).max(0);
     if payable_cents <= 0 {
         return Err(ApiError::BadRequest("订单金额必须大于0".to_string()));
@@ -545,11 +573,15 @@ where
     let cabin_code = random_cabin_code();
     let recipient_name = address.address_name.clone();
     let recipient_phone = fetch_user_phone(&state.db, &body.user_id).await?;
-    let address_text = address.address.unwrap_or_else(|| "未填写详细地址".to_string());
+    let address_text = address
+        .address
+        .unwrap_or_else(|| "未填写详细地址".to_string());
     let delivery_method = body
         .delivery_method
         .unwrap_or_else(|| "无人车冷链直送".to_string());
-    let pickup_method = body.pickup_method.unwrap_or_else(|| "短信码开舱".to_string());
+    let pickup_method = body
+        .pickup_method
+        .unwrap_or_else(|| "短信码开舱".to_string());
 
     let order_id: String = sqlx::query_scalar(
         r#"
@@ -638,7 +670,9 @@ where
 
     tx.commit().await?;
 
-    Ok(ok("订单创建成功", fetch_order_detail(&state.db, &order_id).await?))
+    let mut order = fetch_order_detail(&state.db, &order_id).await?;
+    resolve_mall_image_urls(&state.storage, &mut order).await?;
+    Ok(ok("订单创建成功", order))
 }
 
 async fn list_mall_orders<S>(
@@ -649,7 +683,8 @@ where
     S: Storage,
 {
     let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
-    let orders = fetch_orders(&state.db, Some(&user_id), query.status.as_deref()).await?;
+    let mut orders = fetch_orders(&state.db, Some(&user_id), query.status.as_deref()).await?;
+    resolve_mall_image_urls_in_list(&state.storage, &mut orders).await?;
     Ok(ok("查询成功", orders))
 }
 
@@ -660,7 +695,8 @@ async fn admin_list_orders<S>(
 where
     S: Storage,
 {
-    let orders = fetch_orders(&state.db, None, query.status.as_deref()).await?;
+    let mut orders = fetch_orders(&state.db, None, query.status.as_deref()).await?;
+    resolve_mall_image_urls_in_list(&state.storage, &mut orders).await?;
     Ok(ok("查询成功", orders))
 }
 
@@ -671,7 +707,9 @@ async fn get_mall_order<S>(
 where
     S: Storage,
 {
-    Ok(ok("查询成功", fetch_order_detail(&state.db, &id).await?))
+    let mut order = fetch_order_detail(&state.db, &id).await?;
+    resolve_mall_image_urls(&state.storage, &mut order).await?;
+    Ok(ok("查询成功", order))
 }
 
 async fn admin_get_order<S>(
@@ -681,7 +719,9 @@ async fn admin_get_order<S>(
 where
     S: Storage,
 {
-    Ok(ok("查询成功", fetch_order_detail(&state.db, &id).await?))
+    let mut order = fetch_order_detail(&state.db, &id).await?;
+    resolve_mall_image_urls(&state.storage, &mut order).await?;
+    Ok(ok("查询成功", order))
 }
 
 async fn get_mall_order_tracking<S>(
@@ -691,7 +731,8 @@ async fn get_mall_order_tracking<S>(
 where
     S: Storage,
 {
-    let order = fetch_order_detail(&state.db, &id).await?;
+    let mut order = fetch_order_detail(&state.db, &id).await?;
+    resolve_mall_image_urls(&state.storage, &mut order).await?;
     let events = fetch_order_events(&state.db, &id).await?;
     Ok(ok(
         "查询成功",
@@ -712,10 +753,7 @@ where
 {
     validate_required(&body.reason, "售后原因不能为空")?;
     ensure_order_exists(&state.db, &order_id).await?;
-    let amount_cents = body
-        .amount_cents
-        .unwrap_or_else(|| 0)
-        .max(0);
+    let amount_cents = body.amount_cents.unwrap_or_else(|| 0).max(0);
 
     let after_sale = sqlx::query_scalar::<_, Value>(
         r#"
@@ -817,7 +855,7 @@ where
     let tags = serde_json::to_value(body.tags.unwrap_or_default())
         .map_err(|err| ApiError::BadRequest(err.to_string()))?;
 
-    let product = sqlx::query_scalar::<_, Value>(
+    let mut product = sqlx::query_scalar::<_, Value>(
         r#"
         INSERT INTO mall_products (
           category_id, category_code, sku, name, subtitle, description, image_url,
@@ -834,6 +872,7 @@ where
           'sku', sku,
           'name', name,
           'categoryCode', category_code,
+          'imageUrl', image_url,
           'priceCents', price_cents,
           'stock', stock,
           'status', status,
@@ -859,6 +898,7 @@ where
     .fetch_one(&state.db)
     .await?;
 
+    resolve_mall_image_urls(&state.storage, &mut product).await?;
     Ok(ok("商品创建成功", product))
 }
 
@@ -874,10 +914,12 @@ where
         ensure_category(&state.db, category_code).await?;
     }
     let tags = match body.tags {
-        Some(tags) => Some(serde_json::to_value(tags).map_err(|err| ApiError::BadRequest(err.to_string()))?),
+        Some(tags) => {
+            Some(serde_json::to_value(tags).map_err(|err| ApiError::BadRequest(err.to_string()))?)
+        }
         None => None,
     };
-    let product = sqlx::query_scalar::<_, Value>(
+    let mut product = sqlx::query_scalar::<_, Value>(
         r#"
         UPDATE mall_products
         SET category_id = COALESCE((SELECT id FROM mall_categories WHERE code = $2), category_id),
@@ -901,6 +943,7 @@ where
           'sku', sku,
           'name', name,
           'categoryCode', category_code,
+          'imageUrl', image_url,
           'priceCents', price_cents,
           'stock', stock,
           'status', status,
@@ -928,6 +971,7 @@ where
     .await?
     .ok_or_else(|| ApiError::NotFound("商品不存在".to_string()))?;
 
+    resolve_mall_image_urls(&state.storage, &mut product).await?;
     Ok(ok("商品更新成功", product))
 }
 
@@ -1006,7 +1050,11 @@ where
         &body.status,
         title,
         body.description.as_deref().unwrap_or(title),
-        if body.status == "completed" { "done" } else { "active" },
+        if body.status == "completed" {
+            "done"
+        } else {
+            "active"
+        },
     )
     .await?;
 
@@ -1207,9 +1255,7 @@ where
     Ok(ok("设置已保存", settings))
 }
 
-async fn admin_overview<S>(
-    State(state): State<AppState<S>>,
-) -> ApiResult<Json<ApiEnvelope<Value>>>
+async fn admin_overview<S>(State(state): State<AppState<S>>) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
@@ -1269,11 +1315,19 @@ where
     let mut builder = QueryBuilder::<Postgres>::new(
         "SELECT support_session_json(support_sessions) FROM support_sessions WHERE 1 = 1",
     );
-    if let Some(user_id) = query.user_id.as_deref().filter(|value| !value.trim().is_empty()) {
+    if let Some(user_id) = query
+        .user_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
         builder.push(" AND user_id = ");
         builder.push_bind(user_id);
     }
-    if let Some(status) = query.status.as_deref().filter(|value| !value.trim().is_empty()) {
+    if let Some(status) = query
+        .status
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
         builder.push(" AND status = ");
         builder.push_bind(status);
     }
@@ -1384,11 +1438,19 @@ where
     let mut builder = QueryBuilder::<Postgres>::new(
         "SELECT support_ticket_json(support_tickets) FROM support_tickets WHERE 1 = 1",
     );
-    if let Some(user_id) = query.user_id.as_deref().filter(|value| !value.trim().is_empty()) {
+    if let Some(user_id) = query
+        .user_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
         builder.push(" AND user_id = ");
         builder.push_bind(user_id);
     }
-    if let Some(status) = query.status.as_deref().filter(|value| !value.trim().is_empty()) {
+    if let Some(status) = query
+        .status
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
         builder.push(" AND status = ");
         builder.push_bind(status);
     }
@@ -1500,9 +1562,7 @@ where
     Ok(ok("知识库已更新", article))
 }
 
-async fn support_metrics<S>(
-    State(state): State<AppState<S>>,
-) -> ApiResult<Json<ApiEnvelope<Value>>>
+async fn support_metrics<S>(State(state): State<AppState<S>>) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
@@ -1547,6 +1607,107 @@ pub async fn settle_mall_order_payment_success(pool: &PgPool, order_id: &str) ->
     )
     .await?;
     Ok(())
+}
+
+async fn resolve_mall_image_urls_in_list<S>(storage: &S, payloads: &mut [Value]) -> ApiResult<()>
+where
+    S: Storage,
+{
+    for payload in payloads {
+        resolve_mall_image_urls(storage, payload).await?;
+    }
+    Ok(())
+}
+
+async fn resolve_mall_image_urls<S>(storage: &S, payload: &mut Value) -> ApiResult<()>
+where
+    S: Storage,
+{
+    let mut paths = Vec::new();
+    collect_image_url_paths(payload, &mut Vec::new(), &mut paths);
+
+    for path in paths {
+        let Some(key) = value_at_path(payload, &path)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|image_url| should_resolve_mall_image_url(image_url))
+            .map(str::to_string)
+        else {
+            continue;
+        };
+        let public_url = storage.public_url(&key).await?;
+        if let Some(Value::String(image_url)) = value_at_path_mut(payload, &path) {
+            *image_url = public_url;
+        }
+    }
+
+    Ok(())
+}
+
+fn collect_image_url_paths(
+    value: &Value,
+    current_path: &mut Vec<JsonPathSegment>,
+    paths: &mut Vec<Vec<JsonPathSegment>>,
+) {
+    match value {
+        Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                current_path.push(JsonPathSegment::Index(index));
+                collect_image_url_paths(item, current_path, paths);
+                current_path.pop();
+            }
+        }
+        Value::Object(object) => {
+            for (key, child) in object {
+                current_path.push(JsonPathSegment::Key(key.clone()));
+                if key == "imageUrl"
+                    && child
+                        .as_str()
+                        .map(str::trim)
+                        .is_some_and(should_resolve_mall_image_url)
+                {
+                    paths.push(current_path.clone());
+                }
+                collect_image_url_paths(child, current_path, paths);
+                current_path.pop();
+            }
+        }
+        _ => {}
+    }
+}
+
+fn should_resolve_mall_image_url(image_url: &str) -> bool {
+    if image_url.is_empty() || image_url.starts_with('/') {
+        return false;
+    }
+
+    let lower = image_url.to_ascii_lowercase();
+    !(lower.starts_with("http://")
+        || lower.starts_with("https://")
+        || lower.starts_with("data:")
+        || lower.starts_with("blob:"))
+}
+
+fn value_at_path<'a>(value: &'a Value, path: &[JsonPathSegment]) -> Option<&'a Value> {
+    let mut current = value;
+    for segment in path {
+        current = match segment {
+            JsonPathSegment::Key(key) => current.get(key)?,
+            JsonPathSegment::Index(index) => current.get(*index)?,
+        };
+    }
+    Some(current)
+}
+
+fn value_at_path_mut<'a>(value: &'a mut Value, path: &[JsonPathSegment]) -> Option<&'a mut Value> {
+    let mut current = value;
+    for segment in path {
+        current = match segment {
+            JsonPathSegment::Key(key) => current.get_mut(key)?,
+            JsonPathSegment::Index(index) => current.get_mut(*index)?,
+        };
+    }
+    Some(current)
 }
 
 async fn fetch_products(
@@ -1594,7 +1755,10 @@ async fn fetch_products(
     builder.push(" OFFSET ");
     builder.push_bind((page - 1) * page_size);
 
-    Ok(builder.build_query_scalar::<Value>().fetch_all(pool).await?)
+    Ok(builder
+        .build_query_scalar::<Value>()
+        .fetch_all(pool)
+        .await?)
 }
 
 async fn fetch_product_json(pool: &PgPool, id: &str) -> ApiResult<Value> {
@@ -1646,7 +1810,10 @@ async fn cart_payload(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
     }))
 }
 
-async fn fetch_selected_cart_products(pool: &PgPool, user_id: &str) -> ApiResult<Vec<CartProductRow>> {
+async fn fetch_selected_cart_products(
+    pool: &PgPool,
+    user_id: &str,
+) -> ApiResult<Vec<CartProductRow>> {
     Ok(sqlx::query_as::<_, CartProductRow>(
         r#"
         SELECT
@@ -1741,7 +1908,10 @@ async fn fetch_orders(
         builder.push_bind(status);
     }
     builder.push(" ORDER BY o.created_at DESC LIMIT 100");
-    Ok(builder.build_query_scalar::<Value>().fetch_all(pool).await?)
+    Ok(builder
+        .build_query_scalar::<Value>()
+        .fetch_all(pool)
+        .await?)
 }
 
 async fn fetch_order_detail(pool: &PgPool, order_id: &str) -> ApiResult<Value> {
@@ -1782,12 +1952,11 @@ async fn fetch_order_events(pool: &PgPool, order_id: &str) -> ApiResult<Vec<Valu
 }
 
 async fn ensure_product_can_sell(pool: &PgPool, product_id: &str, quantity: i32) -> ApiResult<()> {
-    let stock: Option<i32> = sqlx::query_scalar(
-        "SELECT stock FROM mall_products WHERE id = $1 AND status = 'on_sale'",
-    )
-    .bind(product_id)
-    .fetch_optional(pool)
-    .await?;
+    let stock: Option<i32> =
+        sqlx::query_scalar("SELECT stock FROM mall_products WHERE id = $1 AND status = 'on_sale'")
+            .bind(product_id)
+            .fetch_optional(pool)
+            .await?;
     let stock = stock.ok_or_else(|| ApiError::NotFound("商品不存在或已下架".to_string()))?;
     if stock < quantity {
         return Err(ApiError::BadRequest("商品库存不足".to_string()));
@@ -1796,10 +1965,11 @@ async fn ensure_product_can_sell(pool: &PgPool, product_id: &str, quantity: i32)
 }
 
 async fn ensure_category(pool: &PgPool, category_code: &str) -> ApiResult<()> {
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM mall_categories WHERE code = $1)")
-        .bind(category_code)
-        .fetch_one(pool)
-        .await?;
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM mall_categories WHERE code = $1)")
+            .bind(category_code)
+            .fetch_one(pool)
+            .await?;
     if !exists {
         return Err(ApiError::BadRequest("商品类目不存在".to_string()));
     }

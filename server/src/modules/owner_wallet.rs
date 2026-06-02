@@ -47,6 +47,13 @@ where
             "/api/owner-wallet/wechat-transfer/notify",
             post(wechat_transfer_notify::<S>),
         )
+}
+
+pub fn admin_router<S>() -> Router<AppState<S>>
+where
+    S: Storage,
+{
+    Router::new()
         .route("/api/admin/owner-withdrawals", get(admin_withdrawals::<S>))
         .route(
             "/api/admin/owner-withdrawals/:id/manual-complete",

@@ -37,6 +37,16 @@ impl Storage for LocalStorage {
         _content_type: Option<&str>,
     ) -> Result<String, ApiError> {
         let key = build_storage_key(file_name)?;
+        self.put_key(bytes, &key, None).await
+    }
+
+    async fn put_key(
+        &self,
+        bytes: Vec<u8>,
+        key: &str,
+        _content_type: Option<&str>,
+    ) -> Result<String, ApiError> {
+        let key = sanitized_key(key)?;
         let path = self.key_path(&key)?;
 
         if let Some(parent) = path.parent() {
