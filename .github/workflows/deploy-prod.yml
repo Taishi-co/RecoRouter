@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - src/**
+      - web-admin/**
       - config/**
       - patches/**
       - server/**
