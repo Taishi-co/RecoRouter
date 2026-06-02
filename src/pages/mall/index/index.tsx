@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Image, Text, View } from '@tarojs/components'
-import Taro from '@tarojs/taro'
+import Taro, { useDidShow } from '@tarojs/taro'
 import { Search, ShoppingCart, Truck } from 'lucide-react-taro'
 import { AppPageShell } from '@/components/layout/app-page-shell'
 import { BottomNav } from '@/components/layout/bottom-nav'
@@ -27,9 +27,9 @@ export default function MallHome() {
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
 
-  useEffect(() => {
+  useDidShow(() => {
     loadProducts()
-  }, [])
+  })
 
   const filteredProducts = useMemo(() => products, [products])
 
