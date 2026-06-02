@@ -246,6 +246,12 @@ export default [
     },
   },
   {
+    files: ['src/web-admin/**/*.{js,jsx,ts,tsx}'],
+    rules: {
+      'react/forbid-elements': 'off',
+    },
+  },
+  {
     ignores: ['dist/**', 'dist-*/**', 'node_modules/**'],
   },
 ];
