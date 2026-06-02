@@ -10,10 +10,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
   addMallCartItem,
-  listMallCategories,
   listMallProducts,
   resolveMallImageUrl,
-  type MallCategory,
   type MallProduct,
   yuan,
 } from '@/services/mall'
@@ -24,42 +22,30 @@ interface StoredUser {
 }
 
 export default function MallHome() {
-  const [categories, setCategories] = useState<MallCategory[]>([])
   const [products, setProducts] = useState<MallProduct[]>([])
-  const [activeCategory, setActiveCategory] = useState('')
   const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    loadCategories()
-  }, [])
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
     loadProducts()
-  }, [activeCategory])
+  }, [])
 
   const filteredProducts = useMemo(() => products, [products])
 
   const currentUser = () => Taro.getStorageSync('userInfo') as StoredUser | undefined
 
-  const loadCategories = async () => {
-    try {
-      const data = await listMallCategories()
-      setCategories(data)
-    } catch (error) {
-      showError(error, '类目加载失败')
-    }
-  }
-
   const loadProducts = async () => {
     setLoading(true)
+    setLoadError('')
     try {
       const data = await listMallProducts({
-        categoryCode: activeCategory || undefined,
         keyword: keyword.trim() || undefined,
       })
       setProducts(data)
     } catch (error) {
+      setProducts([])
+      setLoadError(error instanceof Error ? error.message : '商品加载失败')
       showError(error, '商品加载失败')
     } finally {
       setLoading(false)
@@ -119,28 +105,6 @@ export default function MallHome() {
         </Button>
       </View>
 
-      <View className="flex flex-row gap-2 overflow-x-auto">
-        <Button
-          size="sm"
-          variant={activeCategory ? 'outline' : 'default'}
-          className="shrink-0 rounded-full"
-          onClick={() => setActiveCategory('')}
-        >
-          <Text className="text-xs font-bold">全部</Text>
-        </Button>
-        {categories.map((category) => (
-          <Button
-            key={category.code}
-            size="sm"
-            variant={activeCategory === category.code ? 'default' : 'outline'}
-            className="shrink-0 rounded-full"
-            onClick={() => setActiveCategory(category.code)}
-          >
-            <Text className="text-xs font-bold">{category.name}</Text>
-          </Button>
-        ))}
-      </View>
-
       <View className="flex items-center justify-between">
         <Text className="block text-base font-black text-gray-900">水果 / 鲜奶热卖</Text>
         <Text className="block text-xs font-bold text-gray-500">
@@ -148,9 +112,32 @@ export default function MallHome() {
         </Text>
       </View>
 
-      <View className="grid grid-cols-2 gap-3">
+      {loadError ? (
+        <Card className="bg-white">
+          <CardContent className="p-4">
+            <Text className="block text-sm font-black text-gray-900">商品加载失败</Text>
+            <Text className="mt-1 block text-xs font-bold text-gray-500">{loadError}</Text>
+            <Button className="mt-3 rounded-full" onClick={loadProducts}>
+              <Text className="text-sm font-black text-white">重新加载</Text>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {!loading && !loadError && filteredProducts.length === 0 ? (
+        <Card className="bg-white">
+          <CardContent className="p-4">
+            <Text className="block text-sm font-black text-gray-900">暂无可售商品</Text>
+            <Text className="mt-1 block text-xs font-bold text-gray-500">
+              当前搜索没有匹配商品，可以清空关键词后重试。
+            </Text>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <View className="flex flex-row flex-wrap justify-between gap-y-3">
         {filteredProducts.map((product) => (
-          <Card key={product.id} className="bg-white">
+          <Card key={product.id} className="bg-white" style={{ width: '48.5%' }}>
             <CardContent className="p-3">
               <View
                 className="mb-3 flex h-24 items-center justify-center overflow-hidden rounded-2xl bg-emerald-50"
