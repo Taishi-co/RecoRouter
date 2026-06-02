@@ -11,13 +11,17 @@
     "build:tt": "taro build --type tt",
     "build:weapp": "taro build --type weapp",
     "build:web": "vite build --config web-admin/vite.config.ts",
+    "check:admin-mall-auth": "node scripts/check-admin-mall-auth.mjs",
     "check:merchant-enterprise-boundary": "node scripts/check-merchant-enterprise-boundary.mjs",
+    "check:mall-cos-image-paths": "node scripts/check-mall-cos-image-paths.mjs",
     "check:no-physical-fks": "node scripts/check-no-physical-foreign-keys.mjs",
     "check:no-deprecated-wechat-api": "node scripts/check-no-deprecated-wechat-api.mjs",
     "check:mall-product-refresh": "node scripts/check-mall-product-refresh.mjs",
+    "check:network-query-sanitization": "node scripts/check-network-query-sanitization.mjs",
     "check:miniapp-version": "node --test scripts/bump-miniapp-version.test.mjs",
     "check:registration-security": "node scripts/check-registration-security.mjs",
     "check:sqlx-migration-immutability": "node scripts/check-sqlx-migration-immutability.mjs",
+    "check:web-admin-auth": "node scripts/check-web-admin-auth.mjs",
     "dev": "pnpm exec concurrently --kill-others --kill-signal SIGKILL -n web,server -c blue,green \"pnpm dev:web\" \"pnpm dev:server\"",
     "dev:server": "cargo run --manifest-path server/Cargo.toml",
     "dev:tt": "taro build --type tt --watch",
@@ -37,7 +41,7 @@
     "test:rust-server": "cargo test --manifest-path server/Cargo.toml --lib --bins --tests",
     "test:rust-server:db": "test -n \"$TEST_DATABASE_URL\" && cargo test --manifest-path server/Cargo.toml --lib --bins --tests",
     "tsc": "npx tsc --noEmit --skipLibCheck",
-    "validate": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n lint,tsc,sqlx-migrations,miniapp-version,wechat-api,mall-refresh -c red,blue,magenta,cyan,yellow,green \"pnpm lint:build\" \"pnpm tsc\" \"pnpm check:sqlx-migration-immutability\" \"pnpm check:miniapp-version\" \"pnpm check:no-deprecated-wechat-api\" \"pnpm check:mall-product-refresh\""
+    "validate": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n lint,tsc,sqlx-migrations,miniapp-version,wechat-api,mall-refresh,network-query,web-auth,admin-mall,mall-cos -c red,blue,magenta,cyan,yellow,green,white,gray,redBright,blueBright \"pnpm lint:build\" \"pnpm tsc\" \"pnpm check:sqlx-migration-immutability\" \"pnpm check:miniapp-version\" \"pnpm check:no-deprecated-wechat-api\" \"pnpm check:mall-product-refresh\" \"pnpm check:network-query-sanitization\" \"pnpm check:web-admin-auth\" \"pnpm check:admin-mall-auth\" \"pnpm check:mall-cos-image-paths\""
   },
   "lint-staged": {
     "src/**/*.{js,jsx,ts,tsx,css}": [

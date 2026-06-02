@@ -25,14 +25,6 @@ where
             "/api/orders/owner-revenue/:owner_id",
             get(owner_revenue::<S>),
         )
-        .route(
-            "/api/orders/commission-summary",
-            get(commission_summary::<S>),
-        )
-        .route(
-            "/api/orders/commission-pending",
-            get(commission_pending::<S>),
-        )
         .route("/api/orders/:id", get(get_order::<S>))
         .route("/api/orders/:id/cancel", post(cancel_order::<S>))
         .route(
@@ -53,6 +45,21 @@ where
             put(mark_commission_payment::<S>),
         )
         .route("/api/orders/:id/commission-info", get(commission_info::<S>))
+}
+
+pub fn admin_router<S>() -> Router<AppState<S>>
+where
+    S: Storage,
+{
+    Router::new()
+        .route(
+            "/api/orders/commission-summary",
+            get(commission_summary::<S>),
+        )
+        .route(
+            "/api/orders/commission-pending",
+            get(commission_pending::<S>),
+        )
         .route(
             "/api/orders/:id/commission-confirm",
             put(confirm_commission::<S>),

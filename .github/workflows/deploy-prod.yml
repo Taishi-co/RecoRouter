@@ -77,6 +77,8 @@ jobs:
           cp -R server/migrations "$out_dir/migrations"
           cp -R dist-web "$out_dir/dist-web"
           cp -R deploy "$out_dir/deploy"
+          mkdir -p "$out_dir/mall-products"
+          cp -R src/assets/mall-products/. "$out_dir/mall-products/"
           tar -C "$out_dir" -czf "$out_tar" .
           ls -lh "$out_tar"
 

@@ -61,6 +61,13 @@ chmod +x "$RELEASE_DIR/recorouter-api"
 if [[ -d "$RELEASE_DIR/dist-web" ]]; then
   chmod -R a+rX "$RELEASE_DIR/dist-web"
 fi
+if [[ -d "$RELEASE_DIR/mall-products" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+  set +a
+  "$RELEASE_DIR/recorouter-api" sync-mall-assets "$RELEASE_DIR/mall-products"
+fi
 ln -sfn "$RELEASE_DIR" "$APP_ROOT/current"
 chown -R recorouter:recorouter "$APP_ROOT"
 

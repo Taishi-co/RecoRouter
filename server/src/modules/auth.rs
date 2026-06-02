@@ -4,23 +4,27 @@ use std::{
 };
 
 use axum::{
+    body::Body,
     extract::{DefaultBodyLimit, Multipart, Query, State},
+    http::{HeaderMap, Request},
+    middleware::Next,
+    response::Response,
     routing::{get, post},
     Json, Router,
 };
 use bcrypt::{hash, verify};
 use chrono::{DateTime, Duration, Utc};
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
-use rand::Rng;
+use rand::{Rng, RngCore};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
+use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
 use crate::{
     app::AppState,
     error::{ApiError, ApiResult},
-    response::{ok, ApiEnvelope},
+    response::{empty_message, ok, ApiEnvelope, EmptyMessage},
     storage::Storage,
 };
 
@@ -88,6 +92,7 @@ where
         .route("/api/auth/captcha", get(captcha::<S>))
         .route("/api/auth/register", post(register::<S>))
         .route("/api/auth/login", post(login::<S>))
+        .route("/api/auth/logout", post(logout::<S>))
         .route("/api/auth/user-info", get(user_info::<S>))
         .merge(payment_qr_router)
 }
@@ -170,6 +175,12 @@ struct AuthUserRow {
 }
 
 #[derive(Debug, FromRow)]
+struct SessionUserRow {
+    role: Option<String>,
+    status: Option<String>,
+}
+
+#[derive(Debug, FromRow)]
 struct UserInfoRow {
     id: String,
     phone: Option<String>,
@@ -246,7 +257,9 @@ where
         Err(err) => return Err(err.into()),
     };
 
-    Ok(ok("注册成功", auth_response_from_row(row)))
+    let token = create_session_token(&state.db, &row.id).await?;
+
+    Ok(ok("注册成功", auth_response_from_row(row, token)))
 }
 
 async fn captcha<S>(
@@ -294,7 +307,36 @@ where
         return Err(ApiError::Unauthorized("账号已被禁用".to_string()));
     }
 
-    Ok(ok("登录成功", auth_response_from_row(row)))
+    let token = create_session_token(&state.db, &row.id).await?;
+
+    Ok(ok("登录成功", auth_response_from_row(row, token)))
+}
+
+async fn logout<S>(
+    State(state): State<AppState<S>>,
+    headers: HeaderMap,
+) -> ApiResult<Json<EmptyMessage>>
+where
+    S: Storage,
+{
+    let token = bearer_token(&headers)?;
+    let result = sqlx::query(
+        r#"
+        UPDATE admin_sessions
+        SET revoked_at = now()
+        WHERE token = $1
+          AND revoked_at IS NULL
+        "#,
+    )
+    .bind(token)
+    .execute(&state.db)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(ApiError::Unauthorized("登录已失效".to_string()));
+    }
+
+    Ok(empty_message("退出登录成功"))
 }
 
 async fn user_info<S>(
@@ -465,16 +507,97 @@ fn validate_phone(phone: &str) -> ApiResult<()> {
     }
 }
 
-fn auth_response_from_row(row: AuthUserRow) -> AuthResponse {
+fn auth_response_from_row(row: AuthUserRow, token: String) -> AuthResponse {
     let id = row.id;
 
     AuthResponse {
-        token: id.clone(),
+        token,
         id,
         phone: row.phone.unwrap_or_default(),
         name: row.name.unwrap_or_default(),
         role: row.role.unwrap_or_default(),
     }
+}
+
+pub async fn admin_guard<S>(
+    State(state): State<AppState<S>>,
+    headers: HeaderMap,
+    request: Request<Body>,
+    next: Next,
+) -> ApiResult<Response>
+where
+    S: Storage,
+{
+    let token = bearer_token(&headers)?;
+    let user = session_user(&state.db, token).await?;
+
+    if user.status.as_deref() == Some("disabled") {
+        return Err(ApiError::Unauthorized("账号已被禁用".to_string()));
+    }
+
+    if user.role.as_deref() != Some("admin") {
+        return Err(ApiError::Forbidden("需要管理员权限".to_string()));
+    }
+
+    Ok(next.run(request).await)
+}
+
+fn bearer_token(headers: &HeaderMap) -> ApiResult<&str> {
+    let authorization = headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| ApiError::Unauthorized("缺少登录凭证".to_string()))?;
+
+    authorization
+        .strip_prefix("Bearer ")
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .ok_or_else(|| ApiError::Unauthorized("缺少登录凭证".to_string()))
+}
+
+async fn session_user(pool: &PgPool, token: &str) -> ApiResult<SessionUserRow> {
+    sqlx::query_as::<_, SessionUserRow>(
+        r#"
+        SELECT u.role, u.status
+        FROM admin_sessions s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.token = $1
+          AND s.revoked_at IS NULL
+        "#,
+    )
+    .bind(token)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| ApiError::Unauthorized("登录已失效".to_string()))
+}
+
+async fn create_session_token(pool: &PgPool, user_id: &str) -> ApiResult<String> {
+    for _ in 0..3 {
+        let token = random_session_token();
+        let result = sqlx::query(
+            r#"
+            INSERT INTO admin_sessions (token, user_id)
+            VALUES ($1, $2)
+            ON CONFLICT (token) DO NOTHING
+            "#,
+        )
+        .bind(&token)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+
+        if result.rows_affected() == 1 {
+            return Ok(token);
+        }
+    }
+
+    Err(ApiError::Storage("会话创建失败".to_string()))
+}
+
+fn random_session_token() -> String {
+    let mut bytes = [0_u8; 32];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    hex::encode(bytes)
 }
 
 fn generate_captcha_code() -> String {

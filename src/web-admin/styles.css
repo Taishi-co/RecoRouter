@@ -211,6 +211,126 @@ nav {
   font-size: 13px;
 }
 
+.login-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  background:
+    linear-gradient(180deg, rgb(20 33 61 / 4%), rgb(244 246 248 / 0%)),
+    #f4f6f8;
+}
+
+.login-panel {
+  width: min(100%, 430px);
+  padding: 28px;
+  background: #ffffff;
+  border: 1px solid #dfe5ed;
+  border-radius: 8px;
+  box-shadow: 0 18px 45px rgb(15 23 42 / 10%);
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 20px;
+  color: #172033;
+  border-bottom: 1px solid #e6ebf2;
+}
+
+.login-brand strong,
+.login-brand span,
+.admin-account span,
+.admin-account strong,
+.admin-account small {
+  display: block;
+}
+
+.login-brand strong {
+  font-size: 15px;
+}
+
+.login-brand span {
+  margin-top: 2px;
+  color: #697386;
+  font-size: 12px;
+}
+
+.login-copy {
+  padding: 22px 0 18px;
+}
+
+.login-copy h1 {
+  margin: 0;
+  color: #111827;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.login-copy p {
+  margin: 8px 0 0;
+  color: #697386;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.login-form {
+  display: grid;
+  gap: 14px;
+}
+
+.login-form label {
+  display: grid;
+  gap: 7px;
+  color: #3d4758;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.login-submit {
+  min-height: 42px;
+  width: 100%;
+  margin-top: 2px;
+}
+
+.login-error {
+  padding: 10px 12px;
+  color: #9f1d1d;
+  font-size: 13px;
+  line-height: 1.5;
+  background: #fff1f1;
+  border: 1px solid #f0b8b8;
+  border-radius: 8px;
+}
+
+.admin-account {
+  min-width: 150px;
+  padding: 8px 12px;
+  color: #172033;
+  background: #ffffff;
+  border: 1px solid #d7dde7;
+  border-radius: 8px;
+}
+
+.admin-account span,
+.admin-account small {
+  color: #687386;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.admin-account strong {
+  max-width: 190px;
+  margin: 2px 0;
+  overflow: hidden;
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .page-grid {
   display: grid;
   gap: 18px;
@@ -681,6 +801,14 @@ textarea:focus {
   .topbar-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .admin-account {
+    width: 100%;
+  }
+
+  .admin-account strong {
+    max-width: none;
   }
 
   .stat-grid,

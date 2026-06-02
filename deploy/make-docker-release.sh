@@ -19,6 +19,8 @@ rm -rf "$OUT_DIR" "$OUT_TAR"
 mkdir -p "$OUT_DIR"
 
 cp -R deploy "$OUT_DIR/deploy"
+mkdir -p "$OUT_DIR/mall-products"
+cp -R src/assets/mall-products/. "$OUT_DIR/mall-products/"
 if [[ "${BUILD_WEB:-1}" == "1" ]]; then
   test -d "$WEB_OUTPUT_ROOT"
   cp -R "$WEB_OUTPUT_ROOT" "$OUT_DIR/dist-web"

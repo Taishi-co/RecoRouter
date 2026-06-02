@@ -1,4 +1,4 @@
-use axum::Router;
+use axum::{middleware, Router};
 use sqlx::PgPool;
 use tower_http::services::ServeDir;
 
@@ -7,8 +7,8 @@ use crate::{
     modules::{
         account_settings, address_books, admin, auth, cancellations, demand_schedules,
         demand_templates, demands, enterprise, enterprise_demands, enterprise_vehicles, fare,
-        favorite_routes, health, home, mall, notifications, orders, owner_wallet, payments, platform,
-        rental_reminders, station, user_roles, vehicle_rentals, vehicles,
+        favorite_routes, health, home, mall, notifications, orders, owner_wallet, payments,
+        platform, rental_reminders, station, user_roles, vehicle_rentals, vehicles,
     },
     storage::Storage,
 };
@@ -41,6 +41,12 @@ where
         .merge(health::router::<AppState<S>>())
         .merge(home::router::<S>())
         .merge(mall::router::<S>())
+        .merge(
+            mall::admin_router::<S>().route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                auth::admin_guard::<S>,
+            )),
+        )
         .merge(auth::router::<S>())
         .merge(account_settings::router::<S>())
         .merge(user_roles::router::<S>())
@@ -48,10 +54,27 @@ where
         .merge(fare::router::<S>())
         .merge(notifications::router::<S>())
         .merge(orders::router::<S>())
+        .merge(
+            orders::admin_router::<S>().route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                auth::admin_guard::<S>,
+            )),
+        )
         .merge(payments::router::<S>())
         .merge(owner_wallet::router::<S>())
+        .merge(
+            owner_wallet::admin_router::<S>().route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                auth::admin_guard::<S>,
+            )),
+        )
         .merge(cancellations::router::<S>())
-        .merge(admin::router::<S>())
+        .merge(
+            admin::router::<S>().route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                auth::admin_guard::<S>,
+            )),
+        )
         .merge(enterprise::router::<S>())
         .merge(station::router::<S>())
         .merge(enterprise_vehicles::router::<S>())
@@ -59,6 +82,12 @@ where
         .merge(vehicle_rentals::router::<S>())
         .merge(rental_reminders::router::<S>())
         .merge(vehicles::router::<S>())
+        .merge(
+            vehicles::admin_router::<S>().route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                auth::admin_guard::<S>,
+            )),
+        )
         .merge(address_books::router::<S>())
         .merge(favorite_routes::router::<S>())
         .merge(demands::router::<S>())

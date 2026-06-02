@@ -28,6 +28,24 @@ interface LoadErrors {
   [key: string]: string;
 }
 
+interface AdminUserInfo {
+  id: string;
+  phone: string;
+  name: string;
+  role: string;
+  token: string;
+}
+
+interface AdminSession {
+  token: string;
+  user: AdminUserInfo;
+}
+
+interface LoginForm {
+  phone: string;
+  password: string;
+}
+
 interface DashboardData {
   adminStats: JsonRecord;
   users: JsonRecord[];
@@ -108,6 +126,7 @@ type IconName =
 
 interface ApiEnvelope<T> {
   code?: number | string;
+  statusCode?: number | string;
   message?: string;
   data?: T;
 }
@@ -116,6 +135,103 @@ const API_BASE =
   typeof __PROJECT_DOMAIN__ === 'string' && __PROJECT_DOMAIN__.trim().length > 0
     ? __PROJECT_DOMAIN__.replace(/\/$/, '')
     : '';
+const AUTH_FAILURE_STATUS_CODES = [401, 403];
+
+let currentAdminSession: AdminSession | null = null;
+let adminAuthFailureHandler: ((message: string) => void) | null = null;
+
+function normalizeAdminUser(record: JsonRecord): AdminUserInfo | null {
+  const id = stringValue(record, 'id');
+  const token = stringValue(record, 'token');
+  const role = stringValue(record, 'role');
+
+  if (!id || !token || !role) {
+    return null;
+  }
+
+  return {
+    id,
+    token,
+    role,
+    phone: stringValue(record, 'phone'),
+    name: stringValue(record, 'name'),
+  };
+}
+
+function clearStoredAdminSession() {
+  currentAdminSession = null;
+
+  if (typeof localStorage === 'undefined') {
+    return;
+  }
+
+  localStorage.removeItem('webAdminSession');
+}
+
+function persistAdminSession(user: AdminUserInfo) {
+  const session: AdminSession = {
+    token: user.token,
+    user,
+  };
+
+  currentAdminSession = session;
+  localStorage.setItem('webAdminSession', JSON.stringify(session));
+
+  return session;
+}
+
+function getStoredAdminSession() {
+  if (currentAdminSession) {
+    return currentAdminSession;
+  }
+
+  if (typeof localStorage === 'undefined') {
+    return null;
+  }
+
+  const rawSession = localStorage.getItem('webAdminSession');
+  if (!rawSession) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawSession) as JsonRecord;
+    const userValue = parsed.user;
+
+    if (!userValue || typeof userValue !== 'object' || Array.isArray(userValue)) {
+      clearStoredAdminSession();
+      return null;
+    }
+
+    const userRecord = userValue as JsonRecord;
+    const token = stringValue(parsed, 'token') || stringValue(userRecord, 'token');
+    const user = normalizeAdminUser({ ...userRecord, token });
+
+    if (!user || user.role !== 'admin') {
+      clearStoredAdminSession();
+      return null;
+    }
+
+    currentAdminSession = {
+      token: user.token,
+      user,
+    };
+    return currentAdminSession;
+  } catch {
+    clearStoredAdminSession();
+    return null;
+  }
+}
+
+function isAuthFailureStatus(value: unknown) {
+  const status = typeof value === 'string' ? Number(value) : value;
+  return typeof status === 'number' && AUTH_FAILURE_STATUS_CODES.includes(status);
+}
+
+function handleAdminAuthFailure(message: string) {
+  clearStoredAdminSession();
+  adminAuthFailureHandler?.(message);
+}
 
 const navigation: NavigationItem[] = [
   { key: 'overview', label: '运营看板', description: '平台指标与风险概览', icon: 'dashboard' },
@@ -152,7 +268,7 @@ const initialProductForm: ProductForm = {
   sku: '',
   categoryCode: 'fruit',
   subtitle: '',
-  imageUrl: '/assets/mall-products/kiwi.jpeg',
+  imageUrl: 'mall-products/kiwi.jpeg',
   priceYuan: '19.90',
   originalPriceYuan: '',
   stock: '80',
@@ -200,16 +316,27 @@ function createApiUrl(pathname: string, params: JsonRecord = {}) {
 }
 
 async function apiRequest<T>(pathname: string, init: RequestInit = {}, params?: JsonRecord): Promise<T> {
+  const session = getStoredAdminSession();
   const response = await fetch(createApiUrl(pathname, params), {
     ...init,
     headers: {
       'Content-Type': 'application/json',
+      ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
       ...(init.headers || {}),
     },
   });
   const payload = (await response.json().catch(() => ({}))) as ApiEnvelope<T>;
   const code = typeof payload.code === 'string' ? Number(payload.code) : payload.code;
-  if (!response.ok || (typeof code === 'number' && code >= 400)) {
+  const statusCode = typeof payload.statusCode === 'string' ? Number(payload.statusCode) : payload.statusCode;
+
+  if (
+    pathname !== '/api/auth/login'
+    && (isAuthFailureStatus(response.status) || isAuthFailureStatus(statusCode) || isAuthFailureStatus(code))
+  ) {
+    handleAdminAuthFailure(payload.message || '登录已过期，请重新登录');
+  }
+
+  if (!response.ok || (typeof statusCode === 'number' && statusCode >= 400) || (typeof code === 'number' && code >= 400)) {
     throw new Error(payload.message || `请求失败 ${response.status}`);
   }
   return (payload.data ?? payload) as T;
@@ -369,7 +496,8 @@ function formatDate(value: string) {
 function resolveImage(url: string) {
   if (!url) return '';
   if (/^(https?:|data:|blob:)/.test(url)) return url;
-  return `${API_BASE}${url}`;
+  if (url.startsWith('/')) return `${API_BASE}${url}`;
+  return `${API_BASE}/api/uploads/${url}`;
 }
 
 function tagsText(record: JsonRecord) {
@@ -948,11 +1076,11 @@ function MallProductsSection({
           <label className="wide">
             图片路径
             <select value={form.imageUrl} onChange={event => onChange({ imageUrl: event.target.value })}>
-              <option value="/assets/mall-products/fresh-milk.jpeg">鲜奶图片</option>
-              <option value="/assets/mall-products/kiwi.jpeg">猕猴桃图片</option>
-              <option value="/assets/mall-products/banana.jpeg">香蕉图片</option>
-              <option value="/assets/mall-products/durian.jpeg">榴莲图片</option>
-              <option value="/assets/mall-products/reco-dino.jpeg">周边玩偶图片</option>
+              <option value="mall-products/fresh-milk.jpeg">鲜奶图片</option>
+              <option value="mall-products/kiwi.jpeg">猕猴桃图片</option>
+              <option value="mall-products/banana.jpeg">香蕉图片</option>
+              <option value="mall-products/durian.jpeg">榴莲图片</option>
+              <option value="mall-products/reco-dino.jpeg">周边玩偶图片</option>
             </select>
           </label>
           <label>
@@ -1367,13 +1495,81 @@ function SupportSection({
   );
 }
 
+function LoginScreen({
+  error,
+  loading,
+  onSubmit,
+}: {
+  error: string;
+  loading: boolean;
+  onSubmit: (form: LoginForm) => Promise<void>;
+}) {
+  const [form, setForm] = useState<LoginForm>({ phone: '', password: '' });
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await onSubmit({
+      phone: form.phone.trim(),
+      password: form.password,
+    });
+  };
+
+  return (
+    <main className="login-shell">
+      <section className="login-panel" aria-labelledby="login-title">
+        <div className="login-brand">
+          <div className="brand-mark">R</div>
+          <div>
+            <strong>RecoRouter</strong>
+            <span>Web 管理平台</span>
+          </div>
+        </div>
+        <div className="login-copy">
+          <h1 id="login-title">管理员登录</h1>
+          <p>使用管理员账号进入运营看板、商城与客服工作台。</p>
+        </div>
+        <form className="login-form" onSubmit={submit}>
+          <label>
+            手机号
+            <input
+              autoComplete="username"
+              inputMode="tel"
+              placeholder="请输入管理员手机号"
+              type="tel"
+              value={form.phone}
+              onChange={event => setForm(current => ({ ...current, phone: event.target.value }))}
+            />
+          </label>
+          <label>
+            密码
+            <input
+              autoComplete="current-password"
+              placeholder="请输入密码"
+              type="password"
+              value={form.password}
+              onChange={event => setForm(current => ({ ...current, password: event.target.value }))}
+            />
+          </label>
+          {error ? <div className="login-error">{error}</div> : null}
+          <button className="primary-button login-submit" disabled={loading || !form.phone.trim() || !form.password} type="submit">
+            {loading ? '登录中...' : '登录管理端'}
+          </button>
+        </form>
+      </section>
+    </main>
+  );
+}
+
 function App() {
+  const [session, setSession] = useState<AdminSession | null>(() => getStoredAdminSession());
   const [active, setActive] = useState<NavigationKey>('overview');
   const [data, setData] = useState<DashboardData>(initialData);
   const [errors, setErrors] = useState<LoadErrors>({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => Boolean(getStoredAdminSession()));
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState('正在连接后端管理接口');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
   const [productForm, setProductForm] = useState<ProductForm>(initialProductForm);
   const [campaignForm, setCampaignForm] = useState<CampaignForm>(initialCampaignForm);
   const [settingsForm, setSettingsForm] = useState<SettingsForm>(initialSettingsForm);
@@ -1383,9 +1579,29 @@ function App() {
 
   const currentNav = useMemo(() => navigation.find(item => item.key === active) || navigation[0], [active]);
 
+  const resetDashboardState = () => {
+    setData(initialData);
+    setErrors({});
+    setSupportMessages([]);
+    setSelectedSessionId('');
+    setBusy('');
+    setLoading(false);
+  };
+
   const reload = async () => {
+    if (!getStoredAdminSession()) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     const result = await fetchDashboardData();
+
+    if (!getStoredAdminSession()) {
+      setLoading(false);
+      return;
+    }
+
     setData(result.data);
     setErrors(result.errors);
     setLoading(false);
@@ -1393,8 +1609,30 @@ function App() {
   };
 
   useEffect(() => {
-    void reload();
+    const handler = (message: string) => {
+      resetDashboardState();
+      setSession(null);
+      setAuthError(message || '登录已过期，请重新登录');
+      setNotice('登录已过期，请重新登录');
+    };
+
+    adminAuthFailureHandler = handler;
+
+    return () => {
+      if (adminAuthFailureHandler === handler) {
+        adminAuthFailureHandler = null;
+      }
+    };
   }, []);
+
+  useEffect(() => {
+    if (!session) {
+      setLoading(false);
+      return;
+    }
+
+    void reload();
+  }, [session?.token]);
 
   useEffect(() => {
     if (!Object.keys(data.mallSettings).length) return;
@@ -1416,6 +1654,57 @@ function App() {
       setNotice(`${label}失败：${error instanceof Error ? error.message : '未知错误'}`);
     } finally {
       setBusy('');
+    }
+  };
+
+  const handleLogin = async ({ phone, password }: LoginForm) => {
+    setAuthError('');
+    setAuthLoading(true);
+
+    try {
+      const loginResult = await apiPost<JsonRecord>('/api/auth/login', { phone, password });
+      const user = normalizeAdminUser(loginResult);
+
+      if (!user) {
+        throw new Error('登录结果缺少 token 或用户信息');
+      }
+
+      if (user.role === 'admin') {
+        const nextSession = persistAdminSession(user);
+        setSession(nextSession);
+        setNotice('登录成功，正在加载管理端数据');
+        setLoading(true);
+        return;
+      }
+
+      clearStoredAdminSession();
+      resetDashboardState();
+      setSession(null);
+      setAuthError('当前账号不是管理员，无法登录 Web 管理端');
+      setNotice('非管理员账号已退出');
+    } catch (error) {
+      clearStoredAdminSession();
+      resetDashboardState();
+      setSession(null);
+      setAuthError(error instanceof Error ? error.message : '登录失败，请稍后重试');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    setBusy('退出登录');
+
+    try {
+      await apiRequest('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // 后端登出失败时仍执行本地登出，保证管理端立即回到登录页。
+    } finally {
+      clearStoredAdminSession();
+      resetDashboardState();
+      setSession(null);
+      setAuthError('');
+      setNotice('已退出登录');
     }
   };
 
@@ -1550,13 +1839,13 @@ function App() {
   const createSupportSession = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     await runAction('客服会话创建', async () => {
-      const session = await apiPost<JsonRecord>('/api/support/sessions', {
+      const supportSession = await apiPost<JsonRecord>('/api/support/sessions', {
         userId: supportForm.userId || stringValue(data.users[0], 'id'),
         channel: 'web',
         topic: supportForm.topic,
       });
       await reload();
-      const id = stringValue(session, 'id');
+      const id = stringValue(supportSession, 'id');
       if (id) {
         setSelectedSessionId(id);
       }
@@ -1615,6 +1904,13 @@ function App() {
     });
   };
 
+  if (!session) {
+    return <LoginScreen error={authError} loading={authLoading} onSubmit={handleLogin} />;
+  }
+
+  const currentAdmin = session.user;
+  const currentAdminName = currentAdmin.name || currentAdmin.phone || shortId(currentAdmin.id);
+
   return (
     <div className="admin-shell">
       <aside className="sidebar">
@@ -1642,10 +1938,19 @@ function App() {
             <p>{currentNav.description}</p>
           </div>
           <div className="topbar-actions">
+            <div className="admin-account">
+              <span>当前管理员</span>
+              <strong>{currentAdminName}</strong>
+              <small>{currentAdmin.phone || roleLabel(currentAdmin.role)}</small>
+            </div>
             <span className={Object.keys(errors).length ? 'status-dot warning' : 'status-dot'}>{notice}</span>
             <button className="ghost-button" type="button" onClick={reload} disabled={loading || Boolean(busy)}>
               <Icon name="refresh" />
               刷新
+            </button>
+            <button className="ghost-button danger" type="button" onClick={handleLogout} disabled={Boolean(busy)}>
+              <Icon name="x" />
+              退出
             </button>
           </div>
         </header>

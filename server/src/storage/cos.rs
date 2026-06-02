@@ -97,6 +97,16 @@ impl Storage for TencentCosStorage {
         content_type: Option<&str>,
     ) -> Result<String, ApiError> {
         let key = build_storage_key(file_name)?;
+        self.put_key(bytes, &key, content_type).await
+    }
+
+    async fn put_key(
+        &self,
+        bytes: Vec<u8>,
+        key: &str,
+        content_type: Option<&str>,
+    ) -> Result<String, ApiError> {
+        let key = sanitized_key(key)?;
         let host = self.host();
         let content_type = content_type.unwrap_or("application/octet-stream");
         let content_length = bytes.len().to_string();

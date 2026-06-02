@@ -160,8 +160,55 @@ async fn request_json(
     (status, json)
 }
 
+async fn request_json_with_auth(
+    app: &Router,
+    method: &str,
+    uri: &str,
+    bearer: &str,
+    body: Option<Value>,
+) -> (StatusCode, Value) {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("authorization", format!("Bearer {bearer}"));
+    if body.is_some() {
+        builder = builder.header("content-type", "application/json");
+    }
+    let response = app
+        .clone()
+        .oneshot(
+            builder
+                .body(Body::from(
+                    body.map(|value| value.to_string()).unwrap_or_default(),
+                ))
+                .expect("authenticated request should build"),
+        )
+        .await
+        .expect("authenticated request should complete");
+    let status = response.status();
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should read");
+    let json = if body.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&body).expect("response body should be json")
+    };
+
+    (status, json)
+}
+
 async fn post_json(app: &Router, uri: &str, body: Value) -> (StatusCode, Value) {
     request_json(app, "POST", uri, Some(body)).await
+}
+
+async fn post_json_with_auth(
+    app: &Router,
+    uri: &str,
+    bearer: &str,
+    body: Value,
+) -> (StatusCode, Value) {
+    request_json_with_auth(app, "POST", uri, bearer, Some(body)).await
 }
 
 async fn put_json(app: &Router, uri: &str, body: Value) -> (StatusCode, Value) {
@@ -252,6 +299,22 @@ async fn insert_user(pool: &PgPool, phone: &str, role: &str, name: &str) -> Stri
     .fetch_one(pool)
     .await
     .expect("user should be inserted")
+}
+
+async fn insert_session(pool: &PgPool, user_id: &str, token: &str) -> String {
+    sqlx::query(
+        r#"
+        INSERT INTO admin_sessions (token, user_id)
+        VALUES ($1, $2)
+        "#,
+    )
+    .bind(token)
+    .bind(user_id)
+    .execute(pool)
+    .await
+    .expect("session should be inserted");
+
+    token.to_string()
 }
 
 fn create_vehicle_body(owner_id: &str) -> Value {
@@ -483,6 +546,8 @@ async fn vehicle_review_resubmit_update_availability_and_rental_settings_match_l
     };
     let owner_id = insert_user(&context.pool, "13910002001", "owner", "车主一").await;
     let renter_id = insert_user(&context.pool, "13910002002", "owner", "租户一").await;
+    let admin_id = insert_user(&context.pool, "13910002003", "admin", "车辆管理员").await;
+    let admin_token = insert_session(&context.pool, &admin_id, "vehicles-admin-session-1").await;
 
     let (create_status, create_body) = post_json(
         &context.app,
@@ -499,9 +564,18 @@ async fn vehicle_review_resubmit_update_availability_and_rental_settings_match_l
     assert_eq!(get_body["message"], "查询成功");
     assert_eq!(get_body["data"]["id"], vehicle_id);
 
-    let (reject_status, reject_body) = post_json(
+    let (missing_review_status, _) = post_json(
         &context.app,
         &format!("/api/vehicles/{vehicle_id}/review"),
+        json!({ "action": "reject", "reason": "资料不清晰" }),
+    )
+    .await;
+    assert_eq!(missing_review_status, StatusCode::UNAUTHORIZED);
+
+    let (reject_status, reject_body) = post_json_with_auth(
+        &context.app,
+        &format!("/api/vehicles/{vehicle_id}/review"),
+        &admin_token,
         json!({ "action": "reject", "reason": "资料不清晰" }),
     )
     .await;
@@ -521,9 +595,10 @@ async fn vehicle_review_resubmit_update_availability_and_rental_settings_match_l
     assert_eq!(resubmit_body["data"]["status"], "pending");
     assert!(resubmit_body["data"]["remarks"].is_null());
 
-    let (approve_status, approve_body) = post_json(
+    let (approve_status, approve_body) = post_json_with_auth(
         &context.app,
         &format!("/api/vehicles/{vehicle_id}/review"),
+        &admin_token,
         json!({ "action": "approve" }),
     )
     .await;
