@@ -6,6 +6,7 @@ Target:
 - Domain: `car.shcxyz.site`
 - App root: `/opt/recorouter`
 - API port: `34533`
+- Web root: `/opt/recorouter/current/dist-web`
 - Runtime: Docker container on the existing `server_default` network
 
 ## Prerequisites
@@ -35,11 +36,13 @@ The Rust API runs embedded migrations on startup.
 The repository has two production workflows:
 
 - `.github/workflows/deploy-prod.yml`
-  - Trigger: backend/deploy changes on `main`, or manual `workflow_dispatch`.
+  - Trigger: frontend/backend/deploy changes on `main`, or manual `workflow_dispatch`.
   - Builds `/tmp/recorouter-docker-release.tar.gz`.
+  - Builds the Taro H5 web app with `PROJECT_DOMAIN=https://car.shcxyz.site`.
   - Builds the Rust API binary on the GitHub Linux runner.
-  - Uploads it to the server.
+  - Packages `dist-web`, Rust migrations, the API binary, and deploy scripts.
   - Runs `deploy/install-docker-release.sh`; the server builds only the lightweight runtime Docker image, health-checks a candidate container, then restarts production.
+  - Installs nginx so `/` serves the Web app and `/api/` proxies to the Rust API.
   - Verifies `https://car.shcxyz.site/api/health`.
 - `.github/workflows/publish-miniapp.yml`
   - Trigger: manual `workflow_dispatch`, or push to `main` when repository variable `WEAPP_UPLOAD_ON_MAIN=true`.
@@ -88,12 +91,15 @@ deploy/make-docker-release.sh
 This creates `/tmp/recorouter-docker-release.tar.gz` containing:
 
 - `deploy/`
+- `dist-web/` when `BUILD_WEB` is not `0`
 
 By default the package contains `server/` and lets the server build the
 Docker image. In GitHub Actions, `BUILD_RUST_BINARY=1` builds the Rust binary on
 the Linux runner and packages `recorouter-api` plus migrations; the server then
 builds only the small runtime image and restarts the container. `BUILD_DOCKER_IMAGE=1`
-is also supported when a full Docker image artifact is wanted.
+is also supported when a full Docker image artifact is wanted. Set
+`BUILD_WEB=0` only for backend-only emergency releases; normal production
+releases should include `dist-web`.
 
 Upload and install:
 
@@ -118,6 +124,7 @@ This creates `/tmp/recorouter-release.tar.gz` containing:
 
 - `recorouter-api`
 - `migrations/`
+- `dist-web/` when `BUILD_WEB` is not `0`
 - `deploy/`
 
 ## Install on the server

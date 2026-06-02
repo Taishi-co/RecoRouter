@@ -47,7 +47,9 @@ RELEASE_DIR="$APP_ROOT/releases/$RELEASE_ID"
 rm -rf "$RELEASE_DIR"
 mkdir -p "$RELEASE_DIR"
 tar -xzf "$RELEASE_TAR" -C "$RELEASE_DIR"
-ln -sfn "$RELEASE_DIR" "$APP_ROOT/current"
+if [[ -d "$RELEASE_DIR/dist-web" ]]; then
+  chmod -R a+rX "$RELEASE_DIR/dist-web"
+fi
 
 docker network inspect "$DOCKER_NETWORK" >/dev/null
 IMAGE_REF="recorouter-api:$RELEASE_ID"
@@ -117,6 +119,7 @@ docker run -d \
   -v "$ENV_DIR:$ENV_DIR:ro" \
   "$IMAGE_REF"
 docker tag "$IMAGE_REF" "recorouter-api:latest"
+ln -sfn "$RELEASE_DIR" "$APP_ROOT/current"
 
 if [[ -d /www/server/panel/vhost/nginx ]]; then
   install -m 0644 "$RELEASE_DIR/deploy/nginx-car.shcxyz.site.conf" /www/server/panel/vhost/nginx/car.shcxyz.site.conf

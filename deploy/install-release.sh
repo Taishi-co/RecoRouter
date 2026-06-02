@@ -58,6 +58,9 @@ rm -rf "$RELEASE_DIR"
 mkdir -p "$RELEASE_DIR"
 tar -xzf "$RELEASE_TAR" -C "$RELEASE_DIR"
 chmod +x "$RELEASE_DIR/recorouter-api"
+if [[ -d "$RELEASE_DIR/dist-web" ]]; then
+  chmod -R a+rX "$RELEASE_DIR/dist-web"
+fi
 ln -sfn "$RELEASE_DIR" "$APP_ROOT/current"
 chown -R recorouter:recorouter "$APP_ROOT"
 

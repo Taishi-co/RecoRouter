@@ -7,7 +7,7 @@ use crate::{
     modules::{
         account_settings, address_books, admin, auth, cancellations, demand_schedules,
         demand_templates, demands, enterprise, enterprise_demands, enterprise_vehicles, fare,
-        favorite_routes, health, home, notifications, orders, owner_wallet, payments, platform,
+        favorite_routes, health, home, mall, notifications, orders, owner_wallet, payments, platform,
         rental_reminders, station, user_roles, vehicle_rentals, vehicles,
     },
     storage::Storage,
@@ -40,6 +40,7 @@ where
         .nest_service("/api/uploads", ServeDir::new(upload_dir))
         .merge(health::router::<AppState<S>>())
         .merge(home::router::<S>())
+        .merge(mall::router::<S>())
         .merge(auth::router::<S>())
         .merge(account_settings::router::<S>())
         .merge(user_roles::router::<S>())
