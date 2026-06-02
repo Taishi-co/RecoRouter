@@ -388,7 +388,7 @@ export async function supportMetrics(): Promise<Record<string, number>> {
 }
 
 async function apiGet<T>(url: string, data?: Record<string, unknown>): Promise<T> {
-  const response = await Network.request({ url, method: 'GET', data })
+  const response = await Network.request({ url, method: 'GET', data: cleanQueryData(data) })
   return unwrapApiData<T>(response.statusCode, response.data)
 }
 
@@ -429,4 +429,10 @@ function unwrapApiData<T>(statusCode: number, rawData: unknown): T {
   }
 
   return record.data as T
+}
+
+function cleanQueryData(data?: Record<string, unknown>) {
+  if (!data) return undefined
+  const entries = Object.entries(data).filter(([, value]) => value !== undefined && value !== null && value !== '')
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined
 }
