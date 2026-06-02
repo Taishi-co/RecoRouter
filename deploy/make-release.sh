@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${OUT_DIR:-/tmp/recorouter-release}"
 OUT_TAR="${OUT_TAR:-/tmp/recorouter-release.tar.gz}"
 TARGET_UNAME="$(uname -s)"
+WEB_OUTPUT_ROOT="${WEB_OUTPUT_ROOT:-dist-web}"
 
 cd "$ROOT_DIR"
 
@@ -15,6 +16,9 @@ if [[ "$TARGET_UNAME" != "Linux" && "${ALLOW_NON_LINUX_RELEASE:-}" != "1" ]]; th
 fi
 
 pnpm validate
+if [[ "${BUILD_WEB:-1}" == "1" ]]; then
+  PROJECT_DOMAIN="${PROJECT_DOMAIN:-https://car.shcxyz.site}" pnpm build:web
+fi
 cargo build --manifest-path server/Cargo.toml --release --locked
 
 rm -rf "$OUT_DIR" "$OUT_TAR"
@@ -23,6 +27,10 @@ mkdir -p "$OUT_DIR"
 cp server/target/release/recorouter-api "$OUT_DIR/recorouter-api"
 cp -R server/migrations "$OUT_DIR/migrations"
 cp -R deploy "$OUT_DIR/deploy"
+if [[ "${BUILD_WEB:-1}" == "1" ]]; then
+  test -d "$WEB_OUTPUT_ROOT"
+  cp -R "$WEB_OUTPUT_ROOT" "$OUT_DIR/dist-web"
+fi
 
 tar -C "$OUT_DIR" -czf "$OUT_TAR" .
 

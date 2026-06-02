@@ -13,6 +13,7 @@ pub mod fare;
 pub mod favorite_routes;
 pub mod health;
 pub mod home;
+pub mod mall;
 pub mod notifications;
 pub mod orders;
 pub mod owner_wallet;

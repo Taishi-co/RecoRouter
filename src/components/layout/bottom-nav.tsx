@@ -4,13 +4,14 @@ import { createPortal } from 'react-dom'
 import { Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow } from '@tarojs/taro'
 import {
-  Activity,
   Bell,
   ChartNoAxesCombined,
   ClipboardList,
+  Headphones,
   House,
   ReceiptText,
   Route,
+  ShoppingCart,
   Truck,
   User,
   Users,
@@ -32,8 +33,8 @@ interface BottomNavItem {
 const merchantItems: BottomNavItem[] = [
   { key: 'publish', label: '发布需求', icon: ClipboardList, url: '/pages/merchant/demands/publish' },
   { key: 'demands', label: '需求', icon: Route, url: '/pages/merchant/demands/list' },
+  { key: 'mall', label: '商城', icon: ShoppingCart, url: '/pages/mall/index/index' },
   { key: 'orders', label: '订单', icon: ReceiptText, url: '/pages/merchant/orders/index' },
-  { key: 'stats', label: '统计', icon: Activity, url: '/pages/merchant/stats/index' },
   { key: 'profile', label: '我的', icon: User, url: '/pages/merchant/profile/index' },
 ]
 
@@ -56,8 +57,9 @@ const enterpriseItems: BottomNavItem[] = [
 const adminItems: BottomNavItem[] = [
   { key: 'users', label: '用户', icon: Users, url: '/pages/admin/users/index' },
   { key: 'vehicles', label: '车辆', icon: Truck, url: '/pages/admin/vehicles/index' },
+  { key: 'mall', label: '商城', icon: ShoppingCart, url: '/pages/admin/mall/index' },
+  { key: 'support', label: '客服', icon: Headphones, url: '/pages/admin/support/index' },
   { key: 'orders', label: '订单', icon: ClipboardList, url: '/pages/admin/orders/index' },
-  { key: 'stats', label: '统计', icon: ChartNoAxesCombined, url: '/pages/admin/stats/index' },
   { key: 'profile', label: '我的', icon: User, url: '/pages/admin/settings/index' },
 ]
 

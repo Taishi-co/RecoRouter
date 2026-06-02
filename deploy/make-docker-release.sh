@@ -5,15 +5,24 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${OUT_DIR:-/tmp/recorouter-docker-release}"
 OUT_TAR="${OUT_TAR:-/tmp/recorouter-docker-release.tar.gz}"
 IMAGE_TAG="${IMAGE_TAG:-recorouter-api:release}"
+WEB_OUTPUT_ROOT="${WEB_OUTPUT_ROOT:-dist-web}"
 
 cd "$ROOT_DIR"
 
 pnpm validate
 
+if [[ "${BUILD_WEB:-1}" == "1" ]]; then
+  PROJECT_DOMAIN="${PROJECT_DOMAIN:-https://car.shcxyz.site}" pnpm build:web
+fi
+
 rm -rf "$OUT_DIR" "$OUT_TAR"
 mkdir -p "$OUT_DIR"
 
 cp -R deploy "$OUT_DIR/deploy"
+if [[ "${BUILD_WEB:-1}" == "1" ]]; then
+  test -d "$WEB_OUTPUT_ROOT"
+  cp -R "$WEB_OUTPUT_ROOT" "$OUT_DIR/dist-web"
+fi
 
 if [[ "${BUILD_DOCKER_IMAGE:-0}" == "1" ]]; then
   docker build -t "$IMAGE_TAG" server

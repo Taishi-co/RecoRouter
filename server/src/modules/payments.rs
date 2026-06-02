@@ -71,6 +71,7 @@ impl FromStr for PaymentProvider {
 enum PaymentBusinessType {
     OrderFare,
     OrderCommission,
+    MallOrder,
 }
 
 impl PaymentBusinessType {
@@ -78,6 +79,7 @@ impl PaymentBusinessType {
         match self {
             Self::OrderFare => "order_fare",
             Self::OrderCommission => "order_commission",
+            Self::MallOrder => "mall_order",
         }
     }
 }
@@ -89,6 +91,7 @@ impl FromStr for PaymentBusinessType {
         match value.trim().to_ascii_lowercase().as_str() {
             "" | "order_fare" | "fare" => Ok(Self::OrderFare),
             "order_commission" | "commission" => Ok(Self::OrderCommission),
+            "mall_order" | "mall" => Ok(Self::MallOrder),
             _ => Err(ApiError::BadRequest("不支持的支付业务类型".to_string())),
         }
     }
@@ -174,6 +177,7 @@ struct PayableOrderRow {
     commission_payment_status: Option<String>,
     fare_price: Option<f64>,
     commission_amount: Option<f64>,
+    payable_cents: Option<i64>,
     cargo_name: Option<String>,
 }
 
@@ -227,7 +231,7 @@ where
         .as_deref()
         .unwrap_or("order_fare")
         .parse::<PaymentBusinessType>()?;
-    let order = fetch_payable_order(&state.db, &body.order_id).await?;
+    let order = fetch_payable_order(&state.db, &body.order_id, business_type).await?;
     let amount_cents = payable_amount_cents(&order, business_type)?;
 
     validate_payable_order(&order, business_type)?;
@@ -338,7 +342,7 @@ where
     }
 
     let refreshed = fetch_payment(&state.db, &id).await?;
-    let order = fetch_payable_order(&state.db, &refreshed.business_id).await?;
+    let order = fetch_payable_order(&state.db, &refreshed.business_id, business_type).await?;
     Ok(ok(
         "支付状态已同步",
         SyncPaymentResponse {
@@ -409,26 +413,54 @@ async fn insert_payment(pool: &PgPool, payment: InsertPayment<'_>) -> ApiResult<
     Ok(id)
 }
 
-async fn fetch_payable_order(pool: &PgPool, order_id: &str) -> ApiResult<PayableOrderRow> {
-    sqlx::query_as::<_, PayableOrderRow>(
-        r#"
-        SELECT
-            o.id,
-            o.status,
-            o.payment_status,
-            o.commission_payment_status,
-            o.fare_price::float8 AS fare_price,
-            o.commission_amount::float8 AS commission_amount,
-            d.cargo_name
-        FROM orders o
-        LEFT JOIN demands d ON d.id = o.demand_id
-        WHERE o.id = $1
-        "#,
-    )
-    .bind(order_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| ApiError::NotFound("订单不存在".to_string()))
+async fn fetch_payable_order(
+    pool: &PgPool,
+    order_id: &str,
+    business_type: PaymentBusinessType,
+) -> ApiResult<PayableOrderRow> {
+    match business_type {
+        PaymentBusinessType::OrderFare | PaymentBusinessType::OrderCommission => {
+            sqlx::query_as::<_, PayableOrderRow>(
+                r#"
+                SELECT
+                    o.id,
+                    o.status,
+                    o.payment_status,
+                    o.commission_payment_status,
+                    o.fare_price::float8 AS fare_price,
+                    o.commission_amount::float8 AS commission_amount,
+                    NULL::bigint AS payable_cents,
+                    d.cargo_name
+                FROM orders o
+                LEFT JOIN demands d ON d.id = o.demand_id
+                WHERE o.id = $1
+                "#,
+            )
+            .bind(order_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(|| ApiError::NotFound("订单不存在".to_string()))
+        }
+        PaymentBusinessType::MallOrder => sqlx::query_as::<_, PayableOrderRow>(
+            r#"
+            SELECT
+                id,
+                status,
+                payment_status,
+                NULL::text AS commission_payment_status,
+                NULL::float8 AS fare_price,
+                NULL::float8 AS commission_amount,
+                payable_cents,
+                'RecoRouter Fresh'::text AS cargo_name
+            FROM mall_orders
+            WHERE id = $1
+            "#,
+        )
+        .bind(order_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("商城订单不存在".to_string())),
+    }
 }
 
 async fn fetch_payment(pool: &PgPool, payment_id: &str) -> ApiResult<PaymentRow> {
@@ -482,6 +514,17 @@ fn validate_payable_order(
                 return Err(ApiError::BadRequest("订单佣金已支付".to_string()));
             }
         }
+        PaymentBusinessType::MallOrder => {
+            if !matches!(
+                order.status.as_deref(),
+                Some("pending_payment") | Some("paid")
+            ) {
+                return Err(ApiError::BadRequest("当前商城订单不可支付".to_string()));
+            }
+            if order.payment_status.as_deref() == Some("paid") {
+                return Err(ApiError::BadRequest("商城订单已支付".to_string()));
+            }
+        }
     }
     Ok(())
 }
@@ -493,6 +536,13 @@ fn payable_amount_cents(
     let amount = match business_type {
         PaymentBusinessType::OrderFare => order.fare_price.unwrap_or(0.0),
         PaymentBusinessType::OrderCommission => order.commission_amount.unwrap_or(0.0),
+        PaymentBusinessType::MallOrder => {
+            let cents = order.payable_cents.unwrap_or_default();
+            if cents <= 0 {
+                return Err(ApiError::BadRequest("支付金额必须大于0".to_string()));
+            }
+            return Ok(cents);
+        }
     };
     let cents = (amount * 100.0).round() as i64;
     if cents <= 0 {
@@ -542,6 +592,10 @@ async fn mark_payment_success(
             .execute(pool)
             .await?;
         }
+        PaymentBusinessType::MallOrder => {
+            crate::modules::mall::settle_mall_order_payment_success(pool, &payment.business_id)
+                .await?;
+        }
     }
 
     Ok(())
@@ -582,6 +636,10 @@ async fn wechat_create_jsapi_prepay(
             order.cargo_name.as_deref().unwrap_or("运输订单")
         ),
         PaymentBusinessType::OrderCommission => format!("RecoRouter佣金-{}", order.id),
+        PaymentBusinessType::MallOrder => format!(
+            "RecoRouter商城-{}",
+            order.cargo_name.as_deref().unwrap_or("本地鲜选")
+        ),
     };
     let description = truncate_chars(&description, 127);
     let body = json!({

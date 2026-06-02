@@ -5,8 +5,18 @@ on:
     branches:
       - main
     paths:
+      - src/**
+      - config/**
+      - patches/**
       - server/**
       - deploy/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - project.config.json
+      - tsconfig.json
+      - babel.config.js
+      - eslint.config.mjs
       - .github/workflows/deploy-prod.yml
   workflow_dispatch:
 
@@ -28,6 +38,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate frontend
+        run: pnpm validate
+
+      - name: Build web app
+        run: PROJECT_DOMAIN="$PROJECT_DOMAIN" pnpm build:web
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
@@ -37,7 +65,7 @@ jobs:
       - name: Build Rust API
         run: cargo build --manifest-path server/Cargo.toml --release --locked
 
-      - name: Package backend release
+      - name: Package web and backend release
         run: |
           set -euo pipefail
           out_dir=/tmp/recorouter-docker-release
@@ -46,6 +74,7 @@ jobs:
           mkdir -p "$out_dir"
           cp server/target/release/recorouter-api "$out_dir/recorouter-api"
           cp -R server/migrations "$out_dir/migrations"
+          cp -R dist-web "$out_dir/dist-web"
           cp -R deploy "$out_dir/deploy"
           tar -C "$out_dir" -czf "$out_tar" .
           ls -lh "$out_tar"
@@ -69,7 +98,7 @@ jobs:
             exit 1
           fi
 
-      - name: Upload and install backend release
+      - name: Upload and install production release
         run: |
           set -euo pipefail
           remote="$SERVER_USER@$SERVER_HOST"
