@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Text, View } from '@tarojs/components'
+import { Image, Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
 import { MapPin, ShoppingCart } from 'lucide-react-taro'
 import { AppPageShell } from '@/components/layout/app-page-shell'
@@ -14,6 +14,7 @@ import {
   deleteMallCartItem,
   getMallCart,
   listMallAddresses,
+  resolveMallImageUrl,
   updateMallCartItem,
   type MallAddress,
   type MallCart,
@@ -164,10 +165,18 @@ export default function MallCartPage() {
           <Card key={item.id}>
             <CardContent className="p-4">
               <View className="flex gap-3">
-                <View className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-emerald-50">
-                  <Text className="text-xs font-black text-emerald-600">
-                    {item.product?.categoryCode === 'milk' ? 'MILK' : 'FOOD'}
-                  </Text>
+                <View className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-emerald-50">
+                  {item.product?.imageUrl ? (
+                    <Image
+                      className="h-full w-full"
+                      mode="aspectFill"
+                      src={resolveMallImageUrl(item.product.imageUrl)}
+                    />
+                  ) : (
+                    <Text className="text-xs font-black text-emerald-600">
+                      {item.product?.categoryCode === 'milk' ? 'MILK' : 'FOOD'}
+                    </Text>
+                  )}
                 </View>
                 <View className="min-w-0 flex-1">
                   <Text className="block text-sm font-black text-gray-900">

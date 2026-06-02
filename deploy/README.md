@@ -6,7 +6,7 @@ Target:
 - Domain: `car.shcxyz.site`
 - App root: `/opt/recorouter`
 - API port: `34533`
-- Web root: `/opt/recorouter/current/dist-web`
+- Web root: `/opt/recorouter/current/dist-web` (admin management platform only)
 - Runtime: Docker container on the existing `server_default` network
 
 ## Prerequisites
@@ -38,11 +38,11 @@ The repository has two production workflows:
 - `.github/workflows/deploy-prod.yml`
   - Trigger: frontend/backend/deploy changes on `main`, or manual `workflow_dispatch`.
   - Builds `/tmp/recorouter-docker-release.tar.gz`.
-  - Builds the Taro H5 web app with `PROJECT_DOMAIN=https://car.shcxyz.site`.
+  - Builds the Taro H5 admin management app with `PROJECT_DOMAIN=https://car.shcxyz.site`.
   - Builds the Rust API binary on the GitHub Linux runner.
   - Packages `dist-web`, Rust migrations, the API binary, and deploy scripts.
   - Runs `deploy/install-docker-release.sh`; the server builds only the lightweight runtime Docker image, health-checks a candidate container, then restarts production.
-  - Installs nginx so `/` serves the Web app and `/api/` proxies to the Rust API.
+  - Installs nginx so `/` serves the Web admin platform and `/api/` proxies to the Rust API.
   - Verifies `https://car.shcxyz.site/api/health`.
 - `.github/workflows/publish-miniapp.yml`
   - Trigger: manual `workflow_dispatch`, or push to `main` when repository variable `WEAPP_UPLOAD_ON_MAIN=true`.
