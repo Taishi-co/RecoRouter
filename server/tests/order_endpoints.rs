@@ -280,6 +280,52 @@ async fn insert_demand(pool: &PgPool, merchant_id: &str, cargo_name: &str) -> St
 }
 
 #[tokio::test]
+async fn order_list_applies_limit_pagination_without_changing_array_shape() {
+    let Some(context) = TestContext::new().await else {
+        return;
+    };
+    let merchant_id = insert_user(&context.pool, "13930000901", "merchant", "分页货主").await;
+    let owner_id = insert_user(&context.pool, "13930000902", "owner", "分页车主").await;
+    let vehicle_id = insert_vehicle(&context.pool, &owner_id, "沪P90001").await;
+
+    for index in 0..3 {
+        let demand_id =
+            insert_demand(&context.pool, &merchant_id, &format!("分页订单货物{index}")).await;
+        sqlx::query(
+            r#"
+            INSERT INTO orders (
+                demand_id, vehicle_id, merchant_id, owner_id, status,
+                pickup_address, delivery_address, created_at
+            )
+            VALUES ($1, $2, $3, $4, 'accepted', '上海仓', '杭州仓', $5::timestamptz)
+            "#,
+        )
+        .bind(&demand_id)
+        .bind(&vehicle_id)
+        .bind(&merchant_id)
+        .bind(&owner_id)
+        .bind(format!("2026-06-01T08:3{index}:00Z"))
+        .execute(&context.pool)
+        .await
+        .expect("order should be inserted");
+    }
+
+    let (status, body) = get_json(
+        &context.app,
+        &format!("/api/orders?owner_id={owner_id}&page=2&limit=1"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let data = body["data"]
+        .as_array()
+        .expect("data should remain an array");
+    assert_eq!(data.len(), 1);
+    assert_eq!(data[0]["demand"]["cargo_name"], "分页订单货物1");
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
 async fn order_static_commission_routes_are_not_captured_by_id_route() {
     let Some(context) = TestContext::new().await else {
         return;

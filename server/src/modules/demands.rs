@@ -5,11 +5,12 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
-use sqlx::FromRow;
+use sqlx::{FromRow, Postgres, QueryBuilder};
 
 use crate::{
     app::AppState,
     error::{ApiError, ApiResult},
+    pagination::Pagination,
     response::{ok, ApiEnvelope},
     storage::Storage,
 };
@@ -44,6 +45,9 @@ where
 struct DemandQuery {
     merchant_id: Option<String>,
     status: Option<String>,
+    page: Option<i64>,
+    #[serde(rename = "pageSize", alias = "page_size", alias = "limit")]
+    page_size: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -243,50 +247,36 @@ async fn list_demands<S>(
 where
     S: Storage,
 {
-    let demands = if query.status.as_deref() == Some("pending") {
-        sqlx::query_scalar::<_, Value>(
-            r#"
-            SELECT row_to_json(demand_row)
-            FROM (
-                SELECT *
-                FROM demands
-                WHERE status = 'pending'
-                ORDER BY created_at DESC
-            ) demand_row
-            "#,
-        )
-        .fetch_all(&state.db)
-        .await
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT row_to_json(demand_row)
+        FROM (
+            SELECT *
+            FROM demands
+        "#,
+    );
+    let mut has_where = false;
+    if query.status.as_deref() == Some("pending") {
+        push_where(&mut builder, &mut has_where);
+        builder.push("status = 'pending'");
     } else if let Some(merchant_id) = non_empty(query.merchant_id) {
-        sqlx::query_scalar::<_, Value>(
-            r#"
-            SELECT row_to_json(demand_row)
-            FROM (
-                SELECT *
-                FROM demands
-                WHERE merchant_id = $1
-                ORDER BY created_at DESC
-            ) demand_row
-            "#,
-        )
-        .bind(merchant_id)
-        .fetch_all(&state.db)
-        .await
-    } else {
-        sqlx::query_scalar::<_, Value>(
-            r#"
-            SELECT row_to_json(demand_row)
-            FROM (
-                SELECT *
-                FROM demands
-                ORDER BY created_at DESC
-            ) demand_row
-            "#,
-        )
-        .fetch_all(&state.db)
-        .await
+        push_where(&mut builder, &mut has_where);
+        builder.push("merchant_id = ");
+        builder.push_bind(merchant_id);
     }
-    .map_err(|err| ApiError::BadRequest(format!("查询失败: {err}")))?;
+
+    let pagination = Pagination::from_query(query.page, query.page_size);
+    builder.push(" ORDER BY created_at DESC, id DESC LIMIT ");
+    builder.push_bind(pagination.limit);
+    builder.push(" OFFSET ");
+    builder.push_bind(pagination.offset);
+    builder.push(") demand_row");
+
+    let demands = builder
+        .build_query_scalar::<Value>()
+        .fetch_all(&state.db)
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("查询失败: {err}")))?;
 
     Ok(ok("查询成功", demands))
 }
@@ -1021,6 +1011,15 @@ fn normalize_optional_text(value: Option<String>) -> Option<String> {
 
 fn non_empty(value: Option<String>) -> Option<String> {
     normalize_optional_text(value)
+}
+
+fn push_where(builder: &mut QueryBuilder<'_, Postgres>, has_where: &mut bool) {
+    if *has_where {
+        builder.push(" AND ");
+    } else {
+        builder.push(" WHERE ");
+        *has_where = true;
+    }
 }
 
 fn location_number(location: &Value, key: &str) -> Option<f64> {

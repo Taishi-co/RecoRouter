@@ -186,6 +186,111 @@ async fn insert_user(pool: &PgPool, phone: &str, role: &str, name: &str) -> Stri
 }
 
 #[tokio::test]
+async fn admin_user_and_order_lists_apply_pagination_without_changing_array_shape() {
+    let Some(context) = TestContext::new().await else {
+        return;
+    };
+
+    for index in 0..3 {
+        sqlx::query(
+            r#"
+            INSERT INTO users (phone, password, role, name, username, status, created_at)
+            VALUES ($1, 'hashed-secret', 'merchant', $2, $2, 'disabled', $3::timestamptz)
+            "#,
+        )
+        .bind(format!("1394000090{index}"))
+        .bind(format!("分页用户{index}"))
+        .bind(format!("2026-06-01T08:3{index}:00Z"))
+        .execute(&context.pool)
+        .await
+        .expect("admin user should be inserted");
+    }
+
+    let (users_status, users_body) = get_json(
+        &context.app,
+        "/api/admin/users?status=disabled&page=2&pageSize=1",
+    )
+    .await;
+    assert_eq!(users_status, StatusCode::OK);
+    let users = users_body["data"]
+        .as_array()
+        .expect("admin users data should remain an array");
+    assert_eq!(users.len(), 1);
+    assert_eq!(users[0]["name"], "分页用户1");
+
+    let merchant_id = insert_user(&context.pool, "13940001001", "merchant", "订单货主").await;
+    let owner_id = insert_user(&context.pool, "13940001002", "owner", "订单车主").await;
+    let vehicle_id: String = sqlx::query_scalar(
+        r#"
+        INSERT INTO vehicles (owner_id, vehicle_type, license_plate, status)
+        VALUES ($1, '冷链车', '沪A90001', 'active')
+        RETURNING id
+        "#,
+    )
+    .bind(&owner_id)
+    .fetch_one(&context.pool)
+    .await
+    .expect("vehicle should be inserted");
+
+    for index in 0..3 {
+        let demand_id: String = sqlx::query_scalar(
+            r#"
+            INSERT INTO demands (
+                merchant_id, cargo_name, cargo_type, weight, volume,
+                pickup_time, pickup_address, delivery_address,
+                pickup_location, delivery_location, status
+            )
+            VALUES (
+                $1, $2, 'fresh', 100, 5,
+                '2026-06-01T08:30:00Z', '上海仓', '杭州仓',
+                '{"latitude":31.2,"longitude":121.4}'::jsonb,
+                '{"latitude":30.2,"longitude":120.1}'::jsonb,
+                'accepted'
+            )
+            RETURNING id
+            "#,
+        )
+        .bind(&merchant_id)
+        .bind(format!("分页管理订单货物{index}"))
+        .fetch_one(&context.pool)
+        .await
+        .expect("demand should be inserted");
+
+        sqlx::query(
+            r#"
+            INSERT INTO orders (
+                demand_id, vehicle_id, merchant_id, owner_id, status,
+                pickup_address, delivery_address, created_at
+            )
+            VALUES ($1, $2, $3, $4, 'accepted', '上海仓', '杭州仓', $5::timestamptz)
+            "#,
+        )
+        .bind(&demand_id)
+        .bind(&vehicle_id)
+        .bind(&merchant_id)
+        .bind(&owner_id)
+        .bind(format!("2026-06-01T08:3{index}:00Z"))
+        .execute(&context.pool)
+        .await
+        .expect("order should be inserted");
+    }
+
+    let (orders_status, orders_body) = get_json(
+        &context.app,
+        "/api/admin/orders?status=accepted&page=2&limit=1",
+    )
+    .await;
+    assert_eq!(orders_status, StatusCode::OK);
+    let orders = orders_body["data"]
+        .as_array()
+        .expect("admin orders data should remain an array");
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0]["demand"]["cargo_name"], "分页管理订单货物1");
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
 async fn fare_calculation_matches_legacy_math_and_validation_messages() {
     let Some(context) = TestContext::new().await else {
         return;

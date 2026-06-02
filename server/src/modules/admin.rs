@@ -10,6 +10,7 @@ use sqlx::{Postgres, QueryBuilder};
 use crate::{
     app::AppState,
     error::{ApiError, ApiResult},
+    pagination::Pagination,
     response::{ok, ApiEnvelope},
     storage::Storage,
 };
@@ -32,11 +33,17 @@ where
 struct UserFilters {
     role: Option<String>,
     status: Option<String>,
+    page: Option<i64>,
+    #[serde(rename = "pageSize", alias = "page_size", alias = "limit")]
+    page_size: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
 struct OrderFilters {
     status: Option<String>,
+    page: Option<i64>,
+    #[serde(rename = "pageSize", alias = "page_size", alias = "limit")]
+    page_size: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,7 +73,11 @@ where
         builder.push_bind(status);
     }
 
-    builder.push(" ORDER BY created_at DESC");
+    let pagination = Pagination::from_query(filters.page, filters.page_size);
+    builder.push(" ORDER BY created_at DESC, id DESC LIMIT ");
+    builder.push_bind(pagination.limit);
+    builder.push(" OFFSET ");
+    builder.push_bind(pagination.offset);
     let users = builder
         .build_query_scalar::<Value>()
         .fetch_all(&state.db)
@@ -115,6 +126,7 @@ async fn get_orders<S>(
 where
     S: Storage,
 {
+    let pagination = Pagination::from_query(filters.page, filters.page_size);
     let orders = if let Some(status) = non_empty(filters.status) {
         sqlx::query_scalar::<_, Value>(
             r#"
@@ -186,10 +198,13 @@ where
             )
             FROM orders o
             WHERE o.status = $1
-            ORDER BY o.created_at DESC
+            ORDER BY o.created_at DESC, o.id DESC
+            LIMIT $2 OFFSET $3
             "#,
         )
         .bind(status)
+        .bind(pagination.limit)
+        .bind(pagination.offset)
         .fetch_all(&state.db)
         .await?
     } else {
@@ -262,9 +277,12 @@ where
                 )
             )
             FROM orders o
-            ORDER BY o.created_at DESC
+            ORDER BY o.created_at DESC, o.id DESC
+            LIMIT $1 OFFSET $2
             "#,
         )
+        .bind(pagination.limit)
+        .bind(pagination.offset)
         .fetch_all(&state.db)
         .await?
     };

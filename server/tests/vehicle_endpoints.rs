@@ -270,6 +270,108 @@ fn create_vehicle_body(owner_id: &str) -> Value {
 }
 
 #[tokio::test]
+async fn vehicle_list_applies_page_size_pagination_without_changing_array_shape() {
+    let Some(context) = TestContext::new().await else {
+        return;
+    };
+    let owner_id = insert_user(&context.pool, "13910000901", "owner", "分页车主").await;
+
+    for index in 0..3 {
+        sqlx::query(
+            r#"
+            INSERT INTO vehicles (
+                owner_id, vehicle_type, license_plate, status,
+                load_capacity, volume, battery_life, created_at
+            )
+            VALUES ($1, '冷链车', $2, 'active', 1000, 20, 300, $3::timestamptz)
+            "#,
+        )
+        .bind(&owner_id)
+        .bind(format!("沪V9000{index}"))
+        .bind(format!("2026-06-01T08:3{index}:00Z"))
+        .execute(&context.pool)
+        .await
+        .expect("vehicle should be inserted");
+    }
+
+    let (status, body) = get_json(
+        &context.app,
+        &format!("/api/vehicles?owner_id={owner_id}&user_id={owner_id}&page=2&page_size=1"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let data = body["data"]
+        .as_array()
+        .expect("data should remain an array");
+    assert_eq!(data.len(), 1);
+    assert_eq!(data[0]["license_plate"], "沪V90001");
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
+async fn vehicle_list_deduplicates_rented_vehicles_before_pagination() {
+    let Some(context) = TestContext::new().await else {
+        return;
+    };
+    let owner_id = insert_user(&context.pool, "13910000911", "owner", "出租车主").await;
+    let renter_id = insert_user(&context.pool, "13910000912", "owner", "租赁车主").await;
+
+    let mut vehicle_ids = Vec::new();
+    for index in 0..2 {
+        let vehicle_id: String = sqlx::query_scalar(
+            r#"
+            INSERT INTO vehicles (
+                owner_id, vehicle_type, license_plate, status,
+                load_capacity, volume, battery_life, created_at
+            )
+            VALUES ($1, '冷链车', $2, 'active', 1000, 20, 300, $3::timestamptz)
+            RETURNING id
+            "#,
+        )
+        .bind(&owner_id)
+        .bind(format!("沪R9100{index}"))
+        .bind(format!("2026-06-01T08:3{}:00Z", 2 - index))
+        .fetch_one(&context.pool)
+        .await
+        .expect("vehicle should be inserted");
+        vehicle_ids.push(vehicle_id);
+    }
+
+    for vehicle_id in [&vehicle_ids[0], &vehicle_ids[0], &vehicle_ids[1]] {
+        sqlx::query(
+            r#"
+            INSERT INTO vehicle_rentals (vehicle_id, owner_id, renter_id, status)
+            VALUES ($1, $2, $3, 'active')
+            "#,
+        )
+        .bind(vehicle_id)
+        .bind(&owner_id)
+        .bind(&renter_id)
+        .execute(&context.pool)
+        .await
+        .expect("active rental should be inserted");
+    }
+
+    let (status, body) = get_json(
+        &context.app,
+        &format!("/api/vehicles?owner_id={renter_id}&user_id={renter_id}&page=1&pageSize=2"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let data = body["data"]
+        .as_array()
+        .expect("data should remain an array");
+    assert_eq!(data.len(), 2);
+    assert_eq!(data[0]["license_plate"], "沪R91000");
+    assert_eq!(data[0]["ownership_type"], "rented");
+    assert_eq!(data[1]["license_plate"], "沪R91001");
+    assert_eq!(data[1]["ownership_type"], "rented");
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
 async fn vehicle_create_validates_owner_role_and_lists_enriched_owned_and_rented_vehicles() {
     let Some(context) = TestContext::new().await else {
         return;

@@ -3,6 +3,7 @@ pub mod config;
 pub mod db;
 pub mod error;
 pub mod modules;
+pub mod pagination;
 pub mod response;
 pub mod storage;
 pub mod wechat_pay;

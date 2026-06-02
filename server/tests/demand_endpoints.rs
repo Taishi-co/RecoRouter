@@ -209,6 +209,53 @@ fn create_demand_body(merchant_id: &str) -> Value {
 }
 
 #[tokio::test]
+async fn demand_list_applies_page_size_pagination_without_changing_array_shape() {
+    let Some(context) = TestContext::new().await else {
+        return;
+    };
+    let merchant_id = insert_user(&context.pool, "13920000901", "merchant", "分页货主").await;
+
+    for index in 0..3 {
+        sqlx::query(
+            r#"
+            INSERT INTO demands (
+                merchant_id, cargo_name, cargo_type, weight, volume,
+                pickup_time, pickup_address, delivery_address,
+                pickup_location, delivery_location, status, created_at
+            )
+            VALUES (
+                $1, $2, 'fresh', 100, 5,
+                '2026-06-01T08:30:00Z', '上海仓', '杭州仓',
+                '{"latitude":31.2,"longitude":121.4}'::jsonb,
+                '{"latitude":30.2,"longitude":120.1}'::jsonb,
+                'pending', $3::timestamptz
+            )
+            "#,
+        )
+        .bind(&merchant_id)
+        .bind(format!("分页需求{index}"))
+        .bind(format!("2026-06-01T08:3{index}:00Z"))
+        .execute(&context.pool)
+        .await
+        .expect("demand should be inserted");
+    }
+
+    let (status, body) = get_json(
+        &context.app,
+        &format!("/api/demands?merchant_id={merchant_id}&page=2&pageSize=1"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let data = body["data"]
+        .as_array()
+        .expect("data should remain an array");
+    assert_eq!(data.len(), 1);
+    assert_eq!(data[0]["cargo_name"], "分页需求1");
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
 async fn demand_create_list_get_update_and_cancel_match_legacy_envelopes() {
     let Some(context) = TestContext::new().await else {
         return;
