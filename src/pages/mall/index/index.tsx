@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Text, View } from '@tarojs/components'
+import { Image, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { Search, ShoppingCart, Truck } from 'lucide-react-taro'
 import { AppPageShell } from '@/components/layout/app-page-shell'
@@ -12,6 +12,7 @@ import {
   addMallCartItem,
   listMallCategories,
   listMallProducts,
+  resolveMallImageUrl,
   type MallCategory,
   type MallProduct,
   yuan,
@@ -104,13 +105,6 @@ export default function MallHome() {
           <Text className="mt-1 block text-xs font-bold text-emerald-50">
             水果、鲜奶、烘焙同城拼单
           </Text>
-          <View className="mt-4 grid grid-cols-3 gap-2">
-            {['18分钟达', '坏果包赔', '冷链温控'].map((item) => (
-              <View key={item} className="rounded-xl bg-white bg-opacity-20 px-3 py-2">
-                <Text className="block text-center text-xs font-black text-white">{item}</Text>
-              </View>
-            ))}
-          </View>
         </CardContent>
       </Card>
 
@@ -159,12 +153,20 @@ export default function MallHome() {
           <Card key={product.id} className="bg-white">
             <CardContent className="p-3">
               <View
-                className="mb-3 flex h-24 items-center justify-center rounded-2xl bg-emerald-50"
+                className="mb-3 flex h-24 items-center justify-center overflow-hidden rounded-2xl bg-emerald-50"
                 onClick={() => Taro.navigateTo({ url: `/pages/mall/product/index?id=${product.id}` })}
               >
-                <Text className="block text-lg font-black text-emerald-600">
-                  {product.categoryCode === 'milk' ? 'MILK' : 'FRUIT'}
-                </Text>
+                {product.imageUrl ? (
+                  <Image
+                    className="h-full w-full"
+                    mode="aspectFill"
+                    src={resolveMallImageUrl(product.imageUrl)}
+                  />
+                ) : (
+                  <Text className="block text-lg font-black text-emerald-600">
+                    {product.categoryCode === 'milk' ? 'MILK' : 'FRUIT'}
+                  </Text>
+                )}
               </View>
               <View className="mb-2 flex flex-wrap gap-1">
                 {product.tags.slice(0, 2).map((tag) => (

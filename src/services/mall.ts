@@ -29,6 +29,15 @@ export interface MallProduct {
   coldChainRequired: boolean
 }
 
+export function resolveMallImageUrl(imageUrl?: string | null) {
+  if (!imageUrl) return ''
+  if (/^(https?:|data:|blob:)/.test(imageUrl)) return imageUrl
+  if (imageUrl.startsWith('/') && typeof PROJECT_DOMAIN === 'string' && PROJECT_DOMAIN.length > 0) {
+    return `${PROJECT_DOMAIN}${imageUrl}`
+  }
+  return imageUrl
+}
+
 export interface MallCartItem {
   id: string
   userId: string

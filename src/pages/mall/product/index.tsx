@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Text, View } from '@tarojs/components'
+import { Image, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { ChevronLeft, ShoppingCart, Truck } from 'lucide-react-taro'
 import { AppPageShell } from '@/components/layout/app-page-shell'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { addMallCartItem, getMallProduct, type MallProduct, yuan } from '@/services/mall'
+import { addMallCartItem, getMallProduct, resolveMallImageUrl, type MallProduct, yuan } from '@/services/mall'
 
 interface StoredUser {
   id?: string
@@ -82,10 +82,18 @@ export default function MallProductDetail() {
         </Card>
       ) : (
         <>
-          <View className="flex h-56 items-center justify-center rounded-3xl bg-red-100">
-            <Text className="block text-3xl font-black text-red-600">
-              {product.categoryCode === 'milk' ? 'MILK' : 'STRAWBERRY'}
-            </Text>
+          <View className="flex h-56 items-center justify-center overflow-hidden rounded-3xl bg-red-100">
+            {product.imageUrl ? (
+              <Image
+                className="h-full w-full"
+                mode="aspectFill"
+                src={resolveMallImageUrl(product.imageUrl)}
+              />
+            ) : (
+              <Text className="block text-3xl font-black text-red-600">
+                {product.categoryCode === 'milk' ? 'MILK' : 'STRAWBERRY'}
+              </Text>
+            )}
           </View>
 
           <View>

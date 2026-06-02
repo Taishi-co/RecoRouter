@@ -193,14 +193,20 @@ async fn mall_cart_checkout_and_tracking_are_real_endpoints() {
 
     let user_id = insert_user(&context.pool, "13950001001", "merchant", "商城用户").await;
 
-    let (products_status, products_body) =
-        get_json(&context.app, "/api/mall/products?keyword=草莓").await;
+    let (products_status, products_body) = get_json(&context.app, "/api/mall/products").await;
     assert_eq!(products_status, StatusCode::OK);
     let products = products_body["data"]
         .as_array()
         .expect("products data should be an array");
-    assert!(!products.is_empty(), "seeded mall products should be listed");
-    let product_id = products[0]["id"].as_str().expect("product id should exist");
+    let kiwi = products
+        .iter()
+        .find(|product| product["sku"] == "TEST-FRUIT-KIWI-6")
+        .expect("seeded kiwi product should be listed");
+    assert_eq!(
+        kiwi["imageUrl"], "/assets/mall-products/kiwi.jpeg",
+        "seeded mall products should include test product images"
+    );
+    let product_id = kiwi["id"].as_str().expect("product id should exist");
 
     let (cart_status, cart_body) = post_json(
         &context.app,
