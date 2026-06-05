@@ -1,16 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Image, Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { MapPin, ShoppingCart } from 'lucide-react-taro'
-import { AppPageShell } from '@/components/layout/app-page-shell'
-import { BottomNav } from '@/components/layout/bottom-nav'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
+import { Store } from 'lucide-react-taro'
 import {
-  createMallAddress,
-  createMallOrder,
   deleteMallCartItem,
   getMallCart,
   listMallAddresses,
@@ -18,8 +10,13 @@ import {
   updateMallCartItem,
   type MallAddress,
   type MallCart,
-  yuan,
 } from '@/services/mall'
+import {
+  MallLocationStrip,
+  MallPage,
+  MallPrimaryButton,
+  mallYuan,
+} from '../mall-ui'
 
 interface StoredUser {
   id?: string
@@ -30,16 +27,12 @@ export default function MallCartPage() {
   const [addresses, setAddresses] = useState<MallAddress[]>([])
   const [selectedAddressId, setSelectedAddressId] = useState('')
   const [loading, setLoading] = useState(false)
-  const [addressName, setAddressName] = useState('Haymarket 88号 12F')
-  const [addressText, setAddressText] = useState('Haymarket 88号 12F, Sydney NSW')
-  const [phoneSuffix, setPhoneSuffix] = useState('陈女士')
 
   const userId = (Taro.getStorageSync('userInfo') as StoredUser | undefined)?.id || ''
-  const deliveryFeeCents = cart.subtotalCents >= 9900 ? 0 : 600
-  const couponCents = cart.subtotalCents > 0 ? Math.min(1000, cart.subtotalCents) : 0
+  const couponCents = cart.subtotalCents > 0 ? Math.min(600, cart.subtotalCents) : 0
   const payableCents = useMemo(
-    () => Math.max(cart.subtotalCents + deliveryFeeCents - couponCents, 0),
-    [cart.subtotalCents, deliveryFeeCents, couponCents],
+    () => Math.max(cart.subtotalCents - couponCents, 0),
+    [cart.subtotalCents, couponCents],
   )
 
   useEffect(() => {
@@ -49,6 +42,8 @@ export default function MallCartPage() {
   useDidShow(() => {
     loadData()
   })
+
+  const selectedAddress = addresses.find((item) => item.id === selectedAddressId)
 
   const guardLogin = () => {
     if (!userId) {
@@ -67,7 +62,7 @@ export default function MallCartPage() {
       ])
       setCart(nextCart)
       setAddresses(nextAddresses)
-      const defaultAddress = nextAddresses.find((item) => item.is_default) || nextAddresses[0]
+      const defaultAddress = nextAddresses.find((item) => item.isDefault || item.is_default) || nextAddresses[0]
       if (defaultAddress) {
         setSelectedAddressId(defaultAddress.id)
       }
@@ -79,205 +74,107 @@ export default function MallCartPage() {
   }
 
   const changeQuantity = async (id: string, quantity: number) => {
-    if (quantity <= 0) {
-      await deleteMallCartItem(id)
-    } else {
-      await updateMallCartItem(id, { quantity })
-    }
-    loadData()
-  }
-
-  const addAddress = async () => {
-    if (!addressName.trim() || !addressText.trim()) {
-      Taro.showToast({ title: '请填写地址', icon: 'none' })
-      return
-    }
     try {
-      const address = await createMallAddress({
-        user_id: userId,
-        address_name: addressName,
-        address: `${addressText} · ${phoneSuffix}`,
-        latitude: -33.8796,
-        longitude: 151.2056,
-        address_type: 'home',
-        is_default: addresses.length === 0,
-      })
-      setSelectedAddressId(address.id)
+      if (quantity <= 0) {
+        await deleteMallCartItem(id)
+      } else {
+        await updateMallCartItem(id, { quantity })
+      }
       loadData()
-      Taro.showToast({ title: '地址已保存', icon: 'success' })
     } catch (error) {
-      showError(error, '保存失败')
+      showError(error, '修改失败')
     }
   }
 
   const submitOrder = async () => {
-    if (!selectedAddressId) {
-      Taro.showToast({ title: '请选择配送地址', icon: 'none' })
-      return
-    }
     if (cart.selectedCount === 0) {
       Taro.showToast({ title: '购物车为空', icon: 'none' })
       return
     }
-    try {
-      const order = await createMallOrder({
-        userId,
-        addressId: selectedAddressId,
-        expectedDeliveryWindow: '今天 18:30-19:00',
-        deliveryMethod: '无人车冷链直送',
-        pickupMethod: '短信码开舱',
-        couponCents,
-      })
-      Taro.showToast({ title: '订单已提交', icon: 'success' })
-      Taro.navigateTo({ url: `/pages/mall/orders/index?orderId=${order.id}` })
-    } catch (error) {
-      showError(error, '提交失败')
-    }
+    Taro.navigateTo({ url: `/pages/mall/confirm/index?addressId=${selectedAddressId}` })
   }
 
   return (
-    <AppPageShell
-      title="购物车"
-      subtitle={loading ? '加载中...' : `${cart.selectedCount} 件鲜食待结算`}
-      icon={ShoppingCart}
-      bottom={<BottomNav type="merchant" active="mall" />}
-      contentClassName="space-y-4"
-    >
-      <Card className="bg-blue-50">
-        <CardContent className="p-4">
-          <Text className="block text-sm font-black text-blue-700">
-            满 ¥99 免配送费，还差 {yuan(Math.max(9900 - cart.subtotalCents, 0))}
-          </Text>
-        </CardContent>
-      </Card>
+    <MallPage active="cart">
+      <Text className="mall-page-title">购物车</Text>
+
+      <View style={{ marginTop: 14 }}>
+        <MallLocationStrip
+          title={selectedAddress?.addressLabel || selectedAddress?.address_name || '明日 16:00 后 · 绿荫花园自提点'}
+          subtitle={selectedAddress?.addressText || selectedAddress?.address || '团长王姐 · 距离 320m，可冷藏代收'}
+          onClick={() => Taro.navigateTo({ url: '/pages/mall/category/index?keyword=到点' })}
+        />
+      </View>
 
       {cart.items.length === 0 ? (
-        <Card>
-          <CardContent className="p-8 text-center">
-            <Text className="block text-sm font-bold text-gray-500">购物车暂无商品</Text>
-            <Button className="mt-4 rounded-full" onClick={() => Taro.navigateTo({ url: '/pages/mall/index/index' })}>
-              <Text className="text-sm font-black text-white">去逛逛</Text>
-            </Button>
-          </CardContent>
-        </Card>
+        <View className="mall-empty">
+          <Text className="mall-empty-title">{loading ? '加载中...' : '购物车暂无商品'}</Text>
+          <Text className="mall-empty-copy">去首页看看今日团购鲜品。</Text>
+          <View style={{ marginTop: 14 }}>
+            <MallPrimaryButton onClick={() => Taro.navigateTo({ url: '/pages/mall/index/index' })}>
+              <Text>去逛逛</Text>
+            </MallPrimaryButton>
+          </View>
+        </View>
       ) : (
-        cart.items.map((item) => (
-          <Card key={item.id}>
-            <CardContent className="p-4">
-              <View className="flex gap-3">
-                <View className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-emerald-50">
+        <>
+          <View className="mall-card">
+            <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Store size={18} color="#63BF54" />
+                <Text className="mall-list-title">叁友甄选 · 今日团购</Text>
+              </View>
+              <View className="mall-hero-badge" style={{ marginTop: 0, background: '#FFF1E5', color: '#FF9238' }}>
+                次日达
+              </View>
+            </View>
+
+            {cart.items.map((item) => (
+              <View key={item.id} className="mall-cart-item">
+                <View className="mall-cart-thumb">
                   {item.product?.imageUrl ? (
-                    <Image
-                      className="h-full w-full"
-                      mode="aspectFill"
-                      src={resolveMallImageUrl(item.product.imageUrl)}
-                    />
-                  ) : (
-                    <Text className="text-xs font-black text-emerald-600">
-                      {item.product?.categoryCode === 'milk' ? 'MILK' : 'FOOD'}
-                    </Text>
-                  )}
+                    <Image className="mall-product-image" mode="aspectFill" src={resolveMallImageUrl(item.product.imageUrl)} />
+                  ) : null}
                 </View>
-                <View className="min-w-0 flex-1">
-                  <Text className="block text-sm font-black text-gray-900">
+                <View>
+                  <Text className="mall-product-name" style={{ marginTop: 0 }}>
                     {item.product?.name || '商品'}
                   </Text>
-                  <Text className="mt-1 block text-xs font-bold text-gray-500">
-                    {item.product?.subtitle || '无人车配送'}
+                  <Text className="mall-product-subtitle">
+                    {item.product?.subtitle || '基地直采 · 今日锁鲜'}
                   </Text>
-                  <View className="mt-3 flex items-center justify-between">
-                    <Text className="block text-sm font-black text-emerald-600">
-                      {yuan(item.product?.priceCents)}
-                    </Text>
-                    <View className="flex items-center gap-2">
-                      <Button size="sm" variant="outline" onClick={() => changeQuantity(item.id, item.quantity - 1)}>
-                        <Text className="text-sm font-black">-</Text>
-                      </Button>
-                      <Text className="block text-sm font-black text-gray-900">{item.quantity}</Text>
-                      <Button size="sm" onClick={() => changeQuantity(item.id, item.quantity + 1)}>
-                        <Text className="text-sm font-black text-white">+</Text>
-                      </Button>
-                    </View>
-                  </View>
+                  <Text className="mall-price">{mallYuan(item.product?.priceCents)}</Text>
+                </View>
+                <View className="mall-stepper">
+                  <Text className="mall-stepper-action mall-stepper-action-muted" onClick={() => changeQuantity(item.id, item.quantity - 1)}>−</Text>
+                  <Text className="mall-stepper-value">{item.quantity}</Text>
+                  <Text className="mall-stepper-action" onClick={() => changeQuantity(item.id, item.quantity + 1)}>＋</Text>
                 </View>
               </View>
-            </CardContent>
-          </Card>
-        ))
-      )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            <Text className="text-base font-black text-gray-900">配送地址</Text>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {addresses.map((address) => (
-            <View
-              key={address.id}
-              className="rounded-xl border border-gray-200 p-3"
-              onClick={() => setSelectedAddressId(address.id)}
-            >
-              <View className="flex items-center justify-between">
-                <Text className="block text-sm font-black text-gray-900">{address.address_name}</Text>
-                {selectedAddressId === address.id && (
-                  <Badge className="bg-emerald-500">
-                    <Text className="text-xs text-white">使用中</Text>
-                  </Badge>
-                )}
-              </View>
-              <Text className="mt-1 block text-xs font-bold text-gray-500">{address.address}</Text>
-            </View>
-          ))}
-
-          <View className="space-y-2 rounded-xl bg-gray-50 p-3">
-            <View className="flex items-center gap-2">
-              <MapPin size={18} color="#10B981" />
-              <Text className="block text-sm font-black text-gray-900">新增 / 编辑地址</Text>
-            </View>
-            <Input value={addressName} placeholder="地址名" onInput={(event) => setAddressName(String(event.detail.value || ''))} />
-            <Input value={addressText} placeholder="详细地址" onInput={(event) => setAddressText(String(event.detail.value || ''))} />
-            <Input value={phoneSuffix} placeholder="联系人" onInput={(event) => setPhoneSuffix(String(event.detail.value || ''))} />
-            <Button variant="outline" className="w-full rounded-full" onClick={addAddress}>
-              <Text className="text-sm font-black text-primary">保存并使用</Text>
-            </Button>
+            ))}
           </View>
-        </CardContent>
-      </Card>
 
-      <Card className="mb-4 bg-gray-950">
-        <CardContent className="p-4">
-          <View className="space-y-2">
-            <Row label="商品合计" value={yuan(cart.subtotalCents)} dark />
-            <Row label="配送费" value={yuan(deliveryFeeCents)} dark />
-            <Row label="优惠券" value={`- ${yuan(couponCents)}`} dark />
+          <View className="mall-card mall-card-soft">
+            <View className="mall-summary-row" style={{ marginTop: 0 }}>
+              <Text className="mall-summary-label">满 49 减 6 已自动使用</Text>
+              <Text className="mall-summary-value mall-summary-value-warm">-{mallYuan(couponCents)}</Text>
+            </View>
           </View>
-          <View className="mt-4 flex items-center justify-between">
+
+          <View className="mall-total-bar">
             <View>
-              <Text className="block text-lg font-black text-white">实付 {yuan(payableCents)}</Text>
-              <Text className="mt-1 block text-xs font-bold text-emerald-100">预计 18:45 送达</Text>
+              <Text className="mall-total-label">合计</Text>
+              <Text className="mall-total-value">{mallYuan(payableCents)}</Text>
             </View>
-            <Button className="rounded-full bg-emerald-500" onClick={submitOrder}>
-              <Text className="text-sm font-black text-white">提交订单</Text>
-            </Button>
+            <View className="mall-total-button" onClick={submitOrder}>
+              <Text>去结算</Text>
+            </View>
           </View>
-        </CardContent>
-      </Card>
-    </AppPageShell>
+        </>
+      )}
+    </MallPage>
   )
 }
-
-const Row = ({ label, value, dark }: { label: string; value: string; dark?: boolean }) => (
-  <View className="flex items-center justify-between">
-    <Text className={dark ? 'block text-sm font-bold text-gray-300' : 'block text-sm font-bold text-gray-500'}>
-      {label}
-    </Text>
-    <Text className={dark ? 'block text-sm font-black text-white' : 'block text-sm font-black text-gray-900'}>
-      {value}
-    </Text>
-  </View>
-)
 
 function showError(error: unknown, fallback: string) {
   Taro.showToast({

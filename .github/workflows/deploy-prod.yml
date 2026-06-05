@@ -55,7 +55,10 @@ jobs:
         run: pnpm validate
 
       - name: Build web app
-        run: PROJECT_DOMAIN="$PROJECT_DOMAIN" pnpm build:web
+        run: |
+          PROJECT_DOMAIN="$PROJECT_DOMAIN" pnpm build:web
+          PROJECT_DOMAIN="${PROJECT_DOMAIN%/}:18081" pnpm build:web:vehicle
+          PROJECT_DOMAIN="${PROJECT_DOMAIN%/}:18082" pnpm build:web:mall
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -80,6 +83,8 @@ jobs:
           cp server/target/release/recorouter-migrator "$out_dir/recorouter-migrator"
           cp -R server/migrations "$out_dir/migrations"
           cp -R dist-web "$out_dir/dist-web"
+          cp -R dist-web-vehicle "$out_dir/dist-web-vehicle"
+          cp -R dist-web-mall "$out_dir/dist-web-mall"
           cp -R deploy "$out_dir/deploy"
           mkdir -p "$out_dir/mall-products"
           cp -R src/assets/mall-products/. "$out_dir/mall-products/"

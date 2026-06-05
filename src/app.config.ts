@@ -42,10 +42,21 @@ const miniAppPages = [
   'pages/merchant/rentals/index',        // 需求方端-租车大厅
   'pages/merchant/rentals/detail',       // 需求方端-车辆详情
   'pages/mall/index/index',              // 商城-首页
+  'pages/mall/category/index',           // 商城-分类搜索
   'pages/mall/product/index',            // 商城-商品详情
+  'pages/mall/pickup/index',             // 商城-自提点
   'pages/mall/cart/index',               // 商城-购物车/结算/地址
+  'pages/mall/confirm/index',            // 商城-确认订单
+  'pages/mall/address/index',            // 商城-地址/自提点列表
+  'pages/mall/payment-success/index',    // 商城-支付成功
   'pages/mall/orders/index',             // 商城-订单/支付/售后/追踪
+  'pages/mall/order-detail/index',       // 商城-订单详情
+  'pages/mall/after-sale/index',         // 商城-售后申请
   'pages/mall/support/index',            // 商城-客服中心
+  'pages/mall/profile/index',            // 商城-我的
+  'pages/mall/group-leader/index',       // 商城-团长中心
+  'pages/mall/community/index',          // 商城-邻里圈
+  'pages/mall/settings/index',           // 商城-消息与设置
   'pages/owner/rentals/pending/index',   // 运力方端-待确认租赁
   'pages/role-switch/index',             // 角色管理
   'pages/rentals-history/index',         // 我的租赁记录
@@ -112,11 +123,21 @@ const vehiclePages = [
 
 const mallPages = [
   'pages/mall/index/index',              // 商城-首页
+  'pages/mall/category/index',           // 商城-分类搜索
   'pages/mall/product/index',            // 商城-商品详情
+  'pages/mall/pickup/index',             // 商城-自提点
   'pages/mall/cart/index',               // 商城-购物车/结算/地址
+  'pages/mall/confirm/index',            // 商城-确认订单
+  'pages/mall/address/index',            // 商城-地址/自提点列表
+  'pages/mall/payment-success/index',    // 商城-支付成功
   'pages/mall/orders/index',             // 商城-订单/支付/售后/追踪
+  'pages/mall/order-detail/index',       // 商城-订单详情
+  'pages/mall/after-sale/index',         // 商城-售后申请
   'pages/mall/support/index',            // 商城-客服中心
-  // 后续 PRD 商城页归属：分类搜索、自提点选择、确认订单、支付成功、会员首页、团长中心、邻里圈、消息设置。
+  'pages/mall/profile/index',            // 商城-我的
+  'pages/mall/group-leader/index',       // 商城-团长中心
+  'pages/mall/community/index',          // 商城-邻里圈
+  'pages/mall/settings/index',           // 商城-消息与设置
 ]
 
 const adminPages = [

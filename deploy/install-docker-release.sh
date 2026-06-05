@@ -61,9 +61,11 @@ RELEASE_DIR="$APP_ROOT/releases/$RELEASE_ID"
 rm -rf "$RELEASE_DIR"
 mkdir -p "$RELEASE_DIR"
 tar -xzf "$RELEASE_TAR" -C "$RELEASE_DIR"
-if [[ -d "$RELEASE_DIR/dist-web" ]]; then
-  chmod -R a+rX "$RELEASE_DIR/dist-web"
-fi
+for web_dir in dist-web dist-web-vehicle dist-web-mall; do
+  if [[ -d "$RELEASE_DIR/$web_dir" ]]; then
+    chmod -R a+rX "$RELEASE_DIR/$web_dir"
+  fi
+done
 
 docker network inspect "$DOCKER_NETWORK" >/dev/null
 IMAGE_REF="recorouter-api:$RELEASE_ID"
@@ -78,12 +80,12 @@ elif [[ -f "$RELEASE_DIR/recorouter-api" ]]; then
     "$RELEASE_DIR/platform-api" \
     "$RELEASE_DIR/recorouter-migrator"
   cat >"$RELEASE_DIR/Dockerfile.runtime" <<'EOF'
+FROM rust:1-bookworm AS certs
 FROM debian:bookworm-slim
 
 WORKDIR /app
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /etc/ssl/certs
+COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 COPY recorouter-api /usr/local/bin/recorouter-api
 COPY vehicle-api /usr/local/bin/vehicle-api

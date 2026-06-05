@@ -6,13 +6,21 @@ OUT_DIR="${OUT_DIR:-/tmp/recorouter-docker-release}"
 OUT_TAR="${OUT_TAR:-/tmp/recorouter-docker-release.tar.gz}"
 IMAGE_TAG="${IMAGE_TAG:-recorouter-api:release}"
 WEB_OUTPUT_ROOT="${WEB_OUTPUT_ROOT:-dist-web}"
+VEHICLE_WEB_OUTPUT_ROOT="${VEHICLE_WEB_OUTPUT_ROOT:-dist-web-vehicle}"
+MALL_WEB_OUTPUT_ROOT="${MALL_WEB_OUTPUT_ROOT:-dist-web-mall}"
+
+export COPYFILE_DISABLE=1
 
 cd "$ROOT_DIR"
 
 pnpm validate
 
 if [[ "${BUILD_WEB:-1}" == "1" ]]; then
-  PROJECT_DOMAIN="${PROJECT_DOMAIN:-https://car.shcxyz.site}" pnpm build:web
+  BASE_PROJECT_DOMAIN="${PROJECT_DOMAIN:-https://car.shcxyz.site}"
+  BASE_PROJECT_DOMAIN="${BASE_PROJECT_DOMAIN%/}"
+  PROJECT_DOMAIN="${ADMIN_PROJECT_DOMAIN:-$BASE_PROJECT_DOMAIN}" pnpm build:web
+  PROJECT_DOMAIN="${VEHICLE_WEB_PROJECT_DOMAIN:-${BASE_PROJECT_DOMAIN}:18081}" pnpm build:web:vehicle
+  PROJECT_DOMAIN="${MALL_WEB_PROJECT_DOMAIN:-${BASE_PROJECT_DOMAIN}:18082}" pnpm build:web:mall
 fi
 
 rm -rf "$OUT_DIR" "$OUT_TAR"
@@ -23,7 +31,11 @@ mkdir -p "$OUT_DIR/mall-products"
 cp -R src/assets/mall-products/. "$OUT_DIR/mall-products/"
 if [[ "${BUILD_WEB:-1}" == "1" ]]; then
   test -d "$WEB_OUTPUT_ROOT"
+  test -d "$VEHICLE_WEB_OUTPUT_ROOT"
+  test -d "$MALL_WEB_OUTPUT_ROOT"
   cp -R "$WEB_OUTPUT_ROOT" "$OUT_DIR/dist-web"
+  cp -R "$VEHICLE_WEB_OUTPUT_ROOT" "$OUT_DIR/dist-web-vehicle"
+  cp -R "$MALL_WEB_OUTPUT_ROOT" "$OUT_DIR/dist-web-mall"
 fi
 
 if [[ "${BUILD_DOCKER_IMAGE:-0}" == "1" ]]; then
@@ -38,8 +50,7 @@ elif [[ "${BUILD_RUST_BINARY:-0}" == "1" ]]; then
   cp server/target/release/recorouter-migrator "$OUT_DIR/recorouter-migrator"
   cp -R server/migrations "$OUT_DIR/migrations"
 else
-  cp -R server "$OUT_DIR/server"
-  rm -rf "$OUT_DIR/server/target"
+  tar -C "$ROOT_DIR" --exclude "server/target" -cf - server | tar -C "$OUT_DIR" -xf -
 fi
 
 tar -C "$OUT_DIR" -czf "$OUT_TAR" .

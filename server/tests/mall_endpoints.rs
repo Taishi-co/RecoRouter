@@ -463,6 +463,160 @@ async fn mall_cart_checkout_and_tracking_are_real_endpoints() {
 }
 
 #[tokio::test]
+async fn mall_member_group_leader_community_and_after_sale_flows_are_backed_by_api() {
+    let Some(context) = TestContext::new().await else {
+        return;
+    };
+
+    let user_id = insert_user(&context.pool, "13950004001", "merchant", "邻里用户").await;
+    let leader_id = insert_user(&context.pool, "13950003001", "merchant", "林团长").await;
+
+    let (products_status, products_body) = get_json(&context.app, "/api/mall/products").await;
+    assert_eq!(products_status, StatusCode::OK);
+    let product_id = products_body["data"][0]["id"]
+        .as_str()
+        .expect("seed product id should exist");
+
+    let (cart_status, _) = post_json(
+        &context.app,
+        "/api/mall/cart/items",
+        json!({
+            "userId": user_id,
+            "productId": product_id,
+            "quantity": 1
+        }),
+    )
+    .await;
+    assert_eq!(cart_status, StatusCode::OK);
+
+    let pickup_point_id = "pickup-sanyou-central";
+    let (order_status, order_body) = post_json(
+        &context.app,
+        "/api/mall/orders",
+        json!({
+            "userId": user_id,
+            "pickupPointId": pickup_point_id,
+            "expectedDeliveryWindow": "今天 18:30-19:00"
+        }),
+    )
+    .await;
+    assert_eq!(order_status, StatusCode::OK);
+    let order_id = order_body["data"]["id"]
+        .as_str()
+        .expect("order id should exist");
+
+    recorouter_api::modules::mall::settle_mall_order_payment_success(&context.pool, order_id)
+        .await
+        .expect("payment settlement should generate fulfillment code");
+
+    let code: String = sqlx::query_scalar(
+        "SELECT code FROM mall_fulfillment_codes WHERE order_id = $1 AND status = 'ready'",
+    )
+    .bind(order_id)
+    .fetch_one(&context.pool)
+    .await
+    .expect("ready fulfillment code should exist");
+
+    let (profile_status, profile_body) = get_json(
+        &context.app,
+        &format!("/api/mall/me/profile?userId={leader_id}"),
+    )
+    .await;
+    assert_eq!(profile_status, StatusCode::OK);
+    assert_eq!(profile_body["data"]["member"]["id"], leader_id);
+    assert_eq!(
+        profile_body["data"]["groupLeader"]["pickupPoint"]["id"],
+        pickup_point_id
+    );
+    assert!(
+        profile_body["data"]["orderCounts"]["readyForPickup"]
+            .as_i64()
+            .unwrap_or_default()
+            >= 0
+    );
+
+    let (workbench_status, workbench_body) = get_json(
+        &context.app,
+        &format!("/api/mall/group-leader/workbench?userId={leader_id}"),
+    )
+    .await;
+    assert_eq!(workbench_status, StatusCode::OK);
+    assert_eq!(workbench_body["data"]["pickupPoint"]["id"], pickup_point_id);
+    assert_eq!(workbench_body["data"]["today"]["pendingPickup"], 1);
+    assert_eq!(workbench_body["data"]["pendingOrders"][0]["id"], order_id);
+
+    let (verify_status, verify_body) = post_json(
+        &context.app,
+        "/api/mall/group-leader/verify-fulfillment",
+        json!({
+            "userId": leader_id,
+            "orderId": order_id,
+            "code": code
+        }),
+    )
+    .await;
+    assert_eq!(verify_status, StatusCode::OK);
+    assert_eq!(verify_body["data"]["status"], "verified");
+    assert_eq!(verify_body["data"]["verifiedBy"], leader_id);
+
+    let (post_status, post_body) = post_json(
+        &context.app,
+        "/api/mall/community-posts",
+        json!({
+            "userId": user_id,
+            "title": "今晚自提点拼团",
+            "summary": "蓝莓到点后一起取",
+            "content": "邻居可直接跟团。",
+            "pickupPointId": pickup_point_id,
+            "images": ["mall-community/blueberry.jpeg"]
+        }),
+    )
+    .await;
+    assert_eq!(post_status, StatusCode::OK);
+    assert_eq!(post_body["data"]["authorUserId"], user_id);
+    assert_eq!(post_body["data"]["likeCount"], 0);
+    let post_id = post_body["data"]["id"]
+        .as_str()
+        .expect("community post id should exist");
+
+    for _ in 0..2 {
+        let (interaction_status, interaction_body) = post_json(
+            &context.app,
+            &format!("/api/mall/community-posts/{post_id}/interactions"),
+            json!({
+                "userId": user_id,
+                "interactionType": "like"
+            }),
+        )
+        .await;
+        assert_eq!(interaction_status, StatusCode::OK);
+        assert_eq!(interaction_body["data"]["counts"]["like"], 1);
+    }
+
+    let (after_sale_status, after_sale_body) = post_json(
+        &context.app,
+        &format!("/api/mall/orders/{order_id}/after-sales"),
+        json!({
+            "userId": user_id,
+            "reason": "包装破损",
+            "description": "瓶身有裂纹",
+            "evidenceImages": ["mall-after-sales/broken-1.jpeg", "mall-after-sales/broken-2.jpeg"]
+        }),
+    )
+    .await;
+    assert_eq!(after_sale_status, StatusCode::OK);
+    assert_eq!(
+        after_sale_body["data"]["evidenceImages"]
+            .as_array()
+            .expect("evidenceImages should be an array")
+            .len(),
+        2
+    );
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
 async fn admin_mall_product_order_campaign_and_settings_endpoints_work() {
     let Some(context) = TestContext::new().await else {
         return;

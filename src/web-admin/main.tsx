@@ -24,6 +24,29 @@ interface NavigationItem {
   icon: IconName;
 }
 
+type AdminModuleKey = 'platform' | 'vehicle' | 'mall';
+
+interface AdminPageSpec {
+  key: string;
+  label: string;
+  group: string;
+  description: string;
+  icon: IconName;
+  routeKey?: NavigationKey;
+  tableTitle?: string;
+  detailTitle?: string;
+  workflow?: string[];
+}
+
+interface AdminModuleSpec {
+  key: AdminModuleKey;
+  brand: string;
+  subtitle: string;
+  moduleLabel: string;
+  theme: 'blue' | 'green';
+  pages: AdminPageSpec[];
+}
+
 interface LoadErrors {
   [key: string]: string;
 }
@@ -242,6 +265,125 @@ const navigation: NavigationItem[] = [
   { key: 'mallOrders', label: '商城订单', description: '派送、售后与退款', icon: 'orders' },
   { key: 'operations', label: '运营配置', description: '活动、规则、配送设置', icon: 'megaphone' },
   { key: 'support', label: '客服工作台', description: '会话、工单、知识库', icon: 'support' },
+];
+
+const navigationByKey = new Map(navigation.map(item => [item.key, item]));
+
+function designPage(
+  key: string,
+  label: string,
+  group: string,
+  description: string,
+  icon: IconName,
+  routeKey?: NavigationKey,
+  workflow: string[] = ['筛选', '列表', '详情', '处理'],
+): AdminPageSpec {
+  const legacy = routeKey ? navigationByKey.get(routeKey) : undefined;
+  return {
+    key,
+    label,
+    group,
+    description: description || legacy?.description || '',
+    icon: legacy?.icon || icon,
+    routeKey,
+    tableTitle: `${label}列表`,
+    detailTitle: `${label}详情`,
+    workflow,
+  };
+}
+
+const adminModules: AdminModuleSpec[] = [
+  {
+    key: 'platform',
+    brand: 'Reco Console',
+    subtitle: '超级管理端',
+    moduleLabel: '平台治理',
+    theme: 'blue',
+    pages: [
+      designPage('platform.overview', '总览看板', '平台', '平台指标、服务状态和风险事项', 'dashboard', 'overview'),
+      designPage('platform.accounts', '账号列表', '账号权限', '账号启停、角色和主体信息', 'users', 'users'),
+      designPage('platform.invites', '邀请账号', '账号权限', '运营/客服/财务账号邀请流程', 'plus'),
+      designPage('platform.roles', '角色权限', '账号权限', '模块权限、数据权限和操作权限', 'users'),
+      designPage('platform.enterpriseAudit', '企业审核', '审核中心', '企业主体、商户和资质资料审核', 'check'),
+      designPage('platform.ownerAudit', '车主审核', '审核中心', '车主身份、车辆所有权和结算资料', 'truck'),
+      designPage('platform.merchantAudit', '商户审核', '审核中心', '商城商户资料和结算资质', 'shop'),
+      designPage('platform.paymentRecon', '支付对账', '财务', '微信支付、退款和异常账单', 'refund'),
+      designPage('platform.splitLedger', '分账台账', '财务', '无人车与商城业务分账记录', 'orders'),
+      designPage('platform.commission', '佣金审核', '财务', '运力订单佣金确认与异常处理', 'route', 'transportOrders'),
+      designPage('platform.cos', 'COS资源', '公共服务', '商品图、资质图和上传资源治理', 'shop'),
+      designPage('platform.logs', '日志检索', '公共服务', '接口日志、错误日志和审计日志', 'support'),
+      designPage('platform.apiHealth', '服务健康', '公共服务', '无人车、商城、平台服务健康检查', 'refresh'),
+      designPage('platform.risk', '风控规则', '安全', '支付、售后、账号和频控策略', 'x'),
+      designPage('platform.auditLog', '操作审计', '安全', '管理员操作轨迹与敏感动作', 'orders'),
+      designPage('platform.notice', '系统公告', '运营', 'Web、小程序和服务通知发布', 'megaphone'),
+      designPage('platform.dictionary', '基础字典', '运营', '状态、类目、标签和枚举治理', 'dashboard'),
+      designPage('platform.stations', '站点字典', '运营', '无人车站点、自提点基础资料', 'route'),
+      designPage('platform.analytics', '数据报表', '数据', '业务漏斗、收入和履约效率', 'dashboard'),
+      designPage('platform.release', '发布检查', '运维', '版本、部署和回滚检查清单', 'check'),
+      designPage('platform.settings', '系统设置', '设置', '域名、商户号、密钥和公共配置', 'save'),
+      designPage('platform.messages', '消息中心', '运营', '站内消息、模板消息和触达记录', 'send'),
+    ],
+  },
+  {
+    key: 'vehicle',
+    brand: '锐途运力',
+    subtitle: 'B端无人车小程序后台',
+    moduleLabel: '无人车业务',
+    theme: 'blue',
+    pages: [
+      designPage('vehicle.review', '审核', '审核', '企业、车主、车辆资料集中审核', 'check', 'vehicles'),
+      designPage('vehicle.enterpriseReview', '企业入驻审核', '审核', '需求方企业主体审核和资料补录', 'users'),
+      designPage('vehicle.ownerReview', '车主入驻审核', '审核', '车主资质、收款和认证资料', 'users'),
+      designPage('vehicle.vehicleList', '无人车管理', '无人车管理', '车辆列表、冷链能力和运营状态', 'truck', 'vehicles'),
+      designPage('vehicle.vehicleDetail', '车辆详情', '无人车管理', '车辆资质、绑定关系和历史订单', 'truck'),
+      designPage('vehicle.bindings', '车辆绑定', '无人车管理', '无人车和账号/企业绑定关系', 'route'),
+      designPage('vehicle.status', '状态监控', '状态监控', '车辆在线、舱门、电量和异常状态', 'dashboard'),
+      designPage('vehicle.map', '地图监控', '状态监控', '车辆位置、站点和配送轨迹', 'route'),
+      designPage('vehicle.alerts', '告警中心', '状态监控', '离线、异常、冷链和超时告警', 'support'),
+      designPage('vehicle.dispatch', '调度中心', '运单工单', '企业需求、派单和无人车履约', 'send'),
+      designPage('vehicle.transportOrders', '运单列表', '运单工单', '运单、佣金和结算流程', 'orders', 'transportOrders'),
+      designPage('vehicle.cancellations', '取消申请', '运单工单', '取消原因、赔付和人工处理', 'x'),
+      designPage('vehicle.commission', '佣金确认', '运单工单', '车主佣金支付与平台确认', 'refund', 'transportOrders'),
+      designPage('vehicle.wallet', '运力钱包', '运单工单', '车主余额、转账和失败重试', 'orders'),
+      designPage('vehicle.support', '客服运维', '客服运维', '无人车业务客服会话和工单', 'support', 'support'),
+      designPage('vehicle.knowledge', '运维知识库', '客服运维', '车辆、开舱、配送异常处理话术', 'support'),
+      designPage('vehicle.stats', '运力数据', '数据', '接单、履约、时效和收入指标', 'dashboard'),
+      designPage('vehicle.settings', '运力设置', '设置', '无人车业务规则、站点和客服配置', 'save'),
+    ],
+  },
+  {
+    key: 'mall',
+    brand: '叁友甄选',
+    subtitle: '商城运营端',
+    moduleLabel: '商城业务',
+    theme: 'green',
+    pages: [
+      designPage('mall.products', '商品上架', '商品管理', '商品创建、上下架、库存和图片', 'shop', 'mallProducts'),
+      designPage('mall.productList', '商品列表', '商品管理', '在售、售罄和下架商品管理', 'shop', 'mallProducts'),
+      designPage('mall.images', '商品素材', '商品管理', 'COS 图片、主图和详情图审核', 'shop'),
+      designPage('mall.categories', '品类管理', '品类管理', '社区团购类目、排序和状态', 'dashboard'),
+      designPage('mall.inventory', '库存预警', '品类管理', '低库存、缺货替换和补货提醒', 'support'),
+      designPage('mall.orders', '订单管理', '订单管理', '商城订单、履约和退款售后', 'orders', 'mallOrders'),
+      designPage('mall.orderDetail', '订单详情', '订单管理', '订单明细、支付、自提和客服记录', 'orders'),
+      designPage('mall.fulfillment', '自提核销', '订单管理', '提货码生成、团长核销和异常处理', 'check'),
+      designPage('mall.refunds', '退款售后', '订单管理', '售后申请、坏果包赔和退款处理', 'refund', 'mallOrders'),
+      designPage('mall.pickup', '自提点管理', '订单管理', '自提点、团长和营业时间管理', 'route'),
+      designPage('mall.leaders', '团长管理', '订单管理', '团长中心、核销权限和服务质量', 'users'),
+      designPage('mall.community', '邻里圈', '营销中心', '自提点动态、拼团和用户互动', 'megaphone'),
+      designPage('mall.campaigns', '营销活动', '营销中心', '满减、券、拼团和预算管理', 'megaphone', 'operations'),
+      designPage('mall.coupons', '优惠券', '营销中心', '优惠券发放、核销和成本控制', 'megaphone'),
+      designPage('mall.banners', '首页配置', '营销中心', '首页卡片、Banner 和推荐商品', 'dashboard'),
+      designPage('mall.support', '客服售后', '客服售后', '会话、工单、知识库和响应指标', 'support', 'support'),
+      designPage('mall.afterSales', '售后申请', '客服售后', '售后单审核、证据图片和退款流转', 'refund', 'mallOrders'),
+      designPage('mall.knowledge', '客服知识库', '客服售后', '商城 FAQ、坏果包赔和履约话术', 'support', 'support'),
+      designPage('mall.settings', '运营设置', '运营设置', '配送费、售后时效和冷链规则', 'save', 'operations'),
+      designPage('mall.deliveryRules', '配送规则', '运营设置', '自提窗口、冷链承诺和服务费', 'route'),
+      designPage('mall.paymentSplit', '分账规则', '运营设置', '商城分账、团长佣金和商户结算', 'refund'),
+      designPage('mall.risk', '风险审核', '运营设置', '售后异常、频控和恶意退款拦截', 'x'),
+      designPage('mall.data', '运营数据', '数据', '商城收入、订单、复购和售后指标', 'dashboard'),
+      designPage('mall.permissions', '运营权限', '设置', '商品、客服、财务和团长权限', 'users'),
+    ],
+  },
 ];
 
 const initialData: DashboardData = {
@@ -738,6 +880,292 @@ function ErrorStrip({ errors }: { errors: LoadErrors }) {
       <strong>部分接口加载失败</strong>
       <span>{entries.map(([key, value]) => `${key}: ${value}`).join('；')}</span>
     </div>
+  );
+}
+
+function moduleGroups(module: AdminModuleSpec) {
+  return Array.from(new Set(module.pages.map(page => page.group)));
+}
+
+function designMetrics(page: AdminPageSpec, data: DashboardData) {
+  if (page.key.startsWith('mall.')) {
+    return [
+      ['今日销售', yuan(numberValue(data.mallOverview, 'todayRevenueCents')), '商城实时交易'],
+      ['待处理', metricValue(data.mallOverview, ['pendingOrders', 'afterSales']), '订单/售后事项'],
+      ['在售商品', metricValue(data.mallOverview, ['onSaleProducts']), '商品池'],
+      ['客服会话', metricValue(data.supportMetrics, ['openSessions']), '待响应'],
+    ];
+  }
+  if (page.key.startsWith('vehicle.')) {
+    return [
+      ['车辆资产', String(data.vehicles.length), '无人车档案'],
+      ['运单工单', String(data.transportOrders.length), '履约中'],
+      ['待审佣金', String(data.commissionPending.length), '财务处理'],
+      ['客服工单', String(data.supportTickets.length), '运维跟进'],
+    ];
+  }
+  return [
+    ['账号', String(data.users.length), '平台成员'],
+    ['车辆', String(data.vehicles.length), '资产接入'],
+    ['订单', String(data.transportOrders.length + data.mallOrders.length), '跨业务订单'],
+    ['服务', Object.keys(data.adminStats).length ? '在线' : '待连接', '公共服务'],
+  ];
+}
+
+function recordsForDesignPage(page: AdminPageSpec, data: DashboardData) {
+  if (page.key.includes('account') || page.key.includes('roles') || page.key.includes('permissions')) {
+    return data.users;
+  }
+  if (page.key.startsWith('vehicle') || page.key.includes('vehicle') || page.key.includes('owner')) {
+    return data.vehicles.length ? data.vehicles : data.transportOrders;
+  }
+  if (page.key.includes('transport') || page.key.includes('commission')) {
+    return data.commissionPending.length ? data.commissionPending : data.transportOrders;
+  }
+  if (page.key.includes('product') || page.key.includes('inventory') || page.key.includes('images')) {
+    return data.mallProducts;
+  }
+  if (page.key.includes('order') || page.key.includes('refund') || page.key.includes('fulfillment') || page.key.includes('afterSales')) {
+    return data.mallOrders;
+  }
+  if (page.key.includes('campaign') || page.key.includes('coupon') || page.key.includes('banner') || page.key.includes('community')) {
+    return data.campaigns;
+  }
+  if (page.key.includes('support') || page.key.includes('knowledge')) {
+    return data.supportSessions.length ? data.supportSessions : data.supportTickets;
+  }
+  return [];
+}
+
+function fallbackDesignRows(page: AdminPageSpec): JsonRecord[] {
+  return [
+    {
+      id: `${page.key}-1`,
+      name: `${page.label}待处理事项`,
+      owner: page.key.startsWith('mall.') ? '叁友运营' : page.key.startsWith('vehicle.') ? '锐途运维' : '平台管理员',
+      status: 'pending',
+      updatedAt: '2026-06-05 10:30',
+    },
+    {
+      id: `${page.key}-2`,
+      name: `${page.label}已通过记录`,
+      owner: '系统同步',
+      status: 'active',
+      updatedAt: '2026-06-05 09:15',
+    },
+    {
+      id: `${page.key}-3`,
+      name: `${page.label}异常复核`,
+      owner: '客服工作台',
+      status: 'open',
+      updatedAt: '2026-06-04 18:22',
+    },
+  ];
+}
+
+function DesignPlaceholderPage({
+  module,
+  page,
+  data,
+}: {
+  module: AdminModuleSpec;
+  page: AdminPageSpec;
+  data: DashboardData;
+}) {
+  const rows = recordsForDesignPage(page, data);
+  const visibleRows = (rows.length ? rows : fallbackDesignRows(page)).slice(0, 6);
+  const metrics = designMetrics(page, data);
+
+  return (
+    <div className="design-page">
+      <div className="design-stat-grid">
+        {metrics.map(([label, value, detail]) => (
+          <section className="design-stat-card" key={label}>
+            <span>{label}</span>
+            <strong>{value}</strong>
+            <small>{detail}</small>
+          </section>
+        ))}
+      </div>
+
+      <div className="design-filterbar">
+        <button type="button">全部状态</button>
+        <button type="button">待处理</button>
+        <button type="button">近 7 天</button>
+        <div className="design-search">搜索 {page.label}</div>
+        <button className="primary-button small" type="button">
+          <Icon name={page.icon} />
+          新建/处理
+        </button>
+      </div>
+
+      <div className="design-content-grid">
+        <section className="design-table-panel">
+          <div className="design-panel-head">
+            <div>
+              <h2>{page.tableTitle}</h2>
+              <p>{page.description}</p>
+            </div>
+            <span>{visibleRows.length} 条</span>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>对象</th>
+                  <th>负责人</th>
+                  <th>状态</th>
+                  <th>更新时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleRows.map(row => {
+                  const id = stringValue(row, 'id', `${page.key}-${stringValue(row, 'name')}`);
+                  const name = stringValue(row, 'name', stringValue(row, 'title', stringValue(row, 'orderNo', shortId(id))));
+                  const owner = stringValue(row, 'owner', stringValue(row, 'contactName', stringValue(row, 'phone', stringValue(row, 'userId', '运营'))));
+                  const status = stringValue(row, 'status', stringValue(row, 'paymentStatus', 'pending'));
+                  return (
+                    <tr key={id}>
+                      <td>
+                        <strong>{name || page.label}</strong>
+                        <small>{shortId(id)}</small>
+                      </td>
+                      <td>{owner || '-'}</td>
+                      <td>
+                        <span className={badgeClass(status)}>{statusLabel(status)}</span>
+                      </td>
+                      <td>{formatDate(stringValue(row, 'updatedAt', stringValue(row, 'updated_at', stringValue(row, 'createdAt'))))}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside className="design-detail-panel">
+          <div className="detail-card-head">
+            <span>{module.brand}</span>
+            <strong>{page.detailTitle}</strong>
+            <small>{page.group}</small>
+          </div>
+          <div className="detail-steps">
+            {page.workflow?.map((step, index) => (
+              <div className="detail-step" key={step}>
+                <span>{index + 1}</span>
+                <strong>{step}</strong>
+                <small>{index === 0 ? '当前环节' : '待联动'}</small>
+              </div>
+            ))}
+          </div>
+          <button className="primary-button" type="button">
+            <Icon name="check" />
+            执行处理
+          </button>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function MallProductDesignSection({
+  categories,
+  products,
+  form,
+  onChange,
+  onSubmit,
+}: {
+  categories: JsonRecord[];
+  products: JsonRecord[];
+  form: ProductForm;
+  onChange: (patch: Partial<ProductForm>) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+}) {
+  return (
+    <form className="mall-admin-design-page" onSubmit={onSubmit}>
+      <div className="mall-admin-toolbar">
+        <label>
+          状态
+          <select value={form.status} onChange={event => onChange({ status: event.target.value })}>
+            <option value="on_sale">上架</option>
+            <option value="off_sale">下架</option>
+            <option value="draft">草稿</option>
+          </select>
+        </label>
+        <label>
+          品类
+          <select value={form.categoryCode} onChange={event => onChange({ categoryCode: event.target.value })}>
+            {categories.map(category => (
+              <option key={stringValue(category, 'code')} value={stringValue(category, 'code')}>
+                {stringValue(category, 'name', stringValue(category, 'code'))}
+              </option>
+            ))}
+            {!categories.length ? <option value="fruit">鲜果</option> : null}
+          </select>
+        </label>
+        <label>
+          时间
+          <input value="今日上架" readOnly />
+        </label>
+        <label>
+          负责人
+          <input value="叁友运营" readOnly />
+        </label>
+        <button className="mall-admin-submit" type="submit">提交上架</button>
+      </div>
+
+      <div className="mall-admin-kpis">
+        <StatCard label="今日新增" value={String(products.length || 24)} detail="待上架商品池" />
+        <StatCard label="待处理" value="18" detail="资料/库存待补齐" />
+        <StatCard label="完成率" value="96%" detail="上架流程通过率" />
+      </div>
+
+      <section className="mall-admin-form-panel">
+        <div className="design-panel-head">
+          <div>
+            <h2>商品上架信息表单</h2>
+            <p>基础信息、价格库存、适用范围和审核状态集中维护</p>
+          </div>
+          <span>{products.length || 2} 个商品样本</span>
+        </div>
+        <div className="mall-admin-tile-grid">
+          <label className="mall-admin-tile">
+            基础信息
+            <input value={form.name} onChange={event => onChange({ name: event.target.value })} placeholder="商品名称" />
+            <input value={form.subtitle} onChange={event => onChange({ subtitle: event.target.value })} placeholder="规格、配送卖点" />
+          </label>
+          <label className="mall-admin-tile">
+            价格库存
+            <input value={form.priceYuan} type="number" min="0" step="0.01" onChange={event => onChange({ priceYuan: event.target.value })} />
+            <input value={form.stock} type="number" min="0" onChange={event => onChange({ stock: event.target.value })} />
+          </label>
+          <label className="mall-admin-tile">
+            适用范围
+            <input value={form.tags} onChange={event => onChange({ tags: event.target.value })} placeholder="标签" />
+            <select value={form.imageUrl} onChange={event => onChange({ imageUrl: event.target.value })}>
+              <option value="mall-products/fresh-milk.jpeg">鲜奶图片</option>
+              <option value="mall-products/kiwi.jpeg">猕猴桃图片</option>
+              <option value="mall-products/banana.jpeg">香蕉图片</option>
+            </select>
+          </label>
+          <div className="mall-admin-tile">
+            发布规则
+            <span>上架后同步 C 端商城商品池</span>
+            <span>{form.coldChainRequired ? '冷链履约' : '常规自提'}</span>
+          </div>
+          <div className="mall-admin-tile">
+            审核状态
+            <span>资料完整度 96%</span>
+            <span>库存阈值已校验</span>
+          </div>
+          <div className="mall-admin-tile">
+            操作记录
+            <span>最近保存：当前会话</span>
+            <span>SKU {form.sku || '自动生成'}</span>
+          </div>
+        </div>
+      </section>
+    </form>
   );
 }
 
@@ -1562,7 +1990,8 @@ function LoginScreen({
 
 function App() {
   const [session, setSession] = useState<AdminSession | null>(() => getStoredAdminSession());
-  const [active, setActive] = useState<NavigationKey>('overview');
+  const [activeModuleKey, setActiveModuleKey] = useState<AdminModuleKey>('platform');
+  const [activePageKey, setActivePageKey] = useState('platform.overview');
   const [data, setData] = useState<DashboardData>(initialData);
   const [errors, setErrors] = useState<LoadErrors>({});
   const [loading, setLoading] = useState(() => Boolean(getStoredAdminSession()));
@@ -1577,7 +2006,14 @@ function App() {
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [supportMessages, setSupportMessages] = useState<JsonRecord[]>([]);
 
-  const currentNav = useMemo(() => navigation.find(item => item.key === active) || navigation[0], [active]);
+  const currentModule = useMemo(
+    () => adminModules.find(module => module.key === activeModuleKey) || adminModules[0],
+    [activeModuleKey],
+  );
+  const currentPage = useMemo(
+    () => currentModule.pages.find(page => page.key === activePageKey) || currentModule.pages[0],
+    [activePageKey, currentModule],
+  );
 
   const resetDashboardState = () => {
     setData(initialData);
@@ -1904,6 +2340,102 @@ function App() {
     });
   };
 
+  const selectModule = (moduleKey: AdminModuleKey) => {
+    const nextModule = adminModules.find(module => module.key === moduleKey) || adminModules[0];
+    setActiveModuleKey(nextModule.key);
+    setActivePageKey(nextModule.pages[0].key);
+  };
+
+  const renderActivePage = () => {
+    if (activePageKey === 'platform.overview') {
+      return <OverviewSection data={data} />;
+    }
+    if (activePageKey === 'platform.accounts') {
+      return <UsersSection users={data.users} onUpdateStatus={updateUserStatus} />;
+    }
+    if (activePageKey === 'vehicle.review' || activePageKey === 'vehicle.vehicleList') {
+      return <VehiclesSection vehicles={data.vehicles} onReview={reviewVehicle} />;
+    }
+    if (activePageKey === 'vehicle.transportOrders' || activePageKey === 'vehicle.commission' || activePageKey === 'platform.commission') {
+      return (
+        <TransportOrdersSection
+          commissionPending={data.commissionPending}
+          commissionSummary={data.commissionSummary}
+          orders={data.transportOrders}
+          onConfirmCommission={confirmCommission}
+        />
+      );
+    }
+    if (activePageKey === 'mall.products' || activePageKey === 'mall.productList') {
+      if (activePageKey === 'mall.products') {
+        return (
+          <MallProductDesignSection
+            categories={data.mallCategories}
+            form={productForm}
+            products={data.mallProducts}
+            onChange={patch => setProductForm(current => ({ ...current, ...patch }))}
+            onSubmit={createProduct}
+          />
+        );
+      }
+      return (
+        <MallProductsSection
+          categories={data.mallCategories}
+          form={productForm}
+          products={data.mallProducts}
+          onChange={patch => setProductForm(current => ({ ...current, ...patch }))}
+          onStatus={updateProductStatus}
+          onSubmit={createProduct}
+        />
+      );
+    }
+    if (activePageKey === 'mall.orders' || activePageKey === 'mall.refunds' || activePageKey === 'mall.afterSales') {
+      return (
+        <MallOrdersSection
+          orders={data.mallOrders}
+          onDispatch={dispatchMallOrder}
+          onRefund={refundMallOrder}
+          onStatus={updateMallOrderStatus}
+        />
+      );
+    }
+    if (activePageKey === 'mall.campaigns' || activePageKey === 'mall.settings') {
+      return (
+        <OperationsSection
+          campaignForm={campaignForm}
+          campaigns={data.campaigns}
+          settingsForm={settingsForm}
+          onCampaignChange={patch => setCampaignForm(current => ({ ...current, ...patch }))}
+          onCampaignStatus={updateCampaignStatus}
+          onCampaignSubmit={createCampaign}
+          onSettingsChange={patch => setSettingsForm(current => ({ ...current, ...patch }))}
+          onSettingsSubmit={saveSettings}
+        />
+      );
+    }
+    if (activePageKey === 'mall.support' || activePageKey === 'mall.knowledge' || activePageKey === 'vehicle.support') {
+      return (
+        <SupportSection
+          form={supportForm}
+          knowledge={data.supportKnowledge}
+          messages={supportMessages}
+          metrics={data.supportMetrics}
+          selectedSessionId={selectedSessionId}
+          sessions={data.supportSessions}
+          tickets={data.supportTickets}
+          onCreateKnowledge={createKnowledge}
+          onCreateSession={createSupportSession}
+          onCreateTicket={createSupportTicket}
+          onFormChange={patch => setSupportForm(current => ({ ...current, ...patch }))}
+          onResolveTicket={resolveTicket}
+          onSelectSession={selectSession}
+          onSendMessage={sendSupportMessage}
+        />
+      );
+    }
+    return <DesignPlaceholderPage data={data} module={currentModule} page={currentPage} />;
+  };
+
   if (!session) {
     return <LoginScreen error={authError} loading={authLoading} onSubmit={handleLogin} />;
   }
@@ -1912,30 +2444,56 @@ function App() {
   const currentAdminName = currentAdmin.name || currentAdmin.phone || shortId(currentAdmin.id);
 
   return (
-    <div className="admin-shell">
-      <aside className="sidebar">
+    <div className={`admin-shell design-admin module-${currentModule.theme}`}>
+      <aside className="sidebar design-sidebar">
         <div className="brand">
-          <div className="brand-mark">R</div>
+          <div className="brand-mark">{currentModule.brand.slice(0, 1)}</div>
           <div>
-            <strong>RecoRouter</strong>
-            <span>管理平台</span>
+            <strong>{currentModule.brand}</strong>
+            <span>{currentModule.subtitle}</span>
           </div>
         </div>
-        <nav>
-          {navigation.map(item => (
-            <button className={active === item.key ? 'nav-item active' : 'nav-item'} key={item.key} type="button" onClick={() => setActive(item.key)}>
-              <Icon name={item.icon} />
-              <span>{item.label}</span>
+
+        <div className="module-switcher">
+          {adminModules.map(module => (
+            <button
+              className={module.key === activeModuleKey ? 'module-button active' : 'module-button'}
+              key={module.key}
+              type="button"
+              onClick={() => selectModule(module.key)}
+            >
+              <span>{module.moduleLabel}</span>
+              <small>{module.pages.length} 页</small>
             </button>
+          ))}
+        </div>
+
+        <nav className="design-nav">
+          {moduleGroups(currentModule).map(group => (
+            <div className="page-menu-section" key={group}>
+              <span className="page-menu-title">{group}</span>
+              {currentModule.pages.filter(page => page.group === group).map(page => (
+                <button
+                  className={page.key === activePageKey ? 'nav-item active' : 'nav-item'}
+                  key={page.key}
+                  type="button"
+                  onClick={() => setActivePageKey(page.key)}
+                >
+                  <Icon name={page.icon} />
+                  <span>{page.label}</span>
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
       </aside>
 
-      <main className="workspace">
-        <header className="topbar">
+      <main className="workspace design-workspace">
+        <header className="topbar design-topbar">
           <div>
-            <h1>{currentNav.label}</h1>
-            <p>{currentNav.description}</p>
+            <span className="design-breadcrumb">{currentModule.moduleLabel} / {currentPage.group}</span>
+            <h1>{currentPage.label}</h1>
+            <p>{currentPage.description}</p>
           </div>
           <div className="topbar-actions">
             <div className="admin-account">
@@ -1955,69 +2513,12 @@ function App() {
           </div>
         </header>
 
-        <ErrorStrip errors={errors} />
-        {busy ? <div className="busy-line">{busy}中...</div> : null}
-        {loading ? <div className="loading-panel">正在加载管理端数据...</div> : null}
-
-        {!loading && active === 'overview' ? <OverviewSection data={data} /> : null}
-        {!loading && active === 'users' ? <UsersSection users={data.users} onUpdateStatus={updateUserStatus} /> : null}
-        {!loading && active === 'vehicles' ? <VehiclesSection vehicles={data.vehicles} onReview={reviewVehicle} /> : null}
-        {!loading && active === 'transportOrders' ? (
-          <TransportOrdersSection
-            commissionPending={data.commissionPending}
-            commissionSummary={data.commissionSummary}
-            orders={data.transportOrders}
-            onConfirmCommission={confirmCommission}
-          />
-        ) : null}
-        {!loading && active === 'mallProducts' ? (
-          <MallProductsSection
-            categories={data.mallCategories}
-            form={productForm}
-            products={data.mallProducts}
-            onChange={patch => setProductForm(current => ({ ...current, ...patch }))}
-            onStatus={updateProductStatus}
-            onSubmit={createProduct}
-          />
-        ) : null}
-        {!loading && active === 'mallOrders' ? (
-          <MallOrdersSection
-            orders={data.mallOrders}
-            onDispatch={dispatchMallOrder}
-            onRefund={refundMallOrder}
-            onStatus={updateMallOrderStatus}
-          />
-        ) : null}
-        {!loading && active === 'operations' ? (
-          <OperationsSection
-            campaignForm={campaignForm}
-            campaigns={data.campaigns}
-            settingsForm={settingsForm}
-            onCampaignChange={patch => setCampaignForm(current => ({ ...current, ...patch }))}
-            onCampaignStatus={updateCampaignStatus}
-            onCampaignSubmit={createCampaign}
-            onSettingsChange={patch => setSettingsForm(current => ({ ...current, ...patch }))}
-            onSettingsSubmit={saveSettings}
-          />
-        ) : null}
-        {!loading && active === 'support' ? (
-          <SupportSection
-            form={supportForm}
-            knowledge={data.supportKnowledge}
-            messages={supportMessages}
-            metrics={data.supportMetrics}
-            selectedSessionId={selectedSessionId}
-            sessions={data.supportSessions}
-            tickets={data.supportTickets}
-            onCreateKnowledge={createKnowledge}
-            onCreateSession={createSupportSession}
-            onCreateTicket={createSupportTicket}
-            onFormChange={patch => setSupportForm(current => ({ ...current, ...patch }))}
-            onResolveTicket={resolveTicket}
-            onSelectSession={selectSession}
-            onSendMessage={sendSupportMessage}
-          />
-        ) : null}
+        <div className="design-main">
+          <ErrorStrip errors={errors} />
+          {busy ? <div className="busy-line">{busy}中...</div> : null}
+          {loading ? <div className="loading-panel">正在加载管理端数据...</div> : null}
+          {!loading ? renderActivePage() : null}
+        </div>
       </main>
     </div>
   );
