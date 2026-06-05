@@ -1,17 +1,20 @@
-use std::{env, net::SocketAddr, path::Path};
+use std::{env, path::Path};
 
-use recorouter_api::{app, config::Config, db, storage, storage::Storage};
+use recorouter_api::{
+    config::{ApiService, Config},
+    runtime, storage,
+    storage::Storage,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
-
     let args = env::args().collect::<Vec<_>>();
     let config = Config::from_env()?;
 
     if args.get(1).is_some_and(|arg| arg == "sync-mall-assets") {
+        tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .init();
         let asset_dir = args
             .get(2)
             .map(String::as_str)
@@ -21,22 +24,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let db = db::connect(&config).await?;
-    db::run_migrations(&db).await?;
-    let storage = storage::from_config(&config);
-    let router = app::router(config.clone(), db, storage);
-    let addr = SocketAddr::from(([0, 0, 0, 0], config.server_port));
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-
-    axum::serve(listener, router).await?;
-
-    Ok(())
+    runtime::serve(ApiService::Legacy).await
 }
 
-async fn sync_mall_assets<S>(
-    storage: &S,
-    asset_dir: &str,
-) -> Result<(), Box<dyn std::error::Error>>
+async fn sync_mall_assets<S>(storage: &S, asset_dir: &str) -> Result<(), Box<dyn std::error::Error>>
 where
     S: Storage,
 {

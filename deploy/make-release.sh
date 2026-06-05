@@ -19,12 +19,16 @@ pnpm validate
 if [[ "${BUILD_WEB:-1}" == "1" ]]; then
   PROJECT_DOMAIN="${PROJECT_DOMAIN:-https://car.shcxyz.site}" pnpm build:web
 fi
-cargo build --manifest-path server/Cargo.toml --release --locked
+cargo build --manifest-path server/Cargo.toml --release --locked --bins
 
 rm -rf "$OUT_DIR" "$OUT_TAR"
 mkdir -p "$OUT_DIR"
 
 cp server/target/release/recorouter-api "$OUT_DIR/recorouter-api"
+cp server/target/release/vehicle-api "$OUT_DIR/vehicle-api"
+cp server/target/release/mall-api "$OUT_DIR/mall-api"
+cp server/target/release/platform-api "$OUT_DIR/platform-api"
+cp server/target/release/recorouter-migrator "$OUT_DIR/recorouter-migrator"
 cp -R server/migrations "$OUT_DIR/migrations"
 cp -R deploy "$OUT_DIR/deploy"
 mkdir -p "$OUT_DIR/mall-products"

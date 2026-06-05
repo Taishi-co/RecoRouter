@@ -3,7 +3,7 @@ use sqlx::PgPool;
 use tower_http::services::ServeDir;
 
 use crate::{
-    config::Config,
+    config::{ApiService, Config},
     modules::{
         account_settings, address_books, admin, auth, cancellations, demand_schedules,
         demand_templates, demands, enterprise, enterprise_demands, enterprise_vehicles, fare,
@@ -28,6 +28,41 @@ pub fn router<S>(config: Config, db: PgPool, storage: S) -> Router
 where
     S: Storage + Send + Sync + 'static,
 {
+    legacy_router(config, db, storage)
+}
+
+pub fn legacy_router<S>(config: Config, db: PgPool, storage: S) -> Router
+where
+    S: Storage + Send + Sync + 'static,
+{
+    router_for_service(ApiService::Legacy, config, db, storage)
+}
+
+pub fn vehicle_router<S>(config: Config, db: PgPool, storage: S) -> Router
+where
+    S: Storage + Send + Sync + 'static,
+{
+    router_for_service(ApiService::Vehicle, config, db, storage)
+}
+
+pub fn mall_router<S>(config: Config, db: PgPool, storage: S) -> Router
+where
+    S: Storage + Send + Sync + 'static,
+{
+    router_for_service(ApiService::Mall, config, db, storage)
+}
+
+pub fn platform_router<S>(config: Config, db: PgPool, storage: S) -> Router
+where
+    S: Storage + Send + Sync + 'static,
+{
+    router_for_service(ApiService::Platform, config, db, storage)
+}
+
+pub fn router_for_service<S>(service: ApiService, config: Config, db: PgPool, storage: S) -> Router
+where
+    S: Storage + Send + Sync + 'static,
+{
     let upload_dir = config.local_upload_dir.clone();
     let state = AppState {
         config,
@@ -36,21 +71,36 @@ where
         captcha_store: auth::CaptchaStore::default(),
     };
 
-    Router::new()
+    let router: Router<AppState<S>> = Router::new()
         .nest_service("/api/uploads", ServeDir::new(upload_dir))
-        .merge(health::router::<AppState<S>>())
+        .merge(health::router::<AppState<S>>());
+
+    let router = match service {
+        ApiService::Legacy => legacy_routes(router, &state),
+        ApiService::Vehicle => vehicle_routes(router, &state),
+        ApiService::Mall => mall_routes(router, &state),
+        ApiService::Platform => platform_routes(router, &state),
+    };
+
+    router.with_state(state)
+}
+
+fn legacy_routes<S>(router: Router<AppState<S>>, state: &AppState<S>) -> Router<AppState<S>>
+where
+    S: Storage + Send + Sync + 'static,
+{
+    platform_routes(mall_routes(vehicle_routes(router, state), state), state)
+}
+
+fn vehicle_routes<S>(router: Router<AppState<S>>, state: &AppState<S>) -> Router<AppState<S>>
+where
+    S: Storage + Send + Sync + 'static,
+{
+    router
         .merge(home::router::<S>())
-        .merge(mall::router::<S>())
-        .merge(
-            mall::admin_router::<S>().route_layer(middleware::from_fn_with_state(
-                state.clone(),
-                auth::admin_guard::<S>,
-            )),
-        )
         .merge(auth::router::<S>())
         .merge(account_settings::router::<S>())
         .merge(user_roles::router::<S>())
-        .merge(platform::router::<S>())
         .merge(fare::router::<S>())
         .merge(notifications::router::<S>())
         .merge(orders::router::<S>())
@@ -60,7 +110,6 @@ where
                 auth::admin_guard::<S>,
             )),
         )
-        .merge(payments::router::<S>())
         .merge(owner_wallet::router::<S>())
         .merge(
             owner_wallet::admin_router::<S>().route_layer(middleware::from_fn_with_state(
@@ -93,5 +142,27 @@ where
         .merge(demands::router::<S>())
         .merge(demand_templates::router::<S>())
         .merge(demand_schedules::router::<S>())
-        .with_state(state)
+}
+
+fn mall_routes<S>(router: Router<AppState<S>>, state: &AppState<S>) -> Router<AppState<S>>
+where
+    S: Storage + Send + Sync + 'static,
+{
+    router
+        .merge(mall::router::<S>())
+        .merge(
+            mall::admin_router::<S>().route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                auth::admin_guard::<S>,
+            )),
+        )
+}
+
+fn platform_routes<S>(router: Router<AppState<S>>, _state: &AppState<S>) -> Router<AppState<S>>
+where
+    S: Storage + Send + Sync + 'static,
+{
+    router
+        .merge(platform::router::<S>())
+        .merge(payments::router::<S>())
 }

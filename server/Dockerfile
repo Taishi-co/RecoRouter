@@ -4,7 +4,7 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY migrations ./migrations
 COPY src ./src
-RUN cargo build --release
+RUN cargo build --release --bins
 
 FROM debian:bookworm-slim AS runner
 
@@ -14,6 +14,10 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/recorouter-api /usr/local/bin/recorouter-api
+COPY --from=builder /app/target/release/vehicle-api /usr/local/bin/vehicle-api
+COPY --from=builder /app/target/release/mall-api /usr/local/bin/mall-api
+COPY --from=builder /app/target/release/platform-api /usr/local/bin/platform-api
+COPY --from=builder /app/target/release/recorouter-migrator /usr/local/bin/recorouter-migrator
 COPY --from=builder /app/migrations ./migrations
 
 ENV SERVER_PORT=34532

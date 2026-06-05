@@ -2,6 +2,7 @@
 
 declare const PROJECT_DOMAIN: string | undefined;
 declare const TARO_ENV: "weapp" | "h5" | undefined;
+declare const APP_PROFILE: string | undefined;
 
 declare module '*.png';
 declare module '*.gif';
@@ -28,5 +29,4 @@ declare namespace NodeJS {
     TARO_APP_ID: string
   }
 }
-
 

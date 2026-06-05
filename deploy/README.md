@@ -6,6 +6,7 @@ Target:
 - Domain: `car.shcxyz.site`
 - App root: `/opt/recorouter`
 - API port: `34533`
+- Split API ports: `vehicle-api=34533`, `mall-api=34534`, `platform-api=34535`
 - Web root: `/opt/recorouter/current/dist-web` (admin management platform only)
 - Runtime: Docker container on the existing `server_default` network
 
@@ -19,6 +20,10 @@ Target:
 ```dotenv
 DATABASE_URL=postgres://postgres:change-me@recocar-postgres:5432/recocar
 SERVER_PORT=34533
+VEHICLE_API_PORT=34533
+MALL_API_PORT=34534
+PLATFORM_API_PORT=34535
+RUN_MIGRATIONS=0
 PUBLIC_BASE_URL=https://car.shcxyz.site
 LOCAL_UPLOAD_DIR=/app/uploads
 
@@ -30,6 +35,18 @@ LOCAL_UPLOAD_DIR=/app/uploads
 ```
 
 The Rust API runs embedded migrations on startup.
+For the split API deployment, `deploy/install-docker-release.sh` runs
+`recorouter-migrator` first and starts `vehicle-api`, `mall-api`, and
+`platform-api` with embedded migrations disabled. During phased rollout, the
+three services can still share `DATABASE_URL`; when separate databases are
+ready, set `VEHICLE_DATABASE_URL`, `MALL_DATABASE_URL`, and
+`PLATFORM_DATABASE_URL` in `/etc/recorouter/recorouter.env`.
+
+Nginx routes API traffic by path:
+
+- `/api/mall/`, `/api/admin/mall/`, `/api/support/` -> `mall-api`
+- `/api/platform/`, `/api/payments/` -> `platform-api`
+- other `/api/` paths -> `vehicle-api`
 
 ## GitHub Actions auto deploy
 
@@ -40,9 +57,9 @@ The repository has two production workflows:
   - Builds `/tmp/recorouter-docker-release.tar.gz`.
   - Builds the Taro H5 admin management app with `PROJECT_DOMAIN=https://car.shcxyz.site`.
   - Builds the Rust API binary on the GitHub Linux runner.
-  - Packages `dist-web`, Rust migrations, the API binary, and deploy scripts.
-  - Runs `deploy/install-docker-release.sh`; the server builds only the lightweight runtime Docker image, health-checks a candidate container, then restarts production.
-  - Installs nginx so `/` serves the Web admin platform and `/api/` proxies to the Rust API.
+  - Packages `dist-web`, Rust migrations, all API binaries, and deploy scripts.
+  - Runs `deploy/install-docker-release.sh`; the server builds only the lightweight runtime Docker image, runs the migrator, health-checks three candidate containers, then restarts production split API containers.
+  - Installs nginx so `/` serves the Web admin platform and `/api/` is routed to the correct split API by path.
   - Verifies `https://car.shcxyz.site/api/health`.
 - `.github/workflows/publish-miniapp.yml`
   - Trigger: manual `workflow_dispatch`, or push to `main` when repository variable `WEAPP_UPLOAD_ON_MAIN=true`.
@@ -123,6 +140,10 @@ local smoke test. Do not upload that tarball to the Linux server.
 This creates `/tmp/recorouter-release.tar.gz` containing:
 
 - `recorouter-api`
+- `vehicle-api`
+- `mall-api`
+- `platform-api`
+- `recorouter-migrator`
 - `migrations/`
 - `dist-web/` when `BUILD_WEB` is not `0`
 - `deploy/`

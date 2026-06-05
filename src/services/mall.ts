@@ -59,12 +59,98 @@ export interface MallCart {
 
 export interface MallAddress {
   id: string
-  address_name: string
-  address: string
-  latitude: number
-  longitude: number
-  address_type: string
-  is_default: boolean
+  userId?: string
+  contactName: string
+  contactPhone?: string | null
+  addressLabel: string
+  addressText: string
+  latitude?: number | null
+  longitude?: number | null
+  addressType?: string | null
+  isDefault: boolean
+  pickupPointId?: string | null
+  createdAt?: string
+  updatedAt?: string
+  user_id?: string
+  address_name?: string
+  address?: string
+  address_type?: string
+  is_default?: boolean
+}
+
+export interface CreateMallAddressInput {
+  userId?: string
+  contactName?: string
+  contactPhone?: string
+  addressLabel?: string
+  addressText?: string
+  latitude?: number
+  longitude?: number
+  addressType?: string
+  isDefault?: boolean
+  pickupPointId?: string
+  user_id?: string
+  address_name?: string
+  address?: string
+  address_type?: string
+  is_default?: boolean
+}
+
+export interface MallPickupPoint {
+  id: string
+  name: string
+  addressText: string
+  contactName?: string | null
+  contactPhone?: string | null
+  latitude?: number | null
+  longitude?: number | null
+  businessHours?: string | null
+  distanceMeters?: number | null
+  groupLeaderId?: string | null
+  groupLeaderName?: string | null
+  status: string
+  isDefault?: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface MallFulfillmentCode {
+  id: string
+  orderId: string
+  code: string
+  pickupPointId?: string | null
+  status: string
+  verifiedBy?: string | null
+  verifiedAt?: string | null
+  verificationChannel?: string | null
+  expiresAt?: string | null
+  createdAt?: string
+}
+
+export interface MallCommunityPost {
+  id: string
+  title: string
+  content: string
+  summary?: string | null
+  coverImageUrl?: string | null
+  pickupPointId?: string | null
+  authorName?: string | null
+  tags: string[]
+  status: string
+  sortOrder?: number
+  publishedAt?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface MallNotificationPreferences {
+  id?: string
+  userId: string
+  orderUpdates: boolean
+  promotions: boolean
+  communityPosts: boolean
+  serviceMessages: boolean
+  updatedAt?: string
 }
 
 export interface MallOrderEvent {
@@ -80,6 +166,9 @@ export interface MallOrder {
   id: string
   orderNo: string
   userId: string
+  addressId?: string | null
+  pickupPointId?: string | null
+  pickupPointName?: string | null
   addressText: string
   recipientName?: string | null
   recipientPhone?: string | null
@@ -94,6 +183,8 @@ export interface MallOrder {
   status: string
   refundStatus?: string | null
   afterSaleStatus?: string | null
+  fulfillmentCode?: MallFulfillmentCode | null
+  fulfillmentStatus?: string | null
   vehicleCode?: string | null
   trackingDistanceKm?: number | null
   cabinCode?: string | null
@@ -224,9 +315,19 @@ export async function deleteMallCartItem(id: string) {
   return apiDelete(`/api/mall/cart/items/${id}`)
 }
 
+export async function listMallPickupPoints(params: {
+  keyword?: string
+  status?: string
+  latitude?: number
+  longitude?: number
+} = {}): Promise<MallPickupPoint[]> {
+  return apiGet('/api/mall/pickup-points', params)
+}
+
 export async function createMallOrder(data: {
   userId: string
-  addressId: string
+  addressId?: string
+  pickupPointId?: string
   expectedDeliveryWindow?: string
   deliveryMethod?: string
   pickupMethod?: string
@@ -237,19 +338,13 @@ export async function createMallOrder(data: {
 }
 
 export async function listMallAddresses(userId: string): Promise<MallAddress[]> {
-  return apiGet('/api/address-books', { user_id: userId })
+  const addresses = await apiGet<MallAddress[]>('/api/mall/addresses', { userId })
+  return addresses.map(normalizeMallAddress)
 }
 
-export async function createMallAddress(data: {
-  user_id: string
-  address_name: string
-  address: string
-  latitude: number
-  longitude: number
-  address_type: string
-  is_default: boolean
-}): Promise<MallAddress> {
-  return apiPost('/api/address-books', data)
+export async function createMallAddress(data: CreateMallAddressInput): Promise<MallAddress> {
+  const address = await apiPost<MallAddress>('/api/mall/addresses', normalizeMallAddressInput(data))
+  return normalizeMallAddress(address)
 }
 
 export async function listMallOrders(userId: string, status?: string): Promise<MallOrder[]> {
@@ -308,6 +403,24 @@ export async function adminRefundMallOrder(id: string, data: {
   return apiPost(`/api/admin/mall/orders/${id}/refund`, data)
 }
 
+export async function adminCreateFulfillmentCode(orderId: string, data: {
+  pickupPointId?: string
+  expiresAt?: string
+}): Promise<MallFulfillmentCode> {
+  return apiPost(`/api/admin/mall/orders/${orderId}/fulfillment-code`, data)
+}
+
+export async function adminVerifyFulfillment(data: {
+  orderId: string
+  code: string
+  verifiedBy?: string
+}): Promise<MallFulfillmentCode> {
+  return apiPost(`/api/admin/mall/orders/${data.orderId}/verify-fulfillment`, {
+    code: data.code,
+    verifiedBy: data.verifiedBy,
+  })
+}
+
 export async function adminListCampaigns(): Promise<MallCampaign[]> {
   return apiGet('/api/admin/mall/campaigns')
 }
@@ -322,6 +435,25 @@ export async function adminGetSettings(): Promise<MallSettings> {
 
 export async function adminUpdateSettings(data: Partial<MallSettings>): Promise<MallSettings> {
   return apiPut('/api/admin/mall/settings', data)
+}
+
+export async function listMallCommunityPosts(params: {
+  pickupPointId?: string
+  status?: string
+  limit?: number
+} = {}): Promise<MallCommunityPost[]> {
+  return apiGet('/api/mall/community-posts', params)
+}
+
+export async function getMallNotificationPreferences(userId: string): Promise<MallNotificationPreferences> {
+  return apiGet('/api/mall/notification-preferences', { userId })
+}
+
+export async function updateMallNotificationPreferences(
+  userId: string,
+  data: Partial<Omit<MallNotificationPreferences, 'id' | 'userId' | 'updatedAt'>>,
+): Promise<MallNotificationPreferences> {
+  return apiPut('/api/mall/notification-preferences', { userId, ...data })
 }
 
 export async function listSupportSessions(userId?: string): Promise<SupportSession[]> {
@@ -390,6 +522,40 @@ export async function supportMetrics(): Promise<Record<string, number>> {
   return apiGet('/api/support/metrics')
 }
 
+function normalizeMallAddressInput(data: CreateMallAddressInput): Record<string, unknown> {
+  return cleanObjectData({
+    userId: data.userId ?? data.user_id,
+    contactName: data.contactName ?? data.address_name,
+    contactPhone: data.contactPhone,
+    addressLabel: data.addressLabel ?? data.address_name,
+    addressText: data.addressText ?? data.address,
+    latitude: data.latitude,
+    longitude: data.longitude,
+    addressType: data.addressType ?? data.address_type,
+    isDefault: data.isDefault ?? data.is_default,
+    pickupPointId: data.pickupPointId,
+  })
+}
+
+function normalizeMallAddress(address: MallAddress): MallAddress {
+  const addressLabel = address.addressLabel || address.address_name || ''
+  const addressText = address.addressText || address.address || ''
+  const isDefault = address.isDefault ?? address.is_default ?? false
+
+  return {
+    ...address,
+    contactName: address.contactName || address.address_name || '',
+    contactPhone: address.contactPhone ?? null,
+    addressLabel,
+    addressText,
+    address_name: address.address_name || addressLabel,
+    address: address.address || addressText,
+    address_type: address.address_type || address.addressType || undefined,
+    isDefault,
+    is_default: address.is_default ?? isDefault,
+  }
+}
+
 async function apiGet<T>(url: string, data?: Record<string, unknown>): Promise<T> {
   const response = await Network.request({ url, method: 'GET', data: cleanQueryData(data) })
   return unwrapApiData<T>(response.statusCode, response.data)
@@ -438,4 +604,10 @@ function cleanQueryData(data?: Record<string, unknown>) {
   if (!data) return undefined
   const entries = Object.entries(data).filter(([, value]) => value !== undefined && value !== null && value !== '')
   return entries.length > 0 ? Object.fromEntries(entries) : undefined
+}
+
+function cleanObjectData(data: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(data).filter(([, value]) => value !== undefined && value !== null && value !== ''),
+  )
 }

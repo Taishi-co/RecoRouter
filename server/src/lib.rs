@@ -5,5 +5,6 @@ pub mod error;
 pub mod modules;
 pub mod pagination;
 pub mod response;
+pub mod runtime;
 pub mod storage;
 pub mod wechat_pay;

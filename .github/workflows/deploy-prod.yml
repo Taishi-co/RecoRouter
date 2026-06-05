@@ -63,8 +63,8 @@ jobs:
         with:
           workspaces: server
 
-      - name: Build Rust API
-        run: cargo build --manifest-path server/Cargo.toml --release --locked
+      - name: Build Rust APIs
+        run: cargo build --manifest-path server/Cargo.toml --release --locked --bins
 
       - name: Package web and backend release
         run: |
@@ -74,6 +74,10 @@ jobs:
           rm -rf "$out_dir" "$out_tar"
           mkdir -p "$out_dir"
           cp server/target/release/recorouter-api "$out_dir/recorouter-api"
+          cp server/target/release/vehicle-api "$out_dir/vehicle-api"
+          cp server/target/release/mall-api "$out_dir/mall-api"
+          cp server/target/release/platform-api "$out_dir/platform-api"
+          cp server/target/release/recorouter-migrator "$out_dir/recorouter-migrator"
           cp -R server/migrations "$out_dir/migrations"
           cp -R dist-web "$out_dir/dist-web"
           cp -R deploy "$out_dir/deploy"

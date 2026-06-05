@@ -30,8 +30,12 @@ if [[ "${BUILD_DOCKER_IMAGE:-0}" == "1" ]]; then
   docker build -t "$IMAGE_TAG" server
   docker save "$IMAGE_TAG" -o "$OUT_DIR/recorouter-api-image.tar"
 elif [[ "${BUILD_RUST_BINARY:-0}" == "1" ]]; then
-  cargo build --manifest-path server/Cargo.toml --release --locked
+  cargo build --manifest-path server/Cargo.toml --release --locked --bins
   cp server/target/release/recorouter-api "$OUT_DIR/recorouter-api"
+  cp server/target/release/vehicle-api "$OUT_DIR/vehicle-api"
+  cp server/target/release/mall-api "$OUT_DIR/mall-api"
+  cp server/target/release/platform-api "$OUT_DIR/platform-api"
+  cp server/target/release/recorouter-migrator "$OUT_DIR/recorouter-migrator"
   cp -R server/migrations "$OUT_DIR/migrations"
 else
   cp -R server "$OUT_DIR/server"
