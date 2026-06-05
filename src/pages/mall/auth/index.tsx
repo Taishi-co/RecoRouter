@@ -116,7 +116,7 @@ export default function MallAuthPage() {
           verificationCode: captchaCode.trim(),
           captchaId,
           name: name.trim(),
-          role: 'merchant',
+          role: 'customer',
         })
       persistAuth(authUser)
       Taro.showToast({ title: mode === 'login' ? '登录成功' : '注册成功', icon: 'success' })

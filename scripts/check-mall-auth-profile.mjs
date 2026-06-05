@@ -25,6 +25,10 @@ if (!/\/api\/auth\/captcha/.test(authPageSource)) {
   throw new Error('Mall registration must use the existing graphical captcha API')
 }
 
+if (!/role:\s*['"]customer['"]/.test(authPageSource)) {
+  throw new Error('Mall registration must create customer users, not vehicle-side owner/merchant users')
+}
+
 if (!/Taro\.setStorageSync\(\s*['"]userInfo['"]/.test(authPageSource) || !/Taro\.setStorageSync\(\s*['"]token['"]/.test(authPageSource)) {
   throw new Error('Mall auth page must persist both userInfo and token after login/register')
 }

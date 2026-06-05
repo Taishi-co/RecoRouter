@@ -487,9 +487,12 @@ fn validate_register_request(body: &RegisterRequest) -> ApiResult<()> {
         return Err(ApiError::BadRequest("姓名不能为空".to_string()));
     }
 
-    if !matches!(body.role.as_str(), "owner" | "merchant" | "enterprise") {
+    if !matches!(
+        body.role.as_str(),
+        "owner" | "merchant" | "enterprise" | "customer"
+    ) {
         return Err(ApiError::BadRequest(
-            "角色必须为 owner、merchant 或 enterprise".to_string(),
+            "角色必须为 owner、merchant、enterprise 或 customer".to_string(),
         ));
     }
 
