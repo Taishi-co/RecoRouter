@@ -79,6 +79,7 @@ interface DashboardData {
   mallOverview: JsonRecord;
   mallCategories: JsonRecord[];
   mallProducts: JsonRecord[];
+  mallInventoryAlerts: JsonRecord[];
   mallOrders: JsonRecord[];
   campaigns: JsonRecord[];
   mallSettings: JsonRecord;
@@ -93,14 +94,36 @@ interface ProductForm {
   sku: string;
   categoryCode: string;
   subtitle: string;
+  description: string;
   imageUrl: string;
   priceYuan: string;
   originalPriceYuan: string;
   stock: string;
+  stockAlertThreshold: string;
+  lengthCm: string;
+  widthCm: string;
+  heightCm: string;
+  volumeLiters: string;
+  weightKg: string;
   tags: string;
   status: string;
   deliveryMinutes: string;
   coldChainRequired: boolean;
+}
+
+interface CategoryForm {
+  id: string;
+  code: string;
+  name: string;
+  sortOrder: string;
+  status: string;
+}
+
+interface MallFilterState {
+  keyword: string;
+  categoryCode: string;
+  status: string;
+  stockStatus: string;
 }
 
 interface CampaignForm {
@@ -396,6 +419,7 @@ const initialData: DashboardData = {
   mallOverview: {},
   mallCategories: [],
   mallProducts: [],
+  mallInventoryAlerts: [],
   mallOrders: [],
   campaigns: [],
   mallSettings: {},
@@ -410,14 +434,50 @@ const initialProductForm: ProductForm = {
   sku: '',
   categoryCode: 'fruit',
   subtitle: '',
-  imageUrl: 'mall-products/kiwi.jpeg',
+  description: '',
+  imageUrl: '',
   priceYuan: '19.90',
   originalPriceYuan: '',
   stock: '80',
+  stockAlertThreshold: '15',
+  lengthCm: '',
+  widthCm: '',
+  heightCm: '',
+  volumeLiters: '',
+  weightKg: '',
   tags: '鲜选,冷链',
   status: 'on_sale',
   deliveryMinutes: '18',
   coldChainRequired: false,
+};
+
+const initialCategoryForm: CategoryForm = {
+  id: '',
+  code: '',
+  name: '',
+  sortOrder: '0',
+  status: 'active',
+};
+
+const initialProductFilters: MallFilterState = {
+  keyword: '',
+  categoryCode: '',
+  status: '',
+  stockStatus: '',
+};
+
+const initialCategoryFilters: MallFilterState = {
+  keyword: '',
+  categoryCode: '',
+  status: '',
+  stockStatus: '',
+};
+
+const initialInventoryFilters: MallFilterState = {
+  keyword: '',
+  categoryCode: '',
+  status: '',
+  stockStatus: 'alert',
 };
 
 const initialCampaignForm: CampaignForm = {
@@ -459,10 +519,11 @@ function createApiUrl(pathname: string, params: JsonRecord = {}) {
 
 async function apiRequest<T>(pathname: string, init: RequestInit = {}, params?: JsonRecord): Promise<T> {
   const session = getStoredAdminSession();
+  const isFormData = typeof FormData !== 'undefined' && init.body instanceof FormData;
   const response = await fetch(createApiUrl(pathname, params), {
     ...init,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
       ...(init.headers || {}),
     },
@@ -502,6 +563,19 @@ function apiPut<T>(pathname: string, body: JsonRecord = {}) {
   });
 }
 
+function apiDelete<T>(pathname: string) {
+  return apiRequest<T>(pathname, { method: 'DELETE' });
+}
+
+function apiUpload<T>(pathname: string, file: File) {
+  const formData = new FormData();
+  formData.set('file', file);
+  return apiRequest<T>(pathname, {
+    method: 'POST',
+    body: formData,
+  });
+}
+
 async function loadWithFallback<T>(
   key: string,
   fallback: T,
@@ -516,7 +590,11 @@ async function loadWithFallback<T>(
   }
 }
 
-async function fetchDashboardData() {
+async function fetchDashboardData(
+  productFilters: MallFilterState = initialProductFilters,
+  categoryFilters: MallFilterState = initialCategoryFilters,
+  inventoryFilters: MallFilterState = initialInventoryFilters,
+) {
   const errors: LoadErrors = {};
   const [
     adminStats,
@@ -528,6 +606,7 @@ async function fetchDashboardData() {
     mallOverview,
     mallCategories,
     mallProducts,
+    mallInventoryAlerts,
     mallOrders,
     campaigns,
     mallSettings,
@@ -543,8 +622,23 @@ async function fetchDashboardData() {
     loadWithFallback('佣金待审', [], errors, () => apiGet<JsonRecord[]>('/api/orders/commission-pending')),
     loadWithFallback('佣金统计', {}, errors, () => apiGet<JsonRecord>('/api/orders/commission-summary')),
     loadWithFallback('商城概览', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/overview')),
-    loadWithFallback('商城类目', [], errors, () => apiGet<JsonRecord[]>('/api/mall/categories')),
-    loadWithFallback('商城商品', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/products', { limit: 100 })),
+    loadWithFallback('商城类目', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/categories', {
+      keyword: categoryFilters.keyword,
+      status: categoryFilters.status,
+    })),
+    loadWithFallback('商城商品', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/products', {
+      limit: 100,
+      keyword: productFilters.keyword,
+      categoryCode: productFilters.categoryCode,
+      status: productFilters.status,
+      stockStatus: productFilters.stockStatus,
+    })),
+    loadWithFallback('库存预警', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/inventory-alerts', {
+      keyword: inventoryFilters.keyword,
+      categoryCode: inventoryFilters.categoryCode,
+      status: inventoryFilters.status,
+      stockStatus: inventoryFilters.stockStatus,
+    })),
     loadWithFallback('商城订单', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/orders')),
     loadWithFallback('营销活动', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/campaigns')),
     loadWithFallback('商城设置', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/settings')),
@@ -565,6 +659,7 @@ async function fetchDashboardData() {
       mallOverview,
       mallCategories,
       mallProducts,
+      mallInventoryAlerts,
       mallOrders,
       campaigns,
       mallSettings,
@@ -618,6 +713,12 @@ function moneyFromYuan(value: string) {
   return Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
 }
 
+function optionalNumber(value: string) {
+  if (!value.trim()) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 function shortId(value: string) {
   if (!value) return '-';
   return value.length > 10 ? `${value.slice(0, 6)}...${value.slice(-4)}` : value;
@@ -647,6 +748,50 @@ function tagsText(record: JsonRecord) {
     .map(item => String(item))
     .filter(Boolean);
   return tags.length ? tags.join(' / ') : '-';
+}
+
+function productToForm(product: JsonRecord, fallbackCategoryCode = 'fruit'): ProductForm {
+  return {
+    name: stringValue(product, 'name'),
+    sku: stringValue(product, 'sku'),
+    categoryCode: stringValue(product, 'categoryCode', fallbackCategoryCode),
+    subtitle: stringValue(product, 'subtitle'),
+    description: stringValue(product, 'description'),
+    imageUrl: stringValue(product, 'imageKey', stringValue(product, 'imageUrl')),
+    priceYuan: (numberValue(product, 'priceCents') / 100).toFixed(2),
+    originalPriceYuan: numberValue(product, 'originalPriceCents')
+      ? (numberValue(product, 'originalPriceCents') / 100).toFixed(2)
+      : '',
+    stock: String(numberValue(product, 'stock')),
+    stockAlertThreshold: String(numberValue(product, 'stockAlertThreshold', 15)),
+    lengthCm: stringValue(product, 'lengthCm'),
+    widthCm: stringValue(product, 'widthCm'),
+    heightCm: stringValue(product, 'heightCm'),
+    volumeLiters: stringValue(product, 'volumeLiters'),
+    weightKg: stringValue(product, 'weightKg'),
+    tags: arrayValue(product, 'tags').map(item => String(item)).join(','),
+    status: stringValue(product, 'status', 'on_sale'),
+    deliveryMinutes: String(numberValue(product, 'deliveryMinutes', 18)),
+    coldChainRequired: boolValue(product, 'coldChainRequired'),
+  };
+}
+
+function categoryToForm(category: JsonRecord): CategoryForm {
+  return {
+    id: stringValue(category, 'id'),
+    code: stringValue(category, 'code'),
+    name: stringValue(category, 'name'),
+    sortOrder: String(numberValue(category, 'sortOrder')),
+    status: stringValue(category, 'status', 'active'),
+  };
+}
+
+function stockLevelLabel(product: JsonRecord) {
+  const stock = numberValue(product, 'stock');
+  const threshold = numberValue(product, 'stockAlertThreshold', 15);
+  if (stock <= 0) return '缺货';
+  if (stock <= threshold) return '低库存';
+  return '正常';
 }
 
 function statusLabel(value: string) {
@@ -701,6 +846,14 @@ function badgeClass(status: string) {
 
 function updateRecordList(list: JsonRecord[], id: string, patch: JsonRecord) {
   return list.map(item => (stringValue(item, 'id') === id ? { ...item, ...patch } : item));
+}
+
+function upsertRecordList(list: JsonRecord[], record: JsonRecord) {
+  const id = stringValue(record, 'id');
+  if (!id) return list;
+  return list.some(item => stringValue(item, 'id') === id)
+    ? list.map(item => (stringValue(item, 'id') === id ? record : item))
+    : [record, ...list];
 }
 
 function metricValue(record: JsonRecord, keys: string[]) {
@@ -1074,13 +1227,18 @@ function MallProductDesignSection({
   form,
   onChange,
   onSubmit,
+  onUploadImage,
 }: {
   categories: JsonRecord[];
   products: JsonRecord[];
   form: ProductForm;
   onChange: (patch: Partial<ProductForm>) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onUploadImage: (file: File) => Promise<string>;
 }) {
+  const alertCount = products.filter(product => numberValue(product, 'stock') <= numberValue(product, 'stockAlertThreshold', 15)).length;
+  const completeCount = products.filter(product => stringValue(product, 'imageKey', stringValue(product, 'imageUrl')) && numberValue(product, 'weightKg') > 0).length;
+
   return (
     <form className="mall-admin-design-page" onSubmit={onSubmit}>
       <div className="mall-admin-toolbar">
@@ -1104,20 +1262,20 @@ function MallProductDesignSection({
           </select>
         </label>
         <label>
-          时间
-          <input value="今日上架" readOnly />
+          商品搜索
+          <input value={form.sku || form.name || '新商品'} readOnly />
         </label>
         <label>
-          负责人
-          <input value="叁友运营" readOnly />
+          图片
+          <input value={form.imageUrl ? '已上传' : '待上传'} readOnly />
         </label>
         <button className="mall-admin-submit" type="submit">提交上架</button>
       </div>
 
       <div className="mall-admin-kpis">
-        <StatCard label="今日新增" value={String(products.length || 24)} detail="待上架商品池" />
-        <StatCard label="待处理" value="18" detail="资料/库存待补齐" />
-        <StatCard label="完成率" value="96%" detail="上架流程通过率" />
+        <StatCard label="商品总数" value={String(products.length)} detail="当前筛选商品池" />
+        <StatCard label="库存预警" value={String(alertCount)} detail="低于商品级阈值" />
+        <StatCard label="规格完整" value={String(completeCount)} detail="含图片与重量字段" />
       </div>
 
       <section className="mall-admin-form-panel">
@@ -1126,46 +1284,132 @@ function MallProductDesignSection({
             <h2>商品上架信息表单</h2>
             <p>基础信息、价格库存、适用范围和审核状态集中维护</p>
           </div>
-          <span>{products.length || 2} 个商品样本</span>
+          <span>{products.length} 个商品</span>
         </div>
-        <div className="mall-admin-tile-grid">
-          <label className="mall-admin-tile">
-            基础信息
-            <input value={form.name} onChange={event => onChange({ name: event.target.value })} placeholder="商品名称" />
-            <input value={form.subtitle} onChange={event => onChange({ subtitle: event.target.value })} placeholder="规格、配送卖点" />
-          </label>
-          <label className="mall-admin-tile">
-            价格库存
-            <input value={form.priceYuan} type="number" min="0" step="0.01" onChange={event => onChange({ priceYuan: event.target.value })} />
-            <input value={form.stock} type="number" min="0" onChange={event => onChange({ stock: event.target.value })} />
-          </label>
-          <label className="mall-admin-tile">
-            适用范围
-            <input value={form.tags} onChange={event => onChange({ tags: event.target.value })} placeholder="标签" />
-            <select value={form.imageUrl} onChange={event => onChange({ imageUrl: event.target.value })}>
-              <option value="mall-products/fresh-milk.jpeg">鲜奶图片</option>
-              <option value="mall-products/kiwi.jpeg">猕猴桃图片</option>
-              <option value="mall-products/banana.jpeg">香蕉图片</option>
-            </select>
-          </label>
-          <div className="mall-admin-tile">
-            发布规则
-            <span>上架后同步 C 端商城商品池</span>
-            <span>{form.coldChainRequired ? '冷链履约' : '常规自提'}</span>
-          </div>
-          <div className="mall-admin-tile">
-            审核状态
-            <span>资料完整度 96%</span>
-            <span>库存阈值已校验</span>
-          </div>
-          <div className="mall-admin-tile">
-            操作记录
-            <span>最近保存：当前会话</span>
-            <span>SKU {form.sku || '自动生成'}</span>
-          </div>
-        </div>
+        <ProductFormFields
+          categories={categories}
+          form={form}
+          layout="tiles"
+          onChange={onChange}
+          onUploadImage={onUploadImage}
+        />
       </section>
     </form>
+  );
+}
+
+function ProductFormFields({
+  categories,
+  form,
+  layout = 'grid',
+  onChange,
+  onUploadImage,
+}: {
+  categories: JsonRecord[];
+  form: ProductForm;
+  layout?: 'grid' | 'tiles';
+  onChange: (patch: Partial<ProductForm>) => void;
+  onUploadImage: (file: File) => Promise<string>;
+}) {
+  const fieldClass = layout === 'tiles' ? 'mall-admin-tile' : undefined;
+  const wrapperClass = layout === 'tiles' ? 'mall-admin-tile-grid' : 'form-grid';
+  const upload = async (file: File | undefined) => {
+    if (!file) return;
+    const imageUrl = await onUploadImage(file);
+    onChange({ imageUrl });
+  };
+
+  return (
+    <div className={wrapperClass}>
+      <label className={fieldClass}>
+        商品名称
+        <input value={form.name} onChange={event => onChange({ name: event.target.value })} placeholder="例如 澳洲蓝莓" />
+      </label>
+      <label className={fieldClass}>
+        SKU
+        <input value={form.sku} onChange={event => onChange({ sku: event.target.value })} placeholder="不填自动生成" />
+      </label>
+      <label className={fieldClass}>
+        类目
+        <select value={form.categoryCode} onChange={event => onChange({ categoryCode: event.target.value })}>
+          {categories.map(category => (
+            <option key={stringValue(category, 'code')} value={stringValue(category, 'code')}>
+              {stringValue(category, 'name', stringValue(category, 'code'))}
+            </option>
+          ))}
+          {!categories.length ? <option value="fruit">水果鲜选</option> : null}
+        </select>
+      </label>
+      <label className={fieldClass}>
+        商品主图
+        <input accept="image/*" type="file" onChange={event => void upload(event.currentTarget.files?.[0])} />
+        <input value={form.imageUrl} onChange={event => onChange({ imageUrl: event.target.value })} placeholder="上传后自动填入 storage key" />
+      </label>
+      <label className={fieldClass}>
+        售价
+        <input value={form.priceYuan} type="number" min="0" step="0.01" onChange={event => onChange({ priceYuan: event.target.value })} />
+      </label>
+      <label className={fieldClass}>
+        原价
+        <input value={form.originalPriceYuan} type="number" min="0" step="0.01" onChange={event => onChange({ originalPriceYuan: event.target.value })} />
+      </label>
+      <label className={fieldClass}>
+        库存
+        <input value={form.stock} type="number" min="0" onChange={event => onChange({ stock: event.target.value })} />
+      </label>
+      <label className={fieldClass}>
+        预警阈值
+        <input value={form.stockAlertThreshold} type="number" min="0" onChange={event => onChange({ stockAlertThreshold: event.target.value })} />
+      </label>
+      <label className={fieldClass}>
+        长 cm
+        <input value={form.lengthCm} type="number" min="0" step="0.1" onChange={event => onChange({ lengthCm: event.target.value })} />
+      </label>
+      <label className={fieldClass}>
+        宽 cm
+        <input value={form.widthCm} type="number" min="0" step="0.1" onChange={event => onChange({ widthCm: event.target.value })} />
+      </label>
+      <label className={fieldClass}>
+        高 cm
+        <input value={form.heightCm} type="number" min="0" step="0.1" onChange={event => onChange({ heightCm: event.target.value })} />
+      </label>
+      <label className={fieldClass}>
+        体积 L
+        <input value={form.volumeLiters} type="number" min="0" step="0.01" onChange={event => onChange({ volumeLiters: event.target.value })} />
+      </label>
+      <label className={fieldClass}>
+        重量 kg
+        <input value={form.weightKg} type="number" min="0" step="0.001" onChange={event => onChange({ weightKg: event.target.value })} />
+      </label>
+      <label className={fieldClass}>
+        配送分钟
+        <input value={form.deliveryMinutes} type="number" min="1" onChange={event => onChange({ deliveryMinutes: event.target.value })} />
+      </label>
+      <label className={fieldClass}>
+        状态
+        <select value={form.status} onChange={event => onChange({ status: event.target.value })}>
+          <option value="on_sale">在售</option>
+          <option value="off_sale">下架</option>
+          <option value="draft">草稿</option>
+        </select>
+      </label>
+      <label className={fieldClass}>
+        标签
+        <input value={form.tags} onChange={event => onChange({ tags: event.target.value })} placeholder="逗号分隔" />
+      </label>
+      <label className={layout === 'tiles' ? 'mall-admin-tile' : 'wide'}>
+        副标题
+        <input value={form.subtitle} onChange={event => onChange({ subtitle: event.target.value })} placeholder="规格、配送卖点" />
+      </label>
+      <label className={layout === 'tiles' ? 'mall-admin-tile' : 'wide'}>
+        商品说明
+        <textarea value={form.description} onChange={event => onChange({ description: event.target.value })} placeholder="包装、装载注意事项、保存方式等" />
+      </label>
+      <label className={layout === 'tiles' ? 'mall-admin-tile toggle-line' : 'toggle-line'}>
+        <input checked={form.coldChainRequired} type="checkbox" onChange={event => onChange({ coldChainRequired: event.target.checked })} />
+        需要冷链
+      </label>
+    </div>
   );
 }
 
@@ -1451,78 +1695,63 @@ function MallProductsSection({
   categories,
   products,
   form,
+  filters,
   onChange,
+  onFiltersChange,
+  onSearch,
   onSubmit,
   onStatus,
+  onUpdate,
+  onUploadImage,
 }: {
   categories: JsonRecord[];
   products: JsonRecord[];
   form: ProductForm;
+  filters: MallFilterState;
   onChange: (patch: Partial<ProductForm>) => void;
+  onFiltersChange: (patch: Partial<MallFilterState>) => void;
+  onSearch: () => Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onStatus: (id: string, status: string) => Promise<void>;
+  onUpdate: (id: string, form: ProductForm) => Promise<void>;
+  onUploadImage: (file: File) => Promise<string>;
 }) {
+  const [editingProduct, setEditingProduct] = useState<JsonRecord | null>(null);
+
   return (
-    <div className="split-grid">
+    <div className="page-grid">
+      <div className="admin-filterbar">
+        <input value={filters.keyword} onChange={event => onFiltersChange({ keyword: event.target.value })} placeholder="搜索商品名称/SKU" />
+        <select value={filters.categoryCode} onChange={event => onFiltersChange({ categoryCode: event.target.value })}>
+          <option value="">全部品类</option>
+          {categories.map(category => (
+            <option key={stringValue(category, 'code')} value={stringValue(category, 'code')}>
+              {stringValue(category, 'name', stringValue(category, 'code'))}
+            </option>
+          ))}
+        </select>
+        <select value={filters.status} onChange={event => onFiltersChange({ status: event.target.value })}>
+          <option value="">全部状态</option>
+          <option value="on_sale">在售</option>
+          <option value="off_sale">下架</option>
+          <option value="draft">草稿</option>
+        </select>
+        <select value={filters.stockStatus} onChange={event => onFiltersChange({ stockStatus: event.target.value })}>
+          <option value="">全部库存</option>
+          <option value="alert">库存预警</option>
+          <option value="low">低库存</option>
+          <option value="out">缺货</option>
+        </select>
+        <button className="primary-button" type="button" onClick={() => void onSearch()}>
+          <Icon name="refresh" />
+          搜索
+        </button>
+      </div>
+
+      <div className="split-grid">
       <Panel title="新增商品" description="商品创建会调用后台商城商品接口，用户端可直接看到在售商品">
         <form className="form-grid" onSubmit={onSubmit}>
-          <label>
-            商品名称
-            <input value={form.name} onChange={event => onChange({ name: event.target.value })} placeholder="例如 澳洲蓝莓" />
-          </label>
-          <label>
-            SKU
-            <input value={form.sku} onChange={event => onChange({ sku: event.target.value })} placeholder="不填自动生成" />
-          </label>
-          <label>
-            类目
-            <select value={form.categoryCode} onChange={event => onChange({ categoryCode: event.target.value })}>
-              {categories.map(category => (
-                <option key={stringValue(category, 'code')} value={stringValue(category, 'code')}>
-                  {stringValue(category, 'name', stringValue(category, 'code'))}
-                </option>
-              ))}
-              {!categories.length ? <option value="fruit">水果鲜选</option> : null}
-            </select>
-          </label>
-          <label>
-            售价
-            <input value={form.priceYuan} type="number" min="0" step="0.01" onChange={event => onChange({ priceYuan: event.target.value })} />
-          </label>
-          <label>
-            原价
-            <input value={form.originalPriceYuan} type="number" min="0" step="0.01" onChange={event => onChange({ originalPriceYuan: event.target.value })} />
-          </label>
-          <label>
-            库存
-            <input value={form.stock} type="number" min="0" onChange={event => onChange({ stock: event.target.value })} />
-          </label>
-          <label className="wide">
-            副标题
-            <input value={form.subtitle} onChange={event => onChange({ subtitle: event.target.value })} placeholder="规格、配送卖点" />
-          </label>
-          <label className="wide">
-            图片路径
-            <select value={form.imageUrl} onChange={event => onChange({ imageUrl: event.target.value })}>
-              <option value="mall-products/fresh-milk.jpeg">鲜奶图片</option>
-              <option value="mall-products/kiwi.jpeg">猕猴桃图片</option>
-              <option value="mall-products/banana.jpeg">香蕉图片</option>
-              <option value="mall-products/durian.jpeg">榴莲图片</option>
-              <option value="mall-products/reco-dino.jpeg">周边玩偶图片</option>
-            </select>
-          </label>
-          <label>
-            标签
-            <input value={form.tags} onChange={event => onChange({ tags: event.target.value })} />
-          </label>
-          <label>
-            配送分钟
-            <input value={form.deliveryMinutes} type="number" min="1" onChange={event => onChange({ deliveryMinutes: event.target.value })} />
-          </label>
-          <label className="toggle-line">
-            <input checked={form.coldChainRequired} type="checkbox" onChange={event => onChange({ coldChainRequired: event.target.checked })} />
-            需要冷链
-          </label>
+          <ProductFormFields categories={categories} form={form} onChange={onChange} onUploadImage={onUploadImage} />
           <button className="primary-button wide" type="submit">
             <Icon name="plus" />
             创建商品
@@ -1539,6 +1768,7 @@ function MallProductsSection({
                 <th>类目</th>
                 <th>价格</th>
                 <th>库存</th>
+                <th>规格</th>
                 <th>状态</th>
                 <th>操作</th>
               </tr>
@@ -1562,9 +1792,17 @@ function MallProductsSection({
                     </td>
                     <td>{numberValue(product, 'stock')}</td>
                     <td>
+                      <span>{numberValue(product, 'lengthCm')}×{numberValue(product, 'widthCm')}×{numberValue(product, 'heightCm')} cm</span>
+                      <small>{numberValue(product, 'volumeLiters')}L · {numberValue(product, 'weightKg')}kg · 阈值 {numberValue(product, 'stockAlertThreshold', 15)}</small>
+                    </td>
+                    <td>
                       <span className={badgeClass(status)}>{statusLabel(status)}</span>
                     </td>
                     <td className="actions">
+                      <button className="ghost-button" type="button" onClick={() => setEditingProduct(product)}>
+                        <Icon name="save" />
+                        编辑
+                      </button>
                       <button className="ghost-button" type="button" onClick={() => onStatus(id, status === 'on_sale' ? 'off_sale' : 'on_sale')}>
                         <Icon name={status === 'on_sale' ? 'x' : 'check'} />
                         {status === 'on_sale' ? '下架' : '上架'}
@@ -1577,6 +1815,313 @@ function MallProductsSection({
           </table>
         </div>
         {!products.length ? <EmptyState text="暂无商品数据" /> : null}
+      </Panel>
+      </div>
+
+      {editingProduct ? (
+        <ProductEditModal
+          categories={categories}
+          product={editingProduct}
+          onClose={() => setEditingProduct(null)}
+          onSave={async (id, nextForm) => {
+            await onUpdate(id, nextForm);
+            setEditingProduct(null);
+          }}
+          onUploadImage={onUploadImage}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ProductEditModal({
+  categories,
+  product,
+  onClose,
+  onSave,
+  onUploadImage,
+}: {
+  categories: JsonRecord[];
+  product: JsonRecord;
+  onClose: () => void;
+  onSave: (id: string, form: ProductForm) => Promise<void>;
+  onUploadImage: (file: File) => Promise<string>;
+}) {
+  const [draft, setDraft] = useState<ProductForm>(() => productToForm(product, stringValue(categories[0], 'code', 'fruit')));
+  const id = stringValue(product, 'id');
+
+  return (
+    <div className="modal-backdrop">
+      <section className="modal-panel product-modal">
+        <div className="panel-head">
+          <div>
+            <h2>编辑商品</h2>
+            <p>维护商品图片、价格库存和无人车装载规格</p>
+          </div>
+          <button className="ghost-button" type="button" onClick={onClose}>
+            <Icon name="x" />
+            关闭
+          </button>
+        </div>
+        <ProductFormFields
+          categories={categories}
+          form={draft}
+          onChange={patch => setDraft(current => ({ ...current, ...patch }))}
+          onUploadImage={onUploadImage}
+        />
+        <div className="modal-actions">
+          <button className="ghost-button" type="button" onClick={onClose}>取消</button>
+          <button className="primary-button" type="button" onClick={() => void onSave(id, draft)}>
+            <Icon name="save" />
+            保存商品
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function MallCategoriesSection({
+  categories,
+  filters,
+  form,
+  onFormChange,
+  onFiltersChange,
+  onSearch,
+  onSave,
+  onDelete,
+}: {
+  categories: JsonRecord[];
+  filters: MallFilterState;
+  form: CategoryForm;
+  onFormChange: (patch: Partial<CategoryForm>) => void;
+  onFiltersChange: (patch: Partial<MallFilterState>) => void;
+  onSearch: () => Promise<void>;
+  onSave: (form: CategoryForm) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const openCreate = () => {
+    onFormChange(initialCategoryForm);
+    setModalOpen(true);
+  };
+  const openEdit = (category: JsonRecord) => {
+    onFormChange(categoryToForm(category));
+    setModalOpen(true);
+  };
+
+  return (
+    <div className="page-grid">
+      <div className="admin-filterbar">
+        <input value={filters.keyword} onChange={event => onFiltersChange({ keyword: event.target.value })} placeholder="搜索品类名称/编码" />
+        <select value={filters.status} onChange={event => onFiltersChange({ status: event.target.value })}>
+          <option value="">全部状态</option>
+          <option value="active">启用</option>
+          <option value="inactive">停用</option>
+        </select>
+        <button className="primary-button" type="button" onClick={() => void onSearch()}>
+          <Icon name="refresh" />
+          搜索
+        </button>
+        <button className="primary-button" type="button" onClick={openCreate}>
+          <Icon name="plus" />
+          新增品类
+        </button>
+      </div>
+      <Panel title="品类管理" description="维护社区团购商品品类、排序和上下架状态">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>品类</th>
+                <th>编码</th>
+                <th>排序</th>
+                <th>状态</th>
+                <th>更新时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {categories.map(category => {
+                const id = stringValue(category, 'id');
+                return (
+                  <tr key={id}>
+                    <td><strong>{stringValue(category, 'name')}</strong></td>
+                    <td>{stringValue(category, 'code')}</td>
+                    <td>{numberValue(category, 'sortOrder')}</td>
+                    <td><span className={badgeClass(stringValue(category, 'status'))}>{statusLabel(stringValue(category, 'status'))}</span></td>
+                    <td>{formatDate(stringValue(category, 'updatedAt'))}</td>
+                    <td className="actions">
+                      <button className="ghost-button" type="button" onClick={() => openEdit(category)}>
+                        <Icon name="save" />
+                        编辑
+                      </button>
+                      <button className="ghost-button danger" type="button" onClick={() => void onDelete(id)}>
+                        <Icon name="x" />
+                        删除
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {!categories.length ? <EmptyState text="暂无品类数据" /> : null}
+      </Panel>
+
+      {modalOpen ? (
+        <div className="modal-backdrop">
+          <section className="modal-panel">
+            <div className="panel-head">
+              <div>
+                <h2>{form.id ? '编辑品类' : '新增品类'}</h2>
+                <p>品类编码会用于商品归类和商城端筛选</p>
+              </div>
+              <button className="ghost-button" type="button" onClick={() => setModalOpen(false)}>
+                <Icon name="x" />
+                关闭
+              </button>
+            </div>
+            <div className="form-grid">
+              <label>
+                编码
+                <input value={form.code} onChange={event => onFormChange({ code: event.target.value })} placeholder="fruit" />
+              </label>
+              <label>
+                名称
+                <input value={form.name} onChange={event => onFormChange({ name: event.target.value })} placeholder="水果鲜选" />
+              </label>
+              <label>
+                排序
+                <input value={form.sortOrder} type="number" onChange={event => onFormChange({ sortOrder: event.target.value })} />
+              </label>
+              <label>
+                状态
+                <select value={form.status} onChange={event => onFormChange({ status: event.target.value })}>
+                  <option value="active">启用</option>
+                  <option value="inactive">停用</option>
+                </select>
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button className="ghost-button" type="button" onClick={() => setModalOpen(false)}>取消</button>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => {
+                  void onSave(form).then(() => setModalOpen(false));
+                }}
+              >
+                <Icon name="save" />
+                保存品类
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MallInventorySection({
+  categories,
+  products,
+  filters,
+  onFiltersChange,
+  onSearch,
+  onUpdateInventory,
+}: {
+  categories: JsonRecord[];
+  products: JsonRecord[];
+  filters: MallFilterState;
+  onFiltersChange: (patch: Partial<MallFilterState>) => void;
+  onSearch: () => Promise<void>;
+  onUpdateInventory: (id: string, stock: number, stockAlertThreshold: number) => Promise<void>;
+}) {
+  return (
+    <div className="page-grid">
+      <div className="admin-filterbar">
+        <input value={filters.keyword} onChange={event => onFiltersChange({ keyword: event.target.value })} placeholder="搜索低库存商品" />
+        <select value={filters.categoryCode} onChange={event => onFiltersChange({ categoryCode: event.target.value })}>
+          <option value="">全部品类</option>
+          {categories.map(category => (
+            <option key={stringValue(category, 'code')} value={stringValue(category, 'code')}>
+              {stringValue(category, 'name', stringValue(category, 'code'))}
+            </option>
+          ))}
+        </select>
+        <select value={filters.status} onChange={event => onFiltersChange({ status: event.target.value })}>
+          <option value="">全部商品状态</option>
+          <option value="on_sale">在售</option>
+          <option value="off_sale">下架</option>
+          <option value="draft">草稿</option>
+        </select>
+        <select value={filters.stockStatus} onChange={event => onFiltersChange({ stockStatus: event.target.value })}>
+          <option value="alert">全部预警</option>
+          <option value="low">低库存</option>
+          <option value="out">缺货</option>
+        </select>
+        <button className="primary-button" type="button" onClick={() => void onSearch()}>
+          <Icon name="refresh" />
+          搜索
+        </button>
+      </div>
+      <Panel title="库存预警" description="按商品级阈值检查库存，运营可直接补库存或调整预警阈值">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>商品</th>
+                <th>品类</th>
+                <th>库存状态</th>
+                <th>当前库存</th>
+                <th>预警阈值</th>
+                <th>装载规格</th>
+                <th>处理</th>
+              </tr>
+            </thead>
+            <tbody>
+              {products.map(product => {
+                const id = stringValue(product, 'id');
+                const stock = numberValue(product, 'stock');
+                const threshold = numberValue(product, 'stockAlertThreshold', 15);
+                return (
+                  <tr key={id}>
+                    <td><ProductImage record={product} /></td>
+                    <td>{stringValue(product, 'categoryName', stringValue(product, 'categoryCode'))}</td>
+                    <td><span className={stock <= 0 ? 'badge badge-amber' : 'badge badge-blue'}>{stockLevelLabel(product)}</span></td>
+                    <td>
+                      <input defaultValue={stock} type="number" min="0" id={`stock-${id}`} />
+                    </td>
+                    <td>
+                      <input defaultValue={threshold} type="number" min="0" id={`threshold-${id}`} />
+                    </td>
+                    <td>
+                      <span>{numberValue(product, 'lengthCm')}×{numberValue(product, 'widthCm')}×{numberValue(product, 'heightCm')} cm</span>
+                      <small>{numberValue(product, 'volumeLiters')}L · {numberValue(product, 'weightKg')}kg</small>
+                    </td>
+                    <td>
+                      <button
+                        className="primary-button small"
+                        type="button"
+                        onClick={() => {
+                          const stockInput = document.getElementById(`stock-${id}`) as HTMLInputElement | null;
+                          const thresholdInput = document.getElementById(`threshold-${id}`) as HTMLInputElement | null;
+                          void onUpdateInventory(id, Number(stockInput?.value || 0), Number(thresholdInput?.value || 0));
+                        }}
+                      >
+                        <Icon name="save" />
+                        保存
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {!products.length ? <EmptyState text="暂无库存预警" /> : null}
       </Panel>
     </div>
   );
@@ -2003,6 +2548,10 @@ function App() {
   const [campaignForm, setCampaignForm] = useState<CampaignForm>(initialCampaignForm);
   const [settingsForm, setSettingsForm] = useState<SettingsForm>(initialSettingsForm);
   const [supportForm, setSupportForm] = useState<SupportForm>(initialSupportForm);
+  const [categoryForm, setCategoryForm] = useState<CategoryForm>(initialCategoryForm);
+  const [productFilters, setProductFilters] = useState<MallFilterState>(initialProductFilters);
+  const [categoryFilters, setCategoryFilters] = useState<MallFilterState>(initialCategoryFilters);
+  const [inventoryFilters, setInventoryFilters] = useState<MallFilterState>(initialInventoryFilters);
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [supportMessages, setSupportMessages] = useState<JsonRecord[]>([]);
 
@@ -2031,7 +2580,7 @@ function App() {
     }
 
     setLoading(true);
-    const result = await fetchDashboardData();
+    const result = await fetchDashboardData(productFilters, categoryFilters, inventoryFilters);
 
     if (!getStoredAdminSession()) {
       setLoading(false);
@@ -2177,10 +2726,17 @@ function App() {
         sku: productForm.sku || `WEB-${Date.now()}`,
         categoryCode: productForm.categoryCode,
         subtitle: productForm.subtitle,
+        description: productForm.description,
         imageUrl: productForm.imageUrl,
         priceCents: moneyFromYuan(productForm.priceYuan),
         originalPriceCents: productForm.originalPriceYuan ? moneyFromYuan(productForm.originalPriceYuan) : undefined,
         stock: Number(productForm.stock) || 0,
+        stockAlertThreshold: Number(productForm.stockAlertThreshold) || 15,
+        lengthCm: optionalNumber(productForm.lengthCm),
+        widthCm: optionalNumber(productForm.widthCm),
+        heightCm: optionalNumber(productForm.heightCm),
+        volumeLiters: optionalNumber(productForm.volumeLiters),
+        weightKg: optionalNumber(productForm.weightKg),
         status: productForm.status,
         tags,
         deliveryMinutes: Number(productForm.deliveryMinutes) || 18,
@@ -2195,6 +2751,91 @@ function App() {
     await runAction('商品状态更新', async () => {
       await apiPut(`/api/admin/mall/products/${id}`, { status });
       setData(current => ({ ...current, mallProducts: updateRecordList(current.mallProducts, id, { status }) }));
+    });
+  };
+
+  const updateProduct = async (id: string, form: ProductForm) => {
+    await runAction('商品更新', async () => {
+      const tags = form.tags
+        .split(',')
+        .map(tag => tag.trim())
+        .filter(Boolean);
+      const product = await apiPut<JsonRecord>(`/api/admin/mall/products/${id}`, {
+        name: form.name,
+        sku: form.sku,
+        categoryCode: form.categoryCode,
+        subtitle: form.subtitle,
+        description: form.description,
+        imageUrl: form.imageUrl,
+        priceCents: moneyFromYuan(form.priceYuan),
+        originalPriceCents: form.originalPriceYuan ? moneyFromYuan(form.originalPriceYuan) : undefined,
+        stock: Number(form.stock) || 0,
+        stockAlertThreshold: Number(form.stockAlertThreshold) || 15,
+        lengthCm: optionalNumber(form.lengthCm),
+        widthCm: optionalNumber(form.widthCm),
+        heightCm: optionalNumber(form.heightCm),
+        volumeLiters: optionalNumber(form.volumeLiters),
+        weightKg: optionalNumber(form.weightKg),
+        status: form.status,
+        tags,
+        deliveryMinutes: Number(form.deliveryMinutes) || 18,
+        coldChainRequired: form.coldChainRequired,
+      });
+      setData(current => ({
+        ...current,
+        mallProducts: upsertRecordList(current.mallProducts, product),
+      }));
+      await reload();
+    });
+  };
+
+  const uploadProductImage = async (file: File) => {
+    setBusy('商品图片上传');
+    try {
+      const result = await apiUpload<JsonRecord>('/api/admin/mall/uploads/product-image', file);
+      const imageUrl = stringValue(result, 'imageUrl', stringValue(result, 'fileKey'));
+      if (!imageUrl) {
+        throw new Error('上传结果缺少图片地址');
+      }
+      setNotice('商品图片上传成功');
+      return imageUrl;
+    } catch (error) {
+      setNotice(`商品图片上传失败：${error instanceof Error ? error.message : '未知错误'}`);
+      throw error;
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const saveCategory = async (form: CategoryForm) => {
+    await runAction(form.id ? '品类更新' : '品类创建', async () => {
+      const payload = {
+        code: form.code,
+        name: form.name,
+        sortOrder: Number(form.sortOrder) || 0,
+        status: form.status,
+      };
+      if (form.id) {
+        await apiPut(`/api/admin/mall/categories/${form.id}`, payload);
+      } else {
+        await apiPost('/api/admin/mall/categories', payload);
+      }
+      setCategoryForm(initialCategoryForm);
+      await reload();
+    });
+  };
+
+  const deleteCategory = async (id: string) => {
+    await runAction('品类删除', async () => {
+      await apiDelete(`/api/admin/mall/categories/${id}`);
+      await reload();
+    });
+  };
+
+  const updateInventory = async (id: string, stock: number, stockAlertThreshold: number) => {
+    await runAction('库存预警处理', async () => {
+      await apiPut(`/api/admin/mall/products/${id}`, { stock, stockAlertThreshold });
+      await reload();
     });
   };
 
@@ -2375,17 +3016,49 @@ function App() {
             products={data.mallProducts}
             onChange={patch => setProductForm(current => ({ ...current, ...patch }))}
             onSubmit={createProduct}
+            onUploadImage={uploadProductImage}
           />
         );
       }
       return (
         <MallProductsSection
           categories={data.mallCategories}
+          filters={productFilters}
           form={productForm}
           products={data.mallProducts}
           onChange={patch => setProductForm(current => ({ ...current, ...patch }))}
+          onFiltersChange={patch => setProductFilters(current => ({ ...current, ...patch }))}
+          onSearch={reload}
           onStatus={updateProductStatus}
           onSubmit={createProduct}
+          onUpdate={updateProduct}
+          onUploadImage={uploadProductImage}
+        />
+      );
+    }
+    if (activePageKey === 'mall.categories') {
+      return (
+        <MallCategoriesSection
+          categories={data.mallCategories}
+          filters={categoryFilters}
+          form={categoryForm}
+          onDelete={deleteCategory}
+          onFiltersChange={patch => setCategoryFilters(current => ({ ...current, ...patch }))}
+          onFormChange={patch => setCategoryForm(current => ({ ...current, ...patch }))}
+          onSave={saveCategory}
+          onSearch={reload}
+        />
+      );
+    }
+    if (activePageKey === 'mall.inventory') {
+      return (
+        <MallInventorySection
+          categories={data.mallCategories}
+          filters={inventoryFilters}
+          products={data.mallInventoryAlerts}
+          onFiltersChange={patch => setInventoryFilters(current => ({ ...current, ...patch }))}
+          onSearch={reload}
+          onUpdateInventory={updateInventory}
         />
       );
     }

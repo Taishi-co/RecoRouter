@@ -21,12 +21,18 @@ export interface MallProduct {
   priceCents: number
   originalPriceCents?: number | null
   stock: number
+  stockAlertThreshold?: number | null
   soldCount: number
   rating: number
   status: string
   tags: string[]
   deliveryMinutes: number
   coldChainRequired: boolean
+  lengthCm?: number | null
+  widthCm?: number | null
+  heightCm?: number | null
+  volumeLiters?: number | null
+  weightKg?: number | null
 }
 
 export function resolveMallImageUrl(imageUrl?: string | null) {
