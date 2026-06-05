@@ -8,11 +8,9 @@ import {
   initializeH5ErrorHandling,
 } from './h5-error-boundary';
 import { IS_H5_ENV } from './env';
-import { ensureWebAdminSession } from './web-admin-session';
 
 export const Preset = ({ children }: PropsWithChildren) => {
   if (IS_H5_ENV) {
-    ensureWebAdminSession();
     initializeH5ErrorHandling();
   }
 

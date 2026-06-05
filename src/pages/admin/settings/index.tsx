@@ -8,8 +8,6 @@ import { AppPageShell } from '@/components/layout/app-page-shell'
 import { BottomNav } from '@/components/layout/bottom-nav'
 import Taro from '@tarojs/taro'
 import { Bell, DollarSign, LogOut, ShieldCheck, User } from 'lucide-react-taro'
-import { IS_H5_ENV } from '@/presets/env'
-import { ensureWebAdminSession } from '@/presets/web-admin-session'
 
 interface AdminUserInfo {
   id?: string
@@ -44,12 +42,6 @@ export default function AdminSettings() {
       success: (res) => {
         if (res.confirm) {
           Taro.clearStorageSync()
-          if (IS_H5_ENV) {
-            const webAdminUser = ensureWebAdminSession()
-            setUserInfo(webAdminUser)
-            Taro.redirectTo({ url: '/pages/admin/mall/index' })
-            return
-          }
           Taro.redirectTo({
             url: '/pages/index/index'
           })

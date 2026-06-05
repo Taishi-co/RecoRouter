@@ -36,18 +36,34 @@ const generateTTProjectConfig = (outputRoot: string) => {
 
 // https://taro-docs.jd.com/docs/next/config#defineconfig-辅助函数
 export default defineConfig<'vite'>(async (merge, _env) => {
+  const appProfile = (process.env.RECO_APP_PROFILE || process.env.TARO_APP_PROFILE || 'all').trim();
   const outputRootMap: Record<string, string> = {
     weapp: 'dist',
     tt: 'dist-tt',
     h5: 'dist-web',
   };
-  const defaultOutputRoot = outputRootMap[process.env.TARO_ENV || ''] || 'dist';
+  const profileOutputRootMap: Record<string, string> = {
+    vehicle: 'dist-weapp-vehicle',
+    mall: 'dist-weapp-mall',
+    admin: 'dist-weapp-admin',
+  };
+  const defaultOutputRoot =
+    process.env.TARO_ENV === 'weapp' && profileOutputRootMap[appProfile]
+      ? profileOutputRootMap[appProfile]
+      : outputRootMap[process.env.TARO_ENV || ''] || 'dist';
   const outputRoot = process.env.OUTPUT_ROOT?.trim() || defaultOutputRoot;
   const isH5 = process.env.TARO_ENV === 'h5';
   const h5DevPort = Number(process.env.H5_DEV_PORT || 5000);
+  const shouldCopyMallAssets = appProfile === 'mall' || appProfile === 'all';
 
   const buildMiniCIPluginConfig = () => {
-    const hasWeappConfig = !!process.env.TARO_APP_WEAPP_APPID;
+    const weappAppId =
+      appProfile === 'mall'
+        ? process.env.TARO_APP_WEAPP_MALL_APPID || process.env.TARO_APP_WEAPP_APPID
+        : appProfile === 'vehicle'
+          ? process.env.TARO_APP_WEAPP_VEHICLE_APPID || process.env.TARO_APP_WEAPP_APPID
+          : process.env.TARO_APP_WEAPP_APPID;
+    const hasWeappConfig = !!weappAppId;
     const hasTTConfig = !!process.env.TARO_APP_TT_EMAIL;
     if (!hasWeappConfig && !hasTTConfig) {
       return [];
@@ -58,7 +74,7 @@ export default defineConfig<'vite'>(async (merge, _env) => {
     };
     if (hasWeappConfig) {
       miniCIConfig.weapp = {
-        appid: process.env.TARO_APP_WEAPP_APPID,
+        appid: weappAppId,
         privateKeyPath: 'key/private.appid.key',
       };
     }
@@ -97,14 +113,17 @@ export default defineConfig<'vite'>(async (merge, _env) => {
           '',
       ),
       TARO_ENV: JSON.stringify(process.env.TARO_ENV),
+      APP_PROFILE: JSON.stringify(appProfile),
     },
     copy: {
-      patterns: [
-        {
-          from: path.resolve(__dirname, '../src/assets/mall-products'),
-          to: path.resolve(__dirname, '..', outputRoot, 'assets/mall-products'),
-        },
-      ],
+      patterns: shouldCopyMallAssets
+        ? [
+            {
+              from: path.resolve(__dirname, '../src/assets/mall-products'),
+              to: path.resolve(__dirname, '..', outputRoot, 'assets/mall-products'),
+            },
+          ]
+        : [],
       options: {},
     },
     ...(process.env.TARO_ENV === 'tt' && {

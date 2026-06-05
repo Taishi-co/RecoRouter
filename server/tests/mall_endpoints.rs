@@ -1,12 +1,12 @@
 use std::env;
 
 use axum::{
-    Router,
-    body::{Body, to_bytes},
+    body::{to_bytes, Body},
     http::{Request, StatusCode},
+    Router,
 };
-use serde_json::{Value, json};
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use serde_json::{json, Value};
+use sqlx::{postgres::PgPoolOptions, PgPool};
 use tower::ServiceExt;
 
 use recorouter_api::{config::Config, storage::LocalStorage};
@@ -327,8 +327,11 @@ async fn mall_cart_checkout_and_tracking_are_real_endpoints() {
         .expect("seeded kiwi product should be listed for admin");
     assert_accessible_mall_image_url(&admin_kiwi["imageUrl"], "mall-products/kiwi.jpeg");
 
-    let (admin_product_detail_status, _) =
-        get_json(&context.app, &format!("/api/admin/mall/products/{product_id}")).await;
+    let (admin_product_detail_status, _) = get_json(
+        &context.app,
+        &format!("/api/admin/mall/products/{product_id}"),
+    )
+    .await;
     assert_eq!(admin_product_detail_status, StatusCode::UNAUTHORIZED);
 
     let (admin_product_detail_status, admin_product_detail_body) = get_json_with_auth(
@@ -450,13 +453,11 @@ async fn mall_cart_checkout_and_tracking_are_real_endpoints() {
         &tracking_body["data"]["order"]["items"][0]["imageUrl"],
         "mall-products/kiwi.jpeg",
     );
-    assert!(
-        tracking_body["data"]["events"]
-            .as_array()
-            .expect("tracking events should be an array")
-            .iter()
-            .any(|event| event["stage"] == "order_created")
-    );
+    assert!(tracking_body["data"]["events"]
+        .as_array()
+        .expect("tracking events should be an array")
+        .iter()
+        .any(|event| event["stage"] == "order_created"));
 
     context.cleanup().await;
 }
