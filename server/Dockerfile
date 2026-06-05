@@ -1,7 +1,10 @@
 FROM rust:1-bookworm AS builder
 
 WORKDIR /app
+RUN mkdir -p /usr/local/cargo \
+  && printf '[source.crates-io]\nreplace-with = "rsproxy-sparse"\n[source.rsproxy-sparse]\nregistry = "sparse+https://rsproxy.cn/index/"\n' > /usr/local/cargo/config.toml
 COPY Cargo.toml Cargo.lock ./
+RUN cargo fetch --locked
 COPY migrations ./migrations
 COPY src ./src
 RUN cargo build --release --bins --locked
