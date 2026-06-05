@@ -51,8 +51,8 @@ Nginx routes API traffic by path:
 
 Nginx also serves H5 demo builds for browser presentation:
 
-- `http://car.shcxyz.site:18081/` -> vehicle app H5 (`dist-web-vehicle`)
-- `http://car.shcxyz.site:18082/` -> mall app H5 (`dist-web-mall`)
+- `https://car.shcxyz.site:18081/` -> vehicle app H5 (`dist-web-vehicle`)
+- `https://car.shcxyz.site:18082/` -> mall app H5 (`dist-web-mall`)
 
 ## GitHub Actions auto deploy
 
