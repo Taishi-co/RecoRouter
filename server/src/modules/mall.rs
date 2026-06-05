@@ -28,13 +28,29 @@ where
             "/api/mall/cart/items/:id",
             put(update_cart_item::<S>).delete(delete_cart_item::<S>),
         )
+        .route("/api/mall/me/profile", get(get_mall_profile::<S>))
+        .route(
+            "/api/mall/group-leader/workbench",
+            get(get_group_leader_workbench::<S>),
+        )
+        .route(
+            "/api/mall/group-leader/verify-fulfillment",
+            post(group_leader_verify_fulfillment::<S>),
+        )
         .route(
             "/api/mall/addresses",
             get(list_mall_addresses::<S>).post(create_mall_address::<S>),
         )
         .route("/api/mall/addresses/:id", put(update_mall_address::<S>))
         .route("/api/mall/pickup-points", get(list_pickup_points::<S>))
-        .route("/api/mall/community-posts", get(list_community_posts::<S>))
+        .route(
+            "/api/mall/community-posts",
+            get(list_community_posts::<S>).post(create_community_post::<S>),
+        )
+        .route(
+            "/api/mall/community-posts/:id/interactions",
+            post(create_community_post_interaction::<S>),
+        )
         .route(
             "/api/mall/notification-preferences",
             get(get_notification_preferences::<S>).put(update_notification_preferences::<S>),
@@ -270,6 +286,40 @@ struct VerifyFulfillmentRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct GroupLeaderVerifyFulfillmentRequest {
+    #[serde(alias = "user_id")]
+    user_id: String,
+    #[serde(alias = "order_id")]
+    order_id: String,
+    code: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CommunityPostMutationRequest {
+    #[serde(alias = "user_id")]
+    user_id: String,
+    title: String,
+    summary: Option<String>,
+    content: Option<String>,
+    #[serde(alias = "image_url")]
+    image_url: Option<String>,
+    images: Option<Vec<String>>,
+    #[serde(alias = "pickup_point_id")]
+    pickup_point_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CommunityPostInteractionRequest {
+    #[serde(alias = "user_id")]
+    user_id: String,
+    #[serde(alias = "interaction_type", alias = "type")]
+    interaction_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ProductMutationRequest {
     name: Option<String>,
     sku: Option<String>,
@@ -359,6 +409,8 @@ struct AfterSaleRequest {
     description: Option<String>,
     #[serde(alias = "amount_cents")]
     amount_cents: Option<i64>,
+    #[serde(alias = "evidence_images")]
+    evidence_images: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -850,6 +902,97 @@ where
     Ok(ok("查询成功", points))
 }
 
+async fn get_mall_profile<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<UserQuery>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
+    let member = fetch_member_profile(&state.db, &user_id).await?;
+    let order_counts = fetch_member_order_counts(&state.db, &user_id).await?;
+    let default_address = fetch_default_mall_address(&state.db, &user_id).await?;
+    let group_leader = fetch_group_leader_context(&state.db, &user_id).await?;
+    let default_pickup_point =
+        fetch_default_pickup_point(&state.db, &user_id, group_leader.as_ref()).await?;
+    let support_counts = fetch_member_support_counts(&state.db, &user_id).await?;
+    let notification_preferences =
+        upsert_notification_preferences(&state.db, &user_id, None).await?;
+
+    Ok(ok(
+        "查询成功",
+        json!({
+            "member": member,
+            "orderCounts": order_counts,
+            "defaultAddress": default_address,
+            "defaultPickupPoint": default_pickup_point,
+            "support": support_counts,
+            "notificationPreferences": notification_preferences,
+            "groupLeader": group_leader,
+        }),
+    ))
+}
+
+async fn get_group_leader_workbench<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<UserQuery>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
+    let leader = fetch_group_leader_context(&state.db, &user_id)
+        .await?
+        .ok_or_else(|| ApiError::Forbidden("当前用户不是团长".to_string()))?;
+    let pickup_point_id = leader
+        .pointer("/pickupPoint/id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ApiError::BadRequest("团长未绑定自提点".to_string()))?;
+    let today = fetch_group_leader_today_counts(&state.db, pickup_point_id).await?;
+    let pending_orders = fetch_group_leader_pending_orders(&state.db, pickup_point_id).await?;
+
+    Ok(ok(
+        "查询成功",
+        json!({
+            "leader": leader,
+            "pickupPoint": leader.get("pickupPoint").cloned().unwrap_or(Value::Null),
+            "today": today,
+            "pendingOrders": pending_orders,
+        }),
+    ))
+}
+
+async fn group_leader_verify_fulfillment<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<GroupLeaderVerifyFulfillmentRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    validate_required(&body.user_id, "用户ID不能为空")?;
+    validate_required(&body.order_id, "订单ID不能为空")?;
+    let code = require_non_empty(Some(body.code), "提货码不能为空")?;
+    let leader = fetch_group_leader_context(&state.db, &body.user_id)
+        .await?
+        .ok_or_else(|| ApiError::Forbidden("当前用户不是团长".to_string()))?;
+    let pickup_point_id = leader
+        .pointer("/pickupPoint/id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ApiError::BadRequest("团长未绑定自提点".to_string()))?
+        .to_string();
+    let verified_code = verify_fulfillment_code(
+        &state.db,
+        &body.order_id,
+        &code,
+        &body.user_id,
+        Some(&pickup_point_id),
+    )
+    .await?;
+
+    Ok(ok("核销成功", verified_code))
+}
+
 async fn list_community_posts<S>(
     State(state): State<AppState<S>>,
     Query(query): Query<CommunityPostQuery>,
@@ -859,25 +1002,8 @@ where
 {
     let mut builder = QueryBuilder::<Postgres>::new(
         r#"
-        SELECT jsonb_build_object(
-          'id', post.id,
-          'title', post.title,
-          'summary', post.summary,
-          'content', post.content,
-          'imageUrl', post.image_url,
-          'pickupPointId', post.pickup_point_id,
-          'status', post.status,
-          'sortOrder', post.sort_order,
-          'createdAt', post.created_at,
-          'updatedAt', post.updated_at,
-          'pickupPoint', CASE WHEN point.id IS NULL THEN NULL ELSE jsonb_build_object(
-            'id', point.id,
-            'name', point.name,
-            'communityName', point.community_name
-          ) END
-        )
+        SELECT community_post_json(post)
         FROM mall_community_posts post
-        LEFT JOIN mall_pickup_points point ON point.id = post.pickup_point_id
         WHERE post.status = 'published'
         "#,
     );
@@ -891,6 +1017,60 @@ where
         .fetch_all(&state.db)
         .await?;
     Ok(ok("查询成功", posts))
+}
+
+async fn create_community_post<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<CommunityPostMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    validate_required(&body.user_id, "用户ID不能为空")?;
+    validate_required(&body.title, "帖子标题不能为空")?;
+    let pickup_point_id = non_empty(body.pickup_point_id);
+    if let Some(pickup_point_id) = pickup_point_id.as_deref() {
+        ensure_pickup_point_exists(&state.db, pickup_point_id).await?;
+    }
+    let images = json!(body.images.unwrap_or_default());
+    let post = sqlx::query_scalar::<_, Value>(
+        r#"
+        INSERT INTO mall_community_posts (
+          title, summary, content, image_url, images, pickup_point_id, author_user_id, author_name, status
+        )
+        SELECT $2, $3, $4, $5, $6, $7, u.id, COALESCE(u.name, u.nickname, u.username, u.phone), 'published'
+        FROM users u
+        WHERE u.id = $1
+        RETURNING community_post_json(mall_community_posts)
+        "#,
+    )
+    .bind(&body.user_id)
+    .bind(body.title)
+    .bind(body.summary)
+    .bind(body.content)
+    .bind(body.image_url)
+    .bind(images)
+    .bind(pickup_point_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("用户不存在".to_string()))?;
+
+    Ok(ok("帖子已发布", post))
+}
+
+async fn create_community_post_interaction<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<CommunityPostInteractionRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    validate_required(&body.user_id, "用户ID不能为空")?;
+    let interaction_type = normalize_community_interaction(&body.interaction_type)?;
+    let post =
+        upsert_community_interaction(&state.db, &id, &body.user_id, interaction_type).await?;
+    Ok(ok("互动已记录", post))
 }
 
 async fn get_notification_preferences<S>(
@@ -1161,11 +1341,12 @@ where
     validate_required(&body.reason, "售后原因不能为空")?;
     ensure_order_exists(&state.db, &order_id).await?;
     let amount_cents = body.amount_cents.unwrap_or_else(|| 0).max(0);
+    let evidence_images = json!(body.evidence_images.unwrap_or_default());
 
     let after_sale = sqlx::query_scalar::<_, Value>(
         r#"
-        INSERT INTO mall_after_sales (order_id, user_id, reason, description, amount_cents)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO mall_after_sales (order_id, user_id, reason, description, amount_cents, evidence_images)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING jsonb_build_object(
           'id', id,
           'orderId', order_id,
@@ -1173,6 +1354,7 @@ where
           'reason', reason,
           'description', description,
           'amountCents', amount_cents,
+          'evidenceImages', evidence_images,
           'status', status,
           'handlingMethod', handling_method,
           'createdAt', created_at
@@ -1184,6 +1366,7 @@ where
     .bind(body.reason)
     .bind(body.description)
     .bind(amount_cents)
+    .bind(evidence_images)
     .fetch_one(&state.db)
     .await?;
 
@@ -1227,6 +1410,7 @@ where
           'reason', reason,
           'description', description,
           'amountCents', amount_cents,
+          'evidenceImages', evidence_images,
           'status', status,
           'handlingMethod', handling_method,
           'createdAt', created_at,
@@ -1555,124 +1739,7 @@ where
 {
     let code = require_non_empty(Some(body.code), "提货码不能为空")?;
     let verified_by = non_empty(body.verified_by).unwrap_or_else(|| "admin".to_string());
-    let existing = sqlx::query_scalar::<_, Value>(
-        r#"
-        SELECT jsonb_build_object(
-          'id', id,
-          'orderId', order_id,
-          'userId', user_id,
-          'pickupPointId', pickup_point_id,
-          'code', code,
-          'status', status,
-          'verifiedBy', verified_by,
-          'verifiedAt', verified_at,
-          'expiresAt', expires_at,
-          'createdAt', created_at,
-          'updatedAt', updated_at
-        )
-        FROM mall_fulfillment_codes
-        WHERE order_id = $1
-          AND code = $2
-          AND status = 'ready'
-          AND (expires_at IS NULL OR expires_at > now())
-        "#,
-    )
-    .bind(&id)
-    .bind(&code)
-    .fetch_optional(&state.db)
-    .await?;
-
-    if existing.is_none() {
-        let expired = sqlx::query(
-            r#"
-            UPDATE mall_fulfillment_codes
-            SET status = 'expired',
-                updated_at = now()
-            WHERE order_id = $1
-              AND code = $2
-              AND status = 'ready'
-              AND expires_at IS NOT NULL
-              AND expires_at <= now()
-            "#,
-        )
-        .bind(&id)
-        .bind(&code)
-        .execute(&state.db)
-        .await?;
-        if expired.rows_affected() > 0 {
-            return Err(ApiError::BadRequest("提货码已过期".to_string()));
-        }
-        return Err(ApiError::BadRequest("提货码无效或已核销".to_string()));
-    }
-
-    let mut tx = state.db.begin().await?;
-    let verified_code = sqlx::query_scalar::<_, Value>(
-        r#"
-        UPDATE mall_fulfillment_codes
-        SET status = 'verified',
-            verified_by = $3,
-            verified_at = now(),
-            updated_at = now()
-        WHERE order_id = $1
-          AND code = $2
-          AND status = 'ready'
-        RETURNING jsonb_build_object(
-          'id', id,
-          'orderId', order_id,
-          'userId', user_id,
-          'pickupPointId', pickup_point_id,
-          'code', code,
-          'status', status,
-          'verifiedBy', verified_by,
-          'verifiedAt', verified_at,
-          'expiresAt', expires_at,
-          'createdAt', created_at,
-          'updatedAt', updated_at
-        )
-        "#,
-    )
-    .bind(&id)
-    .bind(&code)
-    .bind(&verified_by)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| ApiError::BadRequest("提货码无效或已核销".to_string()))?;
-    let fulfillment_code_id = verified_code["id"].as_str().map(str::to_string);
-
-    sqlx::query(
-        r#"
-        UPDATE mall_orders
-        SET status = 'completed',
-            fulfillment_status = 'verified',
-            completed_at = COALESCE(completed_at, now()),
-            updated_at = now()
-        WHERE id = $1
-        "#,
-    )
-    .bind(&id)
-    .execute(&mut *tx)
-    .await?;
-    insert_fulfillment_event_tx(
-        &mut tx,
-        &id,
-        fulfillment_code_id.as_deref(),
-        "verified",
-        "提货码已核销",
-        "团长已确认用户完成自提",
-        json!({ "verifiedBy": verified_by }),
-    )
-    .await?;
-    insert_order_event_tx(
-        &mut tx,
-        &id,
-        "completed",
-        "已完成自提",
-        "团长核销提货码后订单完成",
-        "done",
-    )
-    .await?;
-    tx.commit().await?;
-
+    let verified_code = verify_fulfillment_code(&state.db, &id, &code, &verified_by, None).await?;
     Ok(ok("核销成功", verified_code))
 }
 
@@ -2125,12 +2192,31 @@ where
 {
     let metrics = sqlx::query_scalar::<_, Value>(
         r#"
+        WITH first_user_messages AS (
+          SELECT session_id, min(created_at) AS first_user_at
+          FROM support_messages
+          WHERE sender_role IN ('user', 'customer', 'member')
+          GROUP BY session_id
+        ),
+        first_agent_messages AS (
+          SELECT user_message.session_id, min(message.created_at) AS first_agent_at
+          FROM first_user_messages user_message
+          JOIN support_messages message
+            ON message.session_id = user_message.session_id
+           AND message.created_at >= user_message.first_user_at
+           AND message.sender_role IN ('agent', 'admin', 'support')
+          GROUP BY user_message.session_id
+        )
         SELECT jsonb_build_object(
           'openSessions', (SELECT count(*) FROM support_sessions WHERE status = 'open'),
           'openTickets', (SELECT count(*) FROM support_tickets WHERE status = 'open'),
           'afterSales', (SELECT count(*) FROM mall_after_sales WHERE status IN ('submitted', 'approved')),
           'knowledgeArticles', (SELECT count(*) FROM support_knowledge_articles WHERE status = 'published'),
-          'avgFirstResponseMinutes', 6,
+          'avgFirstResponseMinutes', COALESCE((
+            SELECT round(avg(extract(epoch from (agent_message.first_agent_at - user_message.first_user_at)) / 60.0))::integer
+            FROM first_user_messages user_message
+            JOIN first_agent_messages agent_message ON agent_message.session_id = user_message.session_id
+          ), 6),
           'satisfaction', 96
         )
         "#,
@@ -2364,6 +2450,312 @@ async fn fetch_pickup_points(
         .build_query_scalar::<Value>()
         .fetch_all(pool)
         .await?)
+}
+
+async fn fetch_member_profile(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
+    sqlx::query_scalar::<_, Value>(
+        r#"
+        WITH stats AS (
+          SELECT
+            count(*)::bigint AS order_count,
+            COALESCE(sum(payable_cents), 0)::bigint AS total_spend_cents,
+            (COALESCE(sum(payable_cents), 0) / 100)::integer AS points
+          FROM mall_orders
+          WHERE user_id = $1
+            AND status <> 'cancelled'
+        ),
+        selected_level AS (
+          SELECT level.*
+          FROM mall_member_levels level, stats
+          WHERE level.status = 'active'
+            AND level.min_points <= stats.points
+          ORDER BY level.min_points DESC, level.sort_order ASC
+          LIMIT 1
+        )
+        SELECT jsonb_build_object(
+          'id', u.id,
+          'phone', u.phone,
+          'name', COALESCE(u.name, u.nickname, u.username, u.phone),
+          'nickname', u.nickname,
+          'avatarUrl', COALESCE(u.avatar_url, u.avatar),
+          'role', u.role,
+          'status', u.status,
+          'points', stats.points,
+          'orderCount', stats.order_count,
+          'totalSpendCents', stats.total_spend_cents,
+          'level', CASE WHEN level.id IS NULL THEN NULL ELSE jsonb_build_object(
+            'id', level.id,
+            'code', level.code,
+            'name', level.name,
+            'discountBps', level.discount_bps,
+            'benefits', level.benefits
+          ) END,
+          'createdAt', u.created_at,
+          'updatedAt', u.updated_at
+        )
+        FROM users u
+        CROSS JOIN stats
+        LEFT JOIN selected_level level ON true
+        WHERE u.id = $1
+        "#,
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("用户不存在".to_string()))
+}
+
+async fn fetch_member_order_counts(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
+    Ok(sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT jsonb_build_object(
+          'total', count(*),
+          'pendingPayment', count(*) FILTER (WHERE status = 'pending_payment'),
+          'paid', count(*) FILTER (WHERE status = 'paid'),
+          'readyForPickup', count(*) FILTER (WHERE status = 'ready_for_pickup'),
+          'dispatching', count(*) FILTER (WHERE status = 'dispatching'),
+          'delivering', count(*) FILTER (WHERE status = 'delivering'),
+          'completed', count(*) FILTER (WHERE status = 'completed'),
+          'cancelled', count(*) FILTER (WHERE status = 'cancelled'),
+          'afterSales', (
+            SELECT count(*)
+            FROM mall_after_sales sale
+            WHERE sale.user_id = $1
+              AND sale.status IN ('submitted', 'approved', 'refunding')
+          )
+        )
+        FROM mall_orders
+        WHERE user_id = $1
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?)
+}
+
+async fn fetch_default_mall_address(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
+    Ok(sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT jsonb_build_object(
+          'id', id,
+          'userId', user_id,
+          'contactName', contact_name,
+          'contactPhone', contact_phone,
+          'addressLabel', address_label,
+          'addressText', address_text,
+          'latitude', latitude,
+          'longitude', longitude,
+          'addressType', address_type,
+          'isDefault', is_default,
+          'createdAt', created_at,
+          'updatedAt', updated_at
+        )
+        FROM mall_addresses
+        WHERE user_id = $1
+        ORDER BY is_default DESC, updated_at DESC, created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?
+    .unwrap_or(Value::Null))
+}
+
+async fn fetch_default_pickup_point(
+    pool: &PgPool,
+    user_id: &str,
+    group_leader: Option<&Value>,
+) -> ApiResult<Value> {
+    if let Some(pickup_point) = group_leader.and_then(|leader| leader.get("pickupPoint")) {
+        if !pickup_point.is_null() {
+            return Ok(pickup_point.clone());
+        }
+    }
+
+    Ok(sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT jsonb_build_object(
+          'id', point.id,
+          'name', point.name,
+          'addressText', point.address_text,
+          'latitude', point.latitude,
+          'longitude', point.longitude,
+          'businessHours', point.business_hours,
+          'status', point.status,
+          'communityName', point.community_name,
+          'leaderName', point.leader_name,
+          'leaderPhone', point.leader_phone
+        )
+        FROM mall_orders o
+        JOIN mall_pickup_points point ON point.id = o.pickup_point_id
+        WHERE o.user_id = $1
+        ORDER BY o.created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?
+    .unwrap_or(Value::Null))
+}
+
+async fn fetch_member_support_counts(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
+    Ok(sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT jsonb_build_object(
+          'openSessions', (SELECT count(*) FROM support_sessions WHERE user_id = $1 AND status = 'open'),
+          'openTickets', (SELECT count(*) FROM support_tickets WHERE user_id = $1 AND status = 'open'),
+          'afterSales', (SELECT count(*) FROM mall_after_sales WHERE user_id = $1 AND status IN ('submitted', 'approved', 'refunding'))
+        )
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?)
+}
+
+async fn fetch_group_leader_context(pool: &PgPool, user_id: &str) -> ApiResult<Option<Value>> {
+    Ok(sqlx::query_scalar::<_, Value>(
+        r#"
+        WITH app_user AS (
+          SELECT id, phone, name, nickname, username
+          FROM users
+          WHERE id = $1
+        ),
+        leader_rows AS (
+          SELECT
+            0 AS priority,
+            leader.id,
+            COALESCE(leader.user_id, app_user.id) AS user_id,
+            COALESCE(leader.name, point.leader_name, app_user.name, app_user.nickname, app_user.username, app_user.phone) AS name,
+            COALESCE(leader.phone, point.leader_phone, app_user.phone) AS phone,
+            leader.status,
+            leader.service_note,
+            point.id AS pickup_point_id,
+            point.name AS pickup_point_name,
+            point.address_text,
+            point.latitude,
+            point.longitude,
+            point.business_hours,
+            point.status AS pickup_point_status,
+            point.community_name,
+            point.leader_name,
+            point.leader_phone
+          FROM app_user
+          JOIN mall_group_leaders leader
+            ON leader.user_id = app_user.id
+            OR (leader.phone IS NOT NULL AND leader.phone = app_user.phone)
+          JOIN mall_pickup_points point ON point.id = leader.pickup_point_id
+          WHERE leader.status = 'active'
+
+          UNION ALL
+
+          SELECT
+            1 AS priority,
+            CONCAT('pickup-leader-', point.id) AS id,
+            app_user.id AS user_id,
+            COALESCE(point.leader_name, app_user.name, app_user.nickname, app_user.username, app_user.phone) AS name,
+            COALESCE(point.leader_phone, app_user.phone) AS phone,
+            point.status AS status,
+            NULL::text AS service_note,
+            point.id AS pickup_point_id,
+            point.name AS pickup_point_name,
+            point.address_text,
+            point.latitude,
+            point.longitude,
+            point.business_hours,
+            point.status AS pickup_point_status,
+            point.community_name,
+            point.leader_name,
+            point.leader_phone
+          FROM app_user
+          JOIN mall_pickup_points point
+            ON point.leader_phone IS NOT NULL
+           AND point.leader_phone = app_user.phone
+          WHERE point.status = 'active'
+        )
+        SELECT jsonb_build_object(
+          'id', id,
+          'userId', user_id,
+          'name', name,
+          'phone', phone,
+          'status', status,
+          'serviceNote', service_note,
+          'pickupPoint', jsonb_build_object(
+            'id', pickup_point_id,
+            'name', pickup_point_name,
+            'addressText', address_text,
+            'latitude', latitude,
+            'longitude', longitude,
+            'businessHours', business_hours,
+            'status', pickup_point_status,
+            'communityName', community_name,
+            'leaderName', leader_name,
+            'leaderPhone', leader_phone
+          )
+        )
+        FROM leader_rows
+        ORDER BY priority ASC
+        LIMIT 1
+        "#,
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
+async fn fetch_group_leader_today_counts(pool: &PgPool, pickup_point_id: &str) -> ApiResult<Value> {
+    Ok(sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT jsonb_build_object(
+          'pendingPickup', (
+            SELECT count(*)
+            FROM mall_orders
+            WHERE pickup_point_id = $1
+              AND status IN ('paid', 'ready_for_pickup')
+              AND fulfillment_status IN ('ready', 'code_pending')
+          ),
+          'completed', (
+            SELECT count(*)
+            FROM mall_orders
+            WHERE pickup_point_id = $1
+              AND status = 'completed'
+              AND COALESCE(completed_at, updated_at, created_at) >= date_trunc('day', now())
+          ),
+          'afterSales', (
+            SELECT count(*)
+            FROM mall_after_sales sale
+            JOIN mall_orders o ON o.id = sale.order_id
+            WHERE o.pickup_point_id = $1
+              AND sale.created_at >= date_trunc('day', now())
+          )
+        )
+        "#,
+    )
+    .bind(pickup_point_id)
+    .fetch_one(pool)
+    .await?)
+}
+
+async fn fetch_group_leader_pending_orders(
+    pool: &PgPool,
+    pickup_point_id: &str,
+) -> ApiResult<Vec<Value>> {
+    Ok(sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT order_summary_json(o)
+        FROM mall_orders o
+        WHERE o.pickup_point_id = $1
+          AND o.status IN ('paid', 'ready_for_pickup')
+          AND o.fulfillment_status IN ('ready', 'code_pending')
+        ORDER BY o.created_at ASC
+        LIMIT 50
+        "#,
+    )
+    .bind(pickup_point_id)
+    .fetch_all(pool)
+    .await?)
 }
 
 async fn fetch_product_json(pool: &PgPool, id: &str) -> ApiResult<Value> {
@@ -2634,6 +3026,78 @@ async fn fetch_order_events(pool: &PgPool, order_id: &str) -> ApiResult<Vec<Valu
     .await?)
 }
 
+async fn upsert_community_interaction(
+    pool: &PgPool,
+    post_id: &str,
+    user_id: &str,
+    interaction_type: &'static str,
+) -> ApiResult<Value> {
+    let post_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM mall_community_posts WHERE id = $1 AND status = 'published')",
+    )
+    .bind(post_id)
+    .fetch_one(pool)
+    .await?;
+    if !post_exists {
+        return Err(ApiError::NotFound("帖子不存在".to_string()));
+    }
+
+    let user_exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM users WHERE id = $1)")
+        .bind(user_id)
+        .fetch_one(pool)
+        .await?;
+    if !user_exists {
+        return Err(ApiError::NotFound("用户不存在".to_string()));
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO mall_community_post_interactions (post_id, user_id, interaction_type)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (post_id, user_id, interaction_type)
+        DO UPDATE SET updated_at = mall_community_post_interactions.updated_at
+        "#,
+    )
+    .bind(post_id)
+    .bind(user_id)
+    .bind(interaction_type)
+    .execute(pool)
+    .await?;
+
+    Ok(sqlx::query_scalar::<_, Value>(
+        r#"
+        WITH counts AS (
+          SELECT
+            count(*) FILTER (WHERE interaction_type = 'like')::integer AS like_count,
+            count(*) FILTER (WHERE interaction_type = 'follow')::integer AS follow_count,
+            count(*) FILTER (WHERE interaction_type = 'join')::integer AS join_count
+          FROM mall_community_post_interactions
+          WHERE post_id = $1
+        )
+        UPDATE mall_community_posts post
+        SET like_count = counts.like_count,
+            follow_count = counts.follow_count,
+            join_count = counts.join_count,
+            updated_at = now()
+        FROM counts
+        WHERE post.id = $1
+        RETURNING jsonb_build_object(
+          'post', community_post_json(post),
+          'interactionType', $2,
+          'counts', jsonb_build_object(
+            'like', post.like_count,
+            'follow', post.follow_count,
+            'join', post.join_count
+          )
+        )
+        "#,
+    )
+    .bind(post_id)
+    .bind(interaction_type)
+    .fetch_one(pool)
+    .await?)
+}
+
 async fn ensure_product_can_sell(pool: &PgPool, product_id: &str, quantity: i32) -> ApiResult<()> {
     let stock: Option<i32> =
         sqlx::query_scalar("SELECT stock FROM mall_products WHERE id = $1 AND status = 'on_sale'")
@@ -2833,6 +3297,154 @@ async fn ensure_fulfillment_code(
     Err(ApiError::BadRequest("提货码生成失败，请重试".to_string()))
 }
 
+async fn verify_fulfillment_code(
+    pool: &PgPool,
+    order_id: &str,
+    code: &str,
+    verified_by: &str,
+    required_pickup_point_id: Option<&str>,
+) -> ApiResult<Value> {
+    let existing = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT jsonb_build_object(
+          'id', code.id,
+          'orderId', code.order_id,
+          'userId', code.user_id,
+          'pickupPointId', code.pickup_point_id,
+          'code', code.code,
+          'status', code.status,
+          'verifiedBy', code.verified_by,
+          'verifiedAt', code.verified_at,
+          'expiresAt', code.expires_at,
+          'createdAt', code.created_at,
+          'updatedAt', code.updated_at
+        )
+        FROM mall_fulfillment_codes code
+        JOIN mall_orders o ON o.id = code.order_id
+        WHERE code.order_id = $1
+          AND code.code = $2
+          AND code.status = 'ready'
+          AND (code.expires_at IS NULL OR code.expires_at > now())
+          AND (
+            $3::text IS NULL
+            OR (o.pickup_point_id = $3 AND COALESCE(code.pickup_point_id, o.pickup_point_id) = $3)
+          )
+        "#,
+    )
+    .bind(order_id)
+    .bind(code)
+    .bind(required_pickup_point_id)
+    .fetch_optional(pool)
+    .await?;
+
+    if existing.is_none() {
+        let expired = sqlx::query(
+            r#"
+            UPDATE mall_fulfillment_codes code
+            SET status = 'expired',
+                updated_at = now()
+            FROM mall_orders o
+            WHERE o.id = code.order_id
+              AND code.order_id = $1
+              AND code.code = $2
+              AND code.status = 'ready'
+              AND code.expires_at IS NOT NULL
+              AND code.expires_at <= now()
+              AND (
+                $3::text IS NULL
+                OR (o.pickup_point_id = $3 AND COALESCE(code.pickup_point_id, o.pickup_point_id) = $3)
+              )
+            "#,
+        )
+        .bind(order_id)
+        .bind(code)
+        .bind(required_pickup_point_id)
+        .execute(pool)
+        .await?;
+        if expired.rows_affected() > 0 {
+            return Err(ApiError::BadRequest("提货码已过期".to_string()));
+        }
+        return Err(ApiError::BadRequest("提货码无效或已核销".to_string()));
+    }
+
+    let mut tx = pool.begin().await?;
+    let verified_code = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_fulfillment_codes code
+        SET status = 'verified',
+            verified_by = $3,
+            verified_at = now(),
+            updated_at = now()
+        FROM mall_orders o
+        WHERE o.id = code.order_id
+          AND code.order_id = $1
+          AND code.code = $2
+          AND code.status = 'ready'
+          AND (
+            $4::text IS NULL
+            OR (o.pickup_point_id = $4 AND COALESCE(code.pickup_point_id, o.pickup_point_id) = $4)
+          )
+        RETURNING jsonb_build_object(
+          'id', code.id,
+          'orderId', code.order_id,
+          'userId', code.user_id,
+          'pickupPointId', code.pickup_point_id,
+          'code', code.code,
+          'status', code.status,
+          'verifiedBy', code.verified_by,
+          'verifiedAt', code.verified_at,
+          'expiresAt', code.expires_at,
+          'createdAt', code.created_at,
+          'updatedAt', code.updated_at
+        )
+        "#,
+    )
+    .bind(order_id)
+    .bind(code)
+    .bind(verified_by)
+    .bind(required_pickup_point_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::BadRequest("提货码无效或已核销".to_string()))?;
+    let fulfillment_code_id = verified_code["id"].as_str().map(str::to_string);
+
+    sqlx::query(
+        r#"
+        UPDATE mall_orders
+        SET status = 'completed',
+            fulfillment_status = 'verified',
+            completed_at = COALESCE(completed_at, now()),
+            updated_at = now()
+        WHERE id = $1
+        "#,
+    )
+    .bind(order_id)
+    .execute(&mut *tx)
+    .await?;
+    insert_fulfillment_event_tx(
+        &mut tx,
+        order_id,
+        fulfillment_code_id.as_deref(),
+        "verified",
+        "提货码已核销",
+        "团长已确认用户完成自提",
+        json!({ "verifiedBy": verified_by }),
+    )
+    .await?;
+    insert_order_event_tx(
+        &mut tx,
+        order_id,
+        "completed",
+        "已完成自提",
+        "团长核销提货码后订单完成",
+        "done",
+    )
+    .await?;
+    tx.commit().await?;
+
+    Ok(verified_code)
+}
+
 async fn insert_order_event(
     pool: &PgPool,
     order_id: &str,
@@ -2988,6 +3600,15 @@ fn validate_order_status(status: &str) -> ApiResult<()> {
         Ok(())
     } else {
         Err(ApiError::BadRequest("订单状态不正确".to_string()))
+    }
+}
+
+fn normalize_community_interaction(interaction_type: &str) -> ApiResult<&'static str> {
+    match interaction_type.trim() {
+        "like" => Ok("like"),
+        "follow" => Ok("follow"),
+        "join" => Ok("join"),
+        _ => Err(ApiError::BadRequest("互动类型不正确".to_string())),
     }
 }
 

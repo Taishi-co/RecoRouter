@@ -24,7 +24,7 @@ const tabItems: Array<{ key: MallTabKey; label: string; url: string; icon: MallI
   { key: 'home', label: '首页', url: '/pages/mall/index/index', icon: House },
   { key: 'category', label: '分类', url: '/pages/mall/category/index', icon: Grid2x2 },
   { key: 'cart', label: '购物车', url: '/pages/mall/cart/index', icon: ShoppingCart },
-  { key: 'mine', label: '我的', url: '/pages/mall/orders/index', icon: UserRound },
+  { key: 'mine', label: '我的', url: '/pages/mall/profile/index', icon: UserRound },
 ]
 
 export function mallYuan(cents?: number | null) {
@@ -32,16 +32,7 @@ export function mallYuan(cents?: number | null) {
 }
 
 export function MallStatusBar() {
-  return (
-    <View className="mall-status">
-      <Text className="mall-status-time">9:41</Text>
-      <View className="mall-status-icons">
-        <Text className="mall-signal">⌁</Text>
-        <Text className="mall-signal">⌁</Text>
-        <Text className="mall-battery">▰</Text>
-      </View>
-    </View>
-  )
+  return null
 }
 
 export function MallPage({
@@ -51,7 +42,6 @@ export function MallPage({
 }: PropsWithChildren<{ active?: MallTabKey; noTab?: boolean }>) {
   return (
     <View className="mall-shell">
-      <MallStatusBar />
       {children}
       {!noTab && <MallBottomNav active={active || 'home'} />}
     </View>
@@ -70,7 +60,7 @@ export function MallBottomNav({ active }: { active: MallTabKey }) {
             className={isActive ? 'mall-tab mall-tab-active' : 'mall-tab'}
             onClick={() => {
               if (item.key === active) return
-              Taro.navigateTo({ url: item.url })
+              Taro.redirectTo({ url: item.url })
             }}
           >
             <Icon size={21} color={isActive ? '#63BF54' : '#6D766B'} />

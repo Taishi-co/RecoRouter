@@ -132,15 +132,33 @@ export interface MallCommunityPost {
   title: string
   content: string
   summary?: string | null
+  imageUrl?: string | null
   coverImageUrl?: string | null
   pickupPointId?: string | null
+  authorUserId?: string | null
   authorName?: string | null
+  likeCount?: number
+  followCount?: number
+  joinCount?: number
+  commentCount?: number
+  joined?: boolean
   tags: string[]
   status: string
   sortOrder?: number
   publishedAt?: string | null
   createdAt?: string
   updatedAt?: string
+}
+
+export interface CreateMallCommunityPostInput {
+  userId: string
+  pickupPointId?: string
+  title: string
+  content: string
+  summary?: string
+  imageUrl?: string
+  coverImageUrl?: string
+  tags?: string[]
 }
 
 export interface MallNotificationPreferences {
@@ -207,10 +225,72 @@ export interface MallAfterSale {
   userId?: string
   reason: string
   description?: string | null
+  evidenceImages?: string[]
   amountCents: number
   status: string
   handlingMethod: string
   createdAt?: string
+}
+
+export interface MallProfile {
+  userId?: string
+  displayName?: string
+  memberLevel?: string
+  pickupPointName?: string
+  monthlySavingsCents?: number
+  pendingPaymentCount?: number
+  pendingPickupCount?: number
+  afterSaleCount?: number
+  groupJoinedCount?: number
+  commonPickupPoint?: string
+  supportStatus?: string
+  member?: {
+    id?: string
+    name?: string
+    username?: string
+    phone?: string
+    role?: string
+    status?: string
+  }
+  orderCounts?: {
+    pendingPayment?: number
+    pendingPickup?: number
+    afterSales?: number
+    completed?: number
+    total?: number
+  }
+  defaultPickupPoint?: MallPickupPoint | null
+  support?: {
+    openSessions?: number
+    openTickets?: number
+    afterSales?: number
+  }
+  groupLeader?: Record<string, unknown> | null
+}
+
+export interface MallGroupLeaderCenter {
+  pickupPointId?: string
+  pickupPointName?: string
+  todayGroupCount?: number
+  estimatedCommissionCents?: number
+  pendingShareCount?: number
+  pendingVerificationCount?: number
+  stockIssueCount?: number
+  leader?: Record<string, unknown>
+  pickupPoint?: MallPickupPoint | null
+  today?: {
+    readyForPickup?: number
+    completed?: number
+    afterSales?: number
+    totalPayableCents?: number
+  }
+  pendingOrders?: MallOrder[]
+  reminders: Array<{
+    id: string
+    title: string
+    description: string
+    actionText: string
+  }>
 }
 
 export interface MallCampaign {
@@ -364,6 +444,7 @@ export async function createMallAfterSale(orderId: string, data: {
   reason: string
   description?: string
   amountCents?: number
+  evidenceImages?: string[]
 }): Promise<MallAfterSale> {
   return apiPost(`/api/mall/orders/${orderId}/after-sales`, data)
 }
@@ -443,6 +524,127 @@ export async function listMallCommunityPosts(params: {
   limit?: number
 } = {}): Promise<MallCommunityPost[]> {
   return apiGet('/api/mall/community-posts', params)
+}
+
+export async function getMallProfile(userId: string): Promise<MallProfile> {
+  return apiGet('/api/mall/me/profile', { userId })
+}
+
+export async function getMallProfileSafe(userId: string): Promise<MallProfile> {
+  return withMallFallback(
+    () => getMallProfile(userId),
+    {
+      userId,
+      displayName: '张女士',
+      memberLevel: '银卡会员',
+      pickupPointName: '路北区邻里驿站',
+      monthlySavingsCents: 4200,
+      pendingPaymentCount: 1,
+      pendingPickupCount: 2,
+      afterSaleCount: 1,
+      groupJoinedCount: 3,
+      commonPickupPoint: '路北区邻里驿站，今天 17:00 后可取',
+      supportStatus: '订单售后、坏果包赔与冷链咨询',
+    },
+  )
+}
+
+export async function getMallGroupLeaderCenter(userId: string): Promise<MallGroupLeaderCenter> {
+  return apiGet('/api/mall/group-leader/workbench', { userId })
+}
+
+export async function getMallGroupLeaderCenterSafe(userId: string): Promise<MallGroupLeaderCenter> {
+  return withMallFallback(
+    () => getMallGroupLeaderCenter(userId),
+    {
+      pickupPointId: 'pickup-demo',
+      pickupPointName: '邻里团长工作台',
+      todayGroupCount: 18,
+      estimatedCommissionCents: 12600,
+      pendingShareCount: 4,
+      pendingVerificationCount: 9,
+      stockIssueCount: 2,
+      reminders: [
+        {
+          id: 'share',
+          title: '分享今日团购',
+          description: '草莓礼盒、鲜奶周卡正在截团',
+          actionText: '分享',
+        },
+        {
+          id: 'orders',
+          title: '团员订单提醒',
+          description: '2 位团员待确认自提时间',
+          actionText: '处理',
+        },
+        {
+          id: 'code',
+          title: '自提核销码',
+          description: '到货后扫码核销，减少排队',
+          actionText: '打开',
+        },
+      ],
+    },
+  )
+}
+
+export async function createMallCommunityPost(data: CreateMallCommunityPostInput): Promise<MallCommunityPost> {
+  return apiPost('/api/mall/community-posts', {
+    userId: data.userId,
+    pickupPointId: data.pickupPointId,
+    title: data.title,
+    summary: data.summary || data.content,
+    content: data.content,
+    imageUrl: data.imageUrl || data.coverImageUrl,
+    images: data.coverImageUrl ? [data.coverImageUrl] : undefined,
+  })
+}
+
+export async function createMallCommunityPostSafe(data: CreateMallCommunityPostInput): Promise<MallCommunityPost> {
+  return withMallFallback(
+    () => createMallCommunityPost(data),
+    {
+      id: `local-${Date.now()}`,
+      title: data.title,
+      content: data.content,
+      summary: data.content,
+      pickupPointId: data.pickupPointId,
+      authorName: '我',
+      likeCount: 0,
+      commentCount: 0,
+      joined: false,
+      tags: data.tags || ['邻里动态'],
+      status: 'published',
+      createdAt: new Date().toISOString(),
+    },
+  )
+}
+
+export async function interactMallCommunityPost(
+  postId: string,
+  data: { userId: string; action: 'like' | 'join' | 'follow'; content?: string },
+): Promise<MallCommunityPost> {
+  return apiPost(`/api/mall/community-posts/${postId}/interactions`, {
+    userId: data.userId,
+    interactionType: data.action,
+    content: data.content,
+  })
+}
+
+export async function interactMallCommunityPostSafe(
+  post: MallCommunityPost,
+  data: { userId: string; action: 'like' | 'join' | 'follow'; content?: string },
+): Promise<MallCommunityPost> {
+  return withMallFallback(
+    () => interactMallCommunityPost(post.id, data),
+    {
+      ...post,
+      likeCount: data.action === 'like' ? (post.likeCount || 0) + 1 : post.likeCount,
+      followCount: data.action === 'follow' ? (post.followCount || 0) + 1 : post.followCount,
+      joinCount: data.action === 'join' ? (post.joinCount || 0) + 1 : post.joinCount,
+      joined: data.action === 'join' ? true : post.joined,
+    },
+  )
 }
 
 export async function getMallNotificationPreferences(userId: string): Promise<MallNotificationPreferences> {
@@ -610,4 +812,12 @@ function cleanObjectData(data: Record<string, unknown>) {
   return Object.fromEntries(
     Object.entries(data).filter(([, value]) => value !== undefined && value !== null && value !== ''),
   )
+}
+
+async function withMallFallback<T>(request: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await request()
+  } catch {
+    return fallback
+  }
 }

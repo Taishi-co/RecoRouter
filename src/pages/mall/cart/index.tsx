@@ -3,8 +3,6 @@ import { Image, Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
 import { Store } from 'lucide-react-taro'
 import {
-  createMallAddress,
-  createMallOrder,
   deleteMallCartItem,
   getMallCart,
   listMallAddresses,
@@ -88,41 +86,12 @@ export default function MallCartPage() {
     }
   }
 
-  const ensureAddress = async () => {
-    if (selectedAddressId) return selectedAddressId
-    const address = await createMallAddress({
-      user_id: userId,
-      address_name: '绿荫花园西门自提点',
-      address: '绿荫花园西门 · 明日 16:00-19:00 · 团长王姐',
-      latitude: -33.8796,
-      longitude: 151.2056,
-      address_type: 'pickup_point',
-      is_default: addresses.length === 0,
-    })
-    setSelectedAddressId(address.id)
-    return address.id
-  }
-
   const submitOrder = async () => {
     if (cart.selectedCount === 0) {
       Taro.showToast({ title: '购物车为空', icon: 'none' })
       return
     }
-    try {
-      const addressId = await ensureAddress()
-      const order = await createMallOrder({
-        userId,
-        addressId,
-        expectedDeliveryWindow: '明日 16:00-19:00',
-        deliveryMethod: '社区自提',
-        pickupMethod: '团长验码',
-        couponCents,
-      })
-      Taro.showToast({ title: '订单已提交', icon: 'success' })
-      Taro.navigateTo({ url: `/pages/mall/orders/index?orderId=${order.id}` })
-    } catch (error) {
-      showError(error, '提交失败')
-    }
+    Taro.navigateTo({ url: `/pages/mall/confirm/index?addressId=${selectedAddressId}` })
   }
 
   return (
