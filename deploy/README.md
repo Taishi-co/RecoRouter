@@ -53,6 +53,8 @@ Nginx also serves H5 demo builds for browser presentation:
 
 - `https://car.shcxyz.site:18081/` -> vehicle app H5 (`dist-web-vehicle`)
 - `https://car.shcxyz.site:18082/` -> mall app H5 (`dist-web-mall`)
+- Both demo ports also proxy `/api/` with the same split routing as `443`, so
+  H5 demos can call backend APIs from their own origin during browser previews.
 
 ## GitHub Actions auto deploy
 
@@ -61,7 +63,7 @@ The repository has two production workflows:
 - `.github/workflows/deploy-prod.yml`
   - Trigger: frontend/backend/deploy changes on `main`, or manual `workflow_dispatch`.
   - Builds `/tmp/recorouter-docker-release.tar.gz`.
-  - Builds the Web admin app plus Taro H5 vehicle and mall demo apps with `PROJECT_DOMAIN=https://car.shcxyz.site`.
+  - Builds the Web admin app with `PROJECT_DOMAIN=https://car.shcxyz.site`, vehicle H5 with `PROJECT_DOMAIN=https://car.shcxyz.site:18081`, and mall H5 with `PROJECT_DOMAIN=https://car.shcxyz.site:18082`.
   - Builds the Rust API binary on the GitHub Linux runner.
   - Packages `dist-web`, `dist-web-vehicle`, `dist-web-mall`, Rust migrations, all API binaries, and deploy scripts.
   - Runs `deploy/install-docker-release.sh`; the server builds only the lightweight runtime Docker image, runs the migrator, health-checks three candidate containers, then restarts production split API containers.

@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react'
-import { Image, Text, View } from '@tarojs/components'
+import { Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
-import { ChevronLeft, ShoppingCart, Truck } from 'lucide-react-taro'
-import { AppPageShell } from '@/components/layout/app-page-shell'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { addMallCartItem, getMallProduct, resolveMallImageUrl, type MallProduct, yuan } from '@/services/mall'
+import { ChevronLeft, Share2, ShoppingCart } from 'lucide-react-taro'
+import { addMallCartItem, getMallProduct, type MallProduct } from '@/services/mall'
+import {
+  MallLocationStrip,
+  MallPage,
+  MallPrimaryButton,
+  MallProductThumb,
+  mallYuan,
+} from '../mall-ui'
 
 interface StoredUser {
   id?: string
@@ -63,87 +66,69 @@ export default function MallProductDetail() {
   }
 
   return (
-    <AppPageShell
-      title={product?.name || '商品详情'}
-      subtitle={product?.subtitle || '产地直采 18 分钟达'}
-      icon={ShoppingCart}
-      right={
-        <Button size="icon" variant="outline" className="rounded-full" onClick={() => Taro.navigateBack()}>
-          <ChevronLeft size={18} color="#0062FF" />
-        </Button>
-      }
-      contentClassName="space-y-4"
-    >
+    <MallPage active="home">
+      <View className="mall-back-row">
+        <ChevronLeft size={24} color="#1F2D1F" onClick={() => Taro.navigateBack()} />
+      </View>
+
       {loading || !product ? (
-        <Card>
-          <CardContent className="p-6">
-            <Text className="block text-center text-sm text-gray-500">加载中...</Text>
-          </CardContent>
-        </Card>
+        <View className="mall-empty">
+          <Text className="mall-empty-title">加载中...</Text>
+        </View>
       ) : (
         <>
-          <View className="flex h-56 items-center justify-center overflow-hidden rounded-3xl bg-red-100">
-            {product.imageUrl ? (
-              <Image
-                className="h-full w-full"
-                mode="aspectFill"
-                src={resolveMallImageUrl(product.imageUrl)}
-              />
-            ) : (
-              <Text className="block text-3xl font-black text-red-600">
-                {product.categoryCode === 'milk' ? 'MILK' : 'STRAWBERRY'}
-              </Text>
-            )}
-          </View>
+          <MallProductThumb product={product} large />
 
-          <View>
-            <Text className="block text-2xl font-black text-gray-900">{product.name}</Text>
-            <Text className="mt-2 block text-sm font-bold text-gray-500">
-              {product.description || product.subtitle}
-            </Text>
-          </View>
-
-          <View className="flex items-end justify-between">
-            <Text className="block text-3xl font-black text-red-500">
-              {yuan(product.priceCents)}
-            </Text>
-            <Text className="block text-xs font-bold text-gray-500">
-              月售 {product.soldCount} · 好评 {product.rating}%
-            </Text>
-          </View>
-
-          <View className="flex flex-wrap gap-2">
-            {product.tags.map((tag) => (
-              <Badge key={tag} className="bg-emerald-100">
-                <Text className="text-xs font-black text-emerald-700">{tag}</Text>
-              </Badge>
-            ))}
-          </View>
-
-          <Card className="bg-emerald-50">
-            <CardContent className="flex items-center gap-3 p-4">
-              <Truck size={24} color="#10B981" />
-              <View className="flex-1">
-                <Text className="block text-sm font-black text-gray-900">
-                  RecoRouter 本地无人车配送
-                </Text>
-                <Text className="mt-1 block text-xs font-bold text-emerald-700">
-                  3km 内最快 {product.deliveryMinutes} 分钟送达，冷链鲜奶全程温控
+          <View className="mall-card">
+            <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text className="mall-page-title">{product.name}</Text>
+                <Text className="mall-page-subtitle">
+                  {product.description || product.subtitle || '团长验货 · 产地直发 · 坏果包退'}
                 </Text>
               </View>
-            </CardContent>
-          </Card>
+              <View className="mall-location-switch">
+                <Share2 size={18} color="#63BF54" />
+              </View>
+            </View>
+            <View style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text className="mall-price-large">{mallYuan(product.priceCents)}</Text>
+              <View className="mall-hero-badge" style={{ marginTop: 0, background: '#FFF1E5', color: '#FF9238' }}>
+                余 {product.stock} 份
+              </View>
+            </View>
+          </View>
 
-          <View className="flex gap-3 pb-4">
-            <Button variant="outline" className="flex-1 rounded-full" onClick={() => handleAddCart(false)}>
-              <Text className="text-sm font-black text-emerald-600">加入购物车</Text>
-            </Button>
-            <Button className="flex-1 rounded-full bg-emerald-500" onClick={() => handleAddCart(true)}>
-              <Text className="text-sm font-black text-white">立即购买</Text>
-            </Button>
+          <View className="mall-chip-row">
+            <View className="mall-chip">
+              <Text className="mall-chip-title">新鲜</Text>
+              <Text className="mall-chip-copy">今日采摘</Text>
+            </View>
+            <View className="mall-chip">
+              <Text className="mall-chip-title">安心</Text>
+              <Text className="mall-chip-copy">团长验收</Text>
+            </View>
+            <View className="mall-chip">
+              <Text className="mall-chip-title">品质</Text>
+              <Text className="mall-chip-copy">坏果包退</Text>
+            </View>
+          </View>
+
+          <View style={{ marginTop: 14 }}>
+            <MallLocationStrip />
+          </View>
+
+          <View className="mall-action-row">
+            <MallPrimaryButton subtle onClick={() => handleAddCart(false)}>
+              <ShoppingCart size={18} color="#FF9238" />
+              <Text style={{ marginLeft: 6 }}>加入购物车</Text>
+            </MallPrimaryButton>
+            <MallPrimaryButton onClick={() => handleAddCart(true)}>
+              <Text>＋ 立即选购</Text>
+            </MallPrimaryButton>
           </View>
         </>
       )}
-    </AppPageShell>
+    </MallPage>
   )
 }

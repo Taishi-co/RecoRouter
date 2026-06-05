@@ -42,6 +42,7 @@ const miniAppPages = [
   'pages/merchant/rentals/index',        // 需求方端-租车大厅
   'pages/merchant/rentals/detail',       // 需求方端-车辆详情
   'pages/mall/index/index',              // 商城-首页
+  'pages/mall/category/index',           // 商城-分类搜索
   'pages/mall/product/index',            // 商城-商品详情
   'pages/mall/cart/index',               // 商城-购物车/结算/地址
   'pages/mall/orders/index',             // 商城-订单/支付/售后/追踪
@@ -112,6 +113,7 @@ const vehiclePages = [
 
 const mallPages = [
   'pages/mall/index/index',              // 商城-首页
+  'pages/mall/category/index',           // 商城-分类搜索
   'pages/mall/product/index',            // 商城-商品详情
   'pages/mall/cart/index',               // 商城-购物车/结算/地址
   'pages/mall/orders/index',             // 商城-订单/支付/售后/追踪

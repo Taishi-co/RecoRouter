@@ -16,9 +16,11 @@ cd "$ROOT_DIR"
 pnpm validate
 
 if [[ "${BUILD_WEB:-1}" == "1" ]]; then
-  PROJECT_DOMAIN="${PROJECT_DOMAIN:-https://car.shcxyz.site}" pnpm build:web
-  PROJECT_DOMAIN="${PROJECT_DOMAIN:-https://car.shcxyz.site}" pnpm build:web:vehicle
-  PROJECT_DOMAIN="${PROJECT_DOMAIN:-https://car.shcxyz.site}" pnpm build:web:mall
+  BASE_PROJECT_DOMAIN="${PROJECT_DOMAIN:-https://car.shcxyz.site}"
+  BASE_PROJECT_DOMAIN="${BASE_PROJECT_DOMAIN%/}"
+  PROJECT_DOMAIN="${ADMIN_PROJECT_DOMAIN:-$BASE_PROJECT_DOMAIN}" pnpm build:web
+  PROJECT_DOMAIN="${VEHICLE_WEB_PROJECT_DOMAIN:-${BASE_PROJECT_DOMAIN}:18081}" pnpm build:web:vehicle
+  PROJECT_DOMAIN="${MALL_WEB_PROJECT_DOMAIN:-${BASE_PROJECT_DOMAIN}:18082}" pnpm build:web:mall
 fi
 
 rm -rf "$OUT_DIR" "$OUT_TAR"

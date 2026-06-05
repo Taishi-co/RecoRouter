@@ -1,25 +1,31 @@
 import { useMemo, useState } from 'react'
-import { Image, Text, View } from '@tarojs/components'
+import { Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { Search, ShoppingCart, Truck } from 'lucide-react-taro'
-import { AppPageShell } from '@/components/layout/app-page-shell'
-import { BottomNav } from '@/components/layout/bottom-nav'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
+import { Apple, Beef, Leaf, MapPin, ShieldCheck, UsersRound } from 'lucide-react-taro'
 import {
   addMallCartItem,
   listMallProducts,
-  resolveMallImageUrl,
   type MallProduct,
-  yuan,
 } from '@/services/mall'
+import {
+  MallPage,
+  MallProductThumb,
+  MallSearchBox,
+  MallSectionTitle,
+  mallYuan,
+} from '../mall-ui'
 
 interface StoredUser {
   id?: string
   role?: string
 }
+
+const shortcuts = [
+  { label: '今日鲜果', icon: Apple },
+  { label: '安心蔬菜', icon: Leaf },
+  { label: '肉禽蛋奶', icon: Beef },
+  { label: '邻里团购', icon: UsersRound },
+]
 
 export default function MallHome() {
   const [products, setProducts] = useState<MallProduct[]>([])
@@ -31,7 +37,7 @@ export default function MallHome() {
     loadProducts()
   })
 
-  const filteredProducts = useMemo(() => products, [products])
+  const featuredProducts = useMemo(() => products.slice(0, 4), [products])
 
   const currentUser = () => Taro.getStorageSync('userInfo') as StoredUser | undefined
 
@@ -46,7 +52,10 @@ export default function MallHome() {
     } catch (error) {
       setProducts([])
       setLoadError(error instanceof Error ? error.message : '商品加载失败')
-      showError(error, '商品加载失败')
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '商品加载失败',
+        icon: 'none',
+      })
     } finally {
       setLoading(false)
     }
@@ -63,146 +72,102 @@ export default function MallHome() {
       await addMallCartItem(user.id, product.id, 1)
       Taro.showToast({ title: '已加入购物车', icon: 'success' })
     } catch (error) {
-      showError(error, '加入失败')
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '加入失败',
+        icon: 'none',
+      })
     }
   }
 
   return (
-    <AppPageShell
-      title="本地鲜选"
-      subtitle="水果鲜奶今日达"
-      icon={ShoppingCart}
-      right={
-        <Button
-          size="icon"
-          variant="outline"
-          className="rounded-full"
-          onClick={() => Taro.navigateTo({ url: '/pages/mall/cart/index' })}
-        >
-          <ShoppingCart size={18} color="#0062FF" />
-        </Button>
-      }
-      bottom={<BottomNav type="merchant" active="mall" />}
-      contentClassName="space-y-4"
-    >
-      <Card className="border-0 bg-gradient-to-br from-sky-500 to-emerald-500 text-white">
-        <CardContent className="p-4">
-          <Text className="block text-xl font-black text-white">周边 3km 鲜品专送</Text>
-          <Text className="mt-1 block text-xs font-bold text-emerald-50">
-            水果、鲜奶、烘焙同城拼单
-          </Text>
-        </CardContent>
-      </Card>
-
-      <View className="flex items-center gap-2">
-        <Input
-          value={keyword}
-          placeholder="搜索水果、鲜奶、今日特价"
-          onInput={(event) => setKeyword(String(event.detail.value || ''))}
-        />
-        <Button size="icon" className="shrink-0 rounded-full" onClick={loadProducts}>
-          <Search size={18} color="#FFFFFF" />
-        </Button>
+    <MallPage active="home">
+      <Text className="mall-location-label">今日自提点</Text>
+      <View className="mall-location-current">
+        <Text className="mall-location-current-title">绿荫花园 3 号楼团长点</Text>
+        <View className="mall-location-switch" onClick={() => Taro.navigateTo({ url: '/pages/mall/cart/index?panel=address' })}>
+          <MapPin size={14} color="#63BF54" />
+          <Text className="mall-location-switch-text">切换</Text>
+        </View>
       </View>
 
-      <View className="flex items-center justify-between">
-        <Text className="block text-base font-black text-gray-900">水果 / 鲜奶热卖</Text>
-        <Text className="block text-xs font-bold text-gray-500">
-          {loading ? '加载中' : `${filteredProducts.length} 件`}
-        </Text>
+      <View className="mall-hero">
+        <Text className="mall-hero-title">叁友甄选</Text>
+        <Text className="mall-hero-copy">邻里一起拼，新鲜果蔬当天到点</Text>
+        <View className="mall-hero-badge">
+          <ShieldCheck size={14} color="#FFFFFF" />
+          <Text>安心溯源</Text>
+        </View>
+        <View className="mall-hero-fruit">
+          <View className="mall-hero-orange" />
+          <View className="mall-hero-avocado" />
+          <View className="mall-hero-seed" />
+          <View className="mall-hero-leaf" />
+        </View>
       </View>
+
+      <MallSearchBox
+        value={keyword}
+        placeholder="搜索鸡蛋、草莓、现摘青菜"
+        onInput={setKeyword}
+        onSearch={loadProducts}
+      />
+
+      <View className="mall-shortcuts">
+        {shortcuts.map((item) => {
+          const Icon = item.icon
+          return (
+            <View
+              key={item.label}
+              className="mall-shortcut"
+              onClick={() => Taro.navigateTo({ url: `/pages/mall/category/index?keyword=${encodeURIComponent(item.label)}` })}
+            >
+              <Icon size={25} color="#63BF54" />
+              <Text className="mall-shortcut-label">{item.label}</Text>
+            </View>
+          )
+        })}
+      </View>
+
+      <MallSectionTitle
+        title="今日邻里精选"
+        action="查看全部"
+        onAction={() => Taro.navigateTo({ url: '/pages/mall/category/index' })}
+      />
 
       {loadError ? (
-        <Card className="bg-white">
-          <CardContent className="p-4">
-            <Text className="block text-sm font-black text-gray-900">商品加载失败</Text>
-            <Text className="mt-1 block text-xs font-bold text-gray-500">{loadError}</Text>
-            <Button className="mt-3 rounded-full" onClick={loadProducts}>
-              <Text className="text-sm font-black text-white">重新加载</Text>
-            </Button>
-          </CardContent>
-        </Card>
+        <View className="mall-empty">
+          <Text className="mall-empty-title">商品加载失败</Text>
+          <Text className="mall-empty-copy">{loadError}</Text>
+          <View className="mall-button" style={{ marginTop: 14 }} onClick={loadProducts}>
+            重新加载
+          </View>
+        </View>
       ) : null}
 
-      {!loading && !loadError && filteredProducts.length === 0 ? (
-        <Card className="bg-white">
-          <CardContent className="p-4">
-            <Text className="block text-sm font-black text-gray-900">暂无可售商品</Text>
-            <Text className="mt-1 block text-xs font-bold text-gray-500">
-              当前搜索没有匹配商品，可以清空关键词后重试。
-            </Text>
-          </CardContent>
-        </Card>
+      {!loading && !loadError && featuredProducts.length === 0 ? (
+        <View className="mall-empty">
+          <Text className="mall-empty-title">暂无可售商品</Text>
+          <Text className="mall-empty-copy">团长补货中，请稍后再来。</Text>
+        </View>
       ) : null}
 
-      <View className="flex flex-row flex-wrap justify-between gap-y-3">
-        {filteredProducts.map((product) => (
-          <Card key={product.id} className="bg-white" style={{ width: '48.5%' }}>
-            <CardContent className="p-3">
-              <View
-                className="mb-3 flex h-24 items-center justify-center overflow-hidden rounded-2xl bg-emerald-50"
-                onClick={() => Taro.navigateTo({ url: `/pages/mall/product/index?id=${product.id}` })}
-              >
-                {product.imageUrl ? (
-                  <Image
-                    className="h-full w-full"
-                    mode="aspectFill"
-                    src={resolveMallImageUrl(product.imageUrl)}
-                  />
-                ) : (
-                  <Text className="block text-lg font-black text-emerald-600">
-                    {product.categoryCode === 'milk' ? 'MILK' : 'FRUIT'}
-                  </Text>
-                )}
-              </View>
-              <View className="mb-2 flex flex-wrap gap-1">
-                {product.tags.slice(0, 2).map((tag) => (
-                  <Badge key={tag} className="bg-emerald-100">
-                    <Text className="text-xs font-bold text-emerald-700">{tag}</Text>
-                  </Badge>
-                ))}
-              </View>
-              <Text className="block text-sm font-black text-gray-900">{product.name}</Text>
-              <Text className="mt-1 block text-xs font-bold text-gray-500">
-                {product.subtitle || `${product.deliveryMinutes} 分钟达`}
+      <View className="mall-product-grid">
+        {featuredProducts.map((product) => (
+          <View key={product.id} className="mall-product-card">
+            <View onClick={() => Taro.navigateTo({ url: `/pages/mall/product/index?id=${product.id}` })}>
+              <MallProductThumb product={product} />
+              <Text className="mall-product-name">{product.name}</Text>
+              <Text className="mall-product-subtitle">
+                {product.subtitle || product.categoryName || `${product.deliveryMinutes} 分钟达`}
               </Text>
-              <View className="mt-3 flex items-center justify-between">
-                <Text className="block text-base font-black text-red-500">
-                  {yuan(product.priceCents)}
-                </Text>
-                <Button
-                  size="icon"
-                  className="h-9 w-9 rounded-full bg-emerald-500"
-                  onClick={() => handleAddCart(product)}
-                >
-                  <Text className="text-lg font-black text-white">+</Text>
-                </Button>
-              </View>
-            </CardContent>
-          </Card>
+            </View>
+            <View className="mall-product-footer">
+              <Text className="mall-price">{mallYuan(product.priceCents)}</Text>
+              <View className="mall-add" onClick={() => handleAddCart(product)}>+</View>
+            </View>
+          </View>
         ))}
       </View>
-
-      <Card className="bg-emerald-50">
-        <CardContent className="flex items-center gap-3 p-4">
-          <Truck size={24} color="#10B981" />
-          <View className="flex-1">
-            <Text className="block text-sm font-black text-gray-900">
-              RecoRouter 本地无人车配送
-            </Text>
-            <Text className="mt-1 block text-xs font-bold text-emerald-700">
-              3km 内最快 18 分钟送达，冷链鲜奶全程温控
-            </Text>
-          </View>
-        </CardContent>
-      </Card>
-    </AppPageShell>
+    </MallPage>
   )
-}
-
-function showError(error: unknown, fallback: string) {
-  Taro.showToast({
-    title: error instanceof Error ? error.message : fallback,
-    icon: 'none',
-  })
 }
