@@ -80,12 +80,12 @@ elif [[ -f "$RELEASE_DIR/recorouter-api" ]]; then
     "$RELEASE_DIR/platform-api" \
     "$RELEASE_DIR/recorouter-migrator"
   cat >"$RELEASE_DIR/Dockerfile.runtime" <<'EOF'
+FROM rust:1-bookworm AS certs
 FROM debian:bookworm-slim
 
 WORKDIR /app
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /etc/ssl/certs
+COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 COPY recorouter-api /usr/local/bin/recorouter-api
 COPY vehicle-api /usr/local/bin/vehicle-api
