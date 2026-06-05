@@ -4,7 +4,7 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY migrations ./migrations
 COPY src ./src
-RUN cargo build --release --bins
+RUN cargo build --release --bins --locked
 
 FROM debian:bookworm-slim AS runner
 
