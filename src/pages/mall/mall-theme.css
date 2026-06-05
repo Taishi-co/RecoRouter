@@ -325,6 +325,28 @@ body.reco-mall-h5 .taro-tabbar__panel {
   height: 30PX;
 }
 
+.mall-auth-divider {
+  margin: 16PX 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #7c8678;
+  font-size: 12PX;
+  font-weight: 800;
+}
+
+.mall-auth-divider::before,
+.mall-auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1PX;
+  background: #dbe8d7;
+}
+
+.mall-auth-divider text {
+  padding: 0 10PX;
+}
+
 .mall-auth-empty {
   min-height: 320PX;
   margin-top: 18PX;

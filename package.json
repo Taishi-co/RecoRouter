@@ -24,6 +24,7 @@
     "check:mall-cos-image-paths": "node scripts/check-mall-cos-image-paths.mjs",
     "check:mall-auth-profile": "node scripts/check-mall-auth-profile.mjs",
     "check:mall-real-checkout": "node scripts/check-mall-real-checkout.mjs",
+    "check:mall-wechat-auth": "node scripts/check-mall-wechat-auth.mjs",
     "check:no-physical-fks": "node scripts/check-no-physical-foreign-keys.mjs",
     "check:no-deprecated-wechat-api": "node scripts/check-no-deprecated-wechat-api.mjs",
     "check:mall-product-refresh": "node scripts/check-mall-product-refresh.mjs",
@@ -64,7 +65,7 @@
     "test:service-routers": "cargo test --manifest-path server/Cargo.toml --test service_routers",
     "tsc": "npx tsc --noEmit --skipLibCheck",
     "validate:split": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n routers,apis,no-fks,boundary,deploy-sh -c blue,magenta,cyan,yellow,green \"pnpm test:service-routers\" \"pnpm build:apis\" \"pnpm check:no-physical-fks\" \"pnpm check:merchant-enterprise-boundary\" \"pnpm check:deploy-scripts\"",
-    "validate": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n lint,tsc,sqlx-migrations,miniapp-version,wechat-api,mall-refresh,network-query,web-auth,admin-mall,admin-ops,mall-cos,mall-auth,mall-real -c red,blue,magenta,cyan,yellow,green,white,gray,redBright,blueBright,magentaBright,greenBright,cyanBright \"pnpm lint:build\" \"pnpm tsc\" \"pnpm check:sqlx-migration-immutability\" \"pnpm check:miniapp-version\" \"pnpm check:no-deprecated-wechat-api\" \"pnpm check:mall-product-refresh\" \"pnpm check:network-query-sanitization\" \"pnpm check:web-admin-auth\" \"pnpm check:admin-mall-auth\" \"pnpm check:admin-mall-ops\" \"pnpm check:mall-cos-image-paths\" \"pnpm check:mall-auth-profile\" \"pnpm check:mall-real-checkout\""
+    "validate": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n lint,tsc,sqlx-migrations,miniapp-version,wechat-api,mall-refresh,network-query,web-auth,admin-mall,admin-ops,mall-cos,mall-auth,mall-real,mall-wechat -c red,blue,magenta,cyan,yellow,green,white,gray,redBright,blueBright,magentaBright,greenBright,cyanBright,yellowBright \"pnpm lint:build\" \"pnpm tsc\" \"pnpm check:sqlx-migration-immutability\" \"pnpm check:miniapp-version\" \"pnpm check:no-deprecated-wechat-api\" \"pnpm check:mall-product-refresh\" \"pnpm check:network-query-sanitization\" \"pnpm check:web-admin-auth\" \"pnpm check:admin-mall-auth\" \"pnpm check:admin-mall-ops\" \"pnpm check:mall-cos-image-paths\" \"pnpm check:mall-auth-profile\" \"pnpm check:mall-real-checkout\" \"pnpm check:mall-wechat-auth\""
   },
   "lint-staged": {
     "src/**/*.{js,jsx,ts,tsx,css}": [

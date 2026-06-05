@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Image, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
-import { ChevronLeft, RefreshCw, ShieldCheck } from 'lucide-react-taro'
+import { ChevronLeft, MessageCircle, RefreshCw, ShieldCheck } from 'lucide-react-taro'
 import { Input } from '@/components/ui/input'
 import { Network } from '@/network'
 import { MallPage, MallPrimaryButton } from '../mall-ui'
@@ -43,6 +43,7 @@ export default function MallAuthPage() {
   const [captchaCode, setCaptchaCode] = useState('')
   const [registerRole, setRegisterRole] = useState<RegisterRole>('customer')
   const [loading, setLoading] = useState(false)
+  const [wechatLoading, setWechatLoading] = useState(false)
   const [captchaLoading, setCaptchaLoading] = useState(false)
 
   const returnUrl = useMemo(() => {
@@ -136,6 +137,32 @@ export default function MallAuthPage() {
     }
   }
 
+  const wechatLogin = async () => {
+    setWechatLoading(true)
+    try {
+      const loginResult = await Taro.login()
+      const loginCode = typeof loginResult.code === 'string' ? loginResult.code : ''
+      if (!loginCode) {
+        throw new Error('微信登录凭证获取失败')
+      }
+
+      const authUser = await requestApi<AuthUserInfo>('/api/auth/wechat-login', 'POST', {
+        loginCode,
+        role: registerRole,
+      })
+      persistAuth(authUser)
+      Taro.showToast({ title: '微信登录成功', icon: 'success' })
+      setTimeout(() => Taro.redirectTo({ url: returnUrl }), 500)
+    } catch (error) {
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '微信登录失败',
+        icon: 'none',
+      })
+    } finally {
+      setWechatLoading(false)
+    }
+  }
+
   return (
     <MallPage active="mine" noTab>
       <View className="mall-back-row">
@@ -155,27 +182,32 @@ export default function MallAuthPage() {
       </View>
 
       <View className="mall-card">
+        <Field label="身份">
+          <View className="mall-auth-tabs" style={{ marginTop: 0, marginBottom: 0 }}>
+            <View
+              className={registerRole === 'customer' ? 'mall-auth-tab mall-auth-tab-active' : 'mall-auth-tab'}
+              onClick={() => setRegisterRole('customer')}
+            >
+              <Text>我是用户</Text>
+            </View>
+            <View
+              className={registerRole === 'group_leader' ? 'mall-auth-tab mall-auth-tab-active' : 'mall-auth-tab'}
+              onClick={() => setRegisterRole('group_leader')}
+            >
+              <Text>我是团长</Text>
+            </View>
+          </View>
+        </Field>
+        <MallPrimaryButton subtle onClick={wechatLogin}>
+          <MessageCircle size={18} color="#63BF54" />
+          <Text>{wechatLoading ? '微信登录中' : '微信快捷登录'}</Text>
+        </MallPrimaryButton>
+        <View className="mall-auth-divider">
+          <Text>或使用手机号</Text>
+        </View>
         {mode === 'register' ? (
           <Field label="姓名">
             <Input className="mall-form-input" value={name} placeholder="请输入姓名" onInput={(event) => setName(String(event.detail.value || ''))} />
-          </Field>
-        ) : null}
-        {mode === 'register' ? (
-          <Field label="身份">
-            <View className="mall-auth-tabs" style={{ marginTop: 0, marginBottom: 0 }}>
-              <View
-                className={registerRole === 'customer' ? 'mall-auth-tab mall-auth-tab-active' : 'mall-auth-tab'}
-                onClick={() => setRegisterRole('customer')}
-              >
-                <Text>我是用户</Text>
-              </View>
-              <View
-                className={registerRole === 'group_leader' ? 'mall-auth-tab mall-auth-tab-active' : 'mall-auth-tab'}
-                onClick={() => setRegisterRole('group_leader')}
-              >
-                <Text>我是团长</Text>
-              </View>
-            </View>
           </Field>
         ) : null}
         <Field label="手机号">
