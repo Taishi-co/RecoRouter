@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Text, View } from '@tarojs/components'
-import Taro from '@tarojs/taro'
+import Taro, { useShareAppMessage } from '@tarojs/taro'
 import { ChevronLeft, Share2, ShoppingCart } from 'lucide-react-taro'
-import { addMallCartItem, getMallProduct, type MallProduct } from '@/services/mall'
+import { Button } from '@/components/ui/button'
+import {
+  addMallCartItem,
+  createMallCheckout,
+  getMallProduct,
+  resolveMallImageUrl,
+  type MallProduct,
+} from '@/services/mall'
 import {
   MallLocationStrip,
   MallPage,
@@ -10,6 +17,7 @@ import {
   MallProductThumb,
   mallYuan,
 } from '../mall-ui'
+import { redirectToMallAuth } from '../auth-route'
 
 interface StoredUser {
   id?: string
@@ -20,6 +28,7 @@ export default function MallProductDetail() {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
+    Taro.showShareMenu?.({ withShareTicket: true })
     const id = Taro.getCurrentInstance().router?.params?.id
     if (!id) {
       Taro.showToast({ title: '商品参数缺失', icon: 'none' })
@@ -28,6 +37,12 @@ export default function MallProductDetail() {
     }
     loadProduct(id)
   }, [])
+
+  useShareAppMessage(() => ({
+    title: product?.name ? `叁友甄选｜${product.name}` : '叁友甄选',
+    path: `/pages/mall/product/index?id=${product?.id || ''}`,
+    imageUrl: resolveMallImageUrl(product?.imageUrl),
+  }))
 
   const loadProduct = async (id: string) => {
     setLoading(true)
@@ -43,23 +58,47 @@ export default function MallProductDetail() {
     }
   }
 
-  const handleAddCart = async (goCart: boolean) => {
+  const requireUser = () => {
     if (!product) return
     const user = Taro.getStorageSync('userInfo') as StoredUser | undefined
     if (!user?.id) {
       Taro.showToast({ title: '请先登录', icon: 'none' })
-      Taro.redirectTo({ url: '/pages/index/index' })
-      return
+      redirectToMallAuth(`/pages/mall/product/index?id=${product.id}`)
+      return null
     }
+    return user
+  }
+
+  const handleAddCart = async () => {
+    if (!product) return
+    const user = requireUser()
+    if (!user?.id) return
     try {
       await addMallCartItem(user.id, product.id, 1)
       Taro.showToast({ title: '已加入购物车', icon: 'success' })
-      if (goCart) {
-        Taro.navigateTo({ url: '/pages/mall/cart/index' })
-      }
     } catch (error) {
       Taro.showToast({
         title: error instanceof Error ? error.message : '加入失败',
+        icon: 'none',
+      })
+    }
+  }
+
+  const handleBuyNow = async () => {
+    if (!product) return
+    const user = requireUser()
+    if (!user?.id) return
+    try {
+      const checkout = await createMallCheckout({
+        userId: user.id,
+        source: 'buy_now',
+        productId: product.id,
+        quantity: 1,
+      })
+      Taro.navigateTo({ url: `/pages/mall/confirm/index?checkoutId=${checkout.id}` })
+    } catch (error) {
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '立即选购失败',
         icon: 'none',
       })
     }
@@ -87,9 +126,9 @@ export default function MallProductDetail() {
                   {product.description || product.subtitle || '团长验货 · 产地直发 · 坏果包退'}
                 </Text>
               </View>
-              <View className="mall-location-switch">
+              <Button className="mall-share-button" openType="share">
                 <Share2 size={18} color="#63BF54" />
-              </View>
+              </Button>
             </View>
             <View style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <Text className="mall-price-large">{mallYuan(product.priceCents)}</Text>
@@ -119,11 +158,11 @@ export default function MallProductDetail() {
           </View>
 
           <View className="mall-action-row">
-            <MallPrimaryButton subtle onClick={() => handleAddCart(false)}>
+            <MallPrimaryButton subtle onClick={handleAddCart}>
               <ShoppingCart size={18} color="#FF9238" />
               <Text style={{ marginLeft: 6 }}>加入购物车</Text>
             </MallPrimaryButton>
-            <MallPrimaryButton onClick={() => handleAddCart(true)}>
+            <MallPrimaryButton onClick={handleBuyNow}>
               <Text>＋ 立即选购</Text>
             </MallPrimaryButton>
           </View>

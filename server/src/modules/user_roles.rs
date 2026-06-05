@@ -410,11 +410,11 @@ fn require_user_id(user_id: Option<String>) -> ApiResult<String> {
 }
 
 fn validate_role(role: &str) -> ApiResult<()> {
-    if matches!(role, "owner" | "merchant" | "enterprise") {
+    if matches!(role, "owner" | "merchant" | "enterprise" | "customer") {
         Ok(())
     } else {
         Err(ApiError::BadRequest(
-            "角色必须为 owner、merchant 或 enterprise".to_string(),
+            "角色必须为 owner、merchant、enterprise 或 customer".to_string(),
         ))
     }
 }

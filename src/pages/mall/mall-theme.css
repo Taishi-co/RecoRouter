@@ -10,6 +10,14 @@
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
 }
 
+body.reco-mall-h5 .taro_router,
+body.reco-mall-h5 .taro_page,
+body.reco-mall-h5 .taro-tabbar__panel {
+  transition: none !important;
+  animation: none !important;
+  transform: none !important;
+}
+
 .mall-status {
   height: 28PX;
   display: flex;
@@ -97,6 +105,24 @@
   color: #63bf54;
   font-size: 12PX;
   font-weight: 900;
+}
+
+.mall-share-button {
+  width: 44PX;
+  height: 44PX;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 999PX;
+  background: #eefbea;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.mall-share-button::after {
+  border: 0;
 }
 
 .mall-hero {
@@ -224,6 +250,123 @@
 
 .mall-search-input::placeholder {
   color: #6f786b;
+}
+
+.mall-auth-tabs {
+  margin-top: 18PX;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8PX;
+  padding: 4PX;
+  border: 1PX solid #cce7c7;
+  border-radius: 10PX;
+  background: #ffffff;
+}
+
+.mall-auth-tab {
+  height: 38PX;
+  border-radius: 8PX;
+  color: #657160;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13PX;
+  font-weight: 900;
+}
+
+.mall-auth-tab-active {
+  background: #eefbea;
+  color: #63bf54;
+}
+
+.mall-form-field {
+  margin-bottom: 14PX;
+}
+
+.mall-form-label {
+  display: block;
+  margin-bottom: 7PX;
+  color: #263225;
+  font-size: 12PX;
+  font-weight: 900;
+}
+
+.mall-form-input {
+  height: 44PX !important;
+  border-color: #cce7c7 !important;
+  background: #fbfaf6 !important;
+  box-shadow: none !important;
+}
+
+.mall-captcha-row {
+  display: grid;
+  grid-template-columns: 1fr 118PX;
+  gap: 9PX;
+  align-items: center;
+}
+
+.mall-captcha {
+  height: 44PX;
+  border: 1PX solid #cce7c7;
+  border-radius: 10PX;
+  background: #ffffff;
+  color: #63bf54;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6PX;
+  font-size: 11PX;
+  font-weight: 900;
+  overflow: hidden;
+}
+
+.mall-captcha-image {
+  width: 72PX;
+  height: 30PX;
+}
+
+.mall-auth-divider {
+  margin: 16PX 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #7c8678;
+  font-size: 12PX;
+  font-weight: 800;
+}
+
+.mall-auth-divider::before,
+.mall-auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1PX;
+  background: #dbe8d7;
+}
+
+.mall-auth-divider text {
+  padding: 0 10PX;
+}
+
+.mall-auth-empty {
+  min-height: 320PX;
+  margin-top: 18PX;
+  padding: 26PX 18PX;
+  border: 1PX solid #cce7c7;
+  border-radius: 12PX;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.mall-auth-actions {
+  width: 100%;
+  margin-top: 18PX;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10PX;
 }
 
 .mall-shortcuts {
@@ -859,6 +1002,14 @@
   justify-content: center;
   font-size: 24PX;
   font-weight: 900;
+}
+
+.mall-profile-avatar-large {
+  width: 74PX;
+  height: 74PX;
+  margin-bottom: 16PX;
+  border-radius: 22PX;
+  font-size: 30PX;
 }
 
 .mall-profile-copy {

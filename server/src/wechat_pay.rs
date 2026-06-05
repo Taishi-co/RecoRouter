@@ -37,6 +37,18 @@ pub struct WechatPayMerchantConfig {
     pub miniapp_secret: Option<String>,
 }
 
+#[derive(Clone)]
+pub struct WechatMiniappConfig {
+    pub app_id: String,
+    pub miniapp_secret: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct MiniappLoginSession {
+    pub openid: String,
+    pub unionid: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct WechatNotifyBody {
     pub resource: WechatNotifyResource,
@@ -72,21 +84,55 @@ impl WechatPayMerchantConfig {
     }
 }
 
+impl WechatMiniappConfig {
+    pub fn from_env() -> ApiResult<Self> {
+        let app_id = read_trimmed("WECHAT_MINIAPP_APPID")
+            .or_else(|| read_trimmed("WECHAT_PAY_APPID"))
+            .ok_or_else(|| ApiError::BadRequest("缺少 WECHAT_MINIAPP_APPID 配置".to_string()))?;
+        let miniapp_secret = read_trimmed("WECHAT_MINIAPP_SECRET")
+            .ok_or_else(|| ApiError::BadRequest("缺少 WECHAT_MINIAPP_SECRET 配置".to_string()))?;
+
+        Ok(Self {
+            app_id,
+            miniapp_secret,
+        })
+    }
+
+    pub fn from_merchant(config: &WechatPayMerchantConfig) -> ApiResult<Self> {
+        let miniapp_secret = config
+            .miniapp_secret
+            .clone()
+            .ok_or_else(|| ApiError::BadRequest("缺少 WECHAT_MINIAPP_SECRET 配置".to_string()))?;
+
+        Ok(Self {
+            app_id: config.app_id.clone(),
+            miniapp_secret,
+        })
+    }
+}
+
 pub async fn exchange_miniapp_login_code(
     config: &WechatPayMerchantConfig,
     login_code: &str,
 ) -> ApiResult<String> {
+    Ok(
+        exchange_miniapp_login_session(&WechatMiniappConfig::from_merchant(config)?, login_code)
+            .await?
+            .openid,
+    )
+}
+
+pub async fn exchange_miniapp_login_session(
+    config: &WechatMiniappConfig,
+    login_code: &str,
+) -> ApiResult<MiniappLoginSession> {
     let login_code = login_code.trim();
     if login_code.is_empty() {
         return Err(ApiError::BadRequest("缺少微信登录凭证".to_string()));
     }
-    let secret = config
-        .miniapp_secret
-        .as_deref()
-        .ok_or_else(|| ApiError::BadRequest("缺少 WECHAT_MINIAPP_SECRET 配置".to_string()))?;
     let url = format!(
         "{WECHAT_CODE2SESSION_URL}?appid={}&secret={}&js_code={}&grant_type=authorization_code",
-        config.app_id, secret, login_code
+        config.app_id, config.miniapp_secret, login_code
     );
     let text = reqwest::get(url)
         .await
@@ -96,13 +142,18 @@ pub async fn exchange_miniapp_login_code(
         .map_err(|err| ApiError::BadRequest(format!("微信登录响应读取失败: {err}")))?;
     let response: Code2SessionResponse = serde_json::from_str(&text)
         .map_err(|err| ApiError::BadRequest(format!("微信登录响应解析失败: {err}")))?;
-    response.openid.ok_or_else(|| {
+    let openid = response.openid.ok_or_else(|| {
         ApiError::BadRequest(format!(
             "微信登录凭证无效: {}",
             response
                 .errmsg
                 .unwrap_or_else(|| response.errcode.unwrap_or_default().to_string())
         ))
+    })?;
+
+    Ok(MiniappLoginSession {
+        openid,
+        unionid: response.unionid,
     })
 }
 
@@ -236,6 +287,7 @@ pub fn truncate_chars(value: &str, max_chars: usize) -> String {
 #[derive(Debug, Deserialize)]
 struct Code2SessionResponse {
     openid: Option<String>,
+    unionid: Option<String>,
     errcode: Option<i64>,
     errmsg: Option<String>,
 }

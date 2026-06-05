@@ -5,6 +5,7 @@ import { Camera, ChevronLeft } from 'lucide-react-taro'
 import { Textarea } from '@/components/ui/textarea'
 import { createMallAfterSale } from '@/services/mall'
 import { MallPage, MallPrimaryButton } from '../mall-ui'
+import { redirectToMallAuth } from '../auth-route'
 
 interface StoredUser {
   id?: string
@@ -31,7 +32,7 @@ export default function MallAfterSalePage() {
   const submit = async () => {
     if (!userId) {
       Taro.showToast({ title: '请先登录', icon: 'none' })
-      Taro.redirectTo({ url: '/pages/index/index' })
+      redirectToMallAuth(`/pages/mall/after-sale/index?orderId=${orderId}`)
       return
     }
     try {

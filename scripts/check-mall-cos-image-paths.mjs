@@ -27,8 +27,12 @@ if (/\/assets\/mall-products/.test(webAdminSource)) {
   throw new Error('web admin product image form must not write local /assets/mall-products paths')
 }
 
-if (!/mall-products\/kiwi\.jpeg/.test(webAdminSource) || !/mall-products\/fresh-milk\.jpeg/.test(webAdminSource)) {
-  throw new Error('web admin product image form must offer COS storage keys')
+if (!/\/api\/admin\/mall\/uploads\/product-image/.test(webAdminSource) || !/type="file"/.test(webAdminSource)) {
+  throw new Error('web admin product image form must upload operator-selected files through the mall admin upload API')
+}
+
+if (/图片路径[\s\S]*?<select[\s\S]*mall-products\/(?:kiwi|fresh-milk|banana|durian|reco-dino)\.jpeg/.test(webAdminSource)) {
+  throw new Error('web admin product image form must not use fixed mall product image choices')
 }
 
 if (!/\/api\/uploads\/\$\{imageUrl\}/.test(miniappMallServiceSource)) {

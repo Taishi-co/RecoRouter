@@ -1,4 +1,4 @@
-import type { PropsWithChildren, ReactNode } from 'react'
+import { useLayoutEffect, type PropsWithChildren, type ReactNode } from 'react'
 import { Image, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import {
@@ -20,6 +20,9 @@ type MallTabKey = 'home' | 'category' | 'cart' | 'mine'
 
 type MallIcon = typeof House
 
+const MALL_H5_BODY_CLASS = 'reco-mall-h5'
+let mallH5PageCount = 0
+
 const tabItems: Array<{ key: MallTabKey; label: string; url: string; icon: MallIcon }> = [
   { key: 'home', label: '首页', url: '/pages/mall/index/index', icon: House },
   { key: 'category', label: '分类', url: '/pages/mall/category/index', icon: Grid2x2 },
@@ -40,12 +43,30 @@ export function MallPage({
   children,
   noTab,
 }: PropsWithChildren<{ active?: MallTabKey; noTab?: boolean }>) {
+  useMallH5BodyClass()
+
   return (
     <View className="mall-shell">
       {children}
       {!noTab && <MallBottomNav active={active || 'home'} />}
     </View>
   )
+}
+
+function useMallH5BodyClass() {
+  useLayoutEffect(() => {
+    if (TARO_ENV !== 'h5' || typeof document === 'undefined') return
+
+    mallH5PageCount += 1
+    document.body.classList.add(MALL_H5_BODY_CLASS)
+
+    return () => {
+      mallH5PageCount = Math.max(0, mallH5PageCount - 1)
+      if (mallH5PageCount === 0) {
+        document.body.classList.remove(MALL_H5_BODY_CLASS)
+      }
+    }
+  }, [])
 }
 
 export function MallBottomNav({ active }: { active: MallTabKey }) {

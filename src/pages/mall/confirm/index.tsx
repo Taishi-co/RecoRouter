@@ -4,25 +4,27 @@ import Taro from '@tarojs/taro'
 import { ChevronLeft, Store } from 'lucide-react-taro'
 import {
   createMallOrder,
-  getMallCart,
+  createMallCheckout,
+  getMallCheckout,
   listMallAddresses,
   type MallAddress,
-  type MallCart,
+  type MallCheckout,
 } from '@/services/mall'
 import { startOrderPayment } from '@/services/payment'
 import { MallLocationStrip, MallPage, mallYuan } from '../mall-ui'
+import { redirectToMallAuth } from '../auth-route'
 
 interface StoredUser {
   id?: string
 }
 
 export default function MallConfirmPage() {
-  const [cart, setCart] = useState<MallCart>({ items: [], selectedCount: 0, subtotalCents: 0 })
+  const [checkout, setCheckout] = useState<MallCheckout | null>(null)
   const [address, setAddress] = useState<MallAddress | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const userId = (Taro.getStorageSync('userInfo') as StoredUser | undefined)?.id || ''
-  const couponCents = cart.subtotalCents > 0 ? Math.min(600, cart.subtotalCents) : 0
-  const payableCents = useMemo(() => Math.max(cart.subtotalCents - couponCents, 0), [cart.subtotalCents, couponCents])
+  const couponCents = checkout?.couponCents || 0
+  const payableCents = useMemo(() => checkout?.payableCents || 0, [checkout?.payableCents])
 
   useEffect(() => {
     loadData()
@@ -30,31 +32,28 @@ export default function MallConfirmPage() {
 
   const loadData = async () => {
     if (!userId) {
-      Taro.redirectTo({ url: '/pages/index/index' })
+      redirectToMallAuth('/pages/mall/confirm/index')
       return
     }
     try {
-      const [nextCart, addresses] = await Promise.all([
-        getMallCart(userId),
+      const checkoutId = String(Taro.getCurrentInstance().router?.params?.checkoutId || '')
+      const [nextCheckout, addresses] = await Promise.all([
+        checkoutId ? getMallCheckout(checkoutId) : createMallCheckout({ userId, source: 'cart' }),
         listMallAddresses(userId),
       ])
-      setCart(nextCart)
-      setAddress(addresses.find((item) => item.isDefault || item.is_default) || addresses[0] || null)
-    } catch {
-      setCart(fallbackCart(userId))
-      setAddress({
-        id: 'address-local-1',
-        userId,
-        contactName: '王姐',
-        addressLabel: '路北区邻里驿站',
-        addressText: '明日 17:00-20:00 · 团长王姐',
-        isDefault: true,
+      setCheckout(nextCheckout)
+      const addressId = String(Taro.getCurrentInstance().router?.params?.addressId || nextCheckout.addressId || '')
+      setAddress(addresses.find((item) => item.id === addressId) || addresses.find((item) => item.isDefault || item.is_default) || addresses[0] || null)
+    } catch (error) {
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '结算单加载失败',
+        icon: 'none',
       })
     }
   }
 
   const submit = async () => {
-    if (cart.selectedCount === 0) {
+    if (!checkout || checkout.items.length === 0) {
       Taro.showToast({ title: '请选择商品', icon: 'none' })
       return
     }
@@ -62,16 +61,22 @@ export default function MallConfirmPage() {
     try {
       const order = await createMallOrder({
         userId,
+        checkoutId: checkout.id,
         addressId: address?.id,
         expectedDeliveryWindow: '明日 17:00-20:00',
         deliveryMethod: '社区自提',
         pickupMethod: '团长验码',
-        couponCents,
       })
-      await startOrderPayment({ orderId: order.id, businessType: 'mall_order' })
+      const payment = await startOrderPayment({ orderId: order.id, businessType: 'mall_order' })
+      if (payment.paymentStatus !== 'paid' && payment.status !== 'paid') {
+        throw new Error('支付结果未确认，请稍后在订单中查看')
+      }
       Taro.redirectTo({ url: `/pages/mall/payment-success/index?orderId=${order.id}` })
-    } catch {
-      Taro.redirectTo({ url: '/pages/mall/payment-success/index?orderId=local-order-1' })
+    } catch (error) {
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '支付未完成',
+        icon: 'none',
+      })
     } finally {
       setSubmitting(false)
     }
@@ -86,8 +91,8 @@ export default function MallConfirmPage() {
 
       <MallLocationStrip
         active
-        title={address?.addressLabel || '路北区邻里驿站'}
-        subtitle={address?.addressText || '明日 17:00-20:00 · 团长王姐'}
+        title={address?.addressLabel || '请选择自提点'}
+        subtitle={address?.addressText || '下单前需要选择真实自提点'}
         onClick={() => Taro.navigateTo({ url: '/pages/mall/address/index' })}
       />
 
@@ -99,12 +104,12 @@ export default function MallConfirmPage() {
           </View>
           <Text className="mall-status-pill">次日达</Text>
         </View>
-        {cart.items.map((item) => (
-          <View key={item.id} className="mall-cart-item" style={{ gridTemplateColumns: '54PX 1fr 58PX' }}>
+        {(checkout?.items || []).map((item) => (
+          <View key={item.id || item.productId} className="mall-cart-item" style={{ gridTemplateColumns: '54PX 1fr 58PX' }}>
             <View className="mall-cart-thumb" style={{ width: 54, height: 54 }} />
             <View>
-              <Text className="mall-product-name" style={{ marginTop: 0 }}>{item.product?.name || '鲜奶苹果组合'}</Text>
-              <Text className="mall-product-subtitle">{item.product?.subtitle || '称重后多退少补'}</Text>
+              <Text className="mall-product-name" style={{ marginTop: 0 }}>{item.product?.name || item.productName}</Text>
+              <Text className="mall-product-subtitle">{item.product?.subtitle || item.sku || '后端结算明细'}</Text>
             </View>
             <Text className="mall-stepper-value">x{item.quantity}</Text>
           </View>
@@ -112,9 +117,9 @@ export default function MallConfirmPage() {
       </View>
 
       <View className="mall-card">
-        <Summary label="商品小计" value={mallYuan(cart.subtotalCents)} />
-        <Summary label="团购优惠" value={`-${mallYuan(couponCents)}`} warm />
-        <Summary label="自提服务费" value={mallYuan(0)} />
+        <Summary label="商品小计" value={mallYuan(checkout?.subtotalCents || 0)} />
+        <Summary label={checkout?.discountDescription || '团购优惠'} value={`-${mallYuan(couponCents)}`} warm />
+        <Summary label="自提服务费" value={mallYuan(checkout?.deliveryFeeCents || 0)} />
       </View>
 
       <View className="mall-total-bar">
@@ -137,35 +142,4 @@ function Summary({ label, value, warm }: { label: string; value: string; warm?: 
       <Text className={warm ? 'mall-summary-value mall-summary-value-warm' : 'mall-summary-value'}>{value}</Text>
     </View>
   )
-}
-
-function fallbackCart(userId: string): MallCart {
-  return {
-    selectedCount: 2,
-    subtotalCents: 12880,
-    items: [
-      {
-        id: 'cart-local-1',
-        userId,
-        productId: 'fresh-set',
-        quantity: 2,
-        selected: true,
-        lineTotalCents: 12880,
-        product: {
-          id: 'fresh-set',
-          sku: 'FRESH-SET',
-          categoryCode: 'fruit',
-          name: '鲜奶苹果组合',
-          priceCents: 6440,
-          stock: 20,
-          soldCount: 8,
-          rating: 4.9,
-          status: 'active',
-          tags: ['邻里团购'],
-          deliveryMinutes: 30,
-          coldChainRequired: true,
-        },
-      },
-    ],
-  }
 }

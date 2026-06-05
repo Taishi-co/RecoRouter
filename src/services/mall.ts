@@ -21,12 +21,18 @@ export interface MallProduct {
   priceCents: number
   originalPriceCents?: number | null
   stock: number
+  stockAlertThreshold?: number | null
   soldCount: number
   rating: number
   status: string
   tags: string[]
   deliveryMinutes: number
   coldChainRequired: boolean
+  lengthCm?: number | null
+  widthCm?: number | null
+  heightCm?: number | null
+  volumeLiters?: number | null
+  weightKg?: number | null
 }
 
 export function resolveMallImageUrl(imageUrl?: string | null) {
@@ -54,6 +60,12 @@ export interface MallCartItem {
 export interface MallCart {
   items: MallCartItem[]
   subtotalCents: number
+  deliveryFeeCents?: number
+  couponCents?: number
+  payableCents?: number
+  discountDescription?: string | null
+  discountThresholdCents?: number | null
+  discountRuleCents?: number | null
   selectedCount: number
 }
 
@@ -187,6 +199,8 @@ export interface MallOrder {
   addressId?: string | null
   pickupPointId?: string | null
   pickupPointName?: string | null
+  groupLeaderName?: string | null
+  groupLeaderPhone?: string | null
   addressText: string
   recipientName?: string | null
   recipientPhone?: string | null
@@ -217,6 +231,35 @@ export interface MallOrder {
   events?: MallOrderEvent[]
   afterSales?: MallAfterSale[]
   createdAt?: string
+}
+
+export interface MallCheckout {
+  id: string
+  userId: string
+  source: 'cart' | 'buy_now' | string
+  productId?: string | null
+  quantity?: number
+  addressId?: string | null
+  pickupPointId?: string | null
+  items: Array<{
+    id?: string
+    productId: string
+    sku?: string
+    productName: string
+    categoryCode?: string | null
+    imageUrl?: string | null
+    unitPriceCents: number
+    quantity: number
+    lineTotalCents: number
+    product?: MallProduct
+  }>
+  subtotalCents: number
+  deliveryFeeCents: number
+  couponCents: number
+  payableCents: number
+  discountDescription?: string | null
+  discountThresholdCents?: number | null
+  discountRuleCents?: number | null
 }
 
 export interface MallAfterSale {
@@ -251,6 +294,14 @@ export interface MallProfile {
     phone?: string
     role?: string
     status?: string
+    points?: number
+    totalSpendCents?: number
+    level?: {
+      code?: string
+      name?: string
+      discountBps?: number
+      benefits?: string[]
+    }
   }
   orderCounts?: {
     pendingPayment?: number
@@ -260,6 +311,7 @@ export interface MallProfile {
     total?: number
   }
   defaultPickupPoint?: MallPickupPoint | null
+  defaultAddress?: MallAddress | null
   support?: {
     openSessions?: number
     openTickets?: number
@@ -406,15 +458,30 @@ export async function listMallPickupPoints(params: {
 
 export async function createMallOrder(data: {
   userId: string
+  checkoutId?: string
   addressId?: string
   pickupPointId?: string
   expectedDeliveryWindow?: string
   deliveryMethod?: string
   pickupMethod?: string
-  couponCents?: number
   remark?: string
 }): Promise<MallOrder> {
   return apiPost('/api/mall/orders', data)
+}
+
+export async function createMallCheckout(data: {
+  userId: string
+  source: 'cart' | 'buy_now'
+  productId?: string
+  quantity?: number
+  addressId?: string
+  pickupPointId?: string
+}): Promise<MallCheckout> {
+  return apiPost('/api/mall/checkouts', data)
+}
+
+export async function getMallCheckout(id: string): Promise<MallCheckout> {
+  return apiGet(`/api/mall/checkouts/${id}`)
 }
 
 export async function listMallAddresses(userId: string): Promise<MallAddress[]> {
@@ -535,16 +602,16 @@ export async function getMallProfileSafe(userId: string): Promise<MallProfile> {
     () => getMallProfile(userId),
     {
       userId,
-      displayName: '张女士',
-      memberLevel: '银卡会员',
-      pickupPointName: '路北区邻里驿站',
-      monthlySavingsCents: 4200,
-      pendingPaymentCount: 1,
-      pendingPickupCount: 2,
-      afterSaleCount: 1,
-      groupJoinedCount: 3,
-      commonPickupPoint: '路北区邻里驿站，今天 17:00 后可取',
-      supportStatus: '订单售后、坏果包赔与冷链咨询',
+      displayName: '',
+      memberLevel: '',
+      pickupPointName: '',
+      monthlySavingsCents: 0,
+      pendingPaymentCount: 0,
+      pendingPickupCount: 0,
+      afterSaleCount: 0,
+      groupJoinedCount: 0,
+      commonPickupPoint: '',
+      supportStatus: '',
     },
   )
 }

@@ -1,8 +1,10 @@
 import * as React from "react"
-import { View } from "@tarojs/components"
+import { Button as TaroButton, View } from "@tarojs/components"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
+
+type TaroButtonOpenType = React.ComponentPropsWithoutRef<typeof TaroButton>["openType"]
 
 const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-semibold ring-offset-background transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background active:translate-y-px disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
@@ -39,11 +41,27 @@ export interface ButtonProps
   asChild?: boolean
   disabled?: boolean
   className?: string
+  openType?: TaroButtonOpenType
 }
 
 const Button = React.forwardRef<React.ElementRef<typeof View>, ButtonProps>(
-  ({ className, variant, size, asChild = false, disabled, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, disabled, openType, ...props }, ref) => {
     const tabIndex = (props as { tabIndex?: number }).tabIndex ?? (disabled ? -1 : 0)
+    if (openType) {
+      return (
+        <TaroButton
+          className={cn(
+            buttonVariants({ variant, size, className }),
+            disabled && "opacity-50 pointer-events-none"
+          )}
+          disabled={disabled}
+          openType={openType}
+          ref={ref as React.Ref<unknown>}
+          {...props}
+        />
+      )
+    }
+
     return (
       <View
         className={cn(

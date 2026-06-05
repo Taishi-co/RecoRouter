@@ -26,6 +26,7 @@ use crate::{
     error::{ApiError, ApiResult},
     response::{empty_message, ok, ApiEnvelope, EmptyMessage},
     storage::Storage,
+    wechat_pay::{exchange_miniapp_login_session, WechatMiniappConfig},
 };
 
 const BCRYPT_COST: u32 = 10;
@@ -92,6 +93,7 @@ where
         .route("/api/auth/captcha", get(captcha::<S>))
         .route("/api/auth/register", post(register::<S>))
         .route("/api/auth/login", post(login::<S>))
+        .route("/api/auth/wechat-login", post(wechat_login::<S>))
         .route("/api/auth/logout", post(logout::<S>))
         .route("/api/auth/user-info", get(user_info::<S>))
         .merge(payment_qr_router)
@@ -120,6 +122,15 @@ struct RegisterRequest {
 struct LoginRequest {
     phone: String,
     password: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct WechatLoginRequest {
+    #[serde(rename = "loginCode", alias = "login_code")]
+    login_code: String,
+    role: Option<String>,
+    name: Option<String>,
+    avatar: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -312,6 +323,72 @@ where
     Ok(ok("登录成功", auth_response_from_row(row, token)))
 }
 
+async fn wechat_login<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<WechatLoginRequest>,
+) -> ApiResult<Json<ApiEnvelope<AuthResponse>>>
+where
+    S: Storage,
+{
+    let role = normalize_mall_auth_role(body.role.as_deref())?;
+    let miniapp_config = WechatMiniappConfig::from_env()?;
+    let session = exchange_miniapp_login_session(&miniapp_config, &body.login_code).await?;
+    let display_name = body
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.chars().take(32).collect::<String>())
+        .unwrap_or_else(|| {
+            if role == "group_leader" {
+                "微信团长".to_string()
+            } else {
+                "微信用户".to_string()
+            }
+        });
+    let avatar = body
+        .avatar
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.chars().take(512).collect::<String>());
+    let user_id = Uuid::new_v4().to_string();
+
+    let row = sqlx::query_as::<_, AuthUserRow>(
+        r#"
+        INSERT INTO users (
+          id, phone, password, role, name, avatar, status,
+          wechat_openid, wechat_unionid, wechat_appid, wechat_bound_at, updated_at
+        )
+        VALUES ($1, NULL, NULL, $2, $3, $4, 'active', $5, $6, $7, now(), now())
+        ON CONFLICT (wechat_appid, wechat_openid)
+          WHERE wechat_appid IS NOT NULL AND wechat_openid IS NOT NULL
+        DO UPDATE SET
+          wechat_unionid = COALESCE(users.wechat_unionid, EXCLUDED.wechat_unionid),
+          wechat_bound_at = COALESCE(users.wechat_bound_at, now()),
+          updated_at = now()
+        RETURNING id, phone, password, name, role, status
+        "#,
+    )
+    .bind(&user_id)
+    .bind(&role)
+    .bind(&display_name)
+    .bind(avatar)
+    .bind(&session.openid)
+    .bind(&session.unionid)
+    .bind(&miniapp_config.app_id)
+    .fetch_one(&state.db)
+    .await?;
+
+    if row.status.as_deref() == Some("disabled") {
+        return Err(ApiError::Unauthorized("账号已被禁用".to_string()));
+    }
+
+    let token = create_session_token(&state.db, &row.id).await?;
+
+    Ok(ok("微信登录成功", auth_response_from_row(row, token)))
+}
+
 async fn logout<S>(
     State(state): State<AppState<S>>,
     headers: HeaderMap,
@@ -487,13 +564,26 @@ fn validate_register_request(body: &RegisterRequest) -> ApiResult<()> {
         return Err(ApiError::BadRequest("姓名不能为空".to_string()));
     }
 
-    if !matches!(body.role.as_str(), "owner" | "merchant" | "enterprise") {
+    if !matches!(
+        body.role.as_str(),
+        "owner" | "merchant" | "enterprise" | "customer" | "group_leader"
+    ) {
         return Err(ApiError::BadRequest(
-            "角色必须为 owner、merchant 或 enterprise".to_string(),
+            "角色必须为 owner、merchant、enterprise、customer 或 group_leader".to_string(),
         ));
     }
 
     Ok(())
+}
+
+fn normalize_mall_auth_role(role: Option<&str>) -> ApiResult<String> {
+    match role.map(str::trim).filter(|value| !value.is_empty()) {
+        None | Some("customer") => Ok("customer".to_string()),
+        Some("group_leader") => Ok("group_leader".to_string()),
+        Some(_) => Err(ApiError::BadRequest(
+            "商城微信身份必须为 customer 或 group_leader".to_string(),
+        )),
+    }
 }
 
 fn validate_phone(phone: &str) -> ApiResult<()> {

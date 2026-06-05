@@ -9,10 +9,11 @@ const enterpriseMigration = readFileSync(
   resolve('server/migrations/0005_merchant_enterprise_no_physical_constraints.sql'),
   'utf8',
 )
+const validateRoleSource = userRolesModule.match(/fn validate_role[\s\S]*?\n}/)?.[0] || ''
 
 const assertions = [
   {
-    ok: /matches!\(\s*role,\s*"owner"\s*\|\s*"merchant"\s*\|\s*"enterprise"\s*\)/.test(userRolesModule),
+    ok: ['owner', 'merchant', 'enterprise'].every((role) => validateRoleSource.includes(`"${role}"`)),
     message: 'User role creation must allow enterprise roles, not only owner/merchant',
   },
   {

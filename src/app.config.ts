@@ -53,6 +53,7 @@ const miniAppPages = [
   'pages/mall/order-detail/index',       // 商城-订单详情
   'pages/mall/after-sale/index',         // 商城-售后申请
   'pages/mall/support/index',            // 商城-客服中心
+  'pages/mall/auth/index',               // 商城-登录注册
   'pages/mall/profile/index',            // 商城-我的
   'pages/mall/group-leader/index',       // 商城-团长中心
   'pages/mall/community/index',          // 商城-邻里圈
@@ -134,6 +135,7 @@ const mallPages = [
   'pages/mall/order-detail/index',       // 商城-订单详情
   'pages/mall/after-sale/index',         // 商城-售后申请
   'pages/mall/support/index',            // 商城-客服中心
+  'pages/mall/auth/index',               // 商城-登录注册
   'pages/mall/profile/index',            // 商城-我的
   'pages/mall/group-leader/index',       // 商城-团长中心
   'pages/mall/community/index',          // 商城-邻里圈
