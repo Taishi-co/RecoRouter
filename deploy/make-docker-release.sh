@@ -9,6 +9,8 @@ WEB_OUTPUT_ROOT="${WEB_OUTPUT_ROOT:-dist-web}"
 VEHICLE_WEB_OUTPUT_ROOT="${VEHICLE_WEB_OUTPUT_ROOT:-dist-web-vehicle}"
 MALL_WEB_OUTPUT_ROOT="${MALL_WEB_OUTPUT_ROOT:-dist-web-mall}"
 
+export COPYFILE_DISABLE=1
+
 cd "$ROOT_DIR"
 
 pnpm validate
@@ -46,8 +48,7 @@ elif [[ "${BUILD_RUST_BINARY:-0}" == "1" ]]; then
   cp server/target/release/recorouter-migrator "$OUT_DIR/recorouter-migrator"
   cp -R server/migrations "$OUT_DIR/migrations"
 else
-  cp -R server "$OUT_DIR/server"
-  rm -rf "$OUT_DIR/server/target"
+  tar -C "$ROOT_DIR" --exclude "server/target" -cf - server | tar -C "$OUT_DIR" -xf -
 fi
 
 tar -C "$OUT_DIR" -czf "$OUT_TAR" .
