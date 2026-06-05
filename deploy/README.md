@@ -7,7 +7,8 @@ Target:
 - App root: `/opt/recorouter`
 - API port: `34533`
 - Split API ports: `vehicle-api=34533`, `mall-api=34534`, `platform-api=34535`
-- Web root: `/opt/recorouter/current/dist-web` (admin management platform only)
+- Web root: `/opt/recorouter/current/dist-web` (admin management platform)
+- Demo web ports: `vehicle H5=18081`, `mall H5=18082`
 - Runtime: Docker container on the existing `server_default` network
 
 ## Prerequisites
@@ -48,6 +49,11 @@ Nginx routes API traffic by path:
 - `/api/platform/`, `/api/payments/` -> `platform-api`
 - other `/api/` paths -> `vehicle-api`
 
+Nginx also serves H5 demo builds for browser presentation:
+
+- `http://car.shcxyz.site:18081/` -> vehicle app H5 (`dist-web-vehicle`)
+- `http://car.shcxyz.site:18082/` -> mall app H5 (`dist-web-mall`)
+
 ## GitHub Actions auto deploy
 
 The repository has two production workflows:
@@ -55,11 +61,11 @@ The repository has two production workflows:
 - `.github/workflows/deploy-prod.yml`
   - Trigger: frontend/backend/deploy changes on `main`, or manual `workflow_dispatch`.
   - Builds `/tmp/recorouter-docker-release.tar.gz`.
-  - Builds the Taro H5 admin management app with `PROJECT_DOMAIN=https://car.shcxyz.site`.
+  - Builds the Web admin app plus Taro H5 vehicle and mall demo apps with `PROJECT_DOMAIN=https://car.shcxyz.site`.
   - Builds the Rust API binary on the GitHub Linux runner.
-  - Packages `dist-web`, Rust migrations, all API binaries, and deploy scripts.
+  - Packages `dist-web`, `dist-web-vehicle`, `dist-web-mall`, Rust migrations, all API binaries, and deploy scripts.
   - Runs `deploy/install-docker-release.sh`; the server builds only the lightweight runtime Docker image, runs the migrator, health-checks three candidate containers, then restarts production split API containers.
-  - Installs nginx so `/` serves the Web admin platform and `/api/` is routed to the correct split API by path.
+  - Installs nginx so `/` serves the Web admin platform, `:18081` serves the vehicle H5 demo, `:18082` serves the mall H5 demo, and `/api/` is routed to the correct split API by path.
   - Verifies `https://car.shcxyz.site/api/health`.
 - `.github/workflows/publish-miniapp.yml`
   - Trigger: manual `workflow_dispatch`, or push to `main` when repository variable `WEAPP_UPLOAD_ON_MAIN=true`.
@@ -109,6 +115,7 @@ This creates `/tmp/recorouter-docker-release.tar.gz` containing:
 
 - `deploy/`
 - `dist-web/` when `BUILD_WEB` is not `0`
+- `dist-web-vehicle/` and `dist-web-mall/` when `BUILD_WEB` is not `0`
 
 By default the package contains `server/` and lets the server build the
 Docker image. In GitHub Actions, `BUILD_RUST_BINARY=1` builds the Rust binary on
@@ -116,7 +123,7 @@ the Linux runner and packages `recorouter-api` plus migrations; the server then
 builds only the small runtime image and restarts the container. `BUILD_DOCKER_IMAGE=1`
 is also supported when a full Docker image artifact is wanted. Set
 `BUILD_WEB=0` only for backend-only emergency releases; normal production
-releases should include `dist-web`.
+releases should include all three web outputs.
 
 Upload and install:
 

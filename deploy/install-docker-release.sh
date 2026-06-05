@@ -61,9 +61,11 @@ RELEASE_DIR="$APP_ROOT/releases/$RELEASE_ID"
 rm -rf "$RELEASE_DIR"
 mkdir -p "$RELEASE_DIR"
 tar -xzf "$RELEASE_TAR" -C "$RELEASE_DIR"
-if [[ -d "$RELEASE_DIR/dist-web" ]]; then
-  chmod -R a+rX "$RELEASE_DIR/dist-web"
-fi
+for web_dir in dist-web dist-web-vehicle dist-web-mall; do
+  if [[ -d "$RELEASE_DIR/$web_dir" ]]; then
+    chmod -R a+rX "$RELEASE_DIR/$web_dir"
+  fi
+done
 
 docker network inspect "$DOCKER_NETWORK" >/dev/null
 IMAGE_REF="recorouter-api:$RELEASE_ID"
