@@ -150,6 +150,7 @@ where
 {
     router
         .merge(mall::router::<S>())
+        .merge(payments::router::<S>())
         .merge(
             mall::admin_router::<S>().route_layer(middleware::from_fn_with_state(
                 state.clone(),

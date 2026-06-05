@@ -3,6 +3,7 @@ import { Image, Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
 import { Store } from 'lucide-react-taro'
 import {
+  createMallCheckout,
   deleteMallCartItem,
   getMallCart,
   listMallAddresses,
@@ -30,10 +31,10 @@ export default function MallCartPage() {
   const [loading, setLoading] = useState(false)
 
   const userId = (Taro.getStorageSync('userInfo') as StoredUser | undefined)?.id || ''
-  const couponCents = cart.subtotalCents > 0 ? Math.min(600, cart.subtotalCents) : 0
+  const couponCents = cart.couponCents || 0
   const payableCents = useMemo(
-    () => Math.max(cart.subtotalCents - couponCents, 0),
-    [cart.subtotalCents, couponCents],
+    () => cart.payableCents ?? Math.max(cart.subtotalCents + (cart.deliveryFeeCents || 0) - couponCents, 0),
+    [cart.deliveryFeeCents, cart.payableCents, cart.subtotalCents, couponCents],
   )
 
   useEffect(() => {
@@ -92,7 +93,16 @@ export default function MallCartPage() {
       Taro.showToast({ title: '购物车为空', icon: 'none' })
       return
     }
-    Taro.navigateTo({ url: `/pages/mall/confirm/index?addressId=${selectedAddressId}` })
+    try {
+      const checkout = await createMallCheckout({
+        userId,
+        source: 'cart',
+        addressId: selectedAddressId || undefined,
+      })
+      Taro.navigateTo({ url: `/pages/mall/confirm/index?checkoutId=${checkout.id}` })
+    } catch (error) {
+      showError(error, '结算失败')
+    }
   }
 
   return (
@@ -103,7 +113,7 @@ export default function MallCartPage() {
         <MallLocationStrip
           title={selectedAddress?.addressLabel || selectedAddress?.address_name || '明日 16:00 后 · 绿荫花园自提点'}
           subtitle={selectedAddress?.addressText || selectedAddress?.address || '团长王姐 · 距离 320m，可冷藏代收'}
-          onClick={() => Taro.navigateTo({ url: '/pages/mall/category/index?keyword=到点' })}
+          onClick={() => Taro.navigateTo({ url: '/pages/mall/address/index' })}
         />
       </View>
 
@@ -157,7 +167,9 @@ export default function MallCartPage() {
 
           <View className="mall-card mall-card-soft">
             <View className="mall-summary-row" style={{ marginTop: 0 }}>
-              <Text className="mall-summary-label">满 49 减 6 已自动使用</Text>
+              <Text className="mall-summary-label">
+                {couponCents > 0 ? `${cart.discountDescription || '团购优惠'} 已自动使用` : cart.discountDescription || '暂无可用优惠'}
+              </Text>
               <Text className="mall-summary-value mall-summary-value-warm">-{mallYuan(couponCents)}</Text>
             </View>
           </View>

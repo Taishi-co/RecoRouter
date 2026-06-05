@@ -489,10 +489,10 @@ fn validate_register_request(body: &RegisterRequest) -> ApiResult<()> {
 
     if !matches!(
         body.role.as_str(),
-        "owner" | "merchant" | "enterprise" | "customer"
+        "owner" | "merchant" | "enterprise" | "customer" | "group_leader"
     ) {
         return Err(ApiError::BadRequest(
-            "角色必须为 owner、merchant、enterprise 或 customer".to_string(),
+            "角色必须为 owner、merchant、enterprise、customer 或 group_leader".to_string(),
         ));
     }
 

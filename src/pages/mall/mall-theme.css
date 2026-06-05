@@ -107,6 +107,24 @@ body.reco-mall-h5 .taro-tabbar__panel {
   font-weight: 900;
 }
 
+.mall-share-button {
+  width: 44PX;
+  height: 44PX;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 999PX;
+  background: #eefbea;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.mall-share-button::after {
+  border: 0;
+}
+
 .mall-hero {
   position: relative;
   min-height: 142PX;

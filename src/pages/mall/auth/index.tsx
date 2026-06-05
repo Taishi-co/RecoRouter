@@ -7,6 +7,7 @@ import { Network } from '@/network'
 import { MallPage, MallPrimaryButton } from '../mall-ui'
 
 type AuthMode = 'login' | 'register'
+type RegisterRole = 'customer' | 'group_leader'
 
 interface AuthUserInfo {
   id: string
@@ -40,6 +41,7 @@ export default function MallAuthPage() {
   const [captchaId, setCaptchaId] = useState('')
   const [captchaImage, setCaptchaImage] = useState('')
   const [captchaCode, setCaptchaCode] = useState('')
+  const [registerRole, setRegisterRole] = useState<RegisterRole>('customer')
   const [loading, setLoading] = useState(false)
   const [captchaLoading, setCaptchaLoading] = useState(false)
 
@@ -116,7 +118,7 @@ export default function MallAuthPage() {
           verificationCode: captchaCode.trim(),
           captchaId,
           name: name.trim(),
-          role: 'customer',
+          role: registerRole,
         })
       persistAuth(authUser)
       Taro.showToast({ title: mode === 'login' ? '登录成功' : '注册成功', icon: 'success' })
@@ -156,6 +158,24 @@ export default function MallAuthPage() {
         {mode === 'register' ? (
           <Field label="姓名">
             <Input className="mall-form-input" value={name} placeholder="请输入姓名" onInput={(event) => setName(String(event.detail.value || ''))} />
+          </Field>
+        ) : null}
+        {mode === 'register' ? (
+          <Field label="身份">
+            <View className="mall-auth-tabs" style={{ marginTop: 0, marginBottom: 0 }}>
+              <View
+                className={registerRole === 'customer' ? 'mall-auth-tab mall-auth-tab-active' : 'mall-auth-tab'}
+                onClick={() => setRegisterRole('customer')}
+              >
+                <Text>我是用户</Text>
+              </View>
+              <View
+                className={registerRole === 'group_leader' ? 'mall-auth-tab mall-auth-tab-active' : 'mall-auth-tab'}
+                onClick={() => setRegisterRole('group_leader')}
+              >
+                <Text>我是团长</Text>
+              </View>
+            </View>
           </Field>
         ) : null}
         <Field label="手机号">

@@ -25,8 +25,12 @@ if (!/\/api\/auth\/captcha/.test(authPageSource)) {
   throw new Error('Mall registration must use the existing graphical captcha API')
 }
 
-if (!/role:\s*['"]customer['"]/.test(authPageSource)) {
-  throw new Error('Mall registration must create customer users, not vehicle-side owner/merchant users')
+if (!/role:\s*registerRole/.test(authPageSource) || !/['"]customer['"]/.test(authPageSource) || !/['"]group_leader['"]/.test(authPageSource)) {
+  throw new Error('Mall registration must let users choose customer or group_leader roles')
+}
+
+if (/role:\s*['"](owner|merchant|enterprise)['"]/.test(authPageSource)) {
+  throw new Error('Mall registration must not create vehicle-side owner/merchant/enterprise users')
 }
 
 if (!/Taro\.setStorageSync\(\s*['"]userInfo['"]/.test(authPageSource) || !/Taro\.setStorageSync\(\s*['"]token['"]/.test(authPageSource)) {

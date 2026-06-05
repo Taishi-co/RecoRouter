@@ -6,8 +6,10 @@ import { Input } from '@/components/ui/input'
 import {
   createSupportMessage,
   createSupportSession,
+  getMallOrder,
   listSupportMessages,
   listSupportSessions,
+  type MallOrder,
   type SupportMessage,
   type SupportSession,
 } from '@/services/mall'
@@ -22,6 +24,8 @@ export default function MallSupportCenter() {
   const [, setSessions] = useState<SupportSession[]>([])
   const [selectedSession, setSelectedSession] = useState<SupportSession | null>(null)
   const [messages, setMessages] = useState<SupportMessage[]>([])
+  const [order, setOrder] = useState<MallOrder | null>(null)
+  const [error, setError] = useState('')
   const [draft, setDraft] = useState('我的订单售后需要协助，请帮我查看进度。')
   const userId = (Taro.getStorageSync('userInfo') as StoredUser | undefined)?.id || ''
   const orderId = Taro.getCurrentInstance().router?.params?.orderId
@@ -43,17 +47,23 @@ export default function MallSupportCenter() {
   const loadSessions = async () => {
     if (!userId) return
     try {
-      const nextSessions = await listSupportSessions(userId)
+      const [nextSessions, nextOrder] = await Promise.all([
+        listSupportSessions(userId),
+        orderId ? getMallOrder(String(orderId)) : Promise.resolve(null),
+      ])
+      setOrder(nextOrder)
       setSessions(nextSessions)
       const session = nextSessions[0]
       if (session) {
         setSelectedSession(session)
         setMessages(await listSupportMessages(session.id))
       }
-    } catch {
+      setError('')
+    } catch (loadError) {
       setSessions([])
       setSelectedSession(null)
-      setMessages(fallbackMessages())
+      setMessages([])
+      setError(loadError instanceof Error ? loadError.message : '客服数据加载失败')
     }
   }
 
@@ -80,19 +90,21 @@ export default function MallSupportCenter() {
       })
       setMessages((current) => [...current, message])
       setDraft('')
-    } catch {
-      setMessages((current) => [
-        ...current,
-        {
-          id: `local-${Date.now()}`,
-          sessionId: selectedSession?.id || 'local-session',
-          senderId: userId,
-          senderRole: 'user',
-          content: draft.trim(),
-        },
-      ])
-      setDraft('')
+    } catch (sendError) {
+      Taro.showToast({
+        title: sendError instanceof Error ? sendError.message : '发送失败',
+        icon: 'none',
+      })
     }
+  }
+
+  const contactLeader = () => {
+    const phone = order?.groupLeaderPhone || order?.recipientPhone
+    if (phone) {
+      Taro.makePhoneCall({ phoneNumber: phone })
+      return
+    }
+    Taro.showToast({ title: '订单暂无团长联系方式', icon: 'none' })
   }
 
   return (
@@ -109,24 +121,31 @@ export default function MallSupportCenter() {
         <View className="mall-list-row" style={{ marginTop: 0 }}>
           <View>
             <Text className="mall-breadcrumb">我的订单支持</Text>
-            <Text className="mall-list-title">{topic}</Text>
+            <Text className="mall-list-title">{order?.orderNo || topic}</Text>
           </View>
-          <Text className="mall-status-pill">处理中</Text>
+          <Text className="mall-status-pill">{selectedSession?.status || '待创建'}</Text>
         </View>
         <View className="mall-support-facts">
-          <Fact label="订单号" value={orderId ? String(orderId).slice(0, 10) : 'SY240618'} />
-          <Fact label="售后单" value="AFTER-028" />
-          <Fact label="预计回复" value="12分钟" />
+          <Fact label="订单号" value={order?.orderNo || (orderId ? String(orderId).slice(0, 10) : '未关联')} />
+          <Fact label="售后状态" value={order?.afterSaleStatus || '暂无售后'} />
+          <Fact label="团长" value={order?.groupLeaderName || order?.recipientName || '待确认'} />
         </View>
       </View>
+      {error ? <Text className="mall-empty-copy">{error}</Text> : null}
 
       <View className="mall-chat-list">
-        {(messages.length > 0 ? messages : fallbackMessages()).map((message) => (
+        {messages.map((message) => (
           <View key={message.id} className={message.senderRole === 'user' ? 'mall-chat-bubble mall-chat-bubble-user' : 'mall-chat-bubble'}>
             <Text className="mall-chat-text">{message.content}</Text>
-            <Text className="mall-chat-time">{message.senderRole === 'user' ? '09:43' : '09:42'}</Text>
+            <Text className="mall-chat-time">{message.createdAt || ''}</Text>
           </View>
         ))}
+        {!messages.length ? (
+          <View className="mall-empty">
+            <Text className="mall-empty-title">暂无客服消息</Text>
+            <Text className="mall-empty-copy">发送第一条消息后将创建真实客服会话。</Text>
+          </View>
+        ) : null}
       </View>
 
       <View className="mall-support-actions">
@@ -137,7 +156,7 @@ export default function MallSupportCenter() {
         <View className="mall-small-button" onClick={() => Taro.navigateTo({ url: `/pages/mall/after-sale/index?orderId=${orderId || ''}` })}>
           <Text>查看进度</Text>
         </View>
-        <View className="mall-small-button" onClick={() => Taro.showToast({ title: '团长中心待补齐', icon: 'none' })}>
+        <View className="mall-small-button" onClick={contactLeader}>
           <Headphones size={15} color="#1F2D1F" />
           <Text>联系团长</Text>
         </View>
@@ -165,27 +184,4 @@ function Fact({ label, value }: { label: string; value: string }) {
       <Text className="mall-summary-value">{value}</Text>
     </View>
   )
-}
-
-function fallbackMessages(): SupportMessage[] {
-  return [
-    {
-      id: 'm1',
-      sessionId: 'local',
-      senderRole: 'agent',
-      content: '客服小叁：已进入我的订单售后客服，请补充坏果照片，我们会优先处理。',
-    },
-    {
-      id: 'm2',
-      sessionId: 'local',
-      senderRole: 'user',
-      content: '我：草莓有两盒压坏了，已拍照。',
-    },
-    {
-      id: 'm3',
-      sessionId: 'local',
-      senderRole: 'agent',
-      content: '客服小叁：照片收到，已为你发起坏果包赔，退款会回到原支付账户。',
-    },
-  ]
 }

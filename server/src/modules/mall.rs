@@ -32,6 +32,8 @@ where
             "/api/mall/cart/items/:id",
             put(update_cart_item::<S>).delete(delete_cart_item::<S>),
         )
+        .route("/api/mall/checkouts", post(create_mall_checkout::<S>))
+        .route("/api/mall/checkouts/:id", get(get_mall_checkout::<S>))
         .route("/api/mall/me/profile", get(get_mall_profile::<S>))
         .route(
             "/api/mall/group-leader/workbench",
@@ -254,6 +256,8 @@ struct UpdateCartItemRequest {
 struct CreateMallOrderRequest {
     #[serde(alias = "user_id")]
     user_id: String,
+    #[serde(alias = "checkout_id")]
+    checkout_id: Option<String>,
     #[serde(alias = "address_id")]
     address_id: Option<String>,
     #[serde(alias = "pickup_point_id")]
@@ -268,9 +272,22 @@ struct CreateMallOrderRequest {
     delivery_method: Option<String>,
     #[serde(alias = "pickup_method")]
     pickup_method: Option<String>,
-    #[serde(alias = "coupon_cents")]
-    coupon_cents: Option<i64>,
     remark: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateMallCheckoutRequest {
+    #[serde(alias = "user_id")]
+    user_id: String,
+    source: Option<String>,
+    #[serde(alias = "product_id")]
+    product_id: Option<String>,
+    quantity: Option<i32>,
+    #[serde(alias = "address_id")]
+    address_id: Option<String>,
+    #[serde(alias = "pickup_point_id")]
+    pickup_point_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -292,6 +309,8 @@ struct AddressMutationRequest {
     address_type: Option<String>,
     #[serde(alias = "is_default")]
     is_default: Option<bool>,
+    #[serde(alias = "pickup_point_id")]
+    pickup_point_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -539,6 +558,31 @@ struct CartProductRow {
     price_cents: i64,
     stock: i32,
     quantity: i32,
+}
+
+#[derive(Debug, FromRow)]
+struct CheckoutRow {
+    id: String,
+    user_id: String,
+    source: String,
+    product_id: Option<String>,
+    quantity: i32,
+    address_id: Option<String>,
+    pickup_point_id: Option<String>,
+}
+
+#[derive(Debug, FromRow)]
+struct CampaignDiscountRow {
+    name: String,
+    threshold_cents: i64,
+    discount_cents: i64,
+}
+
+struct MallDiscount {
+    coupon_cents: i64,
+    description: Option<String>,
+    threshold_cents: Option<i64>,
+    discount_cents: Option<i64>,
 }
 
 #[derive(Debug, FromRow)]
@@ -962,6 +1006,63 @@ where
     Ok(ok("删除成功", Value::Null))
 }
 
+async fn create_mall_checkout<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<CreateMallCheckoutRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    validate_required(&body.user_id, "用户ID不能为空")?;
+    let source = normalize_checkout_source(body.source.as_deref())?;
+    let quantity = body.quantity.unwrap_or(1);
+    if quantity <= 0 {
+        return Err(ApiError::BadRequest("购买数量必须大于0".to_string()));
+    }
+
+    let product_id = non_empty(body.product_id);
+    if source == "buy_now" {
+        let product_id = product_id
+            .as_deref()
+            .ok_or_else(|| ApiError::BadRequest("直购商品不能为空".to_string()))?;
+        ensure_product_can_sell(&state.db, product_id, quantity).await?;
+    }
+
+    let checkout_id = sqlx::query_scalar::<_, String>(
+        r#"
+        INSERT INTO mall_checkouts (
+          user_id, source, product_id, quantity, address_id, pickup_point_id, expires_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, now() + interval '30 minutes')
+        RETURNING id
+        "#,
+    )
+    .bind(&body.user_id)
+    .bind(source)
+    .bind(product_id)
+    .bind(quantity)
+    .bind(non_empty(body.address_id))
+    .bind(non_empty(body.pickup_point_id))
+    .fetch_one(&state.db)
+    .await?;
+
+    let mut checkout = checkout_payload(&state.db, &checkout_id).await?;
+    resolve_mall_image_urls(&state.storage, &mut checkout).await?;
+    Ok(ok("结算单已创建", checkout))
+}
+
+async fn get_mall_checkout<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let mut checkout = checkout_payload(&state.db, &id).await?;
+    resolve_mall_image_urls(&state.storage, &mut checkout).await?;
+    Ok(ok("查询成功", checkout))
+}
+
 async fn list_mall_addresses<S>(
     State(state): State<AppState<S>>,
     Query(query): Query<AddressQuery>,
@@ -982,6 +1083,7 @@ where
           'latitude', latitude,
           'longitude', longitude,
           'addressType', address_type,
+          'pickupPointId', pickup_point_id,
           'isDefault', is_default,
           'createdAt', created_at,
           'updatedAt', updated_at
@@ -1018,6 +1120,10 @@ where
         .unwrap_or_else(|| "社区用户".to_string());
     let contact_phone = non_empty(body.contact_phone);
     let address_type = non_empty(body.address_type).unwrap_or_else(|| "home".to_string());
+    let pickup_point_id = non_empty(body.pickup_point_id);
+    if let Some(pickup_point_id) = pickup_point_id.as_deref() {
+        ensure_pickup_point_exists(&state.db, pickup_point_id).await?;
+    }
     let has_address: bool =
         sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM mall_addresses WHERE user_id = $1)")
             .bind(&user_id)
@@ -1038,9 +1144,9 @@ where
         r#"
         INSERT INTO mall_addresses (
           user_id, contact_name, contact_phone, address_label, address_text,
-          latitude, longitude, address_type, is_default
+          latitude, longitude, address_type, pickup_point_id, is_default
         )
-        VALUES ($1, $2, $3, $4, $5, $6::numeric, $7::numeric, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6::numeric, $7::numeric, $8, $9, $10)
         RETURNING jsonb_build_object(
           'id', id,
           'userId', user_id,
@@ -1051,6 +1157,7 @@ where
           'latitude', latitude,
           'longitude', longitude,
           'addressType', address_type,
+          'pickupPointId', pickup_point_id,
           'isDefault', is_default,
           'createdAt', created_at,
           'updatedAt', updated_at
@@ -1065,6 +1172,7 @@ where
     .bind(body.latitude)
     .bind(body.longitude)
     .bind(address_type)
+    .bind(pickup_point_id)
     .bind(is_default)
     .fetch_one(&mut *tx)
     .await?;
@@ -1093,6 +1201,10 @@ where
     let address_label = non_empty(body.address_label);
     let address_text = optional_non_empty(body.address_text, "地址不能为空")?;
     let address_type = non_empty(body.address_type);
+    let pickup_point_id = non_empty(body.pickup_point_id);
+    if let Some(pickup_point_id) = pickup_point_id.as_deref() {
+        ensure_pickup_point_exists(&state.db, pickup_point_id).await?;
+    }
 
     let mut tx = state.db.begin().await?;
     if body.is_default == Some(true) {
@@ -1115,7 +1227,8 @@ where
             latitude = COALESCE($6::numeric, latitude),
             longitude = COALESCE($7::numeric, longitude),
             address_type = COALESCE($8, address_type),
-            is_default = COALESCE($9, is_default),
+            pickup_point_id = COALESCE($9, pickup_point_id),
+            is_default = COALESCE($10, is_default),
             updated_at = now()
         WHERE id = $1
         RETURNING jsonb_build_object(
@@ -1128,6 +1241,7 @@ where
           'latitude', latitude,
           'longitude', longitude,
           'addressType', address_type,
+          'pickupPointId', pickup_point_id,
           'isDefault', is_default,
           'createdAt', created_at,
           'updatedAt', updated_at
@@ -1142,6 +1256,7 @@ where
     .bind(body.latitude)
     .bind(body.longitude)
     .bind(address_type)
+    .bind(pickup_point_id)
     .bind(body.is_default)
     .fetch_one(&mut *tx)
     .await?;
@@ -1380,8 +1495,25 @@ where
     S: Storage,
 {
     validate_required(&body.user_id, "用户ID不能为空")?;
-    let address_id = non_empty(body.address_id);
-    let pickup_point_id = non_empty(body.pickup_point_id);
+    let checkout = match non_empty(body.checkout_id) {
+        Some(checkout_id) => Some(fetch_checkout(&state.db, &checkout_id).await?),
+        None => None,
+    };
+    if let Some(checkout) = &checkout {
+        if checkout.user_id != body.user_id {
+            return Err(ApiError::Forbidden("结算单不属于当前用户".to_string()));
+        }
+    }
+    let address_id = non_empty(body.address_id).or_else(|| {
+        checkout
+            .as_ref()
+            .and_then(|checkout| checkout.address_id.clone())
+    });
+    let pickup_point_id = non_empty(body.pickup_point_id).or_else(|| {
+        checkout
+            .as_ref()
+            .and_then(|checkout| checkout.pickup_point_id.clone())
+    });
 
     let address = fetch_order_address_snapshot(
         &state.db,
@@ -1390,7 +1522,10 @@ where
         pickup_point_id.as_deref(),
     )
     .await?;
-    let cart_items = fetch_selected_cart_products(&state.db, &body.user_id).await?;
+    let cart_items = match checkout.as_ref() {
+        Some(checkout) => checkout_products(&state.db, checkout).await?,
+        None => fetch_selected_cart_products(&state.db, &body.user_id).await?,
+    };
     if cart_items.is_empty() {
         return Err(ApiError::BadRequest("购物车为空".to_string()));
     }
@@ -1405,15 +1540,9 @@ where
         .iter()
         .map(|item| item.price_cents * i64::from(item.quantity))
         .sum();
-    let delivery_fee_cents = if subtotal_cents >= settings.free_delivery_threshold_cents {
-        0
-    } else {
-        settings.default_delivery_fee_cents
-    };
-    let coupon_cents = body
-        .coupon_cents
-        .unwrap_or_default()
-        .clamp(0, subtotal_cents);
+    let delivery_fee_cents = mall_delivery_fee_cents(subtotal_cents, &settings);
+    let discount = calculate_mall_discount_cents(&state.db, subtotal_cents).await?;
+    let coupon_cents = discount.coupon_cents;
     let payable_cents = (subtotal_cents + delivery_fee_cents - coupon_cents).max(0);
     if payable_cents <= 0 {
         return Err(ApiError::BadRequest("订单金额必须大于0".to_string()));
@@ -1510,10 +1639,23 @@ where
         .await?;
     }
 
-    sqlx::query("DELETE FROM mall_cart_items WHERE user_id = $1 AND selected = true")
-        .bind(&body.user_id)
-        .execute(&mut *tx)
-        .await?;
+    if checkout
+        .as_ref()
+        .map(|checkout| checkout.source == "cart")
+        .unwrap_or(true)
+    {
+        sqlx::query("DELETE FROM mall_cart_items WHERE user_id = $1 AND selected = true")
+            .bind(&body.user_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    if let Some(checkout) = &checkout {
+        sqlx::query("DELETE FROM mall_checkouts WHERE id = $1")
+            .bind(&checkout.id)
+            .execute(&mut *tx)
+            .await?;
+    }
 
     insert_order_event_tx(
         &mut tx,
@@ -2929,6 +3071,7 @@ async fn fetch_default_mall_address(pool: &PgPool, user_id: &str) -> ApiResult<V
           'latitude', latitude,
           'longitude', longitude,
           'addressType', address_type,
+          'pickupPointId', pickup_point_id,
           'isDefault', is_default,
           'createdAt', created_at,
           'updatedAt', updated_at
@@ -3183,11 +3326,152 @@ async fn cart_payload(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
         .filter(|item| item["selected"].as_bool().unwrap_or(false))
         .map(|item| item["lineTotalCents"].as_i64().unwrap_or_default())
         .sum::<i64>();
+    let settings = fetch_mall_settings(pool).await?;
+    let delivery_fee_cents = mall_delivery_fee_cents(subtotal_cents, &settings);
+    let discount = calculate_mall_discount_cents(pool, subtotal_cents).await?;
+    let payable_cents = (subtotal_cents + delivery_fee_cents - discount.coupon_cents).max(0);
     Ok(json!({
         "items": items,
         "subtotalCents": subtotal_cents,
+        "deliveryFeeCents": delivery_fee_cents,
+        "couponCents": discount.coupon_cents,
+        "payableCents": payable_cents,
+        "discountDescription": discount.description,
+        "discountThresholdCents": discount.threshold_cents,
+        "discountRuleCents": discount.discount_cents,
         "selectedCount": items.iter().filter(|item| item["selected"].as_bool().unwrap_or(false)).count(),
     }))
+}
+
+async fn checkout_payload(pool: &PgPool, checkout_id: &str) -> ApiResult<Value> {
+    let checkout = fetch_checkout(pool, checkout_id).await?;
+    let items = checkout_products(pool, &checkout).await?;
+    if items.is_empty() {
+        return Err(ApiError::BadRequest("结算商品为空".to_string()));
+    }
+    for item in &items {
+        if item.quantity > item.stock {
+            return Err(ApiError::BadRequest(format!("{} 库存不足", item.name)));
+        }
+    }
+
+    let item_values = checkout_item_values(&items);
+    let subtotal_cents = checkout_subtotal_cents(&items);
+    let settings = fetch_mall_settings(pool).await?;
+    let delivery_fee_cents = mall_delivery_fee_cents(subtotal_cents, &settings);
+    let discount = calculate_mall_discount_cents(pool, subtotal_cents).await?;
+    let payable_cents = (subtotal_cents + delivery_fee_cents - discount.coupon_cents).max(0);
+
+    Ok(json!({
+        "id": checkout.id,
+        "userId": checkout.user_id,
+        "source": checkout.source,
+        "productId": checkout.product_id,
+        "quantity": checkout.quantity,
+        "addressId": checkout.address_id,
+        "pickupPointId": checkout.pickup_point_id,
+        "items": item_values,
+        "subtotalCents": subtotal_cents,
+        "deliveryFeeCents": delivery_fee_cents,
+        "couponCents": discount.coupon_cents,
+        "payableCents": payable_cents,
+        "discountDescription": discount.description,
+        "discountThresholdCents": discount.threshold_cents,
+        "discountRuleCents": discount.discount_cents,
+    }))
+}
+
+async fn fetch_checkout(pool: &PgPool, checkout_id: &str) -> ApiResult<CheckoutRow> {
+    sqlx::query_as::<_, CheckoutRow>(
+        r#"
+        SELECT id, user_id, source, product_id, quantity, address_id, pickup_point_id
+        FROM mall_checkouts
+        WHERE id = $1
+          AND expires_at > now()
+        "#,
+    )
+    .bind(checkout_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("结算单不存在或已过期".to_string()))
+}
+
+async fn checkout_products(
+    pool: &PgPool,
+    checkout: &CheckoutRow,
+) -> ApiResult<Vec<CartProductRow>> {
+    if checkout.source == "buy_now" {
+        let product_id = checkout
+            .product_id
+            .as_deref()
+            .ok_or_else(|| ApiError::BadRequest("直购商品不能为空".to_string()))?;
+        return fetch_buy_now_product(pool, product_id, checkout.quantity).await;
+    }
+    fetch_selected_cart_products(pool, &checkout.user_id).await
+}
+
+async fn fetch_buy_now_product(
+    pool: &PgPool,
+    product_id: &str,
+    quantity: i32,
+) -> ApiResult<Vec<CartProductRow>> {
+    let product = sqlx::query_as::<_, CartProductRow>(
+        r#"
+        SELECT
+          p.id AS product_id,
+          p.sku,
+          p.name,
+          p.category_code,
+          p.image_url,
+          p.price_cents,
+          p.stock,
+          $2::integer AS quantity
+        FROM mall_products p
+        WHERE p.id = $1
+          AND p.status = 'on_sale'
+        "#,
+    )
+    .bind(product_id)
+    .bind(quantity)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("商品不存在或已下架".to_string()))?;
+    Ok(vec![product])
+}
+
+fn checkout_item_values(items: &[CartProductRow]) -> Vec<Value> {
+    items
+        .iter()
+        .map(|item| {
+            json!({
+                "productId": item.product_id,
+                "sku": item.sku,
+                "productName": item.name,
+                "categoryCode": item.category_code,
+                "imageUrl": item.image_url,
+                "unitPriceCents": item.price_cents,
+                "quantity": item.quantity,
+                "lineTotalCents": item.price_cents * i64::from(item.quantity),
+                "product": {
+                    "id": item.product_id,
+                    "sku": item.sku,
+                    "name": item.name,
+                    "categoryCode": item.category_code,
+                    "imageUrl": item.image_url,
+                    "priceCents": item.price_cents,
+                    "stock": item.stock,
+                    "status": "on_sale",
+                }
+            })
+        })
+        .collect()
+}
+
+fn checkout_subtotal_cents(items: &[CartProductRow]) -> i64 {
+    items
+        .iter()
+        .map(|item| item.price_cents * i64::from(item.quantity))
+        .sum()
 }
 
 async fn fetch_selected_cart_products(
@@ -3253,7 +3537,7 @@ async fn fetch_order_address_snapshot(
         r#"
         SELECT
           id AS address_id,
-          NULL::text AS pickup_point_id,
+          pickup_point_id,
           contact_name,
           contact_phone,
           address_text,
@@ -3281,6 +3565,93 @@ async fn fetch_mall_settings(pool: &PgPool) -> ApiResult<MallSettingsRow> {
     .fetch_optional(pool)
     .await?
     .ok_or_else(|| ApiError::NotFound("商城设置不存在".to_string()))
+}
+
+fn mall_delivery_fee_cents(subtotal_cents: i64, settings: &MallSettingsRow) -> i64 {
+    if subtotal_cents >= settings.free_delivery_threshold_cents {
+        0
+    } else {
+        settings.default_delivery_fee_cents
+    }
+}
+
+async fn calculate_mall_discount_cents(
+    pool: &PgPool,
+    subtotal_cents: i64,
+) -> ApiResult<MallDiscount> {
+    let rules = sqlx::query_as::<_, CampaignDiscountRow>(
+        r#"
+        SELECT
+          name,
+          COALESCE(NULLIF(rules->>'thresholdCents', '')::bigint, 0) AS threshold_cents,
+          COALESCE(NULLIF(rules->>'discountCents', '')::bigint, 0) AS discount_cents
+        FROM mall_campaigns
+        WHERE status = 'active'
+          AND rules ? 'thresholdCents'
+          AND rules ? 'discountCents'
+        ORDER BY COALESCE(NULLIF(rules->>'thresholdCents', '')::bigint, 0) ASC,
+                 COALESCE(NULLIF(rules->>'discountCents', '')::bigint, 0) DESC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut next_rule: Option<&CampaignDiscountRow> = None;
+    let mut best_rule: Option<&CampaignDiscountRow> = None;
+    for rule in &rules {
+        if rule.threshold_cents <= subtotal_cents {
+            if best_rule
+                .map(|current| rule.discount_cents > current.discount_cents)
+                .unwrap_or(true)
+            {
+                best_rule = Some(rule);
+            }
+        } else if next_rule
+            .map(|current| rule.threshold_cents < current.threshold_cents)
+            .unwrap_or(true)
+        {
+            next_rule = Some(rule);
+        }
+    }
+
+    if let Some(rule) = best_rule {
+        let coupon_cents = rule.discount_cents.clamp(0, subtotal_cents);
+        return Ok(MallDiscount {
+            coupon_cents,
+            description: Some(rule.name.clone()),
+            threshold_cents: Some(rule.threshold_cents),
+            discount_cents: Some(rule.discount_cents),
+        });
+    }
+
+    Ok(MallDiscount {
+        coupon_cents: 0,
+        description: next_rule.map(|rule| {
+            format!(
+                "满{}减{}",
+                yuan_amount(rule.threshold_cents),
+                yuan_amount(rule.discount_cents)
+            )
+        }),
+        threshold_cents: next_rule.map(|rule| rule.threshold_cents),
+        discount_cents: next_rule.map(|rule| rule.discount_cents),
+    })
+}
+
+fn yuan_amount(cents: i64) -> String {
+    if cents % 100 == 0 {
+        (cents / 100).to_string()
+    } else {
+        format!("{:.2}", cents as f64 / 100.0)
+    }
+}
+
+fn normalize_checkout_source(source: Option<&str>) -> ApiResult<&'static str> {
+    match source.unwrap_or("cart").trim() {
+        "" | "cart" => Ok("cart"),
+        "buy_now" | "buyNow" | "direct" => Ok("buy_now"),
+        _ => Err(ApiError::BadRequest("结算来源不支持".to_string())),
+    }
 }
 
 async fn fetch_settings_json(pool: &PgPool) -> ApiResult<Value> {
