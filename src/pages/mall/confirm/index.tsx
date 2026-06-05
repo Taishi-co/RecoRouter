@@ -11,6 +11,7 @@ import {
 } from '@/services/mall'
 import { startOrderPayment } from '@/services/payment'
 import { MallLocationStrip, MallPage, mallYuan } from '../mall-ui'
+import { redirectToMallAuth } from '../auth-route'
 
 interface StoredUser {
   id?: string
@@ -30,7 +31,7 @@ export default function MallConfirmPage() {
 
   const loadData = async () => {
     if (!userId) {
-      Taro.redirectTo({ url: '/pages/index/index' })
+      redirectToMallAuth('/pages/mall/confirm/index')
       return
     }
     try {

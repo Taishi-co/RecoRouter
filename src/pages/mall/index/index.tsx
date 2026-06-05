@@ -14,6 +14,7 @@ import {
   MallSectionTitle,
   mallYuan,
 } from '../mall-ui'
+import { redirectToMallAuth } from '../auth-route'
 
 interface StoredUser {
   id?: string
@@ -65,7 +66,7 @@ export default function MallHome() {
     const user = currentUser()
     if (!user?.id) {
       Taro.showToast({ title: '请先登录', icon: 'none' })
-      Taro.redirectTo({ url: '/pages/index/index' })
+      redirectToMallAuth('/pages/mall/index/index')
       return
     }
     try {

@@ -251,6 +251,14 @@ export interface MallProfile {
     phone?: string
     role?: string
     status?: string
+    points?: number
+    totalSpendCents?: number
+    level?: {
+      code?: string
+      name?: string
+      discountBps?: number
+      benefits?: string[]
+    }
   }
   orderCounts?: {
     pendingPayment?: number
@@ -260,6 +268,7 @@ export interface MallProfile {
     total?: number
   }
   defaultPickupPoint?: MallPickupPoint | null
+  defaultAddress?: MallAddress | null
   support?: {
     openSessions?: number
     openTickets?: number
@@ -535,16 +544,16 @@ export async function getMallProfileSafe(userId: string): Promise<MallProfile> {
     () => getMallProfile(userId),
     {
       userId,
-      displayName: '张女士',
-      memberLevel: '银卡会员',
-      pickupPointName: '路北区邻里驿站',
-      monthlySavingsCents: 4200,
-      pendingPaymentCount: 1,
-      pendingPickupCount: 2,
-      afterSaleCount: 1,
-      groupJoinedCount: 3,
-      commonPickupPoint: '路北区邻里驿站，今天 17:00 后可取',
-      supportStatus: '订单售后、坏果包赔与冷链咨询',
+      displayName: '',
+      memberLevel: '',
+      pickupPointName: '',
+      monthlySavingsCents: 0,
+      pendingPaymentCount: 0,
+      pendingPickupCount: 0,
+      afterSaleCount: 0,
+      groupJoinedCount: 0,
+      commonPickupPoint: '',
+      supportStatus: '',
     },
   )
 }

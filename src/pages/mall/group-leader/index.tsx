@@ -4,6 +4,7 @@ import Taro, { useDidShow } from '@tarojs/taro'
 import { ClipboardCheck, Megaphone, PackageOpen, QrCode, Share2 } from 'lucide-react-taro'
 import { getMallGroupLeaderCenterSafe, type MallGroupLeaderCenter } from '@/services/mall'
 import { MallPage, MallPrimaryButton, mallYuan } from '../mall-ui'
+import { redirectToMallAuth } from '../auth-route'
 
 interface StoredUser {
   id?: string
@@ -20,7 +21,7 @@ export default function MallGroupLeaderPage() {
   const loadCenter = async () => {
     if (!userId) {
       Taro.showToast({ title: '请先登录', icon: 'none' })
-      Taro.redirectTo({ url: '/pages/index/index' })
+      redirectToMallAuth('/pages/mall/group-leader/index')
       return
     }
     setCenter(await getMallGroupLeaderCenterSafe(userId))

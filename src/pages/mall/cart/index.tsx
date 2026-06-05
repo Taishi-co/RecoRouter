@@ -17,6 +17,7 @@ import {
   MallPrimaryButton,
   mallYuan,
 } from '../mall-ui'
+import { redirectToMallAuth } from '../auth-route'
 
 interface StoredUser {
   id?: string
@@ -48,7 +49,7 @@ export default function MallCartPage() {
   const guardLogin = () => {
     if (!userId) {
       Taro.showToast({ title: '请先登录', icon: 'none' })
-      Taro.redirectTo({ url: '/pages/index/index' })
+      redirectToMallAuth('/pages/mall/cart/index')
     }
   }
 
