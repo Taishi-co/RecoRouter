@@ -1,10 +1,11 @@
 .mall-shell {
   min-height: 100vh;
-  width: 390PX;
-  max-width: 100vw;
+  width: 100%;
+  max-width: 100%;
   margin: 0;
   padding: 22PX 18PX 92PX;
   box-sizing: border-box;
+  overflow-x: hidden;
   background: #fbfaf6;
   color: #1e2b1e;
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
@@ -16,6 +17,10 @@ body.reco-mall-h5 .taro-tabbar__panel {
   transition: none !important;
   animation: none !important;
   transform: none !important;
+}
+
+body.reco-mall-h5 .taro_page {
+  overflow-x: hidden !important;
 }
 
 .mall-status {
@@ -510,7 +515,7 @@ body.reco-mall-h5 .taro-tabbar__panel {
   bottom: 0;
   z-index: 20;
   width: 100%;
-  max-width: 390PX;
+  max-width: 100%;
   height: 72PX;
   border-top: 1PX solid #d7ead1;
   background: #ffffff;
