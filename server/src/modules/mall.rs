@@ -181,6 +181,14 @@ where
             "/api/admin/mall/settings",
             get(get_operation_settings::<S>).put(update_operation_settings::<S>),
         )
+        .route(
+            "/api/admin/mall/permissions",
+            get(admin_list_permissions::<S>).post(admin_create_permission::<S>),
+        )
+        .route(
+            "/api/admin/mall/permissions/:id",
+            put(admin_update_permission::<S>).delete(admin_delete_permission::<S>),
+        )
 }
 
 #[derive(Debug, Deserialize)]
@@ -547,6 +555,26 @@ struct HomeBannerMutationRequest {
     #[serde(alias = "ends_at")]
     ends_at: Option<String>,
     metadata: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PermissionQuery {
+    keyword: Option<String>,
+    status: Option<String>,
+    module: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PermissionMutationRequest {
+    name: Option<String>,
+    #[serde(alias = "role_key")]
+    role_key: Option<String>,
+    description: Option<String>,
+    modules: Option<Vec<String>>,
+    actions: Option<Vec<String>>,
+    status: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2859,6 +2887,139 @@ where
     Ok(ok("设置已保存", settings))
 }
 
+async fn admin_list_permissions<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<PermissionQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let permissions = filter_permission_records(read_permission_records(&state.db).await?, query)?;
+    Ok(ok("查询成功", permissions))
+}
+
+async fn admin_create_permission<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<PermissionMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let name = require_non_empty(body.name, "权限名称不能为空")?;
+    let role_key = normalize_permission_key(&require_non_empty(body.role_key, "权限角色不能为空")?);
+    let status = body.status.unwrap_or_else(|| "active".to_string());
+    validate_permission_status(&status)?;
+    let modules = normalize_permission_modules(body.modules)?;
+    let actions = normalize_permission_actions(body.actions)?;
+    let now = chrono::Utc::now().to_rfc3339();
+    let permission = json!({
+        "id": uuid::Uuid::new_v4().to_string(),
+        "name": name,
+        "roleKey": role_key,
+        "description": non_empty(body.description).unwrap_or_default(),
+        "modules": modules,
+        "actions": actions,
+        "status": status,
+        "createdAt": now,
+        "updatedAt": now,
+    });
+
+    let mut roles = fetch_roles_config(&state.db).await?;
+    let mut permissions = permissions_from_roles(&roles);
+    permissions.insert(0, permission.clone());
+    persist_permissions(&state.db, &mut roles, permissions).await?;
+
+    Ok(ok("权限创建成功", permission))
+}
+
+async fn admin_update_permission<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<PermissionMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let mut roles = fetch_roles_config(&state.db).await?;
+    let mut permissions = permissions_from_roles(&roles);
+    let index = permissions
+        .iter()
+        .position(|permission| string_field(permission, "id") == id)
+        .ok_or_else(|| ApiError::NotFound("权限不存在".to_string()))?;
+
+    if let Some(status) = body.status.as_deref() {
+        validate_permission_status(status)?;
+    }
+    let modules = match body.modules {
+        Some(modules) => Some(normalize_permission_modules(Some(modules))?),
+        None => None,
+    };
+    let actions = match body.actions {
+        Some(actions) => Some(normalize_permission_actions(Some(actions))?),
+        None => None,
+    };
+
+    let mut permission = permissions[index].clone();
+    if !permission.is_object() {
+        permission = json!({});
+    }
+    let object = permission
+        .as_object_mut()
+        .ok_or_else(|| ApiError::BadRequest("权限数据格式不正确".to_string()))?;
+    if let Some(name) = optional_non_empty(body.name, "权限名称不能为空")? {
+        object.insert("name".to_string(), json!(name));
+    }
+    if let Some(role_key) = optional_non_empty(body.role_key, "权限角色不能为空")? {
+        object.insert(
+            "roleKey".to_string(),
+            json!(normalize_permission_key(&role_key)),
+        );
+    }
+    if let Some(description) = body.description {
+        object.insert("description".to_string(), json!(description.trim()));
+    }
+    if let Some(modules) = modules {
+        object.insert("modules".to_string(), json!(modules));
+    }
+    if let Some(actions) = actions {
+        object.insert("actions".to_string(), json!(actions));
+    }
+    if let Some(status) = body.status {
+        object.insert("status".to_string(), json!(status));
+    }
+    object.insert(
+        "updatedAt".to_string(),
+        json!(chrono::Utc::now().to_rfc3339()),
+    );
+
+    permissions[index] = permission.clone();
+    persist_permissions(&state.db, &mut roles, permissions).await?;
+
+    Ok(ok("权限更新成功", permission))
+}
+
+async fn admin_delete_permission<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let mut roles = fetch_roles_config(&state.db).await?;
+    let permissions = permissions_from_roles(&roles);
+    let original_len = permissions.len();
+    let next_permissions: Vec<Value> = permissions
+        .into_iter()
+        .filter(|permission| string_field(permission, "id") != id)
+        .collect();
+    if next_permissions.len() == original_len {
+        return Err(ApiError::NotFound("权限不存在".to_string()));
+    }
+
+    persist_permissions(&state.db, &mut roles, next_permissions).await?;
+    Ok(ok("权限删除成功", json!({ "id": id, "deleted": true })))
+}
+
 async fn admin_overview<S>(State(state): State<AppState<S>>) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
@@ -4254,6 +4415,138 @@ async fn fetch_settings_json(pool: &PgPool) -> ApiResult<Value> {
     .ok_or_else(|| ApiError::NotFound("商城设置不存在".to_string()))
 }
 
+async fn fetch_roles_config(pool: &PgPool) -> ApiResult<Value> {
+    sqlx::query(
+        r#"
+        INSERT INTO mall_operation_settings (id)
+        VALUES ('default')
+        ON CONFLICT (id) DO NOTHING
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT COALESCE(roles, '{}'::jsonb)
+        FROM mall_operation_settings
+        WHERE id = 'default'
+        "#,
+    )
+    .fetch_one(pool)
+    .await?)
+}
+
+async fn persist_permissions(
+    pool: &PgPool,
+    roles: &mut Value,
+    permissions: Vec<Value>,
+) -> ApiResult<()> {
+    if !roles.is_object() {
+        *roles = json!({});
+    }
+    let object = roles
+        .as_object_mut()
+        .ok_or_else(|| ApiError::BadRequest("权限配置格式不正确".to_string()))?;
+    object.insert("permissions".to_string(), Value::Array(permissions));
+
+    sqlx::query(
+        r#"
+        UPDATE mall_operation_settings
+        SET roles = $1, updated_at = now()
+        WHERE id = 'default'
+        "#,
+    )
+    .bind(roles.clone())
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+fn permissions_from_roles(roles: &Value) -> Vec<Value> {
+    roles
+        .get("permissions")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+
+async fn read_permission_records(pool: &PgPool) -> ApiResult<Vec<Value>> {
+    let roles = fetch_roles_config(pool).await?;
+    Ok(permissions_from_roles(&roles))
+}
+
+fn filter_permission_records(
+    permissions: Vec<Value>,
+    query: PermissionQuery,
+) -> ApiResult<Vec<Value>> {
+    if let Some(status) = query.status.as_deref() {
+        validate_permission_status(status)?;
+    }
+    if let Some(module) = query.module.as_deref() {
+        validate_permission_module(module)?;
+    }
+    let keyword = query.keyword.and_then(|value| {
+        let trimmed = value.trim().to_lowercase();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    });
+
+    Ok(permissions
+        .into_iter()
+        .filter(|permission| {
+            if let Some(status) = query.status.as_deref() {
+                if string_field(permission, "status") != status {
+                    return false;
+                }
+            }
+            if let Some(module) = query.module.as_deref() {
+                if !array_field_contains(permission, "modules", module) {
+                    return false;
+                }
+            }
+            if let Some(keyword) = keyword.as_deref() {
+                let haystack = [
+                    string_field(permission, "name"),
+                    string_field(permission, "roleKey"),
+                    string_field(permission, "description"),
+                ]
+                .join(" ")
+                .to_lowercase();
+                if !haystack.contains(keyword) {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect())
+}
+
+fn string_field(record: &Value, key: &str) -> String {
+    record
+        .get(key)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn array_field_contains(record: &Value, key: &str, needle: &str) -> bool {
+    record
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .any(|value| value == needle)
+        })
+        .unwrap_or(false)
+}
+
 async fn upsert_notification_preferences(
     pool: &PgPool,
     user_id: &str,
@@ -4973,6 +5266,94 @@ fn validate_home_banner_link_type(link_type: &str) -> ApiResult<()> {
     } else {
         Err(ApiError::BadRequest("首页配置跳转类型不正确".to_string()))
     }
+}
+
+fn validate_permission_status(status: &str) -> ApiResult<()> {
+    if matches!(status, "active" | "inactive" | "draft") {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest("权限状态不正确".to_string()))
+    }
+}
+
+fn validate_permission_module(module: &str) -> ApiResult<()> {
+    if matches!(
+        module,
+        "products"
+            | "orders"
+            | "marketing"
+            | "support"
+            | "finance"
+            | "settings"
+            | "data"
+            | "leaders"
+    ) {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest("权限模块不正确".to_string()))
+    }
+}
+
+fn validate_permission_action(action: &str) -> ApiResult<()> {
+    if matches!(
+        action,
+        "view" | "create" | "update" | "delete" | "approve" | "refund" | "export" | "dispatch"
+    ) {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest("权限动作不正确".to_string()))
+    }
+}
+
+fn normalize_permission_key(value: &str) -> String {
+    value
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn normalize_permission_modules(modules: Option<Vec<String>>) -> ApiResult<Vec<String>> {
+    let mut normalized = Vec::new();
+    for module in modules.unwrap_or_default() {
+        let value = module.trim().to_string();
+        if value.is_empty() {
+            continue;
+        }
+        validate_permission_module(&value)?;
+        if !normalized.contains(&value) {
+            normalized.push(value);
+        }
+    }
+    if normalized.is_empty() {
+        return Err(ApiError::BadRequest("至少选择一个权限模块".to_string()));
+    }
+    Ok(normalized)
+}
+
+fn normalize_permission_actions(actions: Option<Vec<String>>) -> ApiResult<Vec<String>> {
+    let mut normalized = Vec::new();
+    for action in actions.unwrap_or_default() {
+        let value = action.trim().to_string();
+        if value.is_empty() {
+            continue;
+        }
+        validate_permission_action(&value)?;
+        if !normalized.contains(&value) {
+            normalized.push(value);
+        }
+    }
+    if normalized.is_empty() {
+        return Err(ApiError::BadRequest("至少选择一个权限动作".to_string()));
+    }
+    Ok(normalized)
 }
 
 fn validate_non_negative_i64(value: i64, message: &str) -> ApiResult<()> {

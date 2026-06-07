@@ -84,6 +84,7 @@ interface DashboardData {
   campaigns: JsonRecord[];
   mallCoupons: JsonRecord[];
   mallHomeBanners: JsonRecord[];
+  mallPermissions: JsonRecord[];
   mallSettings: JsonRecord;
   supportMetrics: JsonRecord;
   supportSessions: JsonRecord[];
@@ -177,6 +178,22 @@ interface SettingsForm {
   deliveryPromiseMinutes: string;
   refundReviewMinutes: string;
   coldChainEnabled: boolean;
+}
+
+interface MallPermissionForm {
+  id: string;
+  name: string;
+  roleKey: string;
+  description: string;
+  modules: string[];
+  actions: string[];
+  status: string;
+}
+
+interface MallPermissionFilterState {
+  keyword: string;
+  status: string;
+  module: string;
 }
 
 interface SupportForm {
@@ -516,6 +533,7 @@ const initialData: DashboardData = {
   campaigns: [],
   mallCoupons: [],
   mallHomeBanners: [],
+  mallPermissions: [],
   mallSettings: {},
   supportMetrics: {},
   supportSessions: [],
@@ -623,6 +641,44 @@ const initialSettingsForm: SettingsForm = {
   deliveryPromiseMinutes: '18',
   refundReviewMinutes: '10',
   coldChainEnabled: true,
+};
+
+const permissionModuleOptions = [
+  ['products', '商品管理'],
+  ['orders', '订单履约'],
+  ['marketing', '营销活动'],
+  ['support', '客服售后'],
+  ['finance', '财务分账'],
+  ['settings', '运营设置'],
+  ['data', '运营数据'],
+  ['leaders', '团长管理'],
+] as const;
+
+const permissionActionOptions = [
+  ['view', '查看'],
+  ['create', '新增'],
+  ['update', '编辑'],
+  ['delete', '删除'],
+  ['approve', '审核'],
+  ['refund', '退款'],
+  ['export', '导出'],
+  ['dispatch', '派车'],
+] as const;
+
+const initialPermissionForm: MallPermissionForm = {
+  id: '',
+  name: '',
+  roleKey: '',
+  description: '',
+  modules: ['products'],
+  actions: ['view'],
+  status: 'active',
+};
+
+const initialPermissionFilters: MallPermissionFilterState = {
+  keyword: '',
+  status: '',
+  module: '',
 };
 
 const initialSupportForm: SupportForm = {
@@ -734,6 +790,7 @@ async function fetchDashboardData(
   inventoryFilters: MallFilterState = initialInventoryFilters,
   couponFilters: MallFilterState = initialProductFilters,
   homeBannerFilters: MallFilterState = initialProductFilters,
+  permissionFilters: MallPermissionFilterState = initialPermissionFilters,
 ) {
   const errors: LoadErrors = {};
   const [
@@ -751,6 +808,7 @@ async function fetchDashboardData(
     campaigns,
     mallCoupons,
     mallHomeBanners,
+    mallPermissions,
     mallSettings,
     supportMetrics,
     supportSessions,
@@ -799,6 +857,11 @@ async function fetchDashboardData(
       keyword: homeBannerFilters.keyword,
       status: homeBannerFilters.status,
     })),
+    loadWithFallback('运营权限', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/permissions', {
+      keyword: permissionFilters.keyword,
+      status: permissionFilters.status,
+      module: permissionFilters.module,
+    })),
     loadWithFallback('商城设置', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/settings')),
     loadWithFallback('客服指标', {}, errors, () => apiGet<JsonRecord>('/api/support/metrics')),
     loadWithFallback('客服会话', [], errors, () => apiGet<JsonRecord[]>('/api/support/sessions')),
@@ -829,6 +892,7 @@ async function fetchDashboardData(
       campaigns,
       mallCoupons,
       mallHomeBanners,
+      mallPermissions,
       mallSettings,
       supportMetrics,
       supportSessions,
@@ -1031,6 +1095,33 @@ function homeBannerToForm(banner: JsonRecord): HomeBannerForm {
     startsAt: datetimeLocalValue(stringValue(banner, 'startsAt')),
     endsAt: datetimeLocalValue(stringValue(banner, 'endsAt')),
     tag: stringValue(metadata, 'tag'),
+  };
+}
+
+function permissionModuleLabel(value: string) {
+  return permissionModuleOptions.find(([key]) => key === value)?.[1] || value || '-';
+}
+
+function permissionActionLabel(value: string) {
+  return permissionActionOptions.find(([key]) => key === value)?.[1] || value || '-';
+}
+
+function permissionTextList(record: JsonRecord, key: string, labelFn: (value: string) => string) {
+  const values = arrayValue(record, key)
+    .map(item => labelFn(String(item)))
+    .filter(Boolean);
+  return values.length ? values.join(' / ') : '-';
+}
+
+function mallPermissionToForm(permission: JsonRecord): MallPermissionForm {
+  return {
+    id: stringValue(permission, 'id'),
+    name: stringValue(permission, 'name'),
+    roleKey: stringValue(permission, 'roleKey'),
+    description: stringValue(permission, 'description'),
+    modules: arrayValue(permission, 'modules').map(item => String(item)),
+    actions: arrayValue(permission, 'actions').map(item => String(item)),
+    status: stringValue(permission, 'status', 'active'),
   };
 }
 
@@ -4351,6 +4442,181 @@ function MallCampaignsSection({
   );
 }
 
+function MallPermissionsSection({
+  permissions,
+  filters,
+  form,
+  onChange,
+  onDelete,
+  onEdit,
+  onFiltersChange,
+  onReset,
+  onSearch,
+  onSubmit,
+  onToggleAction,
+  onToggleModule,
+}: {
+  permissions: JsonRecord[];
+  filters: MallPermissionFilterState;
+  form: MallPermissionForm;
+  onChange: (patch: Partial<MallPermissionForm>) => void;
+  onDelete: (id: string) => Promise<void>;
+  onEdit: (permission: JsonRecord) => void;
+  onFiltersChange: (patch: Partial<MallPermissionFilterState>) => void;
+  onReset: () => void;
+  onSearch: () => Promise<void>;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onToggleAction: (action: string) => void;
+  onToggleModule: (module: string) => void;
+}) {
+  const activeCount = permissions.filter(permission => stringValue(permission, 'status') === 'active').length;
+  const inactiveCount = permissions.filter(permission => stringValue(permission, 'status') === 'inactive').length;
+  const draftCount = permissions.filter(permission => stringValue(permission, 'status') === 'draft').length;
+
+  return (
+    <div className="permission-admin">
+      <div className="permission-summary-grid">
+        <div className="metric-card">
+          <span>权限总数</span>
+          <strong>{permissions.length}</strong>
+          <small>商品、订单、营销、客服、财务等运营角色</small>
+        </div>
+        <div className="metric-card">
+          <span>启用权限</span>
+          <strong>{activeCount}</strong>
+          <small>当前可分配给运营账号</small>
+        </div>
+        <div className="metric-card">
+          <span>停用/草稿</span>
+          <strong>{inactiveCount + draftCount}</strong>
+          <small>停用 {inactiveCount} · 草稿 {draftCount}</small>
+        </div>
+      </div>
+
+      <div className="permission-admin-grid">
+        <Panel title={form.id ? '编辑权限' : '新增权限'} description="维护商城运营角色可访问的模块和动作">
+          <form className="permission-editor" onSubmit={onSubmit}>
+            <label>
+              权限名称
+              <input required value={form.name} placeholder="例：商品运营" onChange={event => onChange({ name: event.target.value })} />
+            </label>
+            <label>
+              角色标识
+              <input required value={form.roleKey} placeholder="例：product_operator" onChange={event => onChange({ roleKey: event.target.value })} />
+            </label>
+            <label>
+              状态
+              <select value={form.status} onChange={event => onChange({ status: event.target.value })}>
+                <option value="active">启用</option>
+                <option value="draft">草稿</option>
+                <option value="inactive">停用</option>
+              </select>
+            </label>
+            <label className="wide">
+              说明
+              <textarea value={form.description} placeholder="说明该权限适用的岗位、审批范围或限制" onChange={event => onChange({ description: event.target.value })} />
+            </label>
+
+            <fieldset className="permission-module-grid wide">
+              <legend>可访问模块</legend>
+              {permissionModuleOptions.map(([key, label]) => (
+                <label className="permission-check" key={key}>
+                  <input checked={form.modules.includes(key)} type="checkbox" onChange={() => onToggleModule(key)} />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </fieldset>
+
+            <fieldset className="permission-checkbox-grid wide">
+              <legend>可执行动作</legend>
+              {permissionActionOptions.map(([key, label]) => (
+                <label className="permission-check" key={key}>
+                  <input checked={form.actions.includes(key)} type="checkbox" onChange={() => onToggleAction(key)} />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </fieldset>
+
+            <div className="permission-form-actions wide">
+              <button className="primary-button" disabled={!form.name.trim() || !form.roleKey.trim() || !form.modules.length || !form.actions.length} type="submit">
+                <Icon name="save" />
+                {form.id ? '保存权限' : '创建权限'}
+              </button>
+              <button className="ghost-button" type="button" onClick={onReset}>
+                <Icon name="x" />
+                重置
+              </button>
+            </div>
+          </form>
+        </Panel>
+
+        <Panel title="运营权限列表" description="支持权限搜索、模块筛选、编辑和删除">
+          <div className="permission-filterbar">
+            <label>
+              权限搜索
+              <input value={filters.keyword} placeholder="名称、标识或说明" onChange={event => onFiltersChange({ keyword: event.target.value })} />
+            </label>
+            <label>
+              状态
+              <select value={filters.status} onChange={event => onFiltersChange({ status: event.target.value })}>
+                <option value="">全部状态</option>
+                <option value="active">启用</option>
+                <option value="draft">草稿</option>
+                <option value="inactive">停用</option>
+              </select>
+            </label>
+            <label>
+              模块
+              <select value={filters.module} onChange={event => onFiltersChange({ module: event.target.value })}>
+                <option value="">全部模块</option>
+                {permissionModuleOptions.map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
+            </label>
+            <button className="primary-button" type="button" onClick={() => void onSearch()}>
+              <Icon name="refresh" />
+              搜索
+            </button>
+          </div>
+
+          <div className="permission-list">
+            {permissions.map(permission => {
+              const id = stringValue(permission, 'id');
+              const status = stringValue(permission, 'status');
+              return (
+                <article className="permission-row" key={id}>
+                  <div>
+                    <strong>{stringValue(permission, 'name')}</strong>
+                    <small>{stringValue(permission, 'roleKey')}</small>
+                  </div>
+                  <span className={badgeClass(status)}>{statusLabel(status)}</span>
+                  <div className="permission-row-detail">
+                    <span>模块：{permissionTextList(permission, 'modules', permissionModuleLabel)}</span>
+                    <span>动作：{permissionTextList(permission, 'actions', permissionActionLabel)}</span>
+                    <small>{stringValue(permission, 'description', '暂无说明')}</small>
+                  </div>
+                  <div className="permission-table-actions">
+                    <button className="ghost-button" type="button" onClick={() => onEdit(permission)}>
+                      <Icon name="save" />
+                      编辑
+                    </button>
+                    <button className="ghost-button danger-button" type="button" onClick={() => void onDelete(id)}>
+                      <Icon name="x" />
+                      删除
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+            {!permissions.length ? <EmptyState text="暂无运营权限" /> : null}
+          </div>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
 function MallSettingsSection({
   settingsForm,
   onSettingsChange,
@@ -4766,6 +5032,7 @@ function App() {
   const [couponForm, setCouponForm] = useState<CouponForm>(initialCouponForm);
   const [homeBannerForm, setHomeBannerForm] = useState<HomeBannerForm>(initialHomeBannerForm);
   const [settingsForm, setSettingsForm] = useState<SettingsForm>(initialSettingsForm);
+  const [permissionForm, setPermissionForm] = useState<MallPermissionForm>(initialPermissionForm);
   const [supportForm, setSupportForm] = useState<SupportForm>(initialSupportForm);
   const [categoryForm, setCategoryForm] = useState<CategoryForm>(initialCategoryForm);
   const [productFilters, setProductFilters] = useState<MallFilterState>(initialProductFilters);
@@ -4773,6 +5040,7 @@ function App() {
   const [inventoryFilters, setInventoryFilters] = useState<MallFilterState>(initialInventoryFilters);
   const [couponFilters, setCouponFilters] = useState<MallFilterState>(initialProductFilters);
   const [homeBannerFilters, setHomeBannerFilters] = useState<MallFilterState>(initialProductFilters);
+  const [permissionFilters, setPermissionFilters] = useState<MallPermissionFilterState>(initialPermissionFilters);
   const [supportFilters, setSupportFilters] = useState<SupportFilterState>(initialSupportFilters);
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [supportMessages, setSupportMessages] = useState<JsonRecord[]>([]);
@@ -4822,8 +5090,10 @@ function App() {
     setMallOrderSearchError('');
     setCouponForm(initialCouponForm);
     setHomeBannerForm(initialHomeBannerForm);
+    setPermissionForm(initialPermissionForm);
     setCouponFilters(initialProductFilters);
     setHomeBannerFilters(initialProductFilters);
+    setPermissionFilters(initialPermissionFilters);
     setBusy('');
     setLoading(false);
   };
@@ -4835,7 +5105,7 @@ function App() {
     }
 
     setLoading(true);
-    const result = await fetchDashboardData(productFilters, categoryFilters, inventoryFilters, couponFilters, homeBannerFilters);
+    const result = await fetchDashboardData(productFilters, categoryFilters, inventoryFilters, couponFilters, homeBannerFilters, permissionFilters);
 
     if (!getStoredAdminSession()) {
       setLoading(false);
@@ -5368,9 +5638,72 @@ function App() {
         deliveryPromiseMinutes: Number(settingsForm.deliveryPromiseMinutes) || 18,
         refundReviewMinutes: Number(settingsForm.refundReviewMinutes) || 10,
         coldChainEnabled: settingsForm.coldChainEnabled,
-        roles: {},
-        riskThresholds: {},
+        roles: recordValue(data.mallSettings, 'roles'),
+        riskThresholds: recordValue(data.mallSettings, 'riskThresholds'),
       });
+      await reload();
+    });
+  };
+
+  const resetPermissionForm = () => {
+    setPermissionForm(initialPermissionForm);
+  };
+
+  const togglePermissionModule = (module: string) => {
+    setPermissionForm(current => {
+      const modules = current.modules.includes(module)
+        ? current.modules.filter(item => item !== module)
+        : [...current.modules, module];
+      return { ...current, modules };
+    });
+  };
+
+  const togglePermissionAction = (action: string) => {
+    setPermissionForm(current => {
+      const actions = current.actions.includes(action)
+        ? current.actions.filter(item => item !== action)
+        : [...current.actions, action];
+      return { ...current, actions };
+    });
+  };
+
+  const savePermission = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const isEditing = Boolean(permissionForm.id);
+    await runAction(isEditing ? '权限更新' : '权限创建', async () => {
+      const payload = {
+        name: permissionForm.name.trim(),
+        roleKey: permissionForm.roleKey.trim(),
+        description: permissionForm.description.trim(),
+        modules: permissionForm.modules,
+        actions: permissionForm.actions,
+        status: permissionForm.status,
+      };
+      const permission = isEditing
+        ? await apiPut<JsonRecord>(`/api/admin/mall/permissions/${permissionForm.id}`, payload)
+        : await apiPost<JsonRecord>('/api/admin/mall/permissions', payload);
+
+      setData(current => ({
+        ...current,
+        mallPermissions: upsertRecordList(current.mallPermissions, permission),
+      }));
+      setPermissionForm(initialPermissionForm);
+      await reload();
+    });
+  };
+
+  const editPermission = (permission: JsonRecord) => {
+    setPermissionForm(mallPermissionToForm(permission));
+  };
+
+  const deletePermission = async (id: string) => {
+    await runAction('权限删除', async () => {
+      await apiDelete(`/api/admin/mall/permissions/${id}`);
+      setData(current => ({
+        ...current,
+        mallPermissions: current.mallPermissions.filter(permission => stringValue(permission, 'id') !== id),
+      }));
+      setPermissionForm(current => (current.id === id ? initialPermissionForm : current));
       await reload();
     });
   };
@@ -5656,6 +5989,24 @@ function App() {
           settingsForm={settingsForm}
           onSettingsChange={patch => setSettingsForm(current => ({ ...current, ...patch }))}
           onSettingsSubmit={saveSettings}
+        />
+      );
+    }
+    if (activePageKey === 'mall.permissions') {
+      return (
+        <MallPermissionsSection
+          filters={permissionFilters}
+          form={permissionForm}
+          permissions={data.mallPermissions}
+          onChange={patch => setPermissionForm(current => ({ ...current, ...patch }))}
+          onDelete={deletePermission}
+          onEdit={editPermission}
+          onFiltersChange={patch => setPermissionFilters(current => ({ ...current, ...patch }))}
+          onReset={resetPermissionForm}
+          onSearch={reload}
+          onSubmit={savePermission}
+          onToggleAction={togglePermissionAction}
+          onToggleModule={togglePermissionModule}
         />
       );
     }
