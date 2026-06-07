@@ -35,6 +35,7 @@
     "check:registration-security": "node scripts/check-registration-security.mjs",
     "check:sqlx-migration-immutability": "node scripts/check-sqlx-migration-immutability.mjs",
     "check:web-admin-auth": "node scripts/check-web-admin-auth.mjs",
+    "check:web-admin-mall-order-detail": "node scripts/check-web-admin-mall-order-detail.mjs",
     "dev": "pnpm exec concurrently --kill-others --kill-signal SIGKILL -n web,server -c blue,green \"pnpm dev:web\" \"pnpm dev:server\"",
     "dev:server": "cargo run --manifest-path server/Cargo.toml",
     "dev:vehicle-api": "cargo run --manifest-path server/Cargo.toml --bin vehicle-api",
@@ -66,7 +67,7 @@
     "test:service-routers": "cargo test --manifest-path server/Cargo.toml --test service_routers",
     "tsc": "npx tsc --noEmit --skipLibCheck",
     "validate:split": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n routers,apis,no-fks,boundary,deploy-sh -c blue,magenta,cyan,yellow,green \"pnpm test:service-routers\" \"pnpm build:apis\" \"pnpm check:no-physical-fks\" \"pnpm check:merchant-enterprise-boundary\" \"pnpm check:deploy-scripts\"",
-    "validate": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n lint,tsc,sqlx-migrations,miniapp-version,wechat-api,mall-refresh,network-query,web-auth,admin-mall,admin-ops,mall-cos,mall-auth,mall-real,mall-wechat,mall-width -c red,blue,magenta,cyan,yellow,green,white,gray,redBright,blueBright,magentaBright,greenBright,cyanBright,yellowBright,whiteBright \"pnpm lint:build\" \"pnpm tsc\" \"pnpm check:sqlx-migration-immutability\" \"pnpm check:miniapp-version\" \"pnpm check:no-deprecated-wechat-api\" \"pnpm check:mall-product-refresh\" \"pnpm check:network-query-sanitization\" \"pnpm check:web-admin-auth\" \"pnpm check:admin-mall-auth\" \"pnpm check:admin-mall-ops\" \"pnpm check:mall-cos-image-paths\" \"pnpm check:mall-auth-profile\" \"pnpm check:mall-real-checkout\" \"pnpm check:mall-wechat-auth\" \"pnpm check:mall-h5-width\""
+    "validate": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n lint,tsc,sqlx-migrations,miniapp-version,wechat-api,mall-refresh,network-query,web-auth,admin-mall,admin-ops,mall-cos,mall-auth,mall-real,mall-wechat,mall-width,web-order-detail -c red,blue,magenta,cyan,yellow,green,white,gray,redBright,blueBright,magentaBright,greenBright,cyanBright,yellowBright,whiteBright,blue \"pnpm lint:build\" \"pnpm tsc\" \"pnpm check:sqlx-migration-immutability\" \"pnpm check:miniapp-version\" \"pnpm check:no-deprecated-wechat-api\" \"pnpm check:mall-product-refresh\" \"pnpm check:network-query-sanitization\" \"pnpm check:web-admin-auth\" \"pnpm check:admin-mall-auth\" \"pnpm check:admin-mall-ops\" \"pnpm check:mall-cos-image-paths\" \"pnpm check:mall-auth-profile\" \"pnpm check:mall-real-checkout\" \"pnpm check:mall-wechat-auth\" \"pnpm check:mall-h5-width\" \"pnpm check:web-admin-mall-order-detail\""
   },
   "lint-staged": {
     "src/**/*.{js,jsx,ts,tsx,css}": [

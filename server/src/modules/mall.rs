@@ -3774,15 +3774,16 @@ async fn fetch_orders(
         .await?)
 }
 
-async fn fetch_order_detail(pool: &PgPool, order_id: &str) -> ApiResult<Value> {
+async fn fetch_order_detail(pool: &PgPool, order_identifier: &str) -> ApiResult<Value> {
     sqlx::query_scalar::<_, Value>(
         r#"
         SELECT order_detail_json(o)
         FROM mall_orders o
         WHERE o.id = $1
+           OR lower(o.order_no) = lower($1)
         "#,
     )
-    .bind(order_id)
+    .bind(order_identifier.trim())
     .fetch_optional(pool)
     .await?
     .ok_or_else(|| ApiError::NotFound("订单不存在".to_string()))

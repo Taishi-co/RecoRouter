@@ -901,6 +901,16 @@ function metricValue(record: JsonRecord, keys: string[]) {
   return '0';
 }
 
+function orderEventTime(record: JsonRecord) {
+  return stringValue(record, 'eventTime', stringValue(record, 'createdAt'));
+}
+
+function itemLineTotal(item: JsonRecord) {
+  const explicitTotal = numberValue(item, 'lineTotalCents', numberValue(item, 'totalPriceCents'));
+  if (explicitTotal) return explicitTotal;
+  return numberValue(item, 'unitPriceCents') * numberValue(item, 'quantity', 1);
+}
+
 function Icon({ name }: { name: IconName }) {
   const common = {
     fill: 'none',
@@ -2877,16 +2887,253 @@ function MallInventorySection({
   );
 }
 
+function MallOrderDetailView({ order }: { order: JsonRecord }) {
+  const status = stringValue(order, 'status');
+  const paymentStatus = stringValue(order, 'paymentStatus');
+  const fulfillmentCode = recordValue(order, 'fulfillmentCode');
+  const items = arrayValue(order, 'items');
+  const events = arrayValue(order, 'events');
+  const fulfillmentEvents = arrayValue(order, 'fulfillmentEvents');
+  const afterSales = arrayValue(order, 'afterSales');
+  const pickupPoint = stringValue(order, 'pickupPointName');
+  const groupLeader = stringValue(order, 'groupLeaderName');
+  const groupLeaderPhone = stringValue(order, 'groupLeaderPhone');
+  const fulfillmentCodeText = stringValue(fulfillmentCode, 'code');
+
+  return (
+    <div className="order-detail-view">
+      <div className="order-detail-head">
+        <div>
+          <span>订单号</span>
+          <strong>{stringValue(order, 'orderNo', shortId(stringValue(order, 'id')))}</strong>
+          <small>{formatDate(stringValue(order, 'createdAt'))}</small>
+        </div>
+        <div className="order-detail-statuses">
+          <span className={badgeClass(status)}>{statusLabel(status)}</span>
+          <span className={badgeClass(paymentStatus)}>{statusLabel(paymentStatus)}</span>
+        </div>
+      </div>
+
+      <div className="order-detail-grid">
+        <div>
+          <span>收货人</span>
+          <strong>{stringValue(order, 'recipientName', '-')}</strong>
+          <small>{stringValue(order, 'recipientPhone', '-')}</small>
+        </div>
+        <div>
+          <span>收货地址</span>
+          <strong>{stringValue(order, 'addressText', '-')}</strong>
+          <small>{stringValue(order, 'expectedDeliveryWindow', '-')}</small>
+        </div>
+        <div>
+          <span>自提点</span>
+          <strong>{pickupPoint || '-'}</strong>
+          <small>{groupLeader ? `${groupLeader} ${groupLeaderPhone}` : '-'}</small>
+        </div>
+        <div>
+          <span>履约</span>
+          <strong>{statusLabel(stringValue(order, 'fulfillmentStatus'))}</strong>
+          <small>舱位 {stringValue(order, 'cabinCode', '-')} · 核销码 {fulfillmentCodeText || '-'}</small>
+        </div>
+        <div>
+          <span>商品金额</span>
+          <strong>{yuan(numberValue(order, 'subtotalCents'))}</strong>
+          <small>配送 {yuan(numberValue(order, 'deliveryFeeCents'))} · 优惠 {yuan(numberValue(order, 'couponCents'))}</small>
+        </div>
+        <div>
+          <span>实付金额</span>
+          <strong>{yuan(numberValue(order, 'payableCents'))}</strong>
+          <small>{stringValue(order, 'remark', '-')}</small>
+        </div>
+      </div>
+
+      <section className="order-detail-block">
+        <h3>商品明细</h3>
+        <div className="table-wrap order-detail-items">
+          <table>
+            <thead>
+              <tr>
+                <th>商品</th>
+                <th>规格</th>
+                <th>单价</th>
+                <th>数量</th>
+                <th>小计</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item, index) => {
+                const row = item && typeof item === 'object' && !Array.isArray(item) ? (item as JsonRecord) : {};
+                return (
+                  <tr key={stringValue(row, 'id', `${index}`)}>
+                    <td>
+                      <strong>{stringValue(row, 'productName', '-')}</strong>
+                      <small>{stringValue(row, 'sku', '-')}</small>
+                    </td>
+                    <td>
+                      <span>{stringValue(row, 'categoryCode', '-')}</span>
+                      <small>{stringValue(row, 'specName', stringValue(row, 'specification', '-'))}</small>
+                    </td>
+                    <td>{yuan(numberValue(row, 'unitPriceCents'))}</td>
+                    <td>{numberValue(row, 'quantity')}</td>
+                    <td>{yuan(itemLineTotal(row))}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {!items.length ? <EmptyState text="暂无商品明细" /> : null}
+      </section>
+
+      <div className="order-detail-columns">
+        <section className="order-detail-block">
+          <h3>订单轨迹</h3>
+          <div className="order-detail-timeline">
+            {events.map((event, index) => {
+              const row = event && typeof event === 'object' && !Array.isArray(event) ? (event as JsonRecord) : {};
+              return (
+                <div key={stringValue(row, 'id', `${index}`)}>
+                  <strong>{stringValue(row, 'title', statusLabel(stringValue(row, 'stage')))}</strong>
+                  <span>{stringValue(row, 'description', '-')}</span>
+                  <small>{formatDate(orderEventTime(row))}</small>
+                </div>
+              );
+            })}
+            {!events.length ? <EmptyState text="暂无订单轨迹" /> : null}
+          </div>
+        </section>
+
+        <section className="order-detail-block">
+          <h3>履约与售后</h3>
+          <div className="order-detail-timeline">
+            {fulfillmentEvents.map((event, index) => {
+              const row = event && typeof event === 'object' && !Array.isArray(event) ? (event as JsonRecord) : {};
+              return (
+                <div key={stringValue(row, 'id', `fulfillment-${index}`)}>
+                  <strong>{stringValue(row, 'title', statusLabel(stringValue(row, 'eventType')))}</strong>
+                  <span>{stringValue(row, 'description', '-')}</span>
+                  <small>{formatDate(orderEventTime(row))}</small>
+                </div>
+              );
+            })}
+            {afterSales.map((sale, index) => {
+              const row = sale && typeof sale === 'object' && !Array.isArray(sale) ? (sale as JsonRecord) : {};
+              return (
+                <div key={stringValue(row, 'id', `after-sale-${index}`)}>
+                  <strong>{statusLabel(stringValue(row, 'status'))} · {yuan(numberValue(row, 'amountCents'))}</strong>
+                  <span>{stringValue(row, 'reason', stringValue(row, 'description', '-'))}</span>
+                  <small>{formatDate(stringValue(row, 'createdAt'))}</small>
+                </div>
+              );
+            })}
+            {!fulfillmentEvents.length && !afterSales.length ? <EmptyState text="暂无履约或售后记录" /> : null}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function MallOrderDetailModal({
+  open,
+  order,
+  loading,
+  error,
+  onClose,
+}: {
+  open: boolean;
+  order: JsonRecord | null;
+  loading: boolean;
+  error: string;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="modal-backdrop">
+      <section className="modal-panel order-detail-modal">
+        <div className="modal-title-row">
+          <div>
+            <h2>订单详情</h2>
+            <p>{order ? stringValue(order, 'orderNo', shortId(stringValue(order, 'id'))) : '正在加载订单详情'}</p>
+          </div>
+          <button className="ghost-button small" type="button" onClick={onClose}>
+            <Icon name="x" />
+            关闭
+          </button>
+        </div>
+        {loading ? <div className="loading-panel">正在加载订单详情...</div> : null}
+        {error ? <div className="detail-error">{error}</div> : null}
+        {!loading && !error && order ? <MallOrderDetailView order={order} /> : null}
+      </section>
+    </div>
+  );
+}
+
+function MallOrderDetailSearchSection({
+  keyword,
+  order,
+  loading,
+  error,
+  onKeywordChange,
+  onSearch,
+  onClear,
+}: {
+  keyword: string;
+  order: JsonRecord | null;
+  loading: boolean;
+  error: string;
+  onKeywordChange: (value: string) => void;
+  onSearch: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onClear: () => void;
+}) {
+  return (
+    <Panel
+      title="订单详情"
+      description="按订单号查看订单明细、支付、履约、自提和售后记录"
+      action={
+        order ? (
+          <button className="ghost-button small" type="button" onClick={onClear}>
+            <Icon name="x" />
+            清空
+          </button>
+        ) : null
+      }
+    >
+      <form className="order-search-form" onSubmit={onSearch}>
+        <label>
+          订单号
+          <input
+            placeholder="输入订单号，例如 MALL202606070001"
+            value={keyword}
+            onChange={event => onKeywordChange(event.target.value)}
+          />
+        </label>
+        <button className="primary-button" type="submit" disabled={loading || !keyword.trim()}>
+          <Icon name="orders" />
+          搜索订单号
+        </button>
+      </form>
+      {loading ? <div className="loading-panel">正在加载订单详情...</div> : null}
+      {error ? <div className="detail-error">{error}</div> : null}
+      {!loading && !error && order ? <MallOrderDetailView order={order} /> : null}
+      {!loading && !error && !order ? <EmptyState text="暂无订单详情" /> : null}
+    </Panel>
+  );
+}
+
 function MallOrdersSection({
   orders,
   onDispatch,
   onStatus,
   onRefund,
+  onViewDetail,
 }: {
   orders: JsonRecord[];
   onDispatch: (id: string) => Promise<void>;
   onStatus: (id: string, status: string) => Promise<void>;
   onRefund: (id: string, amountCents: number) => Promise<void>;
+  onViewDetail: (id: string) => Promise<void>;
 }) {
   return (
     <Panel title="商城订单" description="处理支付、派车、配送、售后与退款">
@@ -2930,6 +3177,10 @@ function MallOrdersSection({
                     <span className={badgeClass(status)}>{statusLabel(status)}</span>
                   </td>
                   <td className="actions column-actions">
+                    <button className="ghost-button" type="button" onClick={() => onViewDetail(id)}>
+                      <Icon name="orders" />
+                      详情
+                    </button>
                     <button className="ghost-button" type="button" onClick={() => onDispatch(id)}>
                       <Icon name="truck" />
                       派车
@@ -3304,6 +3555,14 @@ function App() {
   const [inventoryFilters, setInventoryFilters] = useState<MallFilterState>(initialInventoryFilters);
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [supportMessages, setSupportMessages] = useState<JsonRecord[]>([]);
+  const [mallOrderDetailModalOpen, setMallOrderDetailModalOpen] = useState(false);
+  const [mallOrderDetail, setMallOrderDetail] = useState<JsonRecord | null>(null);
+  const [mallOrderDetailLoading, setMallOrderDetailLoading] = useState(false);
+  const [mallOrderDetailError, setMallOrderDetailError] = useState('');
+  const [mallOrderSearchKeyword, setMallOrderSearchKeyword] = useState('');
+  const [mallOrderSearchResult, setMallOrderSearchResult] = useState<JsonRecord | null>(null);
+  const [mallOrderSearchLoading, setMallOrderSearchLoading] = useState(false);
+  const [mallOrderSearchError, setMallOrderSearchError] = useState('');
 
   const currentModule = useMemo(
     () => adminModules.find(module => module.key === activeModuleKey) || adminModules[0],
@@ -3319,6 +3578,14 @@ function App() {
     setErrors({});
     setSupportMessages([]);
     setSelectedSessionId('');
+    setMallOrderDetailModalOpen(false);
+    setMallOrderDetail(null);
+    setMallOrderDetailLoading(false);
+    setMallOrderDetailError('');
+    setMallOrderSearchKeyword('');
+    setMallOrderSearchResult(null);
+    setMallOrderSearchLoading(false);
+    setMallOrderSearchError('');
     setBusy('');
     setLoading(false);
   };
@@ -3615,6 +3882,50 @@ function App() {
       await apiPut(`/api/admin/mall/products/${id}`, { stock, stockAlertThreshold });
       await reload();
     });
+  };
+
+  const fetchMallOrderDetail = async (identifier: string) => {
+    const value = identifier.trim();
+    if (!value) {
+      throw new Error('请输入订单号或订单ID');
+    }
+    return apiGet<JsonRecord>(`/api/admin/mall/orders/${encodeURIComponent(value)}`);
+  };
+
+  const openMallOrderDetail = async (identifier: string) => {
+    setMallOrderDetailModalOpen(true);
+    setMallOrderDetail(null);
+    setMallOrderDetailError('');
+    setMallOrderDetailLoading(true);
+
+    try {
+      setMallOrderDetail(await fetchMallOrderDetail(identifier));
+    } catch (error) {
+      setMallOrderDetailError(error instanceof Error ? error.message : '订单详情加载失败');
+    } finally {
+      setMallOrderDetailLoading(false);
+    }
+  };
+
+  const searchMallOrderDetail = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setMallOrderSearchResult(null);
+    setMallOrderSearchError('');
+    setMallOrderSearchLoading(true);
+
+    try {
+      setMallOrderSearchResult(await fetchMallOrderDetail(mallOrderSearchKeyword));
+    } catch (error) {
+      setMallOrderSearchError(error instanceof Error ? error.message : '订单详情加载失败');
+    } finally {
+      setMallOrderSearchLoading(false);
+    }
+  };
+
+  const clearMallOrderSearch = () => {
+    setMallOrderSearchKeyword('');
+    setMallOrderSearchResult(null);
+    setMallOrderSearchError('');
   };
 
   const dispatchMallOrder = async (id: string) => {
@@ -3925,6 +4236,19 @@ function App() {
         />
       );
     }
+    if (activePageKey === 'mall.orderDetail') {
+      return (
+        <MallOrderDetailSearchSection
+          error={mallOrderSearchError}
+          keyword={mallOrderSearchKeyword}
+          loading={mallOrderSearchLoading}
+          order={mallOrderSearchResult}
+          onClear={clearMallOrderSearch}
+          onKeywordChange={setMallOrderSearchKeyword}
+          onSearch={searchMallOrderDetail}
+        />
+      );
+    }
     if (activePageKey === 'mall.orders' || activePageKey === 'mall.refunds' || activePageKey === 'mall.afterSales') {
       return (
         <MallOrdersSection
@@ -3932,6 +4256,7 @@ function App() {
           onDispatch={dispatchMallOrder}
           onRefund={refundMallOrder}
           onStatus={updateMallOrderStatus}
+          onViewDetail={openMallOrderDetail}
         />
       );
     }
@@ -4056,6 +4381,16 @@ function App() {
           {!loading ? renderActivePage() : null}
         </div>
       </main>
+      <MallOrderDetailModal
+        error={mallOrderDetailError}
+        loading={mallOrderDetailLoading}
+        open={mallOrderDetailModalOpen}
+        order={mallOrderDetail}
+        onClose={() => {
+          setMallOrderDetailModalOpen(false);
+          setMallOrderDetailError('');
+        }}
+      />
     </div>
   );
 }
