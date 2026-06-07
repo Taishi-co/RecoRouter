@@ -24,6 +24,12 @@ body {
   background: #f4f6f8;
 }
 
+#web-admin-root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 button,
 input,
 select,
@@ -317,7 +323,9 @@ nav {
 }
 
 .design-workspace {
+  min-width: 0;
   min-height: 100vh;
+  max-width: 100%;
   padding: 0;
   background: #f5f7fa;
 }
@@ -1290,6 +1298,85 @@ textarea:focus {
   gap: 14px;
 }
 
+.support-workbench {
+  gap: 14px;
+}
+
+.support-filterbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.6fr) repeat(3, minmax(130px, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.support-filterbar label {
+  display: grid;
+  gap: 6px;
+  color: #526078;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.support-filterbar input,
+.support-filterbar select {
+  min-width: 0;
+}
+
+.support-workbench-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.9fr) minmax(420px, 1.25fr) minmax(320px, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.support-stack {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.support-after-sales {
+  display: grid;
+  gap: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.support-after-sale-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 12px;
+  background: #fffaf0;
+  border: 1px solid #ecd8a6;
+  border-radius: 8px;
+}
+
+.support-after-sale-row strong,
+.support-after-sale-row span,
+.support-after-sale-row small {
+  display: block;
+  min-width: 0;
+}
+
+.support-after-sale-row span,
+.support-after-sale-row small {
+  margin-top: 4px;
+  color: #697386;
+  font-size: 12px;
+}
+
+.support-row-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.support-create-session {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+
 .inline-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
@@ -1373,6 +1460,44 @@ textarea:focus {
   min-height: 56px;
 }
 
+.support-conversation .panel {
+  min-height: 100%;
+}
+
+.quick-replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.quick-replies .ghost-button {
+  justify-content: flex-start;
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+
+.support-ticket-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.support-ticket-form .primary-button {
+  grid-column: 1 / -1;
+}
+
+.support-ticket-board,
+.support-knowledge-panel {
+  min-width: 0;
+}
+
+.support-ticket-row {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
 .knowledge-list {
   display: grid;
   gap: 8px;
@@ -1392,6 +1517,13 @@ textarea:focus {
 .knowledge-list small {
   margin-top: 4px;
   color: #697386;
+}
+
+.knowledge-list p {
+  margin: 6px 0 0;
+  color: #526078;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .empty-state,
@@ -1431,6 +1563,7 @@ textarea:focus {
   .coverage-grid,
   .split-grid,
   .support-layout,
+  .support-workbench-grid,
   .order-detail-grid,
   .order-detail-columns {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1439,16 +1572,35 @@ textarea:focus {
   .stat-grid.compact {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .support-filterbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 860px) {
   .admin-shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  .design-admin {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .sidebar {
     position: static;
     height: auto;
+    width: 100%;
+    max-width: 100vw;
+  }
+
+  .design-sidebar,
+  .design-workspace {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
   }
 
   nav {
@@ -1478,6 +1630,8 @@ textarea:focus {
   .coverage-grid,
   .split-grid,
   .support-layout,
+  .support-filterbar,
+  .support-workbench-grid,
   .settings-form,
   .order-search-form,
   .order-detail-grid,
