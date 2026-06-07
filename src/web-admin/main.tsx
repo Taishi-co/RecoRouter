@@ -431,7 +431,8 @@ const adminModules: AdminModuleSpec[] = [
       designPage('mall.pickup', '自提点管理', '订单管理', '自提点、团长和营业时间管理', 'route'),
       designPage('mall.leaders', '团长管理', '订单管理', '团长中心、核销权限和服务质量', 'users'),
       designPage('mall.community', '邻里圈', '营销中心', '自提点动态、拼团和用户互动', 'megaphone'),
-      designPage('mall.campaigns', '营销活动', '营销中心', '满减、券、拼团和预算管理', 'megaphone', 'operations'),
+      designPage('mall.campaignCreate', '新增营销活动', '营销中心', '创建满减、券包、拼团和配送补贴活动', 'plus'),
+      designPage('mall.campaigns', '营销活动列表', '营销中心', '活动启停、预算消耗和投放状态', 'megaphone', 'operations'),
       designPage('mall.couponCreate', '新增优惠券', '营销中心', '配置优惠券门槛、金额、发放量和有效期', 'plus'),
       designPage('mall.coupons', '优惠券列表', '营销中心', '优惠券发放、核销状态和预算控制', 'megaphone'),
       designPage('mall.banners', '首页配置', '营销中心', '首页卡片、Banner 和推荐商品', 'dashboard'),
@@ -3786,36 +3787,26 @@ function MallHomeBannersSection({
   );
 }
 
-function OperationsSection({
-  campaigns,
-  campaignForm,
-  settingsForm,
-  onCampaignChange,
-  onSettingsChange,
-  onCampaignSubmit,
-  onCampaignStatus,
-  onSettingsSubmit,
+function MallCampaignCreateSection({
+  form,
+  onChange,
+  onSubmit,
 }: {
-  campaigns: JsonRecord[];
-  campaignForm: CampaignForm;
-  settingsForm: SettingsForm;
-  onCampaignChange: (patch: Partial<CampaignForm>) => void;
-  onSettingsChange: (patch: Partial<SettingsForm>) => void;
-  onCampaignSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
-  onCampaignStatus: (id: string, status: string) => Promise<void>;
-  onSettingsSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  form: CampaignForm;
+  onChange: (patch: Partial<CampaignForm>) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
 }) {
   return (
-    <div className="split-grid">
-      <Panel title="营销活动" description="创建满减、补贴、券包等商城运营活动">
-        <form className="form-grid" onSubmit={onCampaignSubmit}>
+    <div className="page-grid">
+      <Panel title="新增营销活动" description="创建满减、补贴、券包等商城运营活动">
+        <form className="form-grid" onSubmit={onSubmit}>
           <label>
             活动名称
-            <input value={campaignForm.name} onChange={event => onCampaignChange({ name: event.target.value })} />
+            <input value={form.name} onChange={event => onChange({ name: event.target.value })} />
           </label>
           <label>
             类型
-            <select value={campaignForm.campaignType} onChange={event => onCampaignChange({ campaignType: event.target.value })}>
+            <select value={form.campaignType} onChange={event => onChange({ campaignType: event.target.value })}>
               <option value="discount">满减</option>
               <option value="coupon">优惠券</option>
               <option value="bundle">组合购</option>
@@ -3824,11 +3815,11 @@ function OperationsSection({
           </label>
           <label>
             预算
-            <input value={campaignForm.budgetYuan} type="number" min="0" step="0.01" onChange={event => onCampaignChange({ budgetYuan: event.target.value })} />
+            <input value={form.budgetYuan} type="number" min="0" step="0.01" onChange={event => onChange({ budgetYuan: event.target.value })} />
           </label>
           <label>
             状态
-            <select value={campaignForm.status} onChange={event => onCampaignChange({ status: event.target.value })}>
+            <select value={form.status} onChange={event => onChange({ status: event.target.value })}>
               <option value="active">启用</option>
               <option value="draft">草稿</option>
               <option value="inactive">停用</option>
@@ -3836,7 +3827,7 @@ function OperationsSection({
           </label>
           <label className="wide">
             规则 JSON
-            <textarea value={campaignForm.rules} onChange={event => onCampaignChange({ rules: event.target.value })} />
+            <textarea value={form.rules} onChange={event => onChange({ rules: event.target.value })} />
           </label>
           <button className="primary-button wide" type="submit">
             <Icon name="plus" />
@@ -3845,7 +3836,20 @@ function OperationsSection({
         </form>
       </Panel>
 
-      <Panel title="活动列表" description="运营端活动启停与消耗查看">
+    </div>
+  );
+}
+
+function MallCampaignsSection({
+  campaigns,
+  onCampaignStatus,
+}: {
+  campaigns: JsonRecord[];
+  onCampaignStatus: (id: string, status: string) => Promise<void>;
+}) {
+  return (
+    <div className="page-grid">
+      <Panel title="营销活动列表" description="运营端活动启停与消耗查看">
         <div className="list-stack">
           {campaigns.map(campaign => {
             const id = stringValue(campaign, 'id');
@@ -3867,7 +3871,21 @@ function OperationsSection({
           {!campaigns.length ? <EmptyState text="暂无活动数据" /> : null}
         </div>
       </Panel>
+    </div>
+  );
+}
 
+function MallSettingsSection({
+  settingsForm,
+  onSettingsChange,
+  onSettingsSubmit,
+}: {
+  settingsForm: SettingsForm;
+  onSettingsChange: (patch: Partial<SettingsForm>) => void;
+  onSettingsSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+}) {
+  return (
+    <div className="page-grid">
       <Panel title="商城与配送配置" description="保存免配送费门槛、配送费、承诺时效、冷链与退款审核规则">
         <form className="form-grid settings-form" onSubmit={onSettingsSubmit}>
           <label>
@@ -4973,15 +4991,27 @@ function App() {
         />
       );
     }
-    if (activePageKey === 'mall.campaigns' || activePageKey === 'mall.settings') {
+    if (activePageKey === 'mall.campaignCreate') {
       return (
-        <OperationsSection
-          campaignForm={campaignForm}
+        <MallCampaignCreateSection
+          form={campaignForm}
+          onChange={patch => setCampaignForm(current => ({ ...current, ...patch }))}
+          onSubmit={createCampaign}
+        />
+      );
+    }
+    if (activePageKey === 'mall.campaigns') {
+      return (
+        <MallCampaignsSection
           campaigns={data.campaigns}
-          settingsForm={settingsForm}
-          onCampaignChange={patch => setCampaignForm(current => ({ ...current, ...patch }))}
           onCampaignStatus={updateCampaignStatus}
-          onCampaignSubmit={createCampaign}
+        />
+      );
+    }
+    if (activePageKey === 'mall.settings') {
+      return (
+        <MallSettingsSection
+          settingsForm={settingsForm}
           onSettingsChange={patch => setSettingsForm(current => ({ ...current, ...patch }))}
           onSettingsSubmit={saveSettings}
         />

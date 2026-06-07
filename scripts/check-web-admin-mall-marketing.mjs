@@ -26,17 +26,27 @@ const migrations = readdirSync(resolve(root, 'server/migrations'))
 
 assert(/designPage\('mall\.couponCreate', '新增优惠券'/.test(adminMain), 'Mall admin must have a dedicated coupon creation page.');
 assert(/designPage\('mall\.coupons', '优惠券列表'/.test(adminMain), 'Mall admin coupon list page must be separate from creation.');
+assert(/designPage\('mall\.campaignCreate', '新增营销活动'/.test(adminMain), 'Mall admin must have a dedicated campaign creation page.');
+assert(/designPage\('mall\.campaigns', '营销活动列表'/.test(adminMain), 'Mall admin campaign list page must be separate from creation.');
 assert(/function MallCouponCreateSection\(/.test(adminMain), 'Web admin must render a real coupon creation section.');
 assert(/function MallCouponsSection\(/.test(adminMain), 'Web admin must render a real coupon list section.');
 assert(/function MallHomeBannersSection\(/.test(adminMain), 'Web admin must render a real home configuration section.');
+assert(/function MallCampaignCreateSection\(/.test(adminMain), 'Web admin must render a real campaign creation section.');
+assert(/function MallCampaignsSection\(/.test(adminMain), 'Web admin must render a real campaign list section.');
+assert(/function MallSettingsSection\(/.test(adminMain), 'Web admin must keep operation settings separate from campaign management.');
 assert(/activePageKey === 'mall\.couponCreate'[\s\S]*<MallCouponCreateSection/.test(adminMain), 'mall.couponCreate must route to MallCouponCreateSection.');
 assert(/activePageKey === 'mall\.coupons'[\s\S]*<MallCouponsSection/.test(adminMain), 'mall.coupons must route to MallCouponsSection.');
 assert(/activePageKey === 'mall\.banners'[\s\S]*<MallHomeBannersSection/.test(adminMain), 'mall.banners must route to MallHomeBannersSection.');
+assert(/activePageKey === 'mall\.campaignCreate'[\s\S]*<MallCampaignCreateSection/.test(adminMain), 'mall.campaignCreate must route to MallCampaignCreateSection.');
+assert(/activePageKey === 'mall\.campaigns'[\s\S]*<MallCampaignsSection/.test(adminMain), 'mall.campaigns must route to MallCampaignsSection.');
+assert(/activePageKey === 'mall\.settings'[\s\S]*<MallSettingsSection/.test(adminMain), 'mall.settings must route to MallSettingsSection.');
 assert(/apiPost\('\/api\/admin\/mall\/coupons'/.test(adminMain), 'Coupon creation must call the real admin coupon API.');
 assert(/apiGet<JsonRecord\[]>\('\/api\/admin\/mall\/coupons'/.test(adminMain), 'Coupon list must load from the real admin coupon API.');
 assert(/apiGet<JsonRecord\[]>\('\/api\/admin\/mall\/home-banners'/.test(adminMain), 'Home configuration must load from the real admin home banner API.');
 assert(/apiPost(?:<[^>]+>)?\('\/api\/admin\/mall\/home-banners'/.test(adminMain), 'Home configuration creation must call the real admin home banner API.');
 assert(/apiPut(?:<[^>]+>)?\(`\/api\/admin\/mall\/home-banners\/\$\{[^}]+\}`/.test(adminMain), 'Home configuration edit must call the real admin home banner update API.');
+assert(/apiPost\('\/api\/admin\/mall\/campaigns'/.test(adminMain), 'Campaign creation must call the real admin campaign API.');
+assert(/apiGet<JsonRecord\[]>\('\/api\/admin\/mall\/campaigns'/.test(adminMain), 'Campaign list must load from the real admin campaign API.');
 assert(/export async function listMallHomeBanners\(\)/.test(mallService), 'Mall app service must expose the public home banner API.');
 assert(/apiGet\('\/api\/mall\/home-banners'\)/.test(mallService), 'Mall app service must call the public home banner endpoint.');
 assert(/listMallHomeBanners/.test(mallHome), 'Mall home page must load configured home banners.');
