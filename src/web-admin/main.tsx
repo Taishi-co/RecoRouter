@@ -199,6 +199,49 @@ interface SupportFilterState {
   priority: string;
 }
 
+interface OperationsTrendBar {
+  key: string;
+  label: string;
+  orders: number;
+  revenueCents: number;
+  percentage: number;
+}
+
+interface OperationsFunnelStep {
+  label: string;
+  value: number;
+  detail: string;
+  percentage: number;
+}
+
+interface OperationsModuleCard {
+  label: string;
+  value: string;
+  detail: string;
+  status: string;
+  progress: number;
+}
+
+interface OperationsRiskItem {
+  label: string;
+  value: string;
+  detail: string;
+  tone: 'blue' | 'green' | 'amber' | 'gray';
+}
+
+interface OperationsScreenModel {
+  kpis: Array<{
+    label: string;
+    value: string;
+    detail: string;
+    trend: string;
+  }>;
+  trends: OperationsTrendBar[];
+  funnel: OperationsFunnelStep[];
+  modules: OperationsModuleCard[];
+  risks: OperationsRiskItem[];
+}
+
 type IconName =
   | 'dashboard'
   | 'users'
@@ -1096,6 +1139,267 @@ function buildAfterSalesQueue(orders: JsonRecord[]) {
       });
     })
     .sort((left, right) => new Date(stringValue(right, 'createdAt')).getTime() - new Date(stringValue(left, 'createdAt')).getTime());
+}
+
+function clampPercent(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function percentValue(value: number, total: number) {
+  return total > 0 ? clampPercent((value / total) * 100) : 0;
+}
+
+function amountCentsFromRecord(record: JsonRecord, centsKeys: string[], yuanKeys: string[] = []) {
+  for (const key of centsKeys) {
+    const value = numberValue(record, key);
+    if (value > 0) return value;
+  }
+
+  for (const key of yuanKeys) {
+    const value = numberValue(record, key);
+    if (value > 0) return Math.round(value * 100);
+  }
+
+  return 0;
+}
+
+function mallOrderRevenueCents(order: JsonRecord) {
+  const explicitAmount = amountCentsFromRecord(order, [
+    'payableAmountCents',
+    'paidAmountCents',
+    'totalAmountCents',
+    'amountCents',
+  ]);
+  if (explicitAmount > 0) return explicitAmount;
+
+  return arrayValue(order, 'items').reduce((total, item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return total;
+    return total + itemLineTotal(item as JsonRecord);
+  }, 0);
+}
+
+function transportOrderRevenueCents(order: JsonRecord) {
+  return amountCentsFromRecord(order, ['farePriceCents', 'fare_price_cents'], ['farePrice', 'fare_price']);
+}
+
+function combinedOrderRevenueCents(order: JsonRecord) {
+  return mallOrderRevenueCents(order) || transportOrderRevenueCents(order);
+}
+
+function orderStatus(record: JsonRecord) {
+  return stringValue(record, 'status', stringValue(record, 'orderStatus', stringValue(record, 'order_status')));
+}
+
+function orderPaymentStatus(record: JsonRecord) {
+  return stringValue(record, 'paymentStatus', stringValue(record, 'payment_status'));
+}
+
+function isPaidBusinessOrder(record: JsonRecord) {
+  const status = orderStatus(record);
+  const payStatus = orderPaymentStatus(record);
+  return payStatus === 'paid' || ['paid', 'dispatching', 'delivering', 'completed'].includes(status);
+}
+
+function isFulfillmentOrder(record: JsonRecord) {
+  return ['dispatching', 'delivering', 'processing'].includes(orderStatus(record));
+}
+
+function isCompletedBusinessOrder(record: JsonRecord) {
+  return orderStatus(record) === 'completed';
+}
+
+function businessOrderTime(record: JsonRecord) {
+  const value = stringValue(record, 'createdAt', stringValue(record, 'created_at', stringValue(record, 'paidAt', stringValue(record, 'updatedAt'))));
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function dayKey(date: Date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function recentDaySlots(count: number) {
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - (count - index - 1));
+    return {
+      key: dayKey(date),
+      label: `${date.getMonth() + 1}/${date.getDate()}`,
+      orders: 0,
+      revenueCents: 0,
+    };
+  });
+}
+
+function operationsTrendBars(data: DashboardData): OperationsTrendBar[] {
+  const slots = recentDaySlots(7);
+  const slotMap = new Map(slots.map(slot => [slot.key, slot]));
+  [...data.mallOrders, ...data.transportOrders].forEach(order => {
+    const date = businessOrderTime(order);
+    if (!date) return;
+    const slot = slotMap.get(dayKey(date));
+    if (!slot) return;
+    slot.orders += 1;
+    slot.revenueCents += combinedOrderRevenueCents(order);
+  });
+
+  const maxRevenue = Math.max(...slots.map(slot => slot.revenueCents), 0);
+  const maxOrders = Math.max(...slots.map(slot => slot.orders), 0);
+  return slots.map(slot => ({
+    ...slot,
+    percentage: maxRevenue > 0
+      ? percentValue(slot.revenueCents, maxRevenue)
+      : percentValue(slot.orders, maxOrders),
+  }));
+}
+
+function operationsFunnelSteps(data: DashboardData): OperationsFunnelStep[] {
+  const orders = [...data.mallOrders, ...data.transportOrders];
+  const created = orders.length;
+  const paid = orders.filter(isPaidBusinessOrder).length;
+  const fulfilling = orders.filter(isFulfillmentOrder).length;
+  const completed = orders.filter(isCompletedBusinessOrder).length;
+  const afterSales = buildAfterSalesQueue(data.mallOrders).length;
+  const base = Math.max(created, 1);
+
+  return [
+    { label: '订单创建', value: created, detail: '商城订单 + 运力订单', percentage: percentValue(created, base) },
+    { label: '支付完成', value: paid, detail: '已支付或进入履约', percentage: percentValue(paid, base) },
+    { label: '履约中', value: fulfilling, detail: '派送、配送、处理中', percentage: percentValue(fulfilling, base) },
+    { label: '已完成', value: completed, detail: '完成闭环订单', percentage: percentValue(completed, base) },
+    { label: '售后处理', value: afterSales, detail: '退款/售后申请', percentage: percentValue(afterSales, base) },
+  ];
+}
+
+function operationsModuleCards(data: DashboardData, errors: LoadErrors): OperationsModuleCard[] {
+  const paidOrders = [...data.mallOrders, ...data.transportOrders].filter(isPaidBusinessOrder).length;
+  const orderTotal = data.mallOrders.length + data.transportOrders.length;
+  const activeVehicles = data.vehicles.filter(vehicle => ['active', 'approved', 'online'].includes(orderStatus(vehicle) || stringValue(vehicle, 'status'))).length;
+  const openTickets = data.supportTickets.filter(ticket => isOpenSupportStatus(orderStatus(ticket))).length;
+  const ticketTotal = data.supportTickets.length;
+  const errorCount = Object.keys(errors).length;
+
+  return [
+    {
+      label: '商城交易',
+      value: yuan(numberValue(data.mallOverview, 'todayRevenueCents') || data.mallOrders.reduce((total, order) => total + mallOrderRevenueCents(order), 0)),
+      detail: `${data.mallOrders.length} 单 · ${data.mallProducts.length} 个商品`,
+      status: data.mallOrders.length ? '运行中' : '待拉新',
+      progress: percentValue(paidOrders, Math.max(orderTotal, 1)),
+    },
+    {
+      label: '无人车履约',
+      value: `${activeVehicles}/${data.vehicles.length}`,
+      detail: `${data.transportOrders.length} 个运力订单 · ${data.commissionPending.length} 个佣金待审`,
+      status: data.vehicles.length ? '资产在线' : '待接入',
+      progress: percentValue(activeVehicles, Math.max(data.vehicles.length, 1)),
+    },
+    {
+      label: '客服售后',
+      value: metricValue(data.supportMetrics, ['openSessions']),
+      detail: `${openTickets} 个未结工单 · ${buildAfterSalesQueue(data.mallOrders).length} 个售后`,
+      status: openTickets ? '需跟进' : '稳定',
+      progress: ticketTotal ? percentValue(ticketTotal - openTickets, ticketTotal) : 100,
+    },
+    {
+      label: '公共服务',
+      value: errorCount ? `${errorCount} 项异常` : '在线',
+      detail: '支付、分账、COS、日志和管理接口',
+      status: errorCount ? '接口降级' : '健康',
+      progress: errorCount ? 58 : 100,
+    },
+  ];
+}
+
+function operationsRiskItems(data: DashboardData, errors: LoadErrors): OperationsRiskItem[] {
+  const openTickets = data.supportTickets.filter(ticket => isOpenSupportStatus(orderStatus(ticket))).length;
+  const pendingOrders = numberValue(data.mallOverview, 'pendingOrders');
+  const afterSales = buildAfterSalesQueue(data.mallOrders).length;
+  const errorCount = Object.keys(errors).length;
+  const risks: OperationsRiskItem[] = [
+    {
+      label: '待履约订单',
+      value: String(pendingOrders || data.mallOrders.filter(isFulfillmentOrder).length),
+      detail: '需要派车、核销或客服确认',
+      tone: pendingOrders ? 'amber' : 'green',
+    },
+    {
+      label: '库存预警',
+      value: String(data.mallInventoryAlerts.length || numberValue(data.mallOverview, 'stockAlerts')),
+      detail: '低库存商品需要运营补货',
+      tone: data.mallInventoryAlerts.length ? 'amber' : 'green',
+    },
+    {
+      label: '售后队列',
+      value: String(afterSales),
+      detail: '坏果包赔、退款和补偿待处理',
+      tone: afterSales ? 'amber' : 'green',
+    },
+    {
+      label: '客服工单',
+      value: String(openTickets),
+      detail: '未解决工单影响用户体验',
+      tone: openTickets ? 'blue' : 'green',
+    },
+    {
+      label: '服务接口',
+      value: errorCount ? `${errorCount} 项` : '正常',
+      detail: errorCount ? Object.keys(errors).join(' / ') : '所有已加载接口可用',
+      tone: errorCount ? 'gray' : 'green',
+    },
+  ];
+
+  return risks;
+}
+
+function buildOperationsScreenModel(data: DashboardData, errors: LoadErrors = {}): OperationsScreenModel {
+  const trends = operationsTrendBars(data);
+  const todayTrend = trends[trends.length - 1];
+  const orders = [...data.mallOrders, ...data.transportOrders];
+  const paidOrders = orders.filter(isPaidBusinessOrder).length;
+  const completedOrders = orders.filter(isCompletedBusinessOrder).length;
+  const todayRevenueCents = numberValue(data.mallOverview, 'todayRevenueCents') || todayTrend?.revenueCents || 0;
+  const supportSatisfaction = metricValue(data.supportMetrics, ['satisfaction']);
+  const totalOrders = orders.length || numberValue(data.adminStats, 'orderCount', numberValue(data.adminStats, 'orders'));
+  const fulfillmentRate = percentValue(completedOrders, Math.max(paidOrders, 1));
+
+  return {
+    kpis: [
+      {
+        label: '今日交易额',
+        value: yuan(todayRevenueCents),
+        detail: `${todayTrend?.orders || 0} 单新增`,
+        trend: '实时交易',
+      },
+      {
+        label: '订单总量',
+        value: String(totalOrders),
+        detail: `${paidOrders} 单已支付`,
+        trend: `${fulfillmentRate}% 完成率`,
+      },
+      {
+        label: '在售商品',
+        value: metricValue(data.mallOverview, ['onSaleProducts']) || String(data.mallProducts.length),
+        detail: `${data.mallInventoryAlerts.length || numberValue(data.mallOverview, 'stockAlerts')} 个库存预警`,
+        trend: '商城供给',
+      },
+      {
+        label: '客服满意度',
+        value: `${supportSatisfaction}%`,
+        detail: `${metricValue(data.supportMetrics, ['openSessions'])} 个会话待跟进`,
+        trend: '服务体验',
+      },
+    ],
+    trends,
+    funnel: operationsFunnelSteps(data),
+    modules: operationsModuleCards(data, errors),
+    risks: operationsRiskItems(data, errors),
+  };
 }
 
 function upsertRecordList(list: JsonRecord[], record: JsonRecord) {
@@ -2424,46 +2728,127 @@ function ProductImage({ record }: { record: JsonRecord }) {
   );
 }
 
-function OverviewSection({ data }: { data: DashboardData }) {
-  const userCount = metricValue(data.adminStats, ['userCount', 'users', 'totalUsers']);
-  const vehicleCount = metricValue(data.adminStats, ['vehicleCount', 'vehicles', 'totalVehicles']);
-  const orderCount = metricValue(data.adminStats, ['orderCount', 'orders', 'totalOrders']);
-  const todayRevenue = yuan(numberValue(data.mallOverview, 'todayRevenueCents'));
-  const onSaleProducts = metricValue(data.mallOverview, ['onSaleProducts']);
-  const pendingOrders = metricValue(data.mallOverview, ['pendingOrders']);
-  const afterSales = metricValue(data.mallOverview, ['afterSales']);
-  const supportOpen = metricValue(data.supportMetrics, ['openSessions']);
-  const satisfaction = metricValue(data.supportMetrics, ['satisfaction']);
+function OperationsDataScreen({ data, errors = {} }: { data: DashboardData; errors?: LoadErrors }) {
+  const model = useMemo(() => buildOperationsScreenModel(data, errors), [data, errors]);
+  const peakTrend = Math.max(...model.trends.map(trend => trend.revenueCents), 0);
 
   return (
-    <div className="page-grid">
-      <div className="stat-grid">
-        <StatCard label="平台用户" value={userCount} detail="账号角色、商户、车主统一管理" />
-        <StatCard label="车辆资产" value={vehicleCount} detail="车辆审核、状态和运营范围" />
-        <StatCard label="运力订单" value={orderCount} detail="普通运力订单与佣金审核" />
-        <StatCard label="今日商城收入" value={todayRevenue} detail="已支付商城订单金额" />
-        <StatCard label="在售商品" value={onSaleProducts} detail={`${numberValue(data.mallOverview, 'stockAlerts')} 个库存预警`} />
-        <StatCard label="待处理商城单" value={pendingOrders} detail={`${afterSales} 个售后/退款事项`} />
-        <StatCard label="客服会话" value={supportOpen} detail={`满意度 ${satisfaction}%`} />
-        <StatCard label="活动投放" value={metricValue(data.mallOverview, ['campaigns'])} detail="商城活动与配送规则" />
+    <div className="operations-screen">
+      <section className="operations-hero">
+        <div>
+          <span className="operations-eyebrow">运营数据大屏</span>
+          <h2>平台实时运营中心</h2>
+          <p>聚合商城交易、无人车履约、客服售后和公共服务状态，给运营值班看当天是否需要介入。</p>
+        </div>
+        <div className="operations-clock">
+          <span>数据来源</span>
+          <strong>管理端实时接口</strong>
+          <small>近 7 日趋势 · 当前加载状态</small>
+        </div>
+      </section>
+
+      <div className="operations-kpi-grid">
+        {model.kpis.map(kpi => (
+          <section className="operations-kpi" key={kpi.label}>
+            <span>{kpi.label}</span>
+            <strong>{kpi.value}</strong>
+            <small>{kpi.detail}</small>
+            <em>{kpi.trend}</em>
+          </section>
+        ))}
       </div>
 
-      <Panel title="设计稿 19-23 功能覆盖" description="Web 管理端、Web 运营端、客服工作台均由同一个桌面平台承载">
-        <div className="coverage-grid">
-          <div>
-            <strong>Web 管理端</strong>
-            <span>账号角色、车辆审核、订单查看、佣金确认、基础配置</span>
+      <div className="operations-main-grid">
+        <section className="operations-panel operations-trend-panel">
+          <div className="operations-panel-head">
+            <div>
+              <h3>交易趋势</h3>
+              <p>商城订单与运力订单合并统计，金额优先取实付/运费字段</p>
+            </div>
+            <span>{peakTrend ? `峰值 ${yuan(peakTrend)}` : '暂无交易峰值'}</span>
           </div>
-          <div>
-            <strong>Web 运营端</strong>
-            <span>商城商品、订单调度、退款售后、营销活动、配送设置</span>
+          <div className="operations-trend-bars">
+            {model.trends.map(trend => (
+              <div className="operations-trend-item" key={trend.key}>
+                <div className="operations-bar-track">
+                  <span style={{ height: `${trend.percentage ? Math.max(trend.percentage, 8) : 4}%` }} />
+                </div>
+                <strong>{trend.orders}</strong>
+                <small>{trend.label}</small>
+              </div>
+            ))}
           </div>
-          <div>
-            <strong>客服模块</strong>
-            <span>客服会话、消息回复、工单处理、知识库发布</span>
+        </section>
+
+        <section className="operations-panel">
+          <div className="operations-panel-head">
+            <div>
+              <h3>业务漏斗</h3>
+              <p>从下单、支付、履约到售后，快速看转化和堆积位置</p>
+            </div>
           </div>
-        </div>
-      </Panel>
+          <div className="operations-funnel">
+            {model.funnel.map(step => (
+              <article className="operations-funnel-step" key={step.label}>
+                <div>
+                  <strong>{step.label}</strong>
+                  <small>{step.detail}</small>
+                </div>
+                <span>{step.value}</span>
+                <div className="operations-progress">
+                  <i style={{ width: `${step.percentage}%` }} />
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <div className="operations-bottom-grid">
+        <section className="operations-panel">
+          <div className="operations-panel-head">
+            <div>
+              <h3>模块健康</h3>
+              <p>按商城、无人车、客服和公共服务拆开看运行状态</p>
+            </div>
+          </div>
+          <div className="operations-module-grid">
+            {model.modules.map(module => (
+              <article className="operations-module-card" key={module.label}>
+                <div>
+                  <span>{module.label}</span>
+                  <strong>{module.value}</strong>
+                </div>
+                <em>{module.status}</em>
+                <small>{module.detail}</small>
+                <div className="operations-progress">
+                  <i style={{ width: `${module.progress}%` }} />
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="operations-panel">
+          <div className="operations-panel-head">
+            <div>
+              <h3>风险队列</h3>
+              <p>把需要运营介入的售后、库存、履约和接口问题集中展示</p>
+            </div>
+          </div>
+          <div className="operations-risk-list">
+            {model.risks.map(item => (
+              <article className={`operations-risk-item ${item.tone}`} key={item.label}>
+                <div>
+                  <strong>{item.label}</strong>
+                  <small>{item.detail}</small>
+                </div>
+                <span>{item.value}</span>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
     </div>
   );
 }
@@ -5082,7 +5467,10 @@ function App() {
 
   const renderActivePage = () => {
     if (activePageKey === 'platform.overview') {
-      return <OverviewSection data={data} />;
+      return <OperationsDataScreen data={data} errors={errors} />;
+    }
+    if (activePageKey === 'mall.data') {
+      return <OperationsDataScreen data={data} errors={errors} />;
     }
     if (activePageKey === 'platform.accounts') {
       return <UsersSection users={data.users} onUpdateStatus={updateUserStatus} />;

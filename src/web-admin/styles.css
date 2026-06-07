@@ -646,6 +646,314 @@ nav {
   font-weight: 700;
 }
 
+.operations-screen {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  color: #eef4ef;
+  background: #111613;
+  border: 1px solid #29362c;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.operations-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 16px;
+  align-items: stretch;
+  padding: 18px;
+  background: #172018;
+  border: 1px solid #2b3d30;
+  border-radius: 8px;
+}
+
+.operations-eyebrow,
+.operations-clock span,
+.operations-kpi span,
+.operations-panel-head span,
+.operations-module-card span {
+  display: block;
+  color: #9ad9a1;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.operations-hero h2 {
+  margin: 7px 0 8px;
+  color: #f7fbf6;
+  font-size: 28px;
+  line-height: 1.12;
+}
+
+.operations-hero p,
+.operations-clock small,
+.operations-kpi small,
+.operations-panel-head p,
+.operations-funnel-step small,
+.operations-module-card small,
+.operations-risk-item small {
+  margin: 0;
+  color: #a9b7ae;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.operations-clock {
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  padding: 14px;
+  background: #20261f;
+  border: 1px solid #344032;
+  border-radius: 8px;
+}
+
+.operations-clock strong {
+  color: #ffffff;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.operations-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.operations-kpi,
+.operations-panel {
+  min-width: 0;
+  background: #181d1a;
+  border: 1px solid #2d3830;
+  border-radius: 8px;
+}
+
+.operations-kpi {
+  min-height: 126px;
+  padding: 15px;
+  position: relative;
+}
+
+.operations-kpi strong {
+  display: block;
+  margin: 10px 0 7px;
+  color: #ffffff;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.operations-kpi em {
+  display: inline-flex;
+  margin-top: 12px;
+  padding: 4px 8px;
+  color: #171b15;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  background: #f5c542;
+  border-radius: 7px;
+}
+
+.operations-main-grid,
+.operations-bottom-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
+  gap: 12px;
+}
+
+.operations-panel {
+  padding: 15px;
+}
+
+.operations-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.operations-panel-head h3 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.operations-panel-head span {
+  flex: 0 0 auto;
+  color: #75d9ff;
+}
+
+.operations-trend-bars {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+  min-height: 230px;
+  padding: 4px 0 0;
+}
+
+.operations-trend-item {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  justify-items: center;
+}
+
+.operations-bar-track {
+  display: flex;
+  align-items: end;
+  width: 100%;
+  height: 166px;
+  padding: 4px;
+  background: #202720;
+  border: 1px solid #344034;
+  border-radius: 8px;
+}
+
+.operations-bar-track span {
+  display: block;
+  width: 100%;
+  background: #35d07f;
+  border-radius: 6px;
+}
+
+.operations-trend-item strong {
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.operations-trend-item small {
+  color: #9ca9a1;
+  font-size: 11px;
+}
+
+.operations-funnel {
+  display: grid;
+  gap: 10px;
+}
+
+.operations-funnel-step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 54px;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 10px;
+  background: #20261f;
+  border: 1px solid #343f34;
+  border-radius: 8px;
+}
+
+.operations-funnel-step strong,
+.operations-risk-item strong {
+  display: block;
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.operations-funnel-step span {
+  justify-self: end;
+  color: #f5c542;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.operations-progress {
+  grid-column: 1 / -1;
+  height: 7px;
+  overflow: hidden;
+  background: #111613;
+  border: 1px solid #2d3830;
+  border-radius: 7px;
+}
+
+.operations-progress i {
+  display: block;
+  height: 100%;
+  background: #38bdf8;
+  border-radius: 7px;
+}
+
+.operations-module-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.operations-module-card {
+  display: grid;
+  gap: 9px;
+  min-height: 132px;
+  padding: 12px;
+  background: #20261f;
+  border: 1px solid #344034;
+  border-radius: 8px;
+}
+
+.operations-module-card strong {
+  display: block;
+  margin-top: 4px;
+  color: #ffffff;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.operations-module-card em {
+  justify-self: start;
+  padding: 4px 8px;
+  color: #07110b;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  background: #7ee787;
+  border-radius: 7px;
+}
+
+.operations-risk-list {
+  display: grid;
+  gap: 9px;
+}
+
+.operations-risk-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 12px;
+  background: #20261f;
+  border: 1px solid #344034;
+  border-radius: 8px;
+}
+
+.operations-risk-item span {
+  min-width: 58px;
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 900;
+  text-align: right;
+}
+
+.operations-risk-item.green {
+  border-color: #2f6d45;
+}
+
+.operations-risk-item.blue {
+  border-color: #2d7190;
+}
+
+.operations-risk-item.amber {
+  border-color: #8b6d22;
+}
+
+.operations-risk-item.gray {
+  border-color: #59635b;
+}
+
 .primary-button.small,
 .ghost-button.small {
   min-height: 30px;
@@ -1565,7 +1873,10 @@ textarea:focus {
   .support-layout,
   .support-workbench-grid,
   .order-detail-grid,
-  .order-detail-columns {
+  .order-detail-columns,
+  .operations-kpi-grid,
+  .operations-main-grid,
+  .operations-bottom-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1635,8 +1946,48 @@ textarea:focus {
   .settings-form,
   .order-search-form,
   .order-detail-grid,
-  .order-detail-columns {
+  .order-detail-columns,
+  .operations-kpi-grid,
+  .operations-main-grid,
+  .operations-bottom-grid,
+  .operations-module-grid {
     grid-template-columns: 1fr;
+  }
+
+  .operations-screen {
+    padding: 10px;
+    border-radius: 8px;
+  }
+
+  .operations-hero {
+    grid-template-columns: 1fr;
+    padding: 14px;
+  }
+
+  .operations-hero h2 {
+    font-size: 24px;
+  }
+
+  .operations-trend-bars {
+    gap: 6px;
+    min-height: 190px;
+  }
+
+  .operations-bar-track {
+    height: 126px;
+  }
+
+  .operations-panel-head,
+  .operations-risk-item {
+    grid-template-columns: 1fr;
+  }
+
+  .operations-panel-head {
+    flex-direction: column;
+  }
+
+  .operations-risk-item span {
+    text-align: left;
   }
 
   .modal-backdrop {
