@@ -35,6 +35,20 @@ export interface MallProduct {
   weightKg?: number | null
 }
 
+export interface MallHomeBanner {
+  id: string
+  title: string
+  subtitle?: string | null
+  imageUrl?: string | null
+  linkType: string
+  linkTarget?: string | null
+  sortOrder: number
+  status: string
+  metadata?: Record<string, unknown>
+  startsAt?: string | null
+  endsAt?: string | null
+}
+
 export function resolveMallImageUrl(imageUrl?: string | null) {
   if (!imageUrl) return ''
   if (/^(https?:|data:|blob:)/.test(imageUrl)) return imageUrl
@@ -425,6 +439,10 @@ export async function listMallProducts(params: {
   status?: string
 } = {}): Promise<MallProduct[]> {
   return apiGet('/api/mall/products', params)
+}
+
+export async function listMallHomeBanners(): Promise<MallHomeBanner[]> {
+  return apiGet('/api/mall/home-banners')
 }
 
 export async function getMallProduct(id: string): Promise<MallProduct> {

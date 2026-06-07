@@ -1,10 +1,13 @@
 import { useMemo, useState } from 'react'
-import { Text, View } from '@tarojs/components'
+import { Image, Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
 import { Apple, Beef, Leaf, MapPin, ShieldCheck, UsersRound } from 'lucide-react-taro'
 import {
   addMallCartItem,
+  listMallHomeBanners,
   listMallProducts,
+  resolveMallImageUrl,
+  type MallHomeBanner,
   type MallProduct,
 } from '@/services/mall'
 import {
@@ -30,6 +33,7 @@ const shortcuts = [
 
 export default function MallHome() {
   const [products, setProducts] = useState<MallProduct[]>([])
+  const [homeBanners, setHomeBanners] = useState<MallHomeBanner[]>([])
   const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
@@ -39,6 +43,13 @@ export default function MallHome() {
   })
 
   const featuredProducts = useMemo(() => products.slice(0, 4), [products])
+  const primaryBanner = useMemo(() => homeBanners[0], [homeBanners])
+  const heroTitle = primaryBanner?.title || '叁友甄选'
+  const heroCopy = primaryBanner?.subtitle || '邻里一起拼，新鲜果蔬当天到点'
+  const heroTag = typeof primaryBanner?.metadata?.tag === 'string' && primaryBanner.metadata.tag.trim().length > 0
+    ? primaryBanner.metadata.tag
+    : '安心溯源'
+  const heroImageUrl = resolveMallImageUrl(primaryBanner?.imageUrl)
 
   const currentUser = () => Taro.getStorageSync('userInfo') as StoredUser | undefined
 
@@ -46,10 +57,14 @@ export default function MallHome() {
     setLoading(true)
     setLoadError('')
     try {
-      const data = await listMallProducts({
-        keyword: keyword.trim() || undefined,
-      })
-      setProducts(data)
+      const [productData, bannerData] = await Promise.all([
+        listMallProducts({
+          keyword: keyword.trim() || undefined,
+        }),
+        listMallHomeBanners().catch(() => []),
+      ])
+      setProducts(productData)
+      setHomeBanners(bannerData)
     } catch (error) {
       setProducts([])
       setLoadError(error instanceof Error ? error.message : '商品加载失败')
@@ -59,6 +74,28 @@ export default function MallHome() {
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleHomeBannerTap = () => {
+    if (!primaryBanner) return
+    const target = primaryBanner.linkTarget?.trim()
+    if (!target || primaryBanner.linkType === 'none') return
+
+    if (primaryBanner.linkType === 'category') {
+      Taro.navigateTo({ url: `/pages/mall/category/index?categoryCode=${encodeURIComponent(target)}` })
+      return
+    }
+    if (primaryBanner.linkType === 'search') {
+      Taro.navigateTo({ url: `/pages/mall/category/index?keyword=${encodeURIComponent(target)}` })
+      return
+    }
+    if (primaryBanner.linkType === 'product') {
+      Taro.navigateTo({ url: `/pages/mall/product/index?id=${encodeURIComponent(target)}` })
+      return
+    }
+    if (target.startsWith('/pages/')) {
+      Taro.navigateTo({ url: target })
     }
   }
 
@@ -91,19 +128,23 @@ export default function MallHome() {
         </View>
       </View>
 
-      <View className="mall-hero">
-        <Text className="mall-hero-title">叁友甄选</Text>
-        <Text className="mall-hero-copy">邻里一起拼，新鲜果蔬当天到点</Text>
+      <View className="mall-hero" onClick={handleHomeBannerTap}>
+        <Text className="mall-hero-title">{heroTitle}</Text>
+        <Text className="mall-hero-copy">{heroCopy}</Text>
         <View className="mall-hero-badge">
           <ShieldCheck size={14} color="#FFFFFF" />
-          <Text>安心溯源</Text>
+          <Text>{heroTag}</Text>
         </View>
-        <View className="mall-hero-fruit">
-          <View className="mall-hero-orange" />
-          <View className="mall-hero-avocado" />
-          <View className="mall-hero-seed" />
-          <View className="mall-hero-leaf" />
-        </View>
+        {heroImageUrl ? (
+          <Image className="mall-hero-image" mode="aspectFill" src={heroImageUrl} />
+        ) : (
+          <View className="mall-hero-fruit">
+            <View className="mall-hero-orange" />
+            <View className="mall-hero-avocado" />
+            <View className="mall-hero-seed" />
+            <View className="mall-hero-leaf" />
+          </View>
+        )}
       </View>
 
       <MallSearchBox

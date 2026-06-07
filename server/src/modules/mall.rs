@@ -24,6 +24,7 @@ where
 {
     Router::new()
         .route("/api/mall/categories", get(list_categories::<S>))
+        .route("/api/mall/home-banners", get(list_home_banners::<S>))
         .route("/api/mall/products", get(list_products::<S>))
         .route("/api/mall/products/:id", get(get_product::<S>))
         .route("/api/mall/cart", get(get_cart::<S>))
@@ -156,6 +157,22 @@ where
             get(list_campaigns::<S>).post(create_campaign::<S>),
         )
         .route("/api/admin/mall/campaigns/:id", put(update_campaign::<S>))
+        .route(
+            "/api/admin/mall/coupons",
+            get(admin_list_coupons::<S>).post(admin_create_coupon::<S>),
+        )
+        .route(
+            "/api/admin/mall/coupons/:id",
+            get(admin_get_coupon::<S>).put(admin_update_coupon::<S>),
+        )
+        .route(
+            "/api/admin/mall/home-banners",
+            get(admin_list_home_banners::<S>).post(admin_create_home_banner::<S>),
+        )
+        .route(
+            "/api/admin/mall/home-banners/:id",
+            get(admin_get_home_banner::<S>).put(admin_update_home_banner::<S>),
+        )
         .route(
             "/api/admin/mall/settings",
             get(get_operation_settings::<S>).put(update_operation_settings::<S>),
@@ -455,6 +472,67 @@ struct CampaignMutationRequest {
     budget_cents: Option<i64>,
     rules: Option<Value>,
     status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CouponQuery {
+    keyword: Option<String>,
+    status: Option<String>,
+    #[serde(alias = "coupon_type")]
+    coupon_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CouponMutationRequest {
+    name: Option<String>,
+    code: Option<String>,
+    #[serde(alias = "coupon_type")]
+    coupon_type: Option<String>,
+    #[serde(alias = "threshold_cents")]
+    threshold_cents: Option<i64>,
+    #[serde(alias = "discount_cents")]
+    discount_cents: Option<i64>,
+    #[serde(alias = "total_quantity")]
+    total_quantity: Option<i32>,
+    #[serde(alias = "per_user_limit")]
+    per_user_limit: Option<i32>,
+    description: Option<String>,
+    rules: Option<Value>,
+    status: Option<String>,
+    #[serde(alias = "starts_at")]
+    starts_at: Option<String>,
+    #[serde(alias = "ends_at")]
+    ends_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HomeBannerQuery {
+    keyword: Option<String>,
+    status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HomeBannerMutationRequest {
+    title: Option<String>,
+    subtitle: Option<String>,
+    #[serde(alias = "image_url")]
+    image_url: Option<String>,
+    #[serde(alias = "link_type")]
+    link_type: Option<String>,
+    #[serde(alias = "link_target")]
+    link_target: Option<String>,
+    #[serde(alias = "sort_order")]
+    sort_order: Option<i32>,
+    status: Option<String>,
+    #[serde(alias = "starts_at")]
+    starts_at: Option<String>,
+    #[serde(alias = "ends_at")]
+    ends_at: Option<String>,
+    metadata: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2272,6 +2350,382 @@ where
     .await?
     .ok_or_else(|| ApiError::NotFound("活动不存在".to_string()))?;
     Ok(ok("活动更新成功", campaign))
+}
+
+async fn admin_list_coupons<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<CouponQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let mut builder =
+        QueryBuilder::<Postgres>::new("SELECT coupon_json(c) FROM mall_coupons c WHERE 1 = 1");
+
+    if let Some(keyword) = query
+        .keyword
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        let pattern = format!("%{}%", keyword);
+        builder.push(" AND (lower(c.name) LIKE lower(");
+        builder.push_bind(pattern.clone());
+        builder.push(") OR lower(c.code) LIKE lower(");
+        builder.push_bind(pattern);
+        builder.push("))");
+    }
+
+    if let Some(status) = query
+        .status
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        builder.push(" AND c.status = ");
+        builder.push_bind(status);
+    }
+
+    if let Some(coupon_type) = query
+        .coupon_type
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        builder.push(" AND c.coupon_type = ");
+        builder.push_bind(coupon_type);
+    }
+
+    builder.push(" ORDER BY c.created_at DESC LIMIT 200");
+    let coupons = builder
+        .build_query_scalar::<Value>()
+        .fetch_all(&state.db)
+        .await?;
+    Ok(ok("查询成功", coupons))
+}
+
+async fn admin_get_coupon<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let coupon = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT coupon_json(c)
+        FROM mall_coupons c
+        WHERE c.id = $1
+        "#,
+    )
+    .bind(&id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("优惠券不存在".to_string()))?;
+
+    Ok(ok("查询成功", coupon))
+}
+
+async fn admin_create_coupon<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<CouponMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let name = require_non_empty(body.name, "优惠券名称不能为空")?;
+    let code = normalize_coupon_code(&require_non_empty(body.code, "优惠券编码不能为空")?);
+    let coupon_type = non_empty(body.coupon_type).unwrap_or_else(|| "full_reduction".to_string());
+    validate_coupon_type(&coupon_type)?;
+    validate_coupon_status(body.status.as_deref().unwrap_or("draft"))?;
+    validate_non_negative_i64(body.threshold_cents.unwrap_or(0), "使用门槛不能小于 0")?;
+    validate_positive_i64(body.discount_cents.unwrap_or(0), "优惠金额必须大于 0")?;
+    validate_non_negative_i32(body.total_quantity.unwrap_or(0), "发放数量不能小于 0")?;
+    validate_positive_i32(body.per_user_limit.unwrap_or(1), "每人限领必须大于 0")?;
+
+    let starts_at = non_empty(body.starts_at);
+    let ends_at = non_empty(body.ends_at);
+    let coupon = sqlx::query_scalar::<_, Value>(
+        r#"
+        INSERT INTO mall_coupons (
+          name, code, coupon_type, threshold_cents, discount_cents, total_quantity,
+          per_user_limit, description, rules, status, starts_at, ends_at
+        )
+        VALUES (
+          $1, $2, $3, COALESCE($4, 0), COALESCE($5, 0), COALESCE($6, 0),
+          COALESCE($7, 1), $8, COALESCE($9, '{}'::jsonb), COALESCE($10, 'draft'),
+          $11::timestamptz, $12::timestamptz
+        )
+        RETURNING coupon_json(mall_coupons)
+        "#,
+    )
+    .bind(name)
+    .bind(code)
+    .bind(coupon_type)
+    .bind(body.threshold_cents)
+    .bind(body.discount_cents)
+    .bind(body.total_quantity)
+    .bind(body.per_user_limit)
+    .bind(non_empty(body.description))
+    .bind(body.rules)
+    .bind(body.status)
+    .bind(starts_at)
+    .bind(ends_at)
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(ok("优惠券创建成功", coupon))
+}
+
+async fn admin_update_coupon<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<CouponMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    if let Some(coupon_type) = body.coupon_type.as_deref() {
+        validate_coupon_type(coupon_type)?;
+    }
+    if let Some(status) = body.status.as_deref() {
+        validate_coupon_status(status)?;
+    }
+    if let Some(threshold_cents) = body.threshold_cents {
+        validate_non_negative_i64(threshold_cents, "使用门槛不能小于 0")?;
+    }
+    if let Some(discount_cents) = body.discount_cents {
+        validate_positive_i64(discount_cents, "优惠金额必须大于 0")?;
+    }
+    validate_optional_non_negative_i32(body.total_quantity, "发放数量不能小于 0")?;
+    if let Some(per_user_limit) = body.per_user_limit {
+        validate_positive_i32(per_user_limit, "每人限领必须大于 0")?;
+    }
+
+    let name = optional_non_empty(body.name, "优惠券名称不能为空")?;
+    let code = match body.code {
+        Some(code) => Some(normalize_coupon_code(&require_non_empty(
+            Some(code),
+            "优惠券编码不能为空",
+        )?)),
+        None => None,
+    };
+    let starts_at = non_empty(body.starts_at);
+    let ends_at = non_empty(body.ends_at);
+
+    let coupon = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_coupons
+        SET name = COALESCE($2, name),
+            code = COALESCE($3, code),
+            coupon_type = COALESCE($4, coupon_type),
+            threshold_cents = COALESCE($5, threshold_cents),
+            discount_cents = COALESCE($6, discount_cents),
+            total_quantity = COALESCE($7, total_quantity),
+            per_user_limit = COALESCE($8, per_user_limit),
+            description = COALESCE($9, description),
+            rules = COALESCE($10, rules),
+            status = COALESCE($11, status),
+            starts_at = COALESCE($12::timestamptz, starts_at),
+            ends_at = COALESCE($13::timestamptz, ends_at),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING coupon_json(mall_coupons)
+        "#,
+    )
+    .bind(&id)
+    .bind(name)
+    .bind(code)
+    .bind(body.coupon_type)
+    .bind(body.threshold_cents)
+    .bind(body.discount_cents)
+    .bind(body.total_quantity)
+    .bind(body.per_user_limit)
+    .bind(non_empty(body.description))
+    .bind(body.rules)
+    .bind(body.status)
+    .bind(starts_at)
+    .bind(ends_at)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("优惠券不存在".to_string()))?;
+
+    Ok(ok("优惠券更新成功", coupon))
+}
+
+async fn list_home_banners<S>(
+    State(state): State<AppState<S>>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let banners = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT home_banner_json(b)
+        FROM mall_home_banners b
+        WHERE b.status = 'active'
+          AND (b.starts_at IS NULL OR b.starts_at <= now())
+          AND (b.ends_at IS NULL OR b.ends_at >= now())
+        ORDER BY b.sort_order ASC, b.created_at DESC
+        "#,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(ok("查询成功", banners))
+}
+
+async fn admin_list_home_banners<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<HomeBannerQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let mut builder = QueryBuilder::<Postgres>::new(
+        "SELECT home_banner_json(b) FROM mall_home_banners b WHERE 1 = 1",
+    );
+
+    if let Some(keyword) = query
+        .keyword
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        let pattern = format!("%{}%", keyword);
+        builder.push(" AND (lower(b.title) LIKE lower(");
+        builder.push_bind(pattern.clone());
+        builder.push(") OR lower(COALESCE(b.subtitle, '')) LIKE lower(");
+        builder.push_bind(pattern);
+        builder.push("))");
+    }
+
+    if let Some(status) = query
+        .status
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        builder.push(" AND b.status = ");
+        builder.push_bind(status);
+    }
+
+    builder.push(" ORDER BY b.sort_order ASC, b.created_at DESC LIMIT 100");
+    let banners = builder
+        .build_query_scalar::<Value>()
+        .fetch_all(&state.db)
+        .await?;
+    Ok(ok("查询成功", banners))
+}
+
+async fn admin_get_home_banner<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let banner = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT home_banner_json(b)
+        FROM mall_home_banners b
+        WHERE b.id = $1
+        "#,
+    )
+    .bind(&id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("首页配置不存在".to_string()))?;
+
+    Ok(ok("查询成功", banner))
+}
+
+async fn admin_create_home_banner<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<HomeBannerMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let title = require_non_empty(body.title, "标题不能为空")?;
+    let link_type = non_empty(body.link_type).unwrap_or_else(|| "none".to_string());
+    validate_home_banner_link_type(&link_type)?;
+    validate_home_banner_status(body.status.as_deref().unwrap_or("draft"))?;
+
+    let banner = sqlx::query_scalar::<_, Value>(
+        r#"
+        INSERT INTO mall_home_banners (
+          title, subtitle, image_url, link_type, link_target, sort_order,
+          status, starts_at, ends_at, metadata
+        )
+        VALUES (
+          $1, $2, $3, $4, $5, COALESCE($6, 0), COALESCE($7, 'draft'),
+          $8::timestamptz, $9::timestamptz, COALESCE($10, '{}'::jsonb)
+        )
+        RETURNING home_banner_json(mall_home_banners)
+        "#,
+    )
+    .bind(title)
+    .bind(non_empty(body.subtitle))
+    .bind(non_empty(body.image_url))
+    .bind(link_type)
+    .bind(non_empty(body.link_target))
+    .bind(body.sort_order)
+    .bind(body.status)
+    .bind(non_empty(body.starts_at))
+    .bind(non_empty(body.ends_at))
+    .bind(body.metadata)
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(ok("首页配置创建成功", banner))
+}
+
+async fn admin_update_home_banner<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<HomeBannerMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    if let Some(link_type) = body.link_type.as_deref() {
+        validate_home_banner_link_type(link_type)?;
+    }
+    if let Some(status) = body.status.as_deref() {
+        validate_home_banner_status(status)?;
+    }
+
+    let title = optional_non_empty(body.title, "标题不能为空")?;
+    let banner = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_home_banners
+        SET title = COALESCE($2, title),
+            subtitle = COALESCE($3, subtitle),
+            image_url = COALESCE($4, image_url),
+            link_type = COALESCE($5, link_type),
+            link_target = COALESCE($6, link_target),
+            sort_order = COALESCE($7, sort_order),
+            status = COALESCE($8, status),
+            starts_at = COALESCE($9::timestamptz, starts_at),
+            ends_at = COALESCE($10::timestamptz, ends_at),
+            metadata = COALESCE($11, metadata),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING home_banner_json(mall_home_banners)
+        "#,
+    )
+    .bind(&id)
+    .bind(title)
+    .bind(non_empty(body.subtitle))
+    .bind(non_empty(body.image_url))
+    .bind(body.link_type)
+    .bind(non_empty(body.link_target))
+    .bind(body.sort_order)
+    .bind(body.status)
+    .bind(non_empty(body.starts_at))
+    .bind(non_empty(body.ends_at))
+    .bind(body.metadata)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("首页配置不存在".to_string()))?;
+
+    Ok(ok("首页配置更新成功", banner))
 }
 
 async fn get_operation_settings<S>(
@@ -4369,11 +4823,85 @@ fn normalize_category_code(code: &str) -> String {
     code.trim().to_ascii_lowercase().replace(' ', "-")
 }
 
+fn normalize_coupon_code(code: &str) -> String {
+    code.trim().to_ascii_uppercase().replace(' ', "-")
+}
+
 fn validate_category_status(status: &str) -> ApiResult<()> {
     if matches!(status, "active" | "inactive" | "deleted") {
         Ok(())
     } else {
         Err(ApiError::BadRequest("品类状态不正确".to_string()))
+    }
+}
+
+fn validate_coupon_type(coupon_type: &str) -> ApiResult<()> {
+    if matches!(
+        coupon_type,
+        "full_reduction" | "cash" | "delivery" | "new_user"
+    ) {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest("优惠券类型不正确".to_string()))
+    }
+}
+
+fn validate_coupon_status(status: &str) -> ApiResult<()> {
+    if matches!(status, "active" | "draft" | "inactive" | "expired") {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest("优惠券状态不正确".to_string()))
+    }
+}
+
+fn validate_home_banner_status(status: &str) -> ApiResult<()> {
+    if matches!(status, "active" | "draft" | "inactive") {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest("首页配置状态不正确".to_string()))
+    }
+}
+
+fn validate_home_banner_link_type(link_type: &str) -> ApiResult<()> {
+    if matches!(
+        link_type,
+        "none" | "category" | "product" | "search" | "url"
+    ) {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest("首页配置跳转类型不正确".to_string()))
+    }
+}
+
+fn validate_non_negative_i64(value: i64, message: &str) -> ApiResult<()> {
+    if value < 0 {
+        Err(ApiError::BadRequest(message.to_string()))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_positive_i64(value: i64, message: &str) -> ApiResult<()> {
+    if value <= 0 {
+        Err(ApiError::BadRequest(message.to_string()))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_non_negative_i32(value: i32, message: &str) -> ApiResult<()> {
+    if value < 0 {
+        Err(ApiError::BadRequest(message.to_string()))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_positive_i32(value: i32, message: &str) -> ApiResult<()> {
+    if value <= 0 {
+        Err(ApiError::BadRequest(message.to_string()))
+    } else {
+        Ok(())
     }
 }
 

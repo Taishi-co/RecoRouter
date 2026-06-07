@@ -25,17 +25,14 @@ const fallbackCategories = [
 ]
 
 export default function MallCategoryPage() {
+  const routeParams = Taro.getCurrentInstance().router?.params
   const [categories, setCategories] = useState<MallCategory[]>([])
   const [products, setProducts] = useState<MallProduct[]>([])
-  const [activeCode, setActiveCode] = useState('')
-  const [keyword, setKeyword] = useState('')
+  const [activeCode, setActiveCode] = useState(routeParams?.categoryCode ? String(routeParams.categoryCode) : '')
+  const [keyword, setKeyword] = useState(routeParams?.keyword ? String(routeParams.keyword) : '')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    const params = Taro.getCurrentInstance().router?.params
-    if (params?.keyword) {
-      setKeyword(String(params.keyword))
-    }
     loadCategories()
   }, [])
 

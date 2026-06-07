@@ -142,16 +142,21 @@ body.reco-mall-h5 .taro_page {
 }
 
 .mall-hero-title {
+  position: relative;
+  z-index: 1;
   display: block;
+  max-width: 196PX;
   color: #ffffff;
   font-size: 30PX;
-  line-height: 1;
+  line-height: 1.12;
   font-weight: 900;
 }
 
 .mall-hero-copy {
+  position: relative;
+  z-index: 1;
   display: block;
-  width: 175PX;
+  max-width: 178PX;
   margin-top: 10PX;
   color: #f4fff1;
   font-size: 14PX;
@@ -160,6 +165,8 @@ body.reco-mall-h5 .taro_page {
 }
 
 .mall-hero-badge {
+  position: relative;
+  z-index: 1;
   width: 88PX;
   height: 28PX;
   margin-top: 12PX;
@@ -179,6 +186,16 @@ body.reco-mall-h5 .taro_page {
   top: 40PX;
   width: 94PX;
   height: 78PX;
+}
+
+.mall-hero-image {
+  position: absolute;
+  right: 14PX;
+  bottom: 12PX;
+  width: 118PX;
+  height: 92PX;
+  border-radius: 14PX;
+  opacity: 0.92;
 }
 
 .mall-hero-orange,

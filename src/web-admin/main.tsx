@@ -82,6 +82,8 @@ interface DashboardData {
   mallInventoryAlerts: JsonRecord[];
   mallOrders: JsonRecord[];
   campaigns: JsonRecord[];
+  mallCoupons: JsonRecord[];
+  mallHomeBanners: JsonRecord[];
   mallSettings: JsonRecord;
   supportMetrics: JsonRecord;
   supportSessions: JsonRecord[];
@@ -139,6 +141,34 @@ interface CampaignForm {
   budgetYuan: string;
   status: string;
   rules: string;
+}
+
+interface CouponForm {
+  name: string;
+  code: string;
+  couponType: string;
+  thresholdYuan: string;
+  discountYuan: string;
+  totalQuantity: string;
+  perUserLimit: string;
+  status: string;
+  startsAt: string;
+  endsAt: string;
+  description: string;
+}
+
+interface HomeBannerForm {
+  id: string;
+  title: string;
+  subtitle: string;
+  imageUrl: string;
+  linkType: string;
+  linkTarget: string;
+  sortOrder: string;
+  status: string;
+  startsAt: string;
+  endsAt: string;
+  tag: string;
 }
 
 interface SettingsForm {
@@ -403,7 +433,8 @@ const adminModules: AdminModuleSpec[] = [
       designPage('mall.leaders', '团长管理', '订单管理', '团长中心、核销权限和服务质量', 'users'),
       designPage('mall.community', '邻里圈', '营销中心', '自提点动态、拼团和用户互动', 'megaphone'),
       designPage('mall.campaigns', '营销活动', '营销中心', '满减、券、拼团和预算管理', 'megaphone', 'operations'),
-      designPage('mall.coupons', '优惠券', '营销中心', '优惠券发放、核销和成本控制', 'megaphone'),
+      designPage('mall.couponCreate', '新增优惠券', '营销中心', '配置优惠券门槛、金额、发放量和有效期', 'plus'),
+      designPage('mall.coupons', '优惠券列表', '营销中心', '优惠券发放、核销状态和预算控制', 'megaphone'),
       designPage('mall.banners', '首页配置', '营销中心', '首页卡片、Banner 和推荐商品', 'dashboard'),
       designPage('mall.support', '客服售后', '客服售后', '会话、工单、知识库和响应指标', 'support', 'support'),
       designPage('mall.afterSales', '售后申请', '客服售后', '售后单审核、证据图片和退款流转', 'refund', 'mallOrders'),
@@ -431,6 +462,8 @@ const initialData: DashboardData = {
   mallInventoryAlerts: [],
   mallOrders: [],
   campaigns: [],
+  mallCoupons: [],
+  mallHomeBanners: [],
   mallSettings: {},
   supportMetrics: {},
   supportSessions: [],
@@ -502,6 +535,34 @@ const initialCampaignForm: CampaignForm = {
   budgetYuan: '3000',
   status: 'active',
   rules: '{"thresholdCents":9900,"discountCents":1000}',
+};
+
+const initialCouponForm: CouponForm = {
+  name: '新人满49减6',
+  code: `COUPON-${Date.now().toString().slice(-6)}`,
+  couponType: 'full_reduction',
+  thresholdYuan: '49',
+  discountYuan: '6',
+  totalQuantity: '1000',
+  perUserLimit: '1',
+  status: 'active',
+  startsAt: '',
+  endsAt: '',
+  description: '新用户首单可用，满足门槛自动抵扣。',
+};
+
+const initialHomeBannerForm: HomeBannerForm = {
+  id: '',
+  title: '叁友甄选今日鲜果',
+  subtitle: '邻里一起拼，新鲜果蔬当天到点',
+  imageUrl: '',
+  linkType: 'category',
+  linkTarget: 'fruit',
+  sortOrder: '10',
+  status: 'active',
+  startsAt: '',
+  endsAt: '',
+  tag: '安心溯源',
 };
 
 const initialSettingsForm: SettingsForm = {
@@ -610,6 +671,8 @@ async function fetchDashboardData(
   productFilters: MallFilterState = initialProductFilters,
   categoryFilters: MallFilterState = initialCategoryFilters,
   inventoryFilters: MallFilterState = initialInventoryFilters,
+  couponFilters: MallFilterState = initialProductFilters,
+  homeBannerFilters: MallFilterState = initialProductFilters,
 ) {
   const errors: LoadErrors = {};
   const [
@@ -625,6 +688,8 @@ async function fetchDashboardData(
     mallInventoryAlerts,
     mallOrders,
     campaigns,
+    mallCoupons,
+    mallHomeBanners,
     mallSettings,
     supportMetrics,
     supportSessions,
@@ -664,6 +729,15 @@ async function fetchDashboardData(
     })),
     loadWithFallback('商城订单', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/orders')),
     loadWithFallback('营销活动', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/campaigns')),
+    loadWithFallback('优惠券', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/coupons', {
+      keyword: couponFilters.keyword,
+      status: couponFilters.status,
+      couponType: couponFilters.categoryCode,
+    })),
+    loadWithFallback('首页配置', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/home-banners', {
+      keyword: homeBannerFilters.keyword,
+      status: homeBannerFilters.status,
+    })),
     loadWithFallback('商城设置', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/settings')),
     loadWithFallback('客服指标', {}, errors, () => apiGet<JsonRecord>('/api/support/metrics')),
     loadWithFallback('客服会话', [], errors, () => apiGet<JsonRecord[]>('/api/support/sessions')),
@@ -692,6 +766,8 @@ async function fetchDashboardData(
       mallInventoryAlerts,
       mallOrders,
       campaigns,
+      mallCoupons,
+      mallHomeBanners,
       mallSettings,
       supportMetrics,
       supportSessions,
@@ -831,6 +907,51 @@ function stockLevelLabel(product: JsonRecord) {
   return '正常';
 }
 
+function couponTypeLabel(value: string) {
+  const labels: Record<string, string> = {
+    full_reduction: '满减券',
+    cash: '现金券',
+    delivery: '配送券',
+    new_user: '新人券',
+  };
+  return labels[value] || value || '-';
+}
+
+function linkTypeLabel(value: string) {
+  const labels: Record<string, string> = {
+    none: '不跳转',
+    category: '品类',
+    product: '商品',
+    search: '搜索',
+    url: '链接',
+  };
+  return labels[value] || value || '-';
+}
+
+function datetimeLocalValue(value: string) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toISOString().slice(0, 16);
+}
+
+function homeBannerToForm(banner: JsonRecord): HomeBannerForm {
+  const metadata = recordValue(banner, 'metadata');
+  return {
+    id: stringValue(banner, 'id'),
+    title: stringValue(banner, 'title'),
+    subtitle: stringValue(banner, 'subtitle'),
+    imageUrl: stringValue(banner, 'imageUrl'),
+    linkType: stringValue(banner, 'linkType', 'none'),
+    linkTarget: stringValue(banner, 'linkTarget'),
+    sortOrder: String(numberValue(banner, 'sortOrder')),
+    status: stringValue(banner, 'status', 'draft'),
+    startsAt: datetimeLocalValue(stringValue(banner, 'startsAt')),
+    endsAt: datetimeLocalValue(stringValue(banner, 'endsAt')),
+    tag: stringValue(metadata, 'tag'),
+  };
+}
+
 function statusLabel(value: string) {
   const labels: Record<string, string> = {
     active: '启用',
@@ -853,6 +974,7 @@ function statusLabel(value: string) {
     published: '已发布',
     submitted: '已提交',
     commission_pending: '佣金待审',
+    expired: '已过期',
   };
   return labels[value] || value || '-';
 }
@@ -875,7 +997,7 @@ function badgeClass(status: string) {
   if (['pending', 'pending_payment', 'dispatching', 'delivering', 'open', 'submitted', 'commission_pending'].includes(status)) {
     return 'badge badge-blue';
   }
-  if (['rejected', 'cancelled', 'off_sale', 'inactive', 'closed'].includes(status)) {
+  if (['rejected', 'cancelled', 'off_sale', 'inactive', 'closed', 'expired'].includes(status)) {
     return 'badge badge-gray';
   }
   return 'badge badge-amber';
@@ -1140,7 +1262,13 @@ function recordsForDesignPage(page: AdminPageSpec, data: DashboardData) {
   if (page.key.includes('order') || page.key.includes('refund') || page.key.includes('fulfillment') || page.key.includes('afterSales')) {
     return data.mallOrders;
   }
-  if (page.key.includes('campaign') || page.key.includes('coupon') || page.key.includes('banner') || page.key.includes('community')) {
+  if (page.key.includes('coupon')) {
+    return data.mallCoupons;
+  }
+  if (page.key.includes('banner')) {
+    return data.mallHomeBanners;
+  }
+  if (page.key.includes('campaign') || page.key.includes('community')) {
     return data.campaigns;
   }
   if (page.key.includes('support') || page.key.includes('knowledge')) {
@@ -3205,6 +3333,320 @@ function MallOrdersSection({
   );
 }
 
+function MallCouponCreateSection({
+  form,
+  onChange,
+  onSubmit,
+}: {
+  form: CouponForm;
+  onChange: (patch: Partial<CouponForm>) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+}) {
+  return (
+    <Panel title="新增优惠券" description="配置优惠券门槛、抵扣金额、发放数量、有效期和状态">
+      <form className="form-grid coupon-form" onSubmit={onSubmit}>
+        <label>
+          优惠券名称
+          <input value={form.name} onChange={event => onChange({ name: event.target.value })} />
+        </label>
+        <label>
+          券码
+          <input value={form.code} onChange={event => onChange({ code: event.target.value })} />
+        </label>
+        <label>
+          类型
+          <select value={form.couponType} onChange={event => onChange({ couponType: event.target.value })}>
+            <option value="full_reduction">满减券</option>
+            <option value="cash">现金券</option>
+            <option value="delivery">配送券</option>
+            <option value="new_user">新人券</option>
+          </select>
+        </label>
+        <label>
+          状态
+          <select value={form.status} onChange={event => onChange({ status: event.target.value })}>
+            <option value="active">启用</option>
+            <option value="draft">草稿</option>
+            <option value="inactive">停用</option>
+            <option value="expired">过期</option>
+          </select>
+        </label>
+        <label>
+          使用门槛
+          <input value={form.thresholdYuan} type="number" min="0" step="0.01" onChange={event => onChange({ thresholdYuan: event.target.value })} />
+        </label>
+        <label>
+          优惠金额
+          <input value={form.discountYuan} type="number" min="0.01" step="0.01" onChange={event => onChange({ discountYuan: event.target.value })} />
+        </label>
+        <label>
+          发放数量
+          <input value={form.totalQuantity} type="number" min="0" onChange={event => onChange({ totalQuantity: event.target.value })} />
+        </label>
+        <label>
+          每人限领
+          <input value={form.perUserLimit} type="number" min="1" onChange={event => onChange({ perUserLimit: event.target.value })} />
+        </label>
+        <label>
+          开始时间
+          <input value={form.startsAt} type="datetime-local" onChange={event => onChange({ startsAt: event.target.value })} />
+        </label>
+        <label>
+          结束时间
+          <input value={form.endsAt} type="datetime-local" onChange={event => onChange({ endsAt: event.target.value })} />
+        </label>
+        <label className="wide">
+          说明
+          <textarea value={form.description} onChange={event => onChange({ description: event.target.value })} />
+        </label>
+        <button className="primary-button wide" type="submit">
+          <Icon name="plus" />
+          创建优惠券
+        </button>
+      </form>
+    </Panel>
+  );
+}
+
+function MallCouponsSection({
+  coupons,
+  filters,
+  onFiltersChange,
+  onSearch,
+  onStatus,
+}: {
+  coupons: JsonRecord[];
+  filters: MallFilterState;
+  onFiltersChange: (patch: Partial<MallFilterState>) => void;
+  onSearch: () => Promise<void>;
+  onStatus: (id: string, status: string) => Promise<void>;
+}) {
+  return (
+    <div className="page-grid">
+      <div className="admin-filterbar marketing-filterbar">
+        <input value={filters.keyword} onChange={event => onFiltersChange({ keyword: event.target.value })} placeholder="搜索券名或券码" />
+        <select value={filters.categoryCode} onChange={event => onFiltersChange({ categoryCode: event.target.value })}>
+          <option value="">全部类型</option>
+          <option value="full_reduction">满减券</option>
+          <option value="cash">现金券</option>
+          <option value="delivery">配送券</option>
+          <option value="new_user">新人券</option>
+        </select>
+        <select value={filters.status} onChange={event => onFiltersChange({ status: event.target.value })}>
+          <option value="">全部状态</option>
+          <option value="active">启用</option>
+          <option value="draft">草稿</option>
+          <option value="inactive">停用</option>
+          <option value="expired">过期</option>
+        </select>
+        <button className="primary-button" type="button" onClick={() => void onSearch()}>
+          <Icon name="refresh" />
+          搜索
+        </button>
+      </div>
+
+      <Panel title="优惠券列表" description="查看发放量、领取量、核销量和启停状态">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>优惠券</th>
+                <th>规则</th>
+                <th>发放/领取/核销</th>
+                <th>有效期</th>
+                <th>状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {coupons.map(coupon => {
+                const id = stringValue(coupon, 'id');
+                const status = stringValue(coupon, 'status');
+                return (
+                  <tr key={id}>
+                    <td>
+                      <strong>{stringValue(coupon, 'name')}</strong>
+                      <small>{stringValue(coupon, 'code')} · {couponTypeLabel(stringValue(coupon, 'couponType'))}</small>
+                    </td>
+                    <td>
+                      <span>满 {yuan(numberValue(coupon, 'thresholdCents'))} 减 {yuan(numberValue(coupon, 'discountCents'))}</span>
+                      <small>{stringValue(coupon, 'description', '-')}</small>
+                    </td>
+                    <td>
+                      <span>{numberValue(coupon, 'totalQuantity')} / {numberValue(coupon, 'claimedCount')} / {numberValue(coupon, 'usedCount')}</span>
+                      <small>每人限领 {numberValue(coupon, 'perUserLimit', 1)} 张</small>
+                    </td>
+                    <td>
+                      <span>{formatDate(stringValue(coupon, 'startsAt'))}</span>
+                      <small>{formatDate(stringValue(coupon, 'endsAt'))}</small>
+                    </td>
+                    <td>
+                      <span className={badgeClass(status)}>{statusLabel(status)}</span>
+                    </td>
+                    <td className="actions">
+                      <button className="ghost-button" type="button" onClick={() => onStatus(id, status === 'active' ? 'inactive' : 'active')}>
+                        <Icon name={status === 'active' ? 'x' : 'check'} />
+                        {status === 'active' ? '停用' : '启用'}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {!coupons.length ? <EmptyState text="暂无优惠券数据" /> : null}
+      </Panel>
+    </div>
+  );
+}
+
+function MallHomeBannersSection({
+  banners,
+  filters,
+  form,
+  onChange,
+  onEdit,
+  onFiltersChange,
+  onReset,
+  onSearch,
+  onStatus,
+  onSubmit,
+  onUploadImage,
+}: {
+  banners: JsonRecord[];
+  filters: MallFilterState;
+  form: HomeBannerForm;
+  onChange: (patch: Partial<HomeBannerForm>) => void;
+  onEdit: (banner: JsonRecord) => void;
+  onFiltersChange: (patch: Partial<MallFilterState>) => void;
+  onReset: () => void;
+  onSearch: () => Promise<void>;
+  onStatus: (id: string, status: string) => Promise<void>;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onUploadImage: (file: File) => Promise<string>;
+}) {
+  return (
+    <div className="split-grid">
+      <Panel title={form.id ? '编辑首页配置' : '新增首页配置'} description="维护商城首页 Banner、活动位、跳转目标和排序">
+        <form className="form-grid" onSubmit={onSubmit}>
+          <label>
+            标题
+            <input value={form.title} onChange={event => onChange({ title: event.target.value })} />
+          </label>
+          <label>
+            标签
+            <input value={form.tag} onChange={event => onChange({ tag: event.target.value })} />
+          </label>
+          <label className="wide">
+            副标题
+            <input value={form.subtitle} onChange={event => onChange({ subtitle: event.target.value })} />
+          </label>
+          <label className="wide">
+            图片
+            <input value={form.imageUrl} placeholder="可输入 COS key 或上传图片" onChange={event => onChange({ imageUrl: event.target.value })} />
+            <input
+              accept="image/*"
+              type="file"
+              onChange={event => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                void onUploadImage(file).then(imageUrl => onChange({ imageUrl }));
+                event.target.value = '';
+              }}
+            />
+          </label>
+          <label>
+            跳转类型
+            <select value={form.linkType} onChange={event => onChange({ linkType: event.target.value })}>
+              <option value="none">不跳转</option>
+              <option value="category">品类</option>
+              <option value="product">商品</option>
+              <option value="search">搜索</option>
+              <option value="url">链接</option>
+            </select>
+          </label>
+          <label>
+            跳转目标
+            <input value={form.linkTarget} onChange={event => onChange({ linkTarget: event.target.value })} />
+          </label>
+          <label>
+            排序
+            <input value={form.sortOrder} type="number" onChange={event => onChange({ sortOrder: event.target.value })} />
+          </label>
+          <label>
+            状态
+            <select value={form.status} onChange={event => onChange({ status: event.target.value })}>
+              <option value="active">启用</option>
+              <option value="draft">草稿</option>
+              <option value="inactive">停用</option>
+            </select>
+          </label>
+          <label>
+            开始时间
+            <input value={form.startsAt} type="datetime-local" onChange={event => onChange({ startsAt: event.target.value })} />
+          </label>
+          <label>
+            结束时间
+            <input value={form.endsAt} type="datetime-local" onChange={event => onChange({ endsAt: event.target.value })} />
+          </label>
+          <button className="primary-button" type="submit">
+            <Icon name="save" />
+            {form.id ? '保存配置' : '创建配置'}
+          </button>
+          <button className="ghost-button" type="button" onClick={onReset}>
+            <Icon name="x" />
+            重置
+          </button>
+        </form>
+      </Panel>
+
+      <Panel title="首页配置列表" description="运营位按排序升序展示，启用后供商城首页读取">
+        <div className="admin-filterbar marketing-filterbar compact">
+          <input value={filters.keyword} onChange={event => onFiltersChange({ keyword: event.target.value })} placeholder="搜索标题或副标题" />
+          <select value={filters.status} onChange={event => onFiltersChange({ status: event.target.value })}>
+            <option value="">全部状态</option>
+            <option value="active">启用</option>
+            <option value="draft">草稿</option>
+            <option value="inactive">停用</option>
+          </select>
+          <button className="primary-button" type="button" onClick={() => void onSearch()}>
+            <Icon name="refresh" />
+            搜索
+          </button>
+        </div>
+        <div className="list-stack">
+          {banners.map(banner => {
+            const id = stringValue(banner, 'id');
+            const status = stringValue(banner, 'status');
+            return (
+              <article className="list-row banner-row" key={id}>
+                <div>
+                  <strong>{numberValue(banner, 'sortOrder')} · {stringValue(banner, 'title')}</strong>
+                  <small>{stringValue(banner, 'subtitle', '-')}</small>
+                  <small>{linkTypeLabel(stringValue(banner, 'linkType'))} · {stringValue(banner, 'linkTarget', '-')}</small>
+                </div>
+                <span className={badgeClass(status)}>{statusLabel(status)}</span>
+                <div className="actions">
+                  <button className="ghost-button" type="button" onClick={() => onEdit(banner)}>
+                    <Icon name="save" />
+                    编辑
+                  </button>
+                  <button className="ghost-button" type="button" onClick={() => onStatus(id, status === 'active' ? 'inactive' : 'active')}>
+                    <Icon name={status === 'active' ? 'x' : 'check'} />
+                    {status === 'active' ? '停用' : '启用'}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+          {!banners.length ? <EmptyState text="暂无首页配置" /> : null}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
 function OperationsSection({
   campaigns,
   campaignForm,
@@ -3547,12 +3989,16 @@ function App() {
   const [authError, setAuthError] = useState('');
   const [productForm, setProductForm] = useState<ProductForm>(initialProductForm);
   const [campaignForm, setCampaignForm] = useState<CampaignForm>(initialCampaignForm);
+  const [couponForm, setCouponForm] = useState<CouponForm>(initialCouponForm);
+  const [homeBannerForm, setHomeBannerForm] = useState<HomeBannerForm>(initialHomeBannerForm);
   const [settingsForm, setSettingsForm] = useState<SettingsForm>(initialSettingsForm);
   const [supportForm, setSupportForm] = useState<SupportForm>(initialSupportForm);
   const [categoryForm, setCategoryForm] = useState<CategoryForm>(initialCategoryForm);
   const [productFilters, setProductFilters] = useState<MallFilterState>(initialProductFilters);
   const [categoryFilters, setCategoryFilters] = useState<MallFilterState>(initialCategoryFilters);
   const [inventoryFilters, setInventoryFilters] = useState<MallFilterState>(initialInventoryFilters);
+  const [couponFilters, setCouponFilters] = useState<MallFilterState>(initialProductFilters);
+  const [homeBannerFilters, setHomeBannerFilters] = useState<MallFilterState>(initialProductFilters);
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [supportMessages, setSupportMessages] = useState<JsonRecord[]>([]);
   const [mallOrderDetailModalOpen, setMallOrderDetailModalOpen] = useState(false);
@@ -3586,6 +4032,10 @@ function App() {
     setMallOrderSearchResult(null);
     setMallOrderSearchLoading(false);
     setMallOrderSearchError('');
+    setCouponForm(initialCouponForm);
+    setHomeBannerForm(initialHomeBannerForm);
+    setCouponFilters(initialProductFilters);
+    setHomeBannerFilters(initialProductFilters);
     setBusy('');
     setLoading(false);
   };
@@ -3597,7 +4047,7 @@ function App() {
     }
 
     setLoading(true);
-    const result = await fetchDashboardData(productFilters, categoryFilters, inventoryFilters);
+    const result = await fetchDashboardData(productFilters, categoryFilters, inventoryFilters, couponFilters, homeBannerFilters);
 
     if (!getStoredAdminSession()) {
       setLoading(false);
@@ -4034,6 +4484,79 @@ function App() {
     });
   };
 
+  const createCoupon = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await runAction('优惠券创建', async () => {
+      await apiPost('/api/admin/mall/coupons', {
+        name: couponForm.name,
+        code: couponForm.code,
+        couponType: couponForm.couponType,
+        thresholdCents: moneyFromYuan(couponForm.thresholdYuan),
+        discountCents: moneyFromYuan(couponForm.discountYuan),
+        totalQuantity: Number(couponForm.totalQuantity) || 0,
+        perUserLimit: Number(couponForm.perUserLimit) || 1,
+        status: couponForm.status,
+        startsAt: couponForm.startsAt || undefined,
+        endsAt: couponForm.endsAt || undefined,
+        description: couponForm.description,
+        rules: {
+          autoApply: true,
+          source: 'web-admin',
+        },
+      });
+      setCouponForm({
+        ...initialCouponForm,
+        code: `COUPON-${Date.now().toString().slice(-6)}`,
+      });
+      await reload();
+    });
+  };
+
+  const updateCouponStatus = async (id: string, status: string) => {
+    await runAction('优惠券状态更新', async () => {
+      await apiPut(`/api/admin/mall/coupons/${id}`, { status });
+      setData(current => ({ ...current, mallCoupons: updateRecordList(current.mallCoupons, id, { status }) }));
+    });
+  };
+
+  const saveHomeBanner = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await runAction(homeBannerForm.id ? '首页配置更新' : '首页配置创建', async () => {
+      const payload = {
+        title: homeBannerForm.title,
+        subtitle: homeBannerForm.subtitle,
+        imageUrl: homeBannerForm.imageUrl,
+        linkType: homeBannerForm.linkType,
+        linkTarget: homeBannerForm.linkTarget,
+        sortOrder: Number(homeBannerForm.sortOrder) || 0,
+        status: homeBannerForm.status,
+        startsAt: homeBannerForm.startsAt || undefined,
+        endsAt: homeBannerForm.endsAt || undefined,
+        metadata: {
+          tag: homeBannerForm.tag,
+        },
+      };
+
+      const banner = homeBannerForm.id
+        ? await apiPut<JsonRecord>(`/api/admin/mall/home-banners/${homeBannerForm.id}`, payload)
+        : await apiPost<JsonRecord>('/api/admin/mall/home-banners', payload);
+
+      setData(current => ({
+        ...current,
+        mallHomeBanners: upsertRecordList(current.mallHomeBanners, banner),
+      }));
+      setHomeBannerForm(initialHomeBannerForm);
+      await reload();
+    });
+  };
+
+  const updateHomeBannerStatus = async (id: string, status: string) => {
+    await runAction('首页配置状态更新', async () => {
+      await apiPut(`/api/admin/mall/home-banners/${id}`, { status });
+      setData(current => ({ ...current, mallHomeBanners: updateRecordList(current.mallHomeBanners, id, { status }) }));
+    });
+  };
+
   const saveSettings = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     await runAction('运营配置保存', async () => {
@@ -4257,6 +4780,43 @@ function App() {
           onRefund={refundMallOrder}
           onStatus={updateMallOrderStatus}
           onViewDetail={openMallOrderDetail}
+        />
+      );
+    }
+    if (activePageKey === 'mall.couponCreate') {
+      return (
+        <MallCouponCreateSection
+          form={couponForm}
+          onChange={patch => setCouponForm(current => ({ ...current, ...patch }))}
+          onSubmit={createCoupon}
+        />
+      );
+    }
+    if (activePageKey === 'mall.coupons') {
+      return (
+        <MallCouponsSection
+          coupons={data.mallCoupons}
+          filters={couponFilters}
+          onFiltersChange={patch => setCouponFilters(current => ({ ...current, ...patch }))}
+          onSearch={reload}
+          onStatus={updateCouponStatus}
+        />
+      );
+    }
+    if (activePageKey === 'mall.banners') {
+      return (
+        <MallHomeBannersSection
+          banners={data.mallHomeBanners}
+          filters={homeBannerFilters}
+          form={homeBannerForm}
+          onChange={patch => setHomeBannerForm(current => ({ ...current, ...patch }))}
+          onEdit={banner => setHomeBannerForm(homeBannerToForm(banner))}
+          onFiltersChange={patch => setHomeBannerFilters(current => ({ ...current, ...patch }))}
+          onReset={() => setHomeBannerForm(initialHomeBannerForm)}
+          onSearch={reload}
+          onStatus={updateHomeBannerStatus}
+          onSubmit={saveHomeBanner}
+          onUploadImage={uploadProductImage}
         />
       );
     }
