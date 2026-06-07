@@ -116,7 +116,11 @@ where
         )
         .route(
             "/api/admin/mall/inventory-alerts",
-            get(admin_list_inventory_alerts::<S>),
+            get(admin_list_inventory_alerts::<S>).post(admin_create_inventory_alert::<S>),
+        )
+        .route(
+            "/api/admin/mall/inventory-alerts/:id",
+            put(admin_update_inventory_alert::<S>).delete(admin_delete_inventory_alert::<S>),
         )
         .route(
             "/api/admin/mall/uploads/product-image",
@@ -208,6 +212,16 @@ struct InventoryAlertQuery {
     status: Option<String>,
     #[serde(alias = "stock_status")]
     stock_status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InventoryAlertMutationRequest {
+    #[serde(alias = "product_id")]
+    product_id: Option<String>,
+    stock: Option<i32>,
+    #[serde(alias = "stock_alert_threshold")]
+    stock_alert_threshold: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -896,6 +910,65 @@ where
     let mut products = fetch_inventory_alerts(&state.db, query).await?;
     resolve_mall_image_urls_in_list(&state.storage, &mut products).await?;
     Ok(ok("查询成功", products))
+}
+
+async fn admin_create_inventory_alert<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<InventoryAlertMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let product_id = require_non_empty(body.product_id, "商品不能为空")?;
+    let threshold = body
+        .stock_alert_threshold
+        .ok_or_else(|| ApiError::BadRequest("预警阈值不能为空".to_string()))?;
+    validate_positive_i32(threshold, "预警阈值必须大于0")?;
+    validate_optional_non_negative_i32(body.stock, "库存不能小于0")?;
+
+    update_inventory_alert_product(
+        &state.db,
+        &state.storage,
+        &product_id,
+        body.stock,
+        Some(threshold),
+    )
+    .await
+    .map(|product| ok("库存预警创建成功", product))
+}
+
+async fn admin_update_inventory_alert<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<InventoryAlertMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    validate_optional_non_negative_i32(body.stock, "库存不能小于0")?;
+    validate_optional_non_negative_i32(body.stock_alert_threshold, "预警阈值不能小于0")?;
+
+    update_inventory_alert_product(
+        &state.db,
+        &state.storage,
+        &id,
+        body.stock,
+        body.stock_alert_threshold,
+    )
+    .await
+    .map(|product| ok("库存预警更新成功", product))
+}
+
+async fn admin_delete_inventory_alert<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    update_inventory_alert_product(&state.db, &state.storage, &id, None, Some(0))
+        .await
+        .map(|product| ok("库存预警已删除", product))
 }
 
 async fn admin_upload_product_image<S>(
@@ -3377,7 +3450,7 @@ async fn fetch_inventory_alerts(
         )
         FROM mall_products p
         LEFT JOIN mall_categories c ON c.code = p.category_code
-        WHERE p.stock <= p.stock_alert_threshold
+        WHERE p.stock_alert_threshold > 0
         "#,
     );
 
@@ -3417,6 +3490,35 @@ async fn fetch_inventory_alerts(
         .build_query_scalar::<Value>()
         .fetch_all(pool)
         .await?)
+}
+
+async fn update_inventory_alert_product<S: Storage>(
+    pool: &PgPool,
+    storage: &S,
+    product_id: &str,
+    stock: Option<i32>,
+    stock_alert_threshold: Option<i32>,
+) -> ApiResult<Value> {
+    let updated_id = sqlx::query_scalar::<_, String>(
+        r#"
+        UPDATE mall_products
+        SET stock = COALESCE($2, stock),
+            stock_alert_threshold = COALESCE($3, stock_alert_threshold),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING id
+        "#,
+    )
+    .bind(product_id)
+    .bind(stock)
+    .bind(stock_alert_threshold)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("商品不存在".to_string()))?;
+
+    let mut product = fetch_product_json(pool, &updated_id).await?;
+    resolve_mall_image_urls(storage, &mut product).await?;
+    Ok(product)
 }
 
 async fn fetch_pickup_points(

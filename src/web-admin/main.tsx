@@ -422,9 +422,8 @@ const adminModules: AdminModuleSpec[] = [
     pages: [
       designPage('mall.products', '商品上架', '商品管理', '商品创建、上下架、库存和图片', 'shop', 'mallProducts'),
       designPage('mall.productList', '商品列表', '商品管理', '在售、售罄和下架商品管理', 'shop', 'mallProducts'),
-      designPage('mall.images', '商品素材', '商品管理', 'COS 图片、主图和详情图审核', 'shop'),
       designPage('mall.categories', '品类管理', '品类管理', '社区团购类目、排序和状态', 'dashboard'),
-      designPage('mall.inventory', '库存预警', '品类管理', '低库存、缺货替换和补货提醒', 'support'),
+      designPage('mall.inventory', '库存预警', '商品管理', '低库存、缺货替换和补货提醒', 'support'),
       designPage('mall.orders', '订单管理', '订单管理', '商城订单、履约和退款售后', 'orders', 'mallOrders'),
       designPage('mall.orderDetail', '订单详情', '订单管理', '订单明细、支付、自提和客服记录', 'orders'),
       designPage('mall.fulfillment', '自提核销', '订单管理', '提货码生成、团长核销和异常处理', 'check'),
@@ -2124,14 +2123,15 @@ function MallProductDesignSection({
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onUploadImage: (file: File) => Promise<string>;
 }) {
+  const [createModalOpen, setCreateModalOpen] = useState(false);
   const alertCount = products.filter(product => numberValue(product, 'stock') <= numberValue(product, 'stockAlertThreshold', 15)).length;
   const completeCount = products.filter(product => stringValue(product, 'imageKey', stringValue(product, 'imageUrl')) && numberValue(product, 'weightKg') > 0).length;
 
   return (
-    <form className="mall-admin-design-page" onSubmit={onSubmit}>
+    <div className="mall-admin-design-page">
       <div className="mall-admin-toolbar">
         <label>
-          状态
+          默认状态
           <select value={form.status} onChange={event => onChange({ status: event.target.value })}>
             <option value="on_sale">上架</option>
             <option value="off_sale">下架</option>
@@ -2157,7 +2157,7 @@ function MallProductDesignSection({
           图片
           <input value={form.imageUrl ? '已上传' : '待上传'} readOnly />
         </label>
-        <button className="mall-admin-submit" type="submit">提交上架</button>
+        <button className="mall-admin-submit" type="button" onClick={() => setCreateModalOpen(true)}>新增上架商品</button>
       </div>
 
       <div className="mall-admin-kpis">
@@ -2169,20 +2169,38 @@ function MallProductDesignSection({
       <section className="mall-admin-form-panel">
         <div className="design-panel-head">
           <div>
-            <h2>商品上架信息表单</h2>
-            <p>基础信息、价格库存、适用范围和审核状态集中维护</p>
+            <h2>商品上架</h2>
+            <p>点击新增上架商品后，在弹窗中维护基础信息、价格库存、主图和无人车装载规格</p>
           </div>
           <span>{products.length} 个商品</span>
         </div>
-        <ProductFormFields
+        <div className="coverage-grid">
+          <div>
+            <strong>图片上传</strong>
+            <span>运营选择本地图片后上传到后端存储，商品主图保存 storage key</span>
+          </div>
+          <div>
+            <strong>规格校验</strong>
+            <span>长宽高、体积、重量和冷链字段用于判断无人车是否可装载</span>
+          </div>
+          <div>
+            <strong>库存预警</strong>
+            <span>上架时可同步设置商品库存和预警阈值</span>
+          </div>
+        </div>
+      </section>
+
+      {createModalOpen ? (
+        <ProductCreateModal
           categories={categories}
           form={form}
-          layout="tiles"
           onChange={onChange}
+          onClose={() => setCreateModalOpen(false)}
+          onSubmit={onSubmit}
           onUploadImage={onUploadImage}
         />
-      </section>
-    </form>
+      ) : null}
+    </div>
   );
 }
 
@@ -2582,24 +2600,18 @@ function TransportOrdersSection({
 function MallProductsSection({
   categories,
   products,
-  form,
   filters,
-  onChange,
   onFiltersChange,
   onSearch,
-  onSubmit,
   onStatus,
   onUpdate,
   onUploadImage,
 }: {
   categories: JsonRecord[];
   products: JsonRecord[];
-  form: ProductForm;
   filters: MallFilterState;
-  onChange: (patch: Partial<ProductForm>) => void;
   onFiltersChange: (patch: Partial<MallFilterState>) => void;
   onSearch: () => Promise<void>;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onStatus: (id: string, status: string) => Promise<void>;
   onUpdate: (id: string, form: ProductForm) => Promise<void>;
   onUploadImage: (file: File) => Promise<string>;
@@ -2635,17 +2647,6 @@ function MallProductsSection({
           搜索
         </button>
       </div>
-
-      <div className="split-grid">
-      <Panel title="新增商品" description="商品创建会调用后台商城商品接口，用户端可直接看到在售商品">
-        <form className="form-grid" onSubmit={onSubmit}>
-          <ProductFormFields categories={categories} form={form} onChange={onChange} onUploadImage={onUploadImage} />
-          <button className="primary-button wide" type="submit">
-            <Icon name="plus" />
-            创建商品
-          </button>
-        </form>
-      </Panel>
 
       <Panel title="商品列表" description="商品上下架、库存和冷链状态">
         <div className="table-wrap">
@@ -2704,7 +2705,6 @@ function MallProductsSection({
         </div>
         {!products.length ? <EmptyState text="暂无商品数据" /> : null}
       </Panel>
-      </div>
 
       {editingProduct ? (
         <ProductEditModal
@@ -2718,6 +2718,54 @@ function MallProductsSection({
           onUploadImage={onUploadImage}
         />
       ) : null}
+    </div>
+  );
+}
+
+function ProductCreateModal({
+  categories,
+  form,
+  onChange,
+  onClose,
+  onSubmit,
+  onUploadImage,
+}: {
+  categories: JsonRecord[];
+  form: ProductForm;
+  onChange: (patch: Partial<ProductForm>) => void;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onUploadImage: (file: File) => Promise<string>;
+}) {
+  return (
+    <div className="modal-backdrop">
+      <section className="modal-panel product-modal">
+        <div className="panel-head">
+          <div>
+            <h2>新增上架商品</h2>
+            <p>维护商品主图、价格库存、无人车装载规格和上架状态</p>
+          </div>
+          <button className="ghost-button" type="button" onClick={onClose}>
+            <Icon name="x" />
+            关闭
+          </button>
+        </div>
+        <form onSubmit={onSubmit}>
+          <ProductFormFields
+            categories={categories}
+            form={form}
+            onChange={onChange}
+            onUploadImage={onUploadImage}
+          />
+          <div className="modal-actions">
+            <button className="ghost-button" type="button" onClick={onClose}>取消</button>
+            <button className="primary-button" type="submit">
+              <Icon name="plus" />
+              创建商品
+            </button>
+          </div>
+        </form>
+      </section>
     </div>
   );
 }
@@ -2913,20 +2961,59 @@ function MallCategoriesSection({
 }
 
 function MallInventorySection({
+  allProducts,
   categories,
   products,
   filters,
+  onCreateInventoryAlert,
+  onDeleteInventoryAlert,
+  onEditInventoryAlert,
   onFiltersChange,
   onSearch,
-  onUpdateInventory,
 }: {
+  allProducts: JsonRecord[];
   categories: JsonRecord[];
   products: JsonRecord[];
   filters: MallFilterState;
+  onCreateInventoryAlert: (id: string, stock: number, stockAlertThreshold: number) => Promise<void>;
+  onDeleteInventoryAlert: (id: string) => Promise<void>;
+  onEditInventoryAlert: (id: string, stock: number, stockAlertThreshold: number) => Promise<void>;
   onFiltersChange: (patch: Partial<MallFilterState>) => void;
   onSearch: () => Promise<void>;
-  onUpdateInventory: (id: string, stock: number, stockAlertThreshold: number) => Promise<void>;
 }) {
+  const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null);
+  const [draft, setDraft] = useState({ productId: '', stock: '0', stockAlertThreshold: '15' });
+  const candidateProducts = allProducts.length ? allProducts : products;
+  const openCreate = () => {
+    const firstProduct = candidateProducts[0];
+    setDraft({
+      productId: stringValue(firstProduct, 'id'),
+      stock: String(numberValue(firstProduct, 'stock')),
+      stockAlertThreshold: String(numberValue(firstProduct, 'stockAlertThreshold', 15)),
+    });
+    setModalMode('create');
+  };
+  const openEdit = (product: JsonRecord) => {
+    setDraft({
+      productId: stringValue(product, 'id'),
+      stock: String(numberValue(product, 'stock')),
+      stockAlertThreshold: String(numberValue(product, 'stockAlertThreshold', 15)),
+    });
+    setModalMode('edit');
+  };
+  const saveDraft = async () => {
+    const productId = draft.productId;
+    if (!productId) return;
+    const stock = Number(draft.stock) || 0;
+    const stockAlertThreshold = Number(draft.stockAlertThreshold) || 0;
+    if (modalMode === 'create') {
+      await onCreateInventoryAlert(productId, stock, stockAlertThreshold);
+    } else {
+      await onEditInventoryAlert(productId, stock, stockAlertThreshold);
+    }
+    setModalMode(null);
+  };
+
   return (
     <div className="page-grid">
       <div className="admin-filterbar">
@@ -2954,8 +3041,12 @@ function MallInventorySection({
           <Icon name="refresh" />
           搜索
         </button>
+        <button className="primary-button" type="button" onClick={openCreate}>
+          <Icon name="plus" />
+          新增预警
+        </button>
       </div>
-      <Panel title="库存预警" description="按商品级阈值检查库存，运营可直接补库存或调整预警阈值">
+      <Panel title="库存预警" description="按商品级阈值检查库存，运营可新增、编辑或删除商品库存预警规则">
         <div className="table-wrap">
           <table>
             <thead>
@@ -2966,7 +3057,7 @@ function MallInventorySection({
                 <th>当前库存</th>
                 <th>预警阈值</th>
                 <th>装载规格</th>
-                <th>处理</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -2979,28 +3070,20 @@ function MallInventorySection({
                     <td><ProductImage record={product} /></td>
                     <td>{stringValue(product, 'categoryName', stringValue(product, 'categoryCode'))}</td>
                     <td><span className={stock <= 0 ? 'badge badge-amber' : 'badge badge-blue'}>{stockLevelLabel(product)}</span></td>
-                    <td>
-                      <input defaultValue={stock} type="number" min="0" id={`stock-${id}`} />
-                    </td>
-                    <td>
-                      <input defaultValue={threshold} type="number" min="0" id={`threshold-${id}`} />
-                    </td>
+                    <td>{stock}</td>
+                    <td>{threshold}</td>
                     <td>
                       <span>{numberValue(product, 'lengthCm')}×{numberValue(product, 'widthCm')}×{numberValue(product, 'heightCm')} cm</span>
                       <small>{numberValue(product, 'volumeLiters')}L · {numberValue(product, 'weightKg')}kg</small>
                     </td>
-                    <td>
-                      <button
-                        className="primary-button small"
-                        type="button"
-                        onClick={() => {
-                          const stockInput = document.getElementById(`stock-${id}`) as HTMLInputElement | null;
-                          const thresholdInput = document.getElementById(`threshold-${id}`) as HTMLInputElement | null;
-                          void onUpdateInventory(id, Number(stockInput?.value || 0), Number(thresholdInput?.value || 0));
-                        }}
-                      >
+                    <td className="actions">
+                      <button className="ghost-button" type="button" onClick={() => openEdit(product)}>
                         <Icon name="save" />
-                        保存
+                        编辑
+                      </button>
+                      <button className="ghost-button danger" type="button" onClick={() => void onDeleteInventoryAlert(id)}>
+                        <Icon name="x" />
+                        删除
                       </button>
                     </td>
                   </tr>
@@ -3011,6 +3094,62 @@ function MallInventorySection({
         </div>
         {!products.length ? <EmptyState text="暂无库存预警" /> : null}
       </Panel>
+
+      {modalMode ? (
+        <div className="modal-backdrop">
+          <section className="modal-panel">
+            <div className="panel-head">
+              <div>
+                <h2>{modalMode === 'create' ? '新增库存预警' : '编辑库存预警'}</h2>
+                <p>选择商品并维护当前库存和预警阈值，阈值为 0 表示关闭预警</p>
+              </div>
+              <button className="ghost-button" type="button" onClick={() => setModalMode(null)}>
+                <Icon name="x" />
+                关闭
+              </button>
+            </div>
+            <div className="form-grid">
+              <label className="wide">
+                商品
+                <select
+                  disabled={modalMode === 'edit'}
+                  value={draft.productId}
+                  onChange={event => {
+                    const product = candidateProducts.find(item => stringValue(item, 'id') === event.target.value);
+                    setDraft({
+                      productId: event.target.value,
+                      stock: String(numberValue(product, 'stock')),
+                      stockAlertThreshold: String(numberValue(product, 'stockAlertThreshold', 15)),
+                    });
+                  }}
+                >
+                  <option value="">请选择商品</option>
+                  {candidateProducts.map(product => (
+                    <option key={stringValue(product, 'id')} value={stringValue(product, 'id')}>
+                      {stringValue(product, 'name', stringValue(product, 'sku'))}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                当前库存
+                <input value={draft.stock} type="number" min="0" onChange={event => setDraft(current => ({ ...current, stock: event.target.value }))} />
+              </label>
+              <label>
+                预警阈值
+                <input value={draft.stockAlertThreshold} type="number" min="0" onChange={event => setDraft(current => ({ ...current, stockAlertThreshold: event.target.value }))} />
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button className="ghost-button" type="button" onClick={() => setModalMode(null)}>取消</button>
+              <button className="primary-button" type="button" onClick={() => void saveDraft()} disabled={!draft.productId}>
+                <Icon name="save" />
+                保存预警
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -4327,9 +4466,23 @@ function App() {
     });
   };
 
-  const updateInventory = async (id: string, stock: number, stockAlertThreshold: number) => {
-    await runAction('库存预警处理', async () => {
-      await apiPut(`/api/admin/mall/products/${id}`, { stock, stockAlertThreshold });
+  const createInventoryAlert = async (id: string, stock: number, stockAlertThreshold: number) => {
+    await runAction('库存预警创建', async () => {
+      await apiPost('/api/admin/mall/inventory-alerts', { productId: id, stock, stockAlertThreshold });
+      await reload();
+    });
+  };
+
+  const editInventoryAlert = async (id: string, stock: number, stockAlertThreshold: number) => {
+    await runAction('库存预警更新', async () => {
+      await apiPut(`/api/admin/mall/inventory-alerts/${id}`, { stock, stockAlertThreshold });
+      await reload();
+    });
+  };
+
+  const deleteInventoryAlert = async (id: string) => {
+    await runAction('库存预警删除', async () => {
+      await apiDelete(`/api/admin/mall/inventory-alerts/${id}`);
       await reload();
     });
   };
@@ -4721,13 +4874,10 @@ function App() {
         <MallProductsSection
           categories={data.mallCategories}
           filters={productFilters}
-          form={productForm}
           products={data.mallProducts}
-          onChange={patch => setProductForm(current => ({ ...current, ...patch }))}
           onFiltersChange={patch => setProductFilters(current => ({ ...current, ...patch }))}
           onSearch={reload}
           onStatus={updateProductStatus}
-          onSubmit={createProduct}
           onUpdate={updateProduct}
           onUploadImage={uploadProductImage}
         />
@@ -4750,12 +4900,15 @@ function App() {
     if (activePageKey === 'mall.inventory') {
       return (
         <MallInventorySection
+          allProducts={data.mallProducts}
           categories={data.mallCategories}
           filters={inventoryFilters}
           products={data.mallInventoryAlerts}
+          onCreateInventoryAlert={createInventoryAlert}
+          onDeleteInventoryAlert={deleteInventoryAlert}
+          onEditInventoryAlert={editInventoryAlert}
           onFiltersChange={patch => setInventoryFilters(current => ({ ...current, ...patch }))}
           onSearch={reload}
-          onUpdateInventory={updateInventory}
         />
       );
     }
