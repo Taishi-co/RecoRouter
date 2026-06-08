@@ -671,7 +671,7 @@ async function fetchDashboardData(
     loadWithFallback('知识库', [], errors, () => apiGet<JsonRecord[]>('/api/support/knowledge')),
     loadWithFallback('企业列表', [], errors, () => apiGet<JsonRecord[]>('/api/enterprise', { limit: 100 }).catch(() => apiGet<JsonRecord[]>('/api/enterprise/admin/' + (getStoredAdminSession()?.user?.id || ''), { limit: 100 }))),
     loadWithFallback('需求列表', [], errors, () => apiGet<JsonRecord[]>('/api/demands', { limit: 100 })),
-    loadWithFallback('取消申请', [], errors, () => apiGet<JsonRecord[]>('/api/cancellations/pending')),
+    loadWithFallback('取消申请', [], errors, () => apiGet<JsonRecord[]>('/api/cancellations/pending', { owner_id: 'admin' })),
     loadWithFallback('提现记录', [], errors, () => apiGet<JsonRecord[]>('/api/admin/owner-withdrawals')),
     loadWithFallback('行程列表', [], errors, () => apiGet<JsonRecord[]>('/api/trips', { limit: 100 })),
     loadWithFallback('未分配订单', [], errors, () => apiGet<JsonRecord[]>('/api/trips/undispatched-orders')),
