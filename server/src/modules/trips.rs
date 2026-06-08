@@ -22,6 +22,8 @@ where
     Router::new()
         .route("/api/trips", get(list_trips::<S>).post(create_trip::<S>))
         .route("/api/trips/:id", get(get_trip::<S>).put(update_trip::<S>).delete(delete_trip::<S>))
+        .route("/api/trips/:id/lock", post(lock_trip::<S>))
+        .route("/api/trips/:id/unlock", post(unlock_trip::<S>))
         .route("/api/trips/:id/start", post(start_trip::<S>))
         .route("/api/trips/:id/complete", post(complete_trip::<S>))
         .route("/api/trips/:id/stops", post(add_stop::<S>))
@@ -41,6 +43,8 @@ where
         .route("/api/admin/trips/:id/assign-orders", post(admin_assign_orders::<S>))
         .route("/api/admin/trips/:id/remove-order/:order_id", delete(admin_remove_order::<S>))
         .route("/api/admin/trips/:id/reorder-stops", put(admin_reorder_stops::<S>))
+        .route("/api/admin/trips/:id/lock", post(admin_lock_trip::<S>))
+        .route("/api/admin/trips/:id/unlock", post(admin_unlock_trip::<S>))
         .route("/api/admin/trips/:id/start", post(admin_start_trip::<S>))
         .route("/api/admin/trips/:id/complete", post(admin_complete_trip::<S>))
 }
@@ -265,8 +269,8 @@ where
     .flatten();
 
     let status = status.ok_or_else(|| ApiError::NotFound("行程不存在".to_string()))?;
-    if status == "in_progress" {
-        return Err(ApiError::BadRequest("进行中的行程不能删除".to_string()));
+    if status == "in_progress" || status == "locked" {
+        return Err(ApiError::BadRequest("进行中或已锁定的行程不能删除".to_string()));
     }
 
     // Unlink mall orders from this trip
@@ -306,6 +310,26 @@ where
     S: Storage,
 {
     do_start_trip(&state.db, &id).await
+}
+
+async fn lock_trip<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    do_lock_trip(&state.db, &id).await
+}
+
+async fn unlock_trip<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    do_unlock_trip(&state.db, &id).await
 }
 
 async fn complete_trip<S>(
@@ -575,8 +599,8 @@ where
     .flatten();
 
     let trip_status = trip_status.ok_or_else(|| ApiError::NotFound("行程不存在".to_string()))?;
-    if trip_status == "completed" || trip_status == "cancelled" {
-        return Err(ApiError::BadRequest("已完成或已取消的行程不能添加订单".to_string()));
+    if trip_status != "planned" && trip_status != "locked" {
+        return Err(ApiError::BadRequest("只有未锁定或已锁定的行程可以添加订单".to_string()));
     }
 
     let mut tx = state.db.begin().await?;
@@ -734,6 +758,26 @@ where
     do_complete_trip(&state.db, &id).await
 }
 
+async fn admin_lock_trip<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    do_lock_trip(&state.db, &id).await
+}
+
+async fn admin_unlock_trip<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    do_unlock_trip(&state.db, &id).await
+}
+
 // ── Shared logic ──
 
 async fn do_create_trip(pool: &sqlx::PgPool, body: &CreateTripRequest) -> ApiResult<Value> {
@@ -846,8 +890,8 @@ async fn do_start_trip(pool: &sqlx::PgPool, id: &str) -> ApiResult<Json<ApiEnvel
     .flatten();
 
     let status = status.ok_or_else(|| ApiError::NotFound("行程不存在".to_string()))?;
-    if status != "planned" {
-        return Err(ApiError::BadRequest("只有已规划的行程可以开始".to_string()));
+    if status != "locked" {
+        return Err(ApiError::BadRequest("只有已锁定的行程可以出发".to_string()));
     }
 
     let vehicle_id: Option<String> = sqlx::query_scalar(
@@ -932,6 +976,52 @@ async fn do_complete_trip(pool: &sqlx::PgPool, id: &str) -> ApiResult<Json<ApiEn
 
     let trip = fetch_trip_detail(pool, id).await?;
     Ok(ok("行程已完成", trip))
+}
+
+async fn do_lock_trip(pool: &sqlx::PgPool, id: &str) -> ApiResult<Json<ApiEnvelope<Value>>> {
+    let status: Option<String> = sqlx::query_scalar(
+        "SELECT status FROM vehicle_trips WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .flatten();
+
+    let status = status.ok_or_else(|| ApiError::NotFound("行程不存在".to_string()))?;
+    if status != "planned" {
+        return Err(ApiError::BadRequest("只有未锁定的行程可以锁定".to_string()));
+    }
+
+    sqlx::query("UPDATE vehicle_trips SET status = 'locked', updated_at = now() WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+    let trip = fetch_trip_detail(pool, id).await?;
+    Ok(ok("行程已锁定", trip))
+}
+
+async fn do_unlock_trip(pool: &sqlx::PgPool, id: &str) -> ApiResult<Json<ApiEnvelope<Value>>> {
+    let status: Option<String> = sqlx::query_scalar(
+        "SELECT status FROM vehicle_trips WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .flatten();
+
+    let status = status.ok_or_else(|| ApiError::NotFound("行程不存在".to_string()))?;
+    if status != "locked" {
+        return Err(ApiError::BadRequest("只有已锁定的行程可以解锁".to_string()));
+    }
+
+    sqlx::query("UPDATE vehicle_trips SET status = 'planned', updated_at = now() WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+    let trip = fetch_trip_detail(pool, id).await?;
+    Ok(ok("行程已解锁", trip))
 }
 
 async fn do_add_stop(pool: &sqlx::PgPool, trip_id: &str, body: &AddStopRequest) -> ApiResult<Json<ApiEnvelope<Value>>> {
