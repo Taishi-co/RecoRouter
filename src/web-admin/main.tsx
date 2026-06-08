@@ -91,6 +91,9 @@ interface DashboardData {
   demands: JsonRecord[];
   cancellations: JsonRecord[];
   ownerWithdrawals: JsonRecord[];
+  trips: JsonRecord[];
+  undispatchedOrders: JsonRecord[];
+  availableVehicles: JsonRecord[];
 }
 
 interface ProductForm {
@@ -172,7 +175,9 @@ type IconName =
   | 'send'
   | 'save'
   | 'plus'
-  | 'refund';
+  | 'refund'
+  | 'lock'
+  | 'unlock';
 
 interface ApiEnvelope<T> {
   code?: number | string;
@@ -435,6 +440,9 @@ const initialData: DashboardData = {
   demands: [],
   cancellations: [],
   ownerWithdrawals: [],
+  trips: [],
+  undispatchedOrders: [],
+  availableVehicles: [],
 };
 
 const initialProductForm: ProductForm = {
@@ -626,6 +634,9 @@ async function fetchDashboardData(
     demands,
     cancellations,
     ownerWithdrawals,
+    trips,
+    undispatchedOrders,
+    availableVehicles,
   ] = await Promise.all([
     loadWithFallback('平台统计', {}, errors, () => apiGet<JsonRecord>('/api/admin/statistics')),
     loadWithFallback('账号列表', [], errors, () => apiGet<JsonRecord[]>('/api/admin/users', { limit: 80 })),
@@ -662,6 +673,9 @@ async function fetchDashboardData(
     loadWithFallback('需求列表', [], errors, () => apiGet<JsonRecord[]>('/api/demands', { limit: 100 })),
     loadWithFallback('取消申请', [], errors, () => apiGet<JsonRecord[]>('/api/cancellations/pending')),
     loadWithFallback('提现记录', [], errors, () => apiGet<JsonRecord[]>('/api/admin/owner-withdrawals')),
+    loadWithFallback('行程列表', [], errors, () => apiGet<JsonRecord[]>('/api/trips', { limit: 100 })),
+    loadWithFallback('未分配订单', [], errors, () => apiGet<JsonRecord[]>('/api/trips/undispatched-orders')),
+    loadWithFallback('可用车辆', [], errors, () => apiGet<JsonRecord[]>('/api/trips/available-vehicles')),
   ]);
 
   return {
@@ -687,6 +701,9 @@ async function fetchDashboardData(
       demands,
       cancellations,
       ownerWithdrawals,
+      trips,
+      undispatchedOrders,
+      availableVehicles,
     },
     errors,
   };
@@ -995,6 +1012,18 @@ function Icon({ name }: { name: IconName }) {
         <path d="M7 7h10a5 5 0 0 1 0 10H9" />
         <path d="m10 4-4 3 4 3" />
         <path d="M12 12h4" />
+      </>
+    ),
+    lock: (
+      <>
+        <rect x="5" y="11" width="14" height="9" rx="2" />
+        <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+      </>
+    ),
+    unlock: (
+      <>
+        <rect x="5" y="11" width="14" height="9" rx="2" />
+        <path d="M8 11V7a4 4 0 0 1 7.4-1.5" />
       </>
     ),
   };
@@ -1428,6 +1457,410 @@ function OwnerWalletSection({
           </table>
         </div>
         {!withdrawals.length ? <EmptyState text="暂无提现记录" /> : null}
+      </Panel>
+    </div>
+  );
+}
+
+function DispatchSection({
+  trips,
+  undispatchedOrders,
+  availableVehicles,
+  onCreateTrip,
+  onAssignOrders,
+  onRemoveOrder,
+  onLockTrip,
+  onUnlockTrip,
+  onStartTrip,
+  onCompleteTrip,
+  onReorderStops: _onReorderStops,
+}: {
+  trips: JsonRecord[];
+  undispatchedOrders: JsonRecord[];
+  availableVehicles: JsonRecord[];
+  onCreateTrip: (vehicleId: string, orderIds: string[]) => Promise<void>;
+  onAssignOrders: (tripId: string, orderIds: string[]) => Promise<void>;
+  onRemoveOrder: (tripId: string, orderId: string) => Promise<void>;
+  onLockTrip: (tripId: string) => Promise<void>;
+  onUnlockTrip: (tripId: string) => Promise<void>;
+  onStartTrip: (tripId: string) => Promise<void>;
+  onCompleteTrip: (tripId: string) => Promise<void>;
+  onReorderStops: (_tripId: string, _stopIds: string[]) => Promise<void>;
+}) {
+  const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
+  const [selectedVehicle, setSelectedVehicle] = useState('');
+  const [tripFilter, setTripFilter] = useState('');
+  const [expandedTrip, setExpandedTrip] = useState<string | null>(null);
+  const [assigningTripId, setAssigningTripId] = useState('');
+  const [assignOrderIds, setAssignOrderIds] = useState<Set<string>>(new Set());
+  const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+
+  const toggleOrder = (id: string) => {
+    setSelectedOrders(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAssignOrder = (id: string) => {
+    setAssignOrderIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleCreateTrip = async () => {
+    if (!selectedVehicle || selectedOrders.size === 0) return;
+    await onCreateTrip(selectedVehicle, Array.from(selectedOrders));
+    setSelectedOrders(new Set());
+    setSelectedVehicle('');
+  };
+
+  const handleAssign = async () => {
+    if (!assigningTripId || assignOrderIds.size === 0) return;
+    await onAssignOrders(assigningTripId, Array.from(assignOrderIds));
+    setAssignOrderIds(new Set());
+    setAssigningTripId('');
+  };
+
+  const filteredTrips = tripFilter ? trips.filter(t => stringValue(t, 'status') === tripFilter) : trips;
+  const plannedTrips = trips.filter(t => stringValue(t, 'status') === 'planned');
+  const lockedTrips = trips.filter(t => stringValue(t, 'status') === 'locked');
+  const inProgressTrips = trips.filter(t => stringValue(t, 'status') === 'in_progress');
+  const editableTrips = trips.filter(t => stringValue(t, 'status') === 'planned' || stringValue(t, 'status') === 'locked');
+
+  const tripStatusLabel: Record<string, string> = { planned: '未锁定', locked: '已锁定', in_progress: '运输中', completed: '已完成', cancelled: '已取消' };
+  const tripStatusColor: Record<string, string> = { planned: 'badge-yellow', locked: 'badge-blue', in_progress: 'badge-green', completed: 'badge-gray', cancelled: 'badge-red' };
+  const tripStatusBg: Record<string, string> = { planned: '#fef9c3', locked: '#dbeafe', in_progress: '#dcfce7', completed: '#f3f4f6', cancelled: '#fee2e2' };
+  const tripStatusBorder: Record<string, string> = { planned: '#facc15', locked: '#3b82f6', in_progress: '#22c55e', completed: '#9ca3af', cancelled: '#ef4444' };
+
+  return (
+    <div className="page-grid">
+      {/* 统计卡片 */}
+      <div className="stat-grid compact">
+        <StatCard label="待分配订单" value={String(undispatchedOrders.length)} detail="等待安排车辆" />
+        <StatCard label="可用车辆" value={String(availableVehicles.length)} detail="空闲可调度" />
+        <StatCard label="未锁定" value={String(plannedTrips.length)} detail="可增减订单" />
+        <StatCard label="已锁定" value={String(lockedTrips.length)} detail="待出发" />
+        <StatCard label="运输中" value={String(inProgressTrips.length)} detail="正在配送" />
+      </div>
+
+      {/* 创建行程 */}
+      <Panel title="创建行程" description="选择可用车辆和待分配订单，创建配送行程">
+        <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 220px' }}>
+            <label style={{ display: 'block', fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>选择车辆</label>
+            <select value={selectedVehicle} onChange={e => setSelectedVehicle(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db' }}>
+              <option value="">-- 选择车辆 --</option>
+              {availableVehicles.map(v => (
+                <option key={stringValue(v, 'id')} value={stringValue(v, 'id')}>
+                  {stringValue(v, 'vehicle_code', stringValue(v, 'vehicleCode', ''))} - {stringValue(v, 'license_plate', stringValue(v, 'licensePlate', ''))} ({stringValue(v, 'vehicle_type', stringValue(v, 'vehicleType', ''))})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <span style={{ fontSize: '12px', color: '#6b7280' }}>已选 {selectedOrders.size} 个订单</span>
+          </div>
+          <button
+            className="primary-button"
+            type="button"
+            disabled={!selectedVehicle || selectedOrders.size === 0}
+            onClick={handleCreateTrip}
+          >
+            <Icon name="route" /> 创建行程
+          </button>
+        </div>
+
+        {/* 待分配订单列表 - 带详情展开 */}
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style={{ width: '40px' }}></th>
+                <th>订单号</th>
+                <th>收货人</th>
+                <th>收货地址</th>
+                <th>商品</th>
+                <th>金额</th>
+                <th>状态</th>
+                <th style={{ width: '40px' }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {undispatchedOrders.map(order => {
+                const id = stringValue(order, 'id');
+                const items = (order as Record<string, unknown>).items as JsonRecord[] | undefined;
+                const isExpanded = expandedOrder === id;
+                return (
+                  <>
+                    <tr key={id} style={{ background: selectedOrders.has(id) ? '#eff6ff' : undefined }}>
+                      <td>
+                        <input type="checkbox" checked={selectedOrders.has(id)} onChange={() => toggleOrder(id)} />
+                      </td>
+                      <td><strong>{stringValue(order, 'order_no', stringValue(order, 'orderNo', shortId(id)))}</strong></td>
+                      <td>
+                        <div>{stringValue(order, 'recipient_name', stringValue(order, 'recipientName', '-'))}</div>
+                        <div style={{ fontSize: '11px', color: '#9ca3af' }}>{stringValue(order, 'recipient_phone', stringValue(order, 'recipientPhone', ''))}</div>
+                      </td>
+                      <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stringValue(order, 'address_text', stringValue(order, 'addressText', '-'))}</td>
+                      <td>
+                        {items && items.length > 0
+                          ? items.map(i => stringValue(i, 'productName', '')).filter(Boolean).join(', ') || '-'
+                          : '-'}
+                      </td>
+                      <td>{yuan(Math.round(numberValue(order, 'payable_cents', numberValue(order, 'payableCents', 0)) / 100))}</td>
+                      <td><span className={badgeClass(stringValue(order, 'status'))}>{statusLabel(stringValue(order, 'status'))}</span></td>
+                      <td>
+                        <button className="ghost-button" style={{ fontSize: '12px', padding: '2px 6px' }} type="button" onClick={() => setExpandedOrder(isExpanded ? null : id)}>
+                          {isExpanded ? '收起' : '详情'}
+                        </button>
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr key={`${id}-detail`}>
+                        <td colSpan={8} style={{ padding: '0', background: '#f9fafb' }}>
+                          <div style={{ padding: '12px 16px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                            {/* 商品明细 */}
+                            <div style={{ flex: '1 1 300px' }}>
+                              <div style={{ fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '8px' }}>商品明细</div>
+                              {items && items.length > 0 ? items.map((item, idx) => (
+                                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                                  {stringValue(item, 'imageUrl', '') && (
+                                    <img src={stringValue(item, 'imageUrl', '')} alt="" style={{ width: '32px', height: '32px', borderRadius: '4px', objectFit: 'cover' }} />
+                                  )}
+                                  <span>{stringValue(item, 'productName', '')}</span>
+                                  <span style={{ color: '#6b7280' }}>x{numberValue(item, 'quantity', 1)}</span>
+                                  <span style={{ color: '#059669' }}>{yuan(Math.round(numberValue(item, 'lineTotalCents', 0) / 100))}</span>
+                                </div>
+                              )) : <div style={{ fontSize: '12px', color: '#9ca3af' }}>无商品信息</div>}
+                            </div>
+                            {/* 途经点/目的地信息 */}
+                            <div style={{ flex: '1 1 250px' }}>
+                              <div style={{ fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '8px' }}>配送目的地</div>
+                              <div style={{ fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <div><span style={{ color: '#6b7280' }}>地址：</span>{stringValue(order, 'address_text', stringValue(order, 'addressText', '-'))}</div>
+                                <div><span style={{ color: '#6b7280' }}>收货人：</span>{stringValue(order, 'recipient_name', stringValue(order, 'recipientName', '-'))}</div>
+                                <div><span style={{ color: '#6b7280' }}>电话：</span>{stringValue(order, 'recipient_phone', stringValue(order, 'recipientPhone', '-'))}</div>
+                                <div><span style={{ color: '#6b7280' }}>期望送达：</span>{formatDate(stringValue(order, 'expected_delivery_time', stringValue(order, 'expectedDeliveryTime', ''))) || '无'}</div>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {!undispatchedOrders.length ? <EmptyState text="暂无待分配订单" /> : null}
+      </Panel>
+
+      {/* 追加订单到已有行程（未锁定或已锁定状态都可追加） */}
+      {editableTrips.length > 0 && undispatchedOrders.length > 0 && (
+        <Panel title="追加订单到行程" description="将订单追加到未锁定或已锁定的行程中（发车前可自由调整）">
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 250px' }}>
+              <label style={{ display: 'block', fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>选择行程</label>
+              <select value={assigningTripId} onChange={e => setAssigningTripId(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db' }}>
+                <option value="">-- 选择行程 --</option>
+                {editableTrips.map(t => {
+                  const ts = stringValue(t, 'status');
+                  return (
+                    <option key={stringValue(t, 'id')} value={stringValue(t, 'id')}>
+                      {stringValue(t, 'vehicle_code', stringValue(t, 'vehicleCode', ''))} - {stringValue(t, 'license_plate', stringValue(t, 'licensePlate', ''))} [{tripStatusLabel[ts] || ts}] ({stringValue(t, 'total_orders', stringValue(t, 'totalOrders', '0'))}单)
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+            <div>
+              <span style={{ fontSize: '12px', color: '#6b7280' }}>已选 {assignOrderIds.size} 个订单</span>
+            </div>
+            <button
+              className="primary-button"
+              type="button"
+              disabled={!assigningTripId || assignOrderIds.size === 0}
+              onClick={handleAssign}
+            >
+              <Icon name="plus" /> 追加订单
+            </button>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style={{ width: '40px' }}></th>
+                  <th>订单号</th>
+                  <th>收货人</th>
+                  <th>收货地址</th>
+                  <th>商品</th>
+                  <th>金额</th>
+                </tr>
+              </thead>
+              <tbody>
+                {undispatchedOrders.map(order => {
+                  const id = stringValue(order, 'id');
+                  const items = (order as Record<string, unknown>).items as JsonRecord[] | undefined;
+                  return (
+                    <tr key={id} style={{ background: assignOrderIds.has(id) ? '#eff6ff' : undefined }}>
+                      <td><input type="checkbox" checked={assignOrderIds.has(id)} onChange={() => toggleAssignOrder(id)} /></td>
+                      <td><strong>{stringValue(order, 'order_no', stringValue(order, 'orderNo', shortId(id)))}</strong></td>
+                      <td>{stringValue(order, 'recipient_name', stringValue(order, 'recipientName', '-'))}</td>
+                      <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stringValue(order, 'address_text', stringValue(order, 'addressText', '-'))}</td>
+                      <td>
+                        {items && items.length > 0
+                          ? items.map(i => stringValue(i, 'productName', '')).filter(Boolean).join(', ') || '-'
+                          : '-'}
+                      </td>
+                      <td>{yuan(Math.round(numberValue(order, 'payable_cents', numberValue(order, 'payableCents', 0)) / 100))}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      )}
+
+      {/* 行程列表 */}
+      <Panel title="行程列表" description="管理所有配送行程，锁定后可出发，发车前可增减订单">
+        <div className="admin-filterbar">
+          <select value={tripFilter} onChange={e => setTripFilter(e.target.value)}>
+            <option value="">全部状态</option>
+            <option value="planned">未锁定</option>
+            <option value="locked">已锁定</option>
+            <option value="in_progress">运输中</option>
+            <option value="completed">已完成</option>
+            <option value="cancelled">已取消</option>
+          </select>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {filteredTrips.map(trip => {
+            const tripId = stringValue(trip, 'id');
+            const status = stringValue(trip, 'status');
+            const stops = ((trip as Record<string, unknown>).stops as JsonRecord[] | undefined) || [];
+            const isExpanded = expandedTrip === tripId;
+            const sortedStops = [...stops].sort((a, b) => numberValue(a, 'stopSequence', 0) - numberValue(b, 'stopSequence', 0));
+            return (
+              <div key={tripId} style={{ border: `2px solid ${tripStatusBorder[status] || '#d1d5db'}`, borderRadius: '8px', overflow: 'hidden', background: '#fff' }}>
+                {/* 行程头部 */}
+                <div
+                  style={{ padding: '12px 16px', background: tripStatusBg[status] || '#f9fafb', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
+                  onClick={() => setExpandedTrip(isExpanded ? null : tripId)}
+                >
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <strong style={{ fontSize: '15px' }}>{stringValue(trip, 'vehicle_code', stringValue(trip, 'vehicleCode', '-'))}</strong>
+                      <span style={{ fontSize: '13px', color: '#6b7280' }}>{stringValue(trip, 'license_plate', stringValue(trip, 'licensePlate', ''))}</span>
+                      <span style={{ fontSize: '12px', color: '#6b7280' }}>({stringValue(trip, 'vehicle_type', stringValue(trip, 'vehicleType', ''))})</span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                      {stringValue(trip, 'total_orders', stringValue(trip, 'totalOrders', '0'))} 个订单 · {stops.length} 个站点 · 计划出发: {formatDate(stringValue(trip, 'planned_departure_time', stringValue(trip, 'plannedDepartureTime'))) || '未设定'}
+                    </div>
+                  </div>
+                  <span className={tripStatusColor[status] || 'badge-gray'} style={{ fontSize: '13px', padding: '4px 12px', borderRadius: '12px', fontWeight: 600 }}>
+                    {tripStatusLabel[status] || status}
+                  </span>
+                  <div style={{ display: 'flex', gap: '6px' }} onClick={e => e.stopPropagation()}>
+                    {status === 'planned' && (
+                      <button className="primary-button small" type="button" onClick={() => onLockTrip(tripId)} title="锁定后不可增减订单，可出发">
+                        <Icon name="lock" /> 锁定
+                      </button>
+                    )}
+                    {status === 'locked' && (
+                      <>
+                        <button className="ghost-button small" type="button" onClick={() => onUnlockTrip(tripId)} title="解锁后可继续增减订单">
+                          <Icon name="unlock" /> 解锁
+                        </button>
+                        <button className="primary-button small" type="button" onClick={() => onStartTrip(tripId)} title="出发开始配送">
+                          <Icon name="send" /> 出发
+                        </button>
+                      </>
+                    )}
+                    {status === 'in_progress' && (
+                      <button className="primary-button small" type="button" onClick={() => onCompleteTrip(tripId)}>
+                        <Icon name="check" /> 完成
+                      </button>
+                    )}
+                    <span style={{ fontSize: '12px', color: '#6b7280', alignSelf: 'center' }}>{isExpanded ? '收起 ▲' : '展开 ▼'}</span>
+                  </div>
+                </div>
+
+                {/* 展开的站点详情 */}
+                {isExpanded && (
+                  <div style={{ padding: '12px 16px', borderTop: `1px solid ${tripStatusBorder[status] || '#e5e7eb'}` }}>
+                    <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '10px', color: '#374151' }}>配送站点（按顺序）</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {sortedStops.map((stop, idx) => {
+                        const stopId = stringValue(stop, 'id');
+                        const stopStatus = stringValue(stop, 'status');
+                        const stopType = stringValue(stop, 'stopType');
+                        const orderId = stringValue(stop, 'mallOrderId');
+                        const orderItems = (stop as Record<string, unknown>).orderItems as JsonRecord[] | undefined;
+                        return (
+                          <div key={stopId} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '10px 14px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                            {/* 序号圆点 */}
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', flexShrink: 0, paddingTop: '2px' }}>
+                              <span style={{ width: '28px', height: '28px', borderRadius: '50%', background: stopStatus === 'completed' ? '#10b981' : stopType === 'pickup' ? '#3b82f6' : '#f59e0b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 600 }}>
+                                {idx + 1}
+                              </span>
+                              {idx < sortedStops.length - 1 && <span style={{ width: '2px', height: '12px', background: '#d1d5db' }}></span>}
+                            </div>
+                            {/* 站点信息 */}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '4px' }}>
+                                <span style={{ fontSize: '12px', padding: '1px 8px', borderRadius: '3px', background: stopType === 'pickup' ? '#dbeafe' : '#fef3c7', color: stopType === 'pickup' ? '#1d4ed8' : '#92400e', fontWeight: 500 }}>
+                                  {stopType === 'pickup' ? '取货' : '送货'}
+                                </span>
+                                <span style={{ fontSize: '14px', fontWeight: 500 }}>{stringValue(stop, 'address', '-')}</span>
+                              </div>
+                              {orderId && (
+                                <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>
+                                  订单: <strong>{shortId(orderId)}</strong>
+                                </div>
+                              )}
+                              {orderItems && orderItems.length > 0 && (
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
+                                  {orderItems.map((i, iidx) => (
+                                    <span key={iidx} style={{ fontSize: '12px', padding: '2px 8px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '4px' }}>
+                                      {stringValue(i, 'productName', '')} x{numberValue(i, 'quantity', 1)}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              <div style={{ fontSize: '12px', color: '#9ca3af' }}>
+                                {stringValue(stop, 'contactName', '')} {stringValue(stop, 'contactPhone', '')}
+                                {stringValue(stop, 'notes', '') && <span> · 备注: {stringValue(stop, 'notes', '')}</span>}
+                              </div>
+                            </div>
+                            {/* 状态和操作 */}
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0 }}>
+                              <span className={stopStatus === 'completed' ? 'badge badge-green' : stopStatus === 'arrived' ? 'badge badge-yellow' : 'badge badge-blue'}>
+                                {stopStatus === 'completed' ? '已完成' : stopStatus === 'arrived' ? '已到达' : '待配送'}
+                              </span>
+                              {(status === 'planned' || status === 'locked') && orderId && (
+                                <button className="ghost-button" style={{ fontSize: '11px', padding: '2px 8px', color: '#ef4444' }} type="button" onClick={() => onRemoveOrder(tripId, orderId)}>
+                                  移除
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {!sortedStops.length && <div style={{ fontSize: '13px', color: '#9ca3af' }}>暂无站点</div>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {!filteredTrips.length ? <EmptyState text="暂无行程数据" /> : null}
       </Panel>
     </div>
   );
@@ -3195,6 +3628,62 @@ function App() {
     });
   };
 
+  const createTrip = async (vehicleId: string, orderIds: string[]) => {
+    await runAction('创建行程', async () => {
+      await apiPost('/api/trips', { vehicleId, orderIds });
+      await reload();
+    });
+  };
+
+  const assignOrdersToTrip = async (tripId: string, orderIds: string[]) => {
+    await runAction('追加订单', async () => {
+      await apiPost(`/api/admin/trips/${tripId}/assign-orders`, { orderIds });
+      await reload();
+    });
+  };
+
+  const removeOrderFromTrip = async (tripId: string, orderId: string) => {
+    await runAction('移除订单', async () => {
+      await apiDelete(`/api/admin/trips/${tripId}/remove-order/${orderId}`);
+      await reload();
+    });
+  };
+
+  const startTrip = async (tripId: string) => {
+    await runAction('出发行程', async () => {
+      await apiPost(`/api/trips/${tripId}/start`);
+      await reload();
+    });
+  };
+
+  const completeTrip = async (tripId: string) => {
+    await runAction('完成行程', async () => {
+      await apiPost(`/api/trips/${tripId}/complete`);
+      await reload();
+    });
+  };
+
+  const lockTrip = async (tripId: string) => {
+    await runAction('锁定行程', async () => {
+      await apiPost(`/api/trips/${tripId}/lock`);
+      await reload();
+    });
+  };
+
+  const unlockTrip = async (tripId: string) => {
+    await runAction('解锁行程', async () => {
+      await apiPost(`/api/trips/${tripId}/unlock`);
+      await reload();
+    });
+  };
+
+  const reorderStops = async (tripId: string, stopIds: string[]) => {
+    await runAction('调整站点顺序', async () => {
+      await apiPut(`/api/admin/trips/${tripId}/reorder-stops`, { stopIds });
+      await reload();
+    });
+  };
+
   const updateMallOrderStatus = async (id: string, status: string) => {
     await runAction('商城订单状态更新', async () => {
       await apiPut(`/api/admin/mall/orders/${id}/status`, { status, description: statusLabel(status) });
@@ -3345,7 +3834,24 @@ function App() {
     if (activePageKey === 'vehicle.enterpriseReview' || activePageKey === 'platform.enterpriseAudit') {
       return <EnterpriseSection enterprises={data.enterprises} onUpdateStatus={updateEnterpriseStatus} />;
     }
-    if (activePageKey === 'vehicle.dispatch' || activePageKey === 'vehicle.ownerReview') {
+    if (activePageKey === 'vehicle.dispatch') {
+      return (
+        <DispatchSection
+          trips={data.trips}
+          undispatchedOrders={data.undispatchedOrders}
+          availableVehicles={data.availableVehicles}
+          onCreateTrip={createTrip}
+          onAssignOrders={assignOrdersToTrip}
+          onRemoveOrder={removeOrderFromTrip}
+          onLockTrip={lockTrip}
+          onUnlockTrip={unlockTrip}
+          onStartTrip={startTrip}
+          onCompleteTrip={completeTrip}
+          onReorderStops={reorderStops}
+        />
+      );
+    }
+    if (activePageKey === 'vehicle.ownerReview') {
       return <DemandsSection demands={data.demands} vehicles={data.vehicles} />;
     }
     if (activePageKey === 'vehicle.cancellations') {

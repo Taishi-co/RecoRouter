@@ -21,6 +21,7 @@ pub mod payments;
 pub mod platform;
 pub mod rental_reminders;
 pub mod station;
+pub mod trips;
 pub mod user_roles;
 pub mod vehicle_rentals;
 pub mod vehicles;
