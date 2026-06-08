@@ -8,6 +8,7 @@ import {
   Grid2x2,
   House,
   MapPin,
+  Plus,
   Search,
   ShoppingCart,
   UserRound,
@@ -31,7 +32,11 @@ const tabItems: Array<{ key: MallTabKey; label: string; url: string; icon: MallI
 ]
 
 export function mallYuan(cents?: number | null) {
-  return yuan(cents).replace(/\.00$/, '').replace(/0$/, '')
+  const formatted = yuan(cents)
+  if (formatted.endsWith('.00')) {
+    return formatted.slice(0, -3)
+  }
+  return formatted.replace(/(\.\d)0$/, '$1')
 }
 
 export function MallStatusBar() {
@@ -149,6 +154,56 @@ export function MallProductThumb({ product, large }: { product?: MallProduct | n
   return (
     <View className={large ? 'mall-product-illustration mall-product-illustration-large' : 'mall-product-illustration'}>
       <Apple size={large ? 78 : 54} color="#63BF54" />
+    </View>
+  )
+}
+
+export function MallDealProductCard({
+  product,
+  onAdd,
+  onOpen,
+  rankLabel,
+  layout = 'grid',
+}: {
+  product: MallProduct
+  onAdd?: (product: MallProduct) => void
+  onOpen?: (product: MallProduct) => void
+  rankLabel?: string
+  layout?: 'grid' | 'list'
+}) {
+  const discountedPriceCents = product.discountedPriceCents ?? product.priceCents
+  const originalPriceCents = product.originalPriceCents ?? product.priceCents
+  const savedCents = Math.max(product.savedCents ?? originalPriceCents - discountedPriceCents, 0)
+  const hasOriginal = originalPriceCents > discountedPriceCents
+  const productTag = rankLabel || product.discountLabel || product.tags?.[0] || (product.stock <= 10 ? '库存紧张' : '')
+
+  return (
+    <View className={layout === 'list' ? 'mall-v7-product-card mall-v7-product-card-list' : 'mall-v7-product-card'}>
+      <View className="mall-v7-product-media" onClick={() => onOpen?.(product)}>
+        <MallProductThumb product={product} />
+        {productTag ? <Text className="mall-v7-product-tag">{productTag}</Text> : null}
+      </View>
+      <View className="mall-v7-product-body" onClick={() => onOpen?.(product)}>
+        <Text className="mall-v7-product-name">{product.name}</Text>
+        <Text className="mall-v7-product-subtitle">
+          {product.subtitle || product.categoryName || `${product.deliveryMinutes || 30} 分钟到点`}
+        </Text>
+        <View className="mall-v7-product-badges">
+          {product.couponStackable ? <Text>券可叠加</Text> : null}
+          {(product.pointsDeductibleCents || 0) > 0 ? <Text>积分抵扣</Text> : null}
+        </View>
+        <View className="mall-v7-product-price-row">
+          <Text className="mall-v7-pay-price">{mallYuan(discountedPriceCents)}</Text>
+          {hasOriginal ? <Text className="mall-v7-original-price">{mallYuan(originalPriceCents)}</Text> : null}
+        </View>
+        <View className="mall-v7-product-meta">
+          <Text>{savedCents > 0 ? `已省 ${mallYuan(savedCents)}` : `已售 ${product.soldCount || 0}`}</Text>
+          <Text>{product.stock > 0 ? `余 ${product.stock}` : '补货中'}</Text>
+        </View>
+      </View>
+      <View className="mall-v7-add-button" onClick={() => onAdd?.(product)}>
+        <Plus size={18} color="#FFFFFF" strokeWidth={3} />
+      </View>
     </View>
   )
 }

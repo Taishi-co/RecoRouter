@@ -721,11 +721,39 @@ struct CampaignDiscountRow {
     discount_cents: i64,
 }
 
+#[derive(Debug, FromRow)]
+struct MemberPricingContextRow {
+    available_points: i32,
+    discount_bps: i32,
+    level_code: Option<String>,
+    level_name: Option<String>,
+}
+
 struct MallDiscount {
-    coupon_cents: i64,
+    discount_cents: i64,
     description: Option<String>,
     threshold_cents: Option<i64>,
-    discount_cents: Option<i64>,
+    rule_discount_cents: Option<i64>,
+    next_discount_cents: Option<i64>,
+    next_gap_cents: Option<i64>,
+}
+
+struct MallPriceSummary {
+    subtotal_cents: i64,
+    full_reduction_cents: i64,
+    coupon_discount_cents: i64,
+    member_discount_cents: i64,
+    points_redeemed_cents: i64,
+    total_discount_cents: i64,
+    payable_cents: i64,
+    discount_description: Option<String>,
+    discount_threshold_cents: Option<i64>,
+    discount_rule_cents: Option<i64>,
+    next_discount_gap_cents: Option<i64>,
+    next_discount_cents: Option<i64>,
+    available_points: i32,
+    member_level: Option<Value>,
+    discount_breakdown: Vec<Value>,
 }
 
 #[derive(Debug, FromRow)]
@@ -924,6 +952,7 @@ where
     S: Storage,
 {
     let mut products = fetch_products(&state.db, query, true).await?;
+    enrich_products_pricing(&state.db, &mut products).await?;
     resolve_mall_image_urls_in_list(&state.storage, &mut products).await?;
     Ok(ok("查询成功", products))
 }
@@ -1083,6 +1112,7 @@ where
     S: Storage,
 {
     let mut product = fetch_product_json(&state.db, &id).await?;
+    enrich_product_pricing(&state.db, &mut product).await?;
     resolve_mall_image_urls(&state.storage, &mut product).await?;
     Ok(ok("查询成功", product))
 }
@@ -1504,6 +1534,7 @@ where
     let default_pickup_point =
         fetch_default_pickup_point(&state.db, &user_id, group_leader.as_ref()).await?;
     let support_counts = fetch_member_support_counts(&state.db, &user_id).await?;
+    let coupon_wallet = fetch_member_coupon_wallet(&state.db).await?;
     let notification_preferences =
         upsert_notification_preferences(&state.db, &user_id, None).await?;
 
@@ -1515,6 +1546,7 @@ where
             "defaultAddress": default_address,
             "defaultPickupPoint": default_pickup_point,
             "support": support_counts,
+            "couponWallet": coupon_wallet,
             "notificationPreferences": notification_preferences,
             "groupLeader": group_leader,
         }),
@@ -1538,6 +1570,12 @@ where
         .ok_or_else(|| ApiError::BadRequest("团长未绑定自提点".to_string()))?;
     let today = fetch_group_leader_today_counts(&state.db, pickup_point_id).await?;
     let pending_orders = fetch_group_leader_pending_orders(&state.db, pickup_point_id).await?;
+    let total_payable_cents = today
+        .get("totalPayableCents")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    let commission_rate_bps = 1000_i64;
+    let estimated_commission_cents = total_payable_cents * commission_rate_bps / 10_000;
 
     Ok(ok(
         "查询成功",
@@ -1546,6 +1584,31 @@ where
             "pickupPoint": leader.get("pickupPoint").cloned().unwrap_or(Value::Null),
             "today": today,
             "pendingOrders": pending_orders,
+            "commissionRateBps": commission_rate_bps,
+            "commissionRateRange": "8%-12%",
+            "estimatedCommissionCents": estimated_commission_cents,
+            "withdrawableCents": estimated_commission_cents,
+            "monthlyRewardCents": if total_payable_cents >= 200_000 { 20_000 } else { 0 },
+            "reminders": [
+                {
+                    "id": "orders",
+                    "title": "自提点订单",
+                    "description": "查看今日到点订单和待核销提货码",
+                    "actionText": "查看"
+                },
+                {
+                    "id": "verify",
+                    "title": "核销取货",
+                    "description": "输入或扫码核销团员取货码",
+                    "actionText": "核销"
+                },
+                {
+                    "id": "commission",
+                    "title": "佣金明细",
+                    "description": "按自提点销售额 8%-12% 计算",
+                    "actionText": "明细"
+                }
+            ],
         }),
     ))
 }
@@ -1743,9 +1806,15 @@ where
         .map(|item| item.price_cents * i64::from(item.quantity))
         .sum();
     let delivery_fee_cents = mall_delivery_fee_cents(subtotal_cents, &settings);
-    let discount = calculate_mall_discount_cents(&state.db, subtotal_cents).await?;
-    let coupon_cents = discount.coupon_cents;
-    let payable_cents = (subtotal_cents + delivery_fee_cents - coupon_cents).max(0);
+    let summary = calculate_mall_price_summary(
+        &state.db,
+        Some(&body.user_id),
+        subtotal_cents,
+        delivery_fee_cents,
+    )
+    .await?;
+    let coupon_cents = summary.total_discount_cents;
+    let payable_cents = summary.payable_cents;
     if payable_cents <= 0 {
         return Err(ApiError::BadRequest("订单金额必须大于0".to_string()));
     }
@@ -1845,6 +1914,22 @@ where
         )
         .bind(&item.product_id)
         .bind(item.quantity)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    if summary.points_redeemed_cents > 0 {
+        sqlx::query(
+            r#"
+            INSERT INTO mall_points_ledger (
+              user_id, order_id, entry_type, points, description
+            )
+            VALUES ($1, $2, 'redeem', $3, '订单积分抵扣')
+            "#,
+        )
+        .bind(&body.user_id)
+        .bind(&order_id)
+        .bind(summary.points_redeemed_cents as i32)
         .execute(&mut *tx)
         .await?;
     }
@@ -3732,16 +3817,32 @@ async fn fetch_member_profile(pool: &PgPool, user_id: &str) -> ApiResult<Value> 
           SELECT
             count(*)::bigint AS order_count,
             COALESCE(sum(payable_cents), 0)::bigint AS total_spend_cents,
-            (COALESCE(sum(payable_cents), 0) / 100)::integer AS points
+            (COALESCE(sum(payable_cents), 0) / 100)::integer AS earned_points
           FROM mall_orders
           WHERE user_id = $1
             AND status <> 'cancelled'
         ),
+        redeemed AS (
+          SELECT COALESCE(sum(points), 0)::integer AS redeemed_points
+          FROM mall_points_ledger
+          WHERE user_id = $1
+            AND entry_type = 'redeem'
+        ),
+        point_stats AS (
+          SELECT
+            stats.order_count,
+            stats.total_spend_cents,
+            stats.earned_points,
+            redeemed.redeemed_points,
+            GREATEST(stats.earned_points - redeemed.redeemed_points, 0)::integer AS points
+          FROM stats
+          CROSS JOIN redeemed
+        ),
         selected_level AS (
           SELECT level.*
-          FROM mall_member_levels level, stats
+          FROM mall_member_levels level, point_stats
           WHERE level.status = 'active'
-            AND level.min_points <= stats.points
+            AND level.min_points <= point_stats.earned_points
           ORDER BY level.min_points DESC, level.sort_order ASC
           LIMIT 1
         )
@@ -3753,9 +3854,11 @@ async fn fetch_member_profile(pool: &PgPool, user_id: &str) -> ApiResult<Value> 
           'avatarUrl', COALESCE(u.avatar_url, u.avatar),
           'role', u.role,
           'status', u.status,
-          'points', stats.points,
-          'orderCount', stats.order_count,
-          'totalSpendCents', stats.total_spend_cents,
+          'points', point_stats.points,
+          'earnedPoints', point_stats.earned_points,
+          'redeemedPoints', point_stats.redeemed_points,
+          'orderCount', point_stats.order_count,
+          'totalSpendCents', point_stats.total_spend_cents,
           'level', CASE WHEN level.id IS NULL THEN NULL ELSE jsonb_build_object(
             'id', level.id,
             'code', level.code,
@@ -3767,7 +3870,7 @@ async fn fetch_member_profile(pool: &PgPool, user_id: &str) -> ApiResult<Value> 
           'updatedAt', u.updated_at
         )
         FROM users u
-        CROSS JOIN stats
+        CROSS JOIN point_stats
         LEFT JOIN selected_level level ON true
         WHERE u.id = $1
         "#,
@@ -3889,6 +3992,35 @@ async fn fetch_member_support_counts(pool: &PgPool, user_id: &str) -> ApiResult<
     .await?)
 }
 
+async fn fetch_member_coupon_wallet(pool: &PgPool) -> ApiResult<Value> {
+    Ok(sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT jsonb_build_object(
+          'availableCount', count(*) FILTER (
+            WHERE status = 'active'
+              AND (starts_at IS NULL OR starts_at <= now())
+              AND (ends_at IS NULL OR ends_at >= now())
+              AND (total_quantity <= 0 OR used_count < total_quantity)
+          ),
+          'expiringCount', count(*) FILTER (
+            WHERE status = 'active'
+              AND ends_at IS NOT NULL
+              AND ends_at >= now()
+              AND ends_at <= now() + interval '7 days'
+          ),
+          'nearestExpiry', min(ends_at) FILTER (
+            WHERE status = 'active'
+              AND ends_at IS NOT NULL
+              AND ends_at >= now()
+          )
+        )
+        FROM mall_coupons
+        "#,
+    )
+    .fetch_one(pool)
+    .await?)
+}
+
 async fn fetch_group_leader_context(pool: &PgPool, user_id: &str) -> ApiResult<Option<Value>> {
     Ok(sqlx::query_scalar::<_, Value>(
         r#"
@@ -3997,6 +4129,19 @@ async fn fetch_group_leader_today_counts(pool: &PgPool, pickup_point_id: &str) -
               AND status = 'completed'
               AND COALESCE(completed_at, updated_at, created_at) >= date_trunc('day', now())
           ),
+          'orderCount', (
+            SELECT count(*)
+            FROM mall_orders
+            WHERE pickup_point_id = $1
+              AND created_at >= date_trunc('day', now())
+          ),
+          'totalPayableCents', (
+            SELECT COALESCE(sum(payable_cents), 0)
+            FROM mall_orders
+            WHERE pickup_point_id = $1
+              AND payment_status = 'paid'
+              AND created_at >= date_trunc('day', now())
+          ),
           'afterSales', (
             SELECT count(*)
             FROM mall_after_sales sale
@@ -4047,8 +4192,56 @@ async fn fetch_product_json(pool: &PgPool, id: &str) -> ApiResult<Value> {
     .ok_or_else(|| ApiError::NotFound("商品不存在".to_string()))
 }
 
+async fn enrich_products_pricing(pool: &PgPool, products: &mut [Value]) -> ApiResult<()> {
+    for product in products {
+        enrich_product_pricing(pool, product).await?;
+    }
+    Ok(())
+}
+
+async fn enrich_product_pricing(pool: &PgPool, product: &mut Value) -> ApiResult<()> {
+    let price_cents = product
+        .get("priceCents")
+        .and_then(Value::as_i64)
+        .unwrap_or_default()
+        .max(0);
+    let original_price_cents = product
+        .get("originalPriceCents")
+        .and_then(Value::as_i64)
+        .unwrap_or(price_cents)
+        .max(price_cents);
+    let full_reduction = calculate_mall_discount_cents(pool, price_cents).await?;
+    let coupon = calculate_mall_coupon_discount_cents(pool, price_cents).await?;
+    let preview_discount_cents =
+        (full_reduction.discount_cents + coupon.discount_cents).clamp(0, price_cents);
+    let discounted_price_cents = (price_cents - preview_discount_cents).max(0);
+    let saved_cents = (original_price_cents - discounted_price_cents).max(0);
+    let points_deductible_cents = (discounted_price_cents / 20).clamp(0, 500);
+    let coupon_stackable = coupon.discount_cents > 0 || coupon.next_gap_cents.is_some();
+    let discount_label = full_reduction
+        .description
+        .or(coupon.description)
+        .unwrap_or_else(|| "今日优惠".to_string());
+
+    if let Some(object) = product.as_object_mut() {
+        object.insert(
+            "discountedPriceCents".to_string(),
+            json!(discounted_price_cents),
+        );
+        object.insert("savedCents".to_string(), json!(saved_cents));
+        object.insert("couponStackable".to_string(), json!(coupon_stackable));
+        object.insert(
+            "pointsDeductibleCents".to_string(),
+            json!(points_deductible_cents),
+        );
+        object.insert("discountLabel".to_string(), json!(discount_label));
+    }
+
+    Ok(())
+}
+
 async fn cart_payload(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
-    let items = sqlx::query_scalar::<_, Value>(
+    let mut items = sqlx::query_scalar::<_, Value>(
         r#"
         SELECT jsonb_build_object(
           'id', ci.id,
@@ -4069,6 +4262,11 @@ async fn cart_payload(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
     .bind(user_id)
     .fetch_all(pool)
     .await?;
+    for item in &mut items {
+        if let Some(product) = item.get_mut("product") {
+            enrich_product_pricing(pool, product).await?;
+        }
+    }
     let subtotal_cents = items
         .iter()
         .filter(|item| item["selected"].as_bool().unwrap_or(false))
@@ -4076,17 +4274,29 @@ async fn cart_payload(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
         .sum::<i64>();
     let settings = fetch_mall_settings(pool).await?;
     let delivery_fee_cents = mall_delivery_fee_cents(subtotal_cents, &settings);
-    let discount = calculate_mall_discount_cents(pool, subtotal_cents).await?;
-    let payable_cents = (subtotal_cents + delivery_fee_cents - discount.coupon_cents).max(0);
+    let summary =
+        calculate_mall_price_summary(pool, Some(user_id), subtotal_cents, delivery_fee_cents)
+            .await?;
+    apply_cart_item_pricing(&mut items, &summary);
     Ok(json!({
         "items": items,
         "subtotalCents": subtotal_cents,
         "deliveryFeeCents": delivery_fee_cents,
-        "couponCents": discount.coupon_cents,
-        "payableCents": payable_cents,
-        "discountDescription": discount.description,
-        "discountThresholdCents": discount.threshold_cents,
-        "discountRuleCents": discount.discount_cents,
+        "couponCents": summary.total_discount_cents,
+        "payableCents": summary.payable_cents,
+        "discountDescription": summary.discount_description,
+        "discountThresholdCents": summary.discount_threshold_cents,
+        "discountRuleCents": summary.discount_rule_cents,
+        "fullReductionCents": summary.full_reduction_cents,
+        "couponDiscountCents": summary.coupon_discount_cents,
+        "memberDiscountCents": summary.member_discount_cents,
+        "pointsRedeemedCents": summary.points_redeemed_cents,
+        "totalDiscountCents": summary.total_discount_cents,
+        "discountBreakdown": summary.discount_breakdown,
+        "nextDiscountGapCents": summary.next_discount_gap_cents,
+        "nextDiscountCents": summary.next_discount_cents,
+        "availablePoints": summary.available_points,
+        "memberLevel": summary.member_level,
         "selectedCount": items.iter().filter(|item| item["selected"].as_bool().unwrap_or(false)).count(),
     }))
 }
@@ -4103,12 +4313,17 @@ async fn checkout_payload(pool: &PgPool, checkout_id: &str) -> ApiResult<Value> 
         }
     }
 
-    let item_values = checkout_item_values(&items);
     let subtotal_cents = checkout_subtotal_cents(&items);
     let settings = fetch_mall_settings(pool).await?;
     let delivery_fee_cents = mall_delivery_fee_cents(subtotal_cents, &settings);
-    let discount = calculate_mall_discount_cents(pool, subtotal_cents).await?;
-    let payable_cents = (subtotal_cents + delivery_fee_cents - discount.coupon_cents).max(0);
+    let summary = calculate_mall_price_summary(
+        pool,
+        Some(&checkout.user_id),
+        subtotal_cents,
+        delivery_fee_cents,
+    )
+    .await?;
+    let item_values = checkout_item_values(&items, &summary);
 
     Ok(json!({
         "id": checkout.id,
@@ -4121,11 +4336,21 @@ async fn checkout_payload(pool: &PgPool, checkout_id: &str) -> ApiResult<Value> 
         "items": item_values,
         "subtotalCents": subtotal_cents,
         "deliveryFeeCents": delivery_fee_cents,
-        "couponCents": discount.coupon_cents,
-        "payableCents": payable_cents,
-        "discountDescription": discount.description,
-        "discountThresholdCents": discount.threshold_cents,
-        "discountRuleCents": discount.discount_cents,
+        "couponCents": summary.total_discount_cents,
+        "payableCents": summary.payable_cents,
+        "discountDescription": summary.discount_description,
+        "discountThresholdCents": summary.discount_threshold_cents,
+        "discountRuleCents": summary.discount_rule_cents,
+        "fullReductionCents": summary.full_reduction_cents,
+        "couponDiscountCents": summary.coupon_discount_cents,
+        "memberDiscountCents": summary.member_discount_cents,
+        "pointsRedeemedCents": summary.points_redeemed_cents,
+        "totalDiscountCents": summary.total_discount_cents,
+        "discountBreakdown": summary.discount_breakdown,
+        "nextDiscountGapCents": summary.next_discount_gap_cents,
+        "nextDiscountCents": summary.next_discount_cents,
+        "availablePoints": summary.available_points,
+        "memberLevel": summary.member_level,
     }))
 }
 
@@ -4158,6 +4383,87 @@ async fn checkout_products(
     fetch_selected_cart_products(pool, &checkout.user_id).await
 }
 
+fn apply_cart_item_pricing(items: &mut [Value], summary: &MallPriceSummary) {
+    for item in items {
+        let selected = item
+            .get("selected")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let quantity = item
+            .get("quantity")
+            .and_then(Value::as_i64)
+            .unwrap_or(1)
+            .max(1);
+        let line_total_cents = item
+            .get("lineTotalCents")
+            .and_then(Value::as_i64)
+            .unwrap_or_default()
+            .max(0);
+        let unit_price_cents = line_total_cents / quantity;
+        let line_discount_cents = if selected {
+            proportional_discount_cents(
+                line_total_cents,
+                summary.subtotal_cents,
+                summary.total_discount_cents,
+            )
+        } else {
+            0
+        };
+        let line_payable_cents = (line_total_cents - line_discount_cents).max(0);
+        let discounted_unit_price_cents = if selected {
+            line_payable_cents / quantity
+        } else {
+            unit_price_cents
+        };
+        let points_deductible_cents = (discounted_unit_price_cents / 20).clamp(0, 500);
+
+        if let Some(object) = item.as_object_mut() {
+            object.insert(
+                "originalUnitPriceCents".to_string(),
+                json!(unit_price_cents),
+            );
+            object.insert(
+                "discountedUnitPriceCents".to_string(),
+                json!(discounted_unit_price_cents),
+            );
+            object.insert("lineDiscountCents".to_string(), json!(line_discount_cents));
+            object.insert("linePayableCents".to_string(), json!(line_payable_cents));
+            object.insert("savedCents".to_string(), json!(line_discount_cents));
+            object.insert(
+                "couponStackable".to_string(),
+                json!(
+                    summary.coupon_discount_cents > 0 || summary.next_discount_gap_cents.is_some()
+                ),
+            );
+            object.insert(
+                "pointsDeductibleCents".to_string(),
+                json!(points_deductible_cents),
+            );
+        }
+
+        if let Some(product) = item.get_mut("product").and_then(Value::as_object_mut) {
+            product.insert(
+                "discountedPriceCents".to_string(),
+                json!(discounted_unit_price_cents),
+            );
+            product.insert(
+                "savedCents".to_string(),
+                json!((unit_price_cents - discounted_unit_price_cents).max(0)),
+            );
+            product.insert(
+                "couponStackable".to_string(),
+                json!(
+                    summary.coupon_discount_cents > 0 || summary.next_discount_gap_cents.is_some()
+                ),
+            );
+            product.insert(
+                "pointsDeductibleCents".to_string(),
+                json!(points_deductible_cents),
+            );
+        }
+    }
+}
+
 async fn fetch_buy_now_product(
     pool: &PgPool,
     product_id: &str,
@@ -4187,10 +4493,20 @@ async fn fetch_buy_now_product(
     Ok(vec![product])
 }
 
-fn checkout_item_values(items: &[CartProductRow]) -> Vec<Value> {
+fn checkout_item_values(items: &[CartProductRow], summary: &MallPriceSummary) -> Vec<Value> {
     items
         .iter()
         .map(|item| {
+            let line_total_cents = item.price_cents * i64::from(item.quantity);
+            let line_discount_cents =
+                proportional_discount_cents(line_total_cents, summary.subtotal_cents, summary.total_discount_cents);
+            let line_payable_cents = (line_total_cents - line_discount_cents).max(0);
+            let discounted_unit_price_cents = if item.quantity > 0 {
+                line_payable_cents / i64::from(item.quantity)
+            } else {
+                item.price_cents
+            };
+            let points_deductible_cents = (item.price_cents / 20).clamp(0, 500);
             json!({
                 "productId": item.product_id,
                 "sku": item.sku,
@@ -4198,8 +4514,15 @@ fn checkout_item_values(items: &[CartProductRow]) -> Vec<Value> {
                 "categoryCode": item.category_code,
                 "imageUrl": item.image_url,
                 "unitPriceCents": item.price_cents,
+                "originalUnitPriceCents": item.price_cents,
+                "discountedUnitPriceCents": discounted_unit_price_cents,
                 "quantity": item.quantity,
-                "lineTotalCents": item.price_cents * i64::from(item.quantity),
+                "lineTotalCents": line_total_cents,
+                "lineDiscountCents": line_discount_cents,
+                "linePayableCents": line_payable_cents,
+                "savedCents": line_discount_cents,
+                "couponStackable": summary.coupon_discount_cents > 0 || summary.next_discount_gap_cents.is_some(),
+                "pointsDeductibleCents": points_deductible_cents,
                 "product": {
                     "id": item.product_id,
                     "sku": item.sku,
@@ -4207,6 +4530,10 @@ fn checkout_item_values(items: &[CartProductRow]) -> Vec<Value> {
                     "categoryCode": item.category_code,
                     "imageUrl": item.image_url,
                     "priceCents": item.price_cents,
+                    "discountedPriceCents": discounted_unit_price_cents,
+                    "savedCents": (item.price_cents - discounted_unit_price_cents).max(0),
+                    "couponStackable": summary.coupon_discount_cents > 0 || summary.next_discount_gap_cents.is_some(),
+                    "pointsDeductibleCents": points_deductible_cents,
                     "stock": item.stock,
                     "status": "on_sale",
                 }
@@ -4363,17 +4690,19 @@ async fn calculate_mall_discount_cents(
     }
 
     if let Some(rule) = best_rule {
-        let coupon_cents = rule.discount_cents.clamp(0, subtotal_cents);
+        let discount_cents = rule.discount_cents.clamp(0, subtotal_cents);
         return Ok(MallDiscount {
-            coupon_cents,
+            discount_cents,
             description: Some(rule.name.clone()),
             threshold_cents: Some(rule.threshold_cents),
-            discount_cents: Some(rule.discount_cents),
+            rule_discount_cents: Some(rule.discount_cents),
+            next_discount_cents: next_rule.map(|rule| rule.discount_cents),
+            next_gap_cents: next_rule.map(|rule| rule.threshold_cents - subtotal_cents),
         });
     }
 
     Ok(MallDiscount {
-        coupon_cents: 0,
+        discount_cents: 0,
         description: next_rule.map(|rule| {
             format!(
                 "满{}减{}",
@@ -4382,8 +4711,258 @@ async fn calculate_mall_discount_cents(
             )
         }),
         threshold_cents: next_rule.map(|rule| rule.threshold_cents),
-        discount_cents: next_rule.map(|rule| rule.discount_cents),
+        rule_discount_cents: next_rule.map(|rule| rule.discount_cents),
+        next_discount_cents: next_rule.map(|rule| rule.discount_cents),
+        next_gap_cents: next_rule.map(|rule| rule.threshold_cents - subtotal_cents),
     })
+}
+
+async fn calculate_mall_coupon_discount_cents(
+    pool: &PgPool,
+    subtotal_cents: i64,
+) -> ApiResult<MallDiscount> {
+    let rules = sqlx::query_as::<_, CampaignDiscountRow>(
+        r#"
+        SELECT
+          name,
+          threshold_cents,
+          discount_cents
+        FROM mall_coupons
+        WHERE status = 'active'
+          AND coupon_type = 'full_reduction'
+          AND (starts_at IS NULL OR starts_at <= now())
+          AND (ends_at IS NULL OR ends_at >= now())
+          AND (total_quantity <= 0 OR used_count < total_quantity)
+          AND COALESCE((rules->>'autoApply')::boolean, true) = true
+        ORDER BY threshold_cents ASC, discount_cents DESC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut next_rule: Option<&CampaignDiscountRow> = None;
+    let mut best_rule: Option<&CampaignDiscountRow> = None;
+    for rule in &rules {
+        if rule.threshold_cents <= subtotal_cents {
+            if best_rule
+                .map(|current| rule.discount_cents > current.discount_cents)
+                .unwrap_or(true)
+            {
+                best_rule = Some(rule);
+            }
+        } else if next_rule
+            .map(|current| rule.threshold_cents < current.threshold_cents)
+            .unwrap_or(true)
+        {
+            next_rule = Some(rule);
+        }
+    }
+
+    if let Some(rule) = best_rule {
+        return Ok(MallDiscount {
+            discount_cents: rule.discount_cents.clamp(0, subtotal_cents),
+            description: Some(rule.name.clone()),
+            threshold_cents: Some(rule.threshold_cents),
+            rule_discount_cents: Some(rule.discount_cents),
+            next_discount_cents: next_rule.map(|rule| rule.discount_cents),
+            next_gap_cents: next_rule.map(|rule| rule.threshold_cents - subtotal_cents),
+        });
+    }
+
+    Ok(MallDiscount {
+        discount_cents: 0,
+        description: next_rule.map(|rule| {
+            format!(
+                "优惠券满{}减{}",
+                yuan_amount(rule.threshold_cents),
+                yuan_amount(rule.discount_cents)
+            )
+        }),
+        threshold_cents: next_rule.map(|rule| rule.threshold_cents),
+        rule_discount_cents: next_rule.map(|rule| rule.discount_cents),
+        next_discount_cents: next_rule.map(|rule| rule.discount_cents),
+        next_gap_cents: next_rule.map(|rule| rule.threshold_cents - subtotal_cents),
+    })
+}
+
+async fn calculate_mall_price_summary(
+    pool: &PgPool,
+    user_id: Option<&str>,
+    subtotal_cents: i64,
+    delivery_fee_cents: i64,
+) -> ApiResult<MallPriceSummary> {
+    let subtotal_cents = subtotal_cents.max(0);
+    let full_reduction = calculate_mall_discount_cents(pool, subtotal_cents).await?;
+    let coupon = calculate_mall_coupon_discount_cents(pool, subtotal_cents).await?;
+    let member_context = fetch_member_pricing_context(pool, user_id).await?;
+    let after_market_discount =
+        (subtotal_cents - full_reduction.discount_cents - coupon.discount_cents).max(0);
+    let member_discount_cents = if member_context.discount_bps < 10_000 {
+        (after_market_discount * i64::from(10_000 - member_context.discount_bps) / 10_000)
+            .clamp(0, after_market_discount)
+    } else {
+        0
+    };
+    let after_member_discount = (after_market_discount - member_discount_cents).max(0);
+    let point_cents = i64::from(member_context.available_points / 100 * 100);
+    let max_points_redeemable = (after_member_discount + delivery_fee_cents - 1).max(0);
+    let points_redeemed_cents = point_cents.clamp(0, max_points_redeemable);
+    let total_discount_cents = full_reduction.discount_cents
+        + coupon.discount_cents
+        + member_discount_cents
+        + points_redeemed_cents;
+    let payable_cents = (subtotal_cents + delivery_fee_cents - total_discount_cents).max(0);
+    let mut discount_breakdown = Vec::new();
+
+    if full_reduction.discount_cents > 0 {
+        discount_breakdown.push(json!({
+            "type": "full_reduction",
+            "label": full_reduction.description.clone().unwrap_or_else(|| "满减活动".to_string()),
+            "amountCents": full_reduction.discount_cents,
+        }));
+    }
+    if coupon.discount_cents > 0 {
+        discount_breakdown.push(json!({
+            "type": "coupon",
+            "label": coupon.description.clone().unwrap_or_else(|| "优惠券".to_string()),
+            "amountCents": coupon.discount_cents,
+        }));
+    }
+    if member_discount_cents > 0 {
+        let level_name = member_context.level_name.as_deref().unwrap_or("会员折扣");
+        discount_breakdown.push(json!({
+            "type": "member",
+            "label": format!("{level_name}折扣"),
+            "amountCents": member_discount_cents,
+        }));
+    }
+    if points_redeemed_cents > 0 {
+        discount_breakdown.push(json!({
+            "type": "points",
+            "label": "积分抵扣",
+            "amountCents": points_redeemed_cents,
+        }));
+    }
+
+    let next_gap = [full_reduction.next_gap_cents, coupon.next_gap_cents]
+        .into_iter()
+        .flatten()
+        .filter(|value| *value > 0)
+        .min();
+    let next_discount = match next_gap {
+        Some(gap) if Some(gap) == full_reduction.next_gap_cents => {
+            full_reduction.next_discount_cents
+        }
+        Some(_) => coupon.next_discount_cents,
+        None => None,
+    };
+    let discount_description = discount_breakdown
+        .first()
+        .and_then(|item| item.get("label"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| full_reduction.description.clone())
+        .or_else(|| coupon.description.clone());
+    let member_level = member_context.level_name.as_ref().map(|name| {
+        json!({
+            "code": member_context.level_code,
+            "name": name,
+            "discountBps": member_context.discount_bps,
+        })
+    });
+
+    Ok(MallPriceSummary {
+        subtotal_cents,
+        full_reduction_cents: full_reduction.discount_cents,
+        coupon_discount_cents: coupon.discount_cents,
+        member_discount_cents,
+        points_redeemed_cents,
+        total_discount_cents,
+        payable_cents,
+        discount_description,
+        discount_threshold_cents: full_reduction.threshold_cents.or(coupon.threshold_cents),
+        discount_rule_cents: full_reduction
+            .rule_discount_cents
+            .or(coupon.rule_discount_cents),
+        next_discount_gap_cents: next_gap,
+        next_discount_cents: next_discount,
+        available_points: member_context.available_points,
+        member_level,
+        discount_breakdown,
+    })
+}
+
+async fn fetch_member_pricing_context(
+    pool: &PgPool,
+    user_id: Option<&str>,
+) -> ApiResult<MemberPricingContextRow> {
+    let Some(user_id) = user_id.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(default_member_pricing_context());
+    };
+
+    Ok(sqlx::query_as::<_, MemberPricingContextRow>(
+        r#"
+        WITH stats AS (
+          SELECT
+            (COALESCE(sum(payable_cents), 0) / 100)::integer AS earned_points
+          FROM mall_orders
+          WHERE user_id = $1
+            AND status <> 'cancelled'
+        ),
+        redeemed AS (
+          SELECT COALESCE(sum(points), 0)::integer AS redeemed_points
+          FROM mall_points_ledger
+          WHERE user_id = $1
+            AND entry_type = 'redeem'
+        ),
+        point_stats AS (
+          SELECT
+            stats.earned_points,
+            GREATEST(stats.earned_points - redeemed.redeemed_points, 0)::integer AS available_points
+          FROM stats
+          CROSS JOIN redeemed
+        ),
+        selected_level AS (
+          SELECT level.*
+          FROM mall_member_levels level, point_stats
+          WHERE level.status = 'active'
+            AND level.min_points <= point_stats.earned_points
+          ORDER BY level.min_points DESC, level.sort_order ASC
+          LIMIT 1
+        )
+        SELECT
+          point_stats.available_points,
+          COALESCE(level.discount_bps, 10000)::integer AS discount_bps,
+          level.code AS level_code,
+          level.name AS level_name
+        FROM point_stats
+        LEFT JOIN selected_level level ON true
+        "#,
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?
+    .unwrap_or_else(default_member_pricing_context))
+}
+
+fn default_member_pricing_context() -> MemberPricingContextRow {
+    MemberPricingContextRow {
+        available_points: 0,
+        discount_bps: 10_000,
+        level_code: None,
+        level_name: None,
+    }
+}
+
+fn proportional_discount_cents(
+    line_total_cents: i64,
+    subtotal_cents: i64,
+    total_discount_cents: i64,
+) -> i64 {
+    if subtotal_cents <= 0 || total_discount_cents <= 0 || line_total_cents <= 0 {
+        return 0;
+    }
+    (line_total_cents * total_discount_cents / subtotal_cents).clamp(0, line_total_cents)
 }
 
 fn yuan_amount(cents: i64) -> String {

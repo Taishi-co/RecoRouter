@@ -3,70 +3,66 @@ import { Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { SlidersHorizontal } from 'lucide-react-taro'
 import {
-  listMallCategories,
+  addMallCartItem,
   listMallProducts,
-  type MallCategory,
   type MallProduct,
 } from '@/services/mall'
 import {
+  MallDealProductCard,
   MallPage,
-  MallProductThumb,
   MallSearchBox,
-  mallYuan,
 } from '../mall-ui'
+import { redirectToMallAuth } from '../auth-route'
 
-const fallbackCategories = [
-  { code: '', name: '热卖' },
-  { code: 'fruit', name: '水果' },
-  { code: 'vegetable', name: '蔬菜' },
-  { code: 'meat', name: '肉禽蛋' },
-  { code: 'grain', name: '粮油' },
-  { code: 'pickup', name: '到点' },
+interface StoredUser {
+  id?: string
+}
+
+const mallV7Categories = [
+  { code: '', label: '全部', keyword: '' },
+  { code: 'meat', label: '肉禽', keyword: '肉禽' },
+  { code: 'milk', label: '蛋奶', keyword: '鲜奶' },
+  { code: 'vegetable', label: '蔬菜', keyword: '蔬菜' },
+  { code: 'fruit', label: '水果', keyword: '水果' },
+  { code: 'snack', label: '零食', keyword: '零食' },
+  { code: 'wine', label: '酒水', keyword: '酒水' },
+  { code: 'daily', label: '日用', keyword: '日用' },
 ]
 
 export default function MallCategoryPage() {
   const routeParams = Taro.getCurrentInstance().router?.params
-  const [categories, setCategories] = useState<MallCategory[]>([])
+  const initialKeyword = routeParams?.keyword ? String(routeParams.keyword) : ''
+  const initialCode = routeParams?.categoryCode ? String(routeParams.categoryCode) : categoryCodeFromKeyword(initialKeyword)
   const [products, setProducts] = useState<MallProduct[]>([])
-  const [activeCode, setActiveCode] = useState(routeParams?.categoryCode ? String(routeParams.categoryCode) : '')
-  const [keyword, setKeyword] = useState(routeParams?.keyword ? String(routeParams.keyword) : '')
+  const [activeCode, setActiveCode] = useState(initialCode)
+  const [keyword, setKeyword] = useState(initialKeyword)
   const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    loadCategories()
-  }, [])
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
     loadProducts()
   }, [activeCode])
 
-  const categoryTabs = useMemo(() => {
-    const normalized = categories.map((item) => ({
-      code: item.code,
-      name: categoryLabel(item.name),
-    }))
-    return normalized.length > 0
-      ? [{ code: '', name: '热卖' }, ...normalized, { code: 'pickup', name: '到点' }]
-      : fallbackCategories
-  }, [categories])
+  const activeCategory = useMemo(
+    () => mallV7Categories.find((category) => category.code === activeCode) || mallV7Categories[0],
+    [activeCode],
+  )
 
-  const loadCategories = async () => {
-    try {
-      setCategories(await listMallCategories())
-    } catch {
-      setCategories([])
-    }
-  }
+  const currentUser = () => Taro.getStorageSync('userInfo') as StoredUser | undefined
 
   const loadProducts = async () => {
     setLoading(true)
+    setLoadError('')
     try {
-      setProducts(await listMallProducts({
-        keyword: keyword.trim() || undefined,
-        categoryCode: activeCode && activeCode !== 'pickup' ? activeCode : undefined,
-      }))
+      const category = mallV7Categories.find((item) => item.code === activeCode)
+      const nextProducts = await listMallProducts({
+        keyword: keyword.trim() || category?.keyword || undefined,
+        categoryCode: isSeedCategory(activeCode) ? activeCode : undefined,
+      })
+      setProducts(nextProducts)
     } catch (error) {
       setProducts([])
+      setLoadError(error instanceof Error ? error.message : '商品加载失败')
       Taro.showToast({
         title: error instanceof Error ? error.message : '商品加载失败',
         icon: 'none',
@@ -76,69 +72,91 @@ export default function MallCategoryPage() {
     }
   }
 
+  const handleSearch = () => {
+    setActiveCode('')
+    loadProducts()
+  }
+
+  const handleAddCart = async (product: MallProduct) => {
+    const user = currentUser()
+    if (!user?.id) {
+      Taro.showToast({ title: '请先登录', icon: 'none' })
+      redirectToMallAuth('/pages/mall/category/index')
+      return
+    }
+    try {
+      await addMallCartItem(user.id, product.id, 1)
+      Taro.showToast({ title: '已加入购物车', icon: 'success' })
+    } catch (error) {
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '加入失败',
+        icon: 'none',
+      })
+    }
+  }
+
   return (
     <MallPage active="category">
-      <Text className="mall-page-title">分类与搜索</Text>
+      <View className="mall-v7-page-head">
+        <View>
+          <Text className="mall-v7-kicker">叁友甄选</Text>
+          <Text className="mall-page-title">商品列表</Text>
+        </View>
+        <View className="mall-v7-head-pill">
+          <Text>{activeCategory.label}</Text>
+        </View>
+      </View>
+
       <MallSearchBox
         value={keyword}
-        placeholder="草莓"
+        placeholder="搜索肉禽、鲜奶、草莓"
         onInput={setKeyword}
-        onSearch={loadProducts}
+        onSearch={handleSearch}
         trailing={<SlidersHorizontal size={18} color="#FF9238" />}
       />
 
-      <View className="mall-category-layout">
-        <View className="mall-category-rail">
-          {categoryTabs.map((item) => (
-            <View
-              key={item.code || 'hot'}
-              className={activeCode === item.code ? 'mall-category-item mall-category-item-active' : 'mall-category-item'}
-              onClick={() => setActiveCode(item.code)}
-            >
-              <Text>{item.name}</Text>
-            </View>
-          ))}
-        </View>
-        <View className="mall-list">
-          {products.slice(0, 8).map((product) => (
-            <View
-              key={product.id}
-              className="mall-list-card"
-              onClick={() => Taro.navigateTo({ url: `/pages/mall/product/index?id=${product.id}` })}
-            >
-              <View className="mall-list-thumb">
-                <MallProductThumb product={product} />
-              </View>
-              <View>
-                <Text className="mall-list-title">{product.name}</Text>
-                <Text className="mall-list-meta">
-                  {product.subtitle || `${product.deliveryMinutes} 分钟到点`}
-                </Text>
-                <View className="mall-list-row">
-                  <Text className="mall-price">{mallYuan(product.priceCents)}</Text>
-                  <Text className="mall-list-meta">
-                    {product.stock > 0 ? `余 ${product.stock} 份` : '邻里复购'}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          ))}
-
-          {!loading && products.length === 0 ? (
-            <View className="mall-empty">
-              <Text className="mall-empty-title">没有找到商品</Text>
-              <Text className="mall-empty-copy">换个分类或关键词试试。</Text>
-            </View>
-          ) : null}
-        </View>
+      <View className="mall-v7-category-tabs">
+        {mallV7Categories.map((category) => (
+          <View
+            key={category.code || 'all'}
+            className={activeCode === category.code ? 'mall-v7-category-tab mall-v7-category-tab-active' : 'mall-v7-category-tab'}
+            onClick={() => {
+              setKeyword(category.keyword)
+              setActiveCode(category.code)
+            }}
+          >
+            <Text>{category.label}</Text>
+          </View>
+        ))}
       </View>
+
+      <View className="mall-v7-product-list">
+        {products.map((product) => (
+          <MallDealProductCard
+            key={product.id}
+            product={product}
+            layout="list"
+            onAdd={handleAddCart}
+            onOpen={() => Taro.navigateTo({ url: `/pages/mall/product/index?id=${product.id}` })}
+          />
+        ))}
+      </View>
+
+      {!loading && products.length === 0 ? (
+        <View className="mall-empty">
+          <Text className="mall-empty-title">{loadError ? '加载失败' : '没有找到商品'}</Text>
+          <Text className="mall-empty-copy">{loadError || '换个分类或关键词试试。'}</Text>
+        </View>
+      ) : null}
     </MallPage>
   )
 }
 
-function categoryLabel(name: string) {
-  if (name.includes('鲜奶')) return '肉禽蛋'
-  if (name.includes('水果')) return '水果'
-  if (name.includes('蔬')) return '蔬菜'
-  return name
+function categoryCodeFromKeyword(keyword: string) {
+  const matched = mallV7Categories.find((category) => category.keyword && keyword.includes(category.keyword))
+  return matched?.code || ''
+}
+
+function isSeedCategory(code: string) {
+  return ['fruit', 'vegetable', 'milk'].includes(code)
 }

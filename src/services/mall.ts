@@ -33,6 +33,17 @@ export interface MallProduct {
   heightCm?: number | null
   volumeLiters?: number | null
   weightKg?: number | null
+  discountedPriceCents?: number | null
+  savedCents?: number | null
+  couponStackable?: boolean
+  pointsDeductibleCents?: number | null
+  discountLabel?: string | null
+}
+
+export interface MallDiscountBreakdown {
+  type: 'full_reduction' | 'coupon' | 'member' | 'points' | string
+  label: string
+  amountCents: number
 }
 
 export interface MallHomeBanner {
@@ -69,6 +80,13 @@ export interface MallCartItem {
   selected: boolean
   product?: MallProduct
   lineTotalCents?: number
+  originalUnitPriceCents?: number
+  discountedUnitPriceCents?: number
+  lineDiscountCents?: number
+  linePayableCents?: number
+  savedCents?: number
+  couponStackable?: boolean
+  pointsDeductibleCents?: number
 }
 
 export interface MallCart {
@@ -80,6 +98,20 @@ export interface MallCart {
   discountDescription?: string | null
   discountThresholdCents?: number | null
   discountRuleCents?: number | null
+  fullReductionCents?: number
+  couponDiscountCents?: number
+  memberDiscountCents?: number
+  pointsRedeemedCents?: number
+  totalDiscountCents?: number
+  discountBreakdown?: MallDiscountBreakdown[]
+  nextDiscountGapCents?: number | null
+  nextDiscountCents?: number | null
+  availablePoints?: number
+  memberLevel?: {
+    code?: string
+    name?: string
+    discountBps?: number
+  } | null
   selectedCount: number
 }
 
@@ -263,14 +295,35 @@ export interface MallCheckout {
     categoryCode?: string | null
     imageUrl?: string | null
     unitPriceCents: number
+    originalUnitPriceCents?: number
+    discountedUnitPriceCents?: number
     quantity: number
     lineTotalCents: number
+    lineDiscountCents?: number
+    linePayableCents?: number
+    savedCents?: number
+    couponStackable?: boolean
+    pointsDeductibleCents?: number
     product?: MallProduct
   }>
   subtotalCents: number
   deliveryFeeCents: number
   couponCents: number
   payableCents: number
+  fullReductionCents?: number
+  couponDiscountCents?: number
+  memberDiscountCents?: number
+  pointsRedeemedCents?: number
+  totalDiscountCents?: number
+  discountBreakdown?: MallDiscountBreakdown[]
+  nextDiscountGapCents?: number | null
+  nextDiscountCents?: number | null
+  availablePoints?: number
+  memberLevel?: {
+    code?: string
+    name?: string
+    discountBps?: number
+  } | null
   discountDescription?: string | null
   discountThresholdCents?: number | null
   discountRuleCents?: number | null
@@ -331,6 +384,11 @@ export interface MallProfile {
     openTickets?: number
     afterSales?: number
   }
+  couponWallet?: {
+    availableCount?: number
+    expiringCount?: number
+    nearestExpiry?: string | null
+  }
   groupLeader?: Record<string, unknown> | null
 }
 
@@ -342,10 +400,16 @@ export interface MallGroupLeaderCenter {
   pendingShareCount?: number
   pendingVerificationCount?: number
   stockIssueCount?: number
+  commissionRateBps?: number
+  commissionRateRange?: string
+  withdrawableCents?: number
+  monthlyRewardCents?: number
   leader?: Record<string, unknown>
   pickupPoint?: MallPickupPoint | null
   today?: {
     readyForPickup?: number
+    pendingPickup?: number
+    orderCount?: number
     completed?: number
     afterSales?: number
     totalPayableCents?: number
@@ -636,6 +700,14 @@ export async function getMallProfileSafe(userId: string): Promise<MallProfile> {
 
 export async function getMallGroupLeaderCenter(userId: string): Promise<MallGroupLeaderCenter> {
   return apiGet('/api/mall/group-leader/workbench', { userId })
+}
+
+export async function verifyMallGroupLeaderFulfillment(data: {
+  userId: string
+  orderId: string
+  code: string
+}): Promise<MallFulfillmentCode> {
+  return apiPost('/api/mall/group-leader/verify-fulfillment', data)
 }
 
 export async function getMallGroupLeaderCenterSafe(userId: string): Promise<MallGroupLeaderCenter> {

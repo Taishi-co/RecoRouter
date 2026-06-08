@@ -1,21 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Image, Text, View } from '@tarojs/components'
+import { Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { Store } from 'lucide-react-taro'
+import { Check, Circle, Store, Trash2 } from 'lucide-react-taro'
 import {
   createMallCheckout,
   deleteMallCartItem,
   getMallCart,
   listMallAddresses,
-  resolveMallImageUrl,
   updateMallCartItem,
   type MallAddress,
   type MallCart,
+  type MallCartItem,
 } from '@/services/mall'
 import {
   MallLocationStrip,
   MallPage,
   MallPrimaryButton,
+  MallProductThumb,
   mallYuan,
 } from '../mall-ui'
 import { redirectToMallAuth } from '../auth-route'
@@ -29,13 +30,16 @@ export default function MallCartPage() {
   const [addresses, setAddresses] = useState<MallAddress[]>([])
   const [selectedAddressId, setSelectedAddressId] = useState('')
   const [loading, setLoading] = useState(false)
-
   const userId = (Taro.getStorageSync('userInfo') as StoredUser | undefined)?.id || ''
-  const couponCents = cart.couponCents || 0
+
   const payableCents = useMemo(
-    () => cart.payableCents ?? Math.max(cart.subtotalCents + (cart.deliveryFeeCents || 0) - couponCents, 0),
-    [cart.deliveryFeeCents, cart.payableCents, cart.subtotalCents, couponCents],
+    () => cart.payableCents ?? Math.max(cart.subtotalCents + (cart.deliveryFeeCents || 0) - (cart.couponCents || 0), 0),
+    [cart.deliveryFeeCents, cart.payableCents, cart.subtotalCents, cart.couponCents],
   )
+  const savedCents = Math.max(cart.totalDiscountCents ?? cart.couponCents ?? 0, 0)
+  const selectedAddress = addresses.find((item) => item.id === selectedAddressId)
+  const allSelected = cart.items.length > 0 && cart.items.every((item) => item.selected)
+  const addOnPrompt = buildAddOnPrompt(cart)
 
   useEffect(() => {
     guardLogin()
@@ -44,8 +48,6 @@ export default function MallCartPage() {
   useDidShow(() => {
     loadData()
   })
-
-  const selectedAddress = addresses.find((item) => item.id === selectedAddressId)
 
   const guardLogin = () => {
     if (!userId) {
@@ -88,9 +90,36 @@ export default function MallCartPage() {
     }
   }
 
+  const toggleItem = async (item: MallCartItem) => {
+    try {
+      await updateMallCartItem(item.id, { selected: !item.selected })
+      loadData()
+    } catch (error) {
+      showError(error, '修改失败')
+    }
+  }
+
+  const selectAllCartItems = async () => {
+    try {
+      await Promise.all(cart.items.map((item) => updateMallCartItem(item.id, { selected: !allSelected })))
+      loadData()
+    } catch (error) {
+      showError(error, '全选失败')
+    }
+  }
+
+  const clearMallCart = async () => {
+    try {
+      await Promise.all(cart.items.map((item) => deleteMallCartItem(item.id)))
+      loadData()
+    } catch (error) {
+      showError(error, '清空失败')
+    }
+  }
+
   const submitOrder = async () => {
     if (cart.selectedCount === 0) {
-      Taro.showToast({ title: '购物车为空', icon: 'none' })
+      Taro.showToast({ title: '请选择商品', icon: 'none' })
       return
     }
     try {
@@ -107,20 +136,61 @@ export default function MallCartPage() {
 
   return (
     <MallPage active="cart">
-      <Text className="mall-page-title">购物车</Text>
+      <View className="mall-v7-page-head">
+        <View>
+          <Text className="mall-v7-kicker">叁友甄选</Text>
+          <Text className="mall-page-title">购物车</Text>
+        </View>
+        <View className="mall-v7-head-pill">
+          <Text>{cart.selectedCount || 0} 件已选</Text>
+        </View>
+      </View>
 
-      <View style={{ marginTop: 14 }}>
+      <View className="mall-v7-cart-summary">
+        <View>
+          <Text className="mall-v7-summary-label">当前合计</Text>
+          <Text className="mall-v7-summary-value cart-subtotal-before">{mallYuan(cart.subtotalCents)}</Text>
+        </View>
+        <View>
+          <Text className="mall-v7-summary-label">满减后实付</Text>
+          <Text className="mall-v7-summary-value cart-payable-after">{mallYuan(payableCents)}</Text>
+        </View>
+        <View>
+          <Text className="mall-v7-summary-label">已省</Text>
+          <Text className="mall-v7-summary-value cart-saved-cents">{mallYuan(savedCents)}</Text>
+        </View>
+      </View>
+
+      {addOnPrompt ? (
+        <View className="mall-v7-addon" onClick={() => Taro.navigateTo({ url: '/pages/mall/category/index?keyword=凑单' })}>
+          <Text>{addOnPrompt}</Text>
+          <Text>去凑单</Text>
+        </View>
+      ) : null}
+
+      <View style={{ marginTop: 12 }}>
         <MallLocationStrip
-          title={selectedAddress?.addressLabel || selectedAddress?.address_name || '明日 16:00 后 · 绿荫花园自提点'}
-          subtitle={selectedAddress?.addressText || selectedAddress?.address || '团长王姐 · 距离 320m，可冷藏代收'}
+          title={selectedAddress?.addressLabel || selectedAddress?.address_name || '明日 16:00 后 · 叁友自提点'}
+          subtitle={selectedAddress?.addressText || selectedAddress?.address || '默认使用上次收货地址 / 自提点'}
           onClick={() => Taro.navigateTo({ url: '/pages/mall/address/index' })}
         />
+      </View>
+
+      <View className="mall-v7-cart-actions">
+        <View onClick={selectAllCartItems}>
+          {allSelected ? <Check size={16} color="#2F7E43" /> : <Circle size={16} color="#7A8476" />}
+          <Text>{allSelected ? '取消全选' : '一键勾选全部'}</Text>
+        </View>
+        <View onClick={clearMallCart}>
+          <Trash2 size={16} color="#B45309" />
+          <Text>一键清空</Text>
+        </View>
       </View>
 
       {cart.items.length === 0 ? (
         <View className="mall-empty">
           <Text className="mall-empty-title">{loading ? '加载中...' : '购物车暂无商品'}</Text>
-          <Text className="mall-empty-copy">去首页看看今日团购鲜品。</Text>
+          <Text className="mall-empty-copy">去首页看看今日秒杀和新上鲜品。</Text>
           <View style={{ marginTop: 14 }}>
             <MallPrimaryButton onClick={() => Taro.navigateTo({ url: '/pages/mall/index/index' })}>
               <Text>去逛逛</Text>
@@ -128,65 +198,62 @@ export default function MallCartPage() {
           </View>
         </View>
       ) : (
-        <>
-          <View className="mall-card">
-            <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <View style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Store size={18} color="#63BF54" />
-                <Text className="mall-list-title">叁友甄选 · 今日团购</Text>
+        <View className="mall-card mall-v7-cart-shop">
+          <View className="mall-v7-shop-head">
+            <Store size={18} color="#2F7E43" />
+            <Text>叁友甄选 · 今日团购</Text>
+            <Text>次日达</Text>
+          </View>
+          {cart.items.map((item) => (
+            <View key={item.id} className="mall-v7-cart-item">
+              <View className="mall-v7-cart-check" onClick={() => toggleItem(item)}>
+                {item.selected ? <Check size={16} color="#FFFFFF" /> : null}
               </View>
-              <View className="mall-hero-badge" style={{ marginTop: 0, background: '#FFF1E5', color: '#FF9238' }}>
-                次日达
+              <View className="mall-v7-cart-thumb">
+                <MallProductThumb product={item.product} />
               </View>
-            </View>
-
-            {cart.items.map((item) => (
-              <View key={item.id} className="mall-cart-item">
-                <View className="mall-cart-thumb">
-                  {item.product?.imageUrl ? (
-                    <Image className="mall-product-image" mode="aspectFill" src={resolveMallImageUrl(item.product.imageUrl)} />
-                  ) : null}
+              <View className="mall-v7-cart-copy">
+                <Text className="mall-v7-product-name">{item.product?.name || '商品'}</Text>
+                <Text className="mall-v7-product-subtitle">{item.product?.subtitle || '基地直采 · 今日锁鲜'}</Text>
+                <View className="mall-v7-unit-row">
+                  <Text>满减前 {mallYuan(item.originalUnitPriceCents ?? item.product?.priceCents ?? 0)}</Text>
+                  <Text>满减后 {mallYuan(item.discountedUnitPriceCents ?? item.product?.priceCents ?? 0)}</Text>
                 </View>
-                <View>
-                  <Text className="mall-product-name" style={{ marginTop: 0 }}>
-                    {item.product?.name || '商品'}
-                  </Text>
-                  <Text className="mall-product-subtitle">
-                    {item.product?.subtitle || '基地直采 · 今日锁鲜'}
-                  </Text>
-                  <Text className="mall-price">{mallYuan(item.product?.priceCents)}</Text>
-                </View>
-                <View className="mall-stepper">
-                  <Text className="mall-stepper-action mall-stepper-action-muted" onClick={() => changeQuantity(item.id, item.quantity - 1)}>−</Text>
-                  <Text className="mall-stepper-value">{item.quantity}</Text>
-                  <Text className="mall-stepper-action" onClick={() => changeQuantity(item.id, item.quantity + 1)}>＋</Text>
+                <View className="mall-v7-unit-row mall-v7-unit-row-warm">
+                  <Text>优惠 {mallYuan(item.lineDiscountCents || 0)}</Text>
+                  <Text>积分最高抵 {mallYuan(item.pointsDeductibleCents || 0)}</Text>
                 </View>
               </View>
-            ))}
-          </View>
-
-          <View className="mall-card mall-card-soft">
-            <View className="mall-summary-row" style={{ marginTop: 0 }}>
-              <Text className="mall-summary-label">
-                {couponCents > 0 ? `${cart.discountDescription || '团购优惠'} 已自动使用` : cart.discountDescription || '暂无可用优惠'}
-              </Text>
-              <Text className="mall-summary-value mall-summary-value-warm">-{mallYuan(couponCents)}</Text>
+              <View className="mall-stepper">
+                <Text className="mall-stepper-action mall-stepper-action-muted" onClick={() => changeQuantity(item.id, item.quantity - 1)}>−</Text>
+                <Text className="mall-stepper-value">{item.quantity}</Text>
+                <Text className="mall-stepper-action" onClick={() => changeQuantity(item.id, item.quantity + 1)}>＋</Text>
+              </View>
             </View>
-          </View>
-
-          <View className="mall-total-bar">
-            <View>
-              <Text className="mall-total-label">合计</Text>
-              <Text className="mall-total-value">{mallYuan(payableCents)}</Text>
-            </View>
-            <View className="mall-total-button" onClick={submitOrder}>
-              <Text>去结算</Text>
-            </View>
-          </View>
-        </>
+          ))}
+        </View>
       )}
+
+      {cart.items.length > 0 ? (
+        <View className="mall-total-bar mall-v7-fixed-checkout">
+          <View>
+            <Text className="mall-total-label">满减后实付</Text>
+            <Text className="mall-total-value">{mallYuan(payableCents)}</Text>
+          </View>
+          <View className="mall-total-button" onClick={submitOrder}>
+            <Text>去结算</Text>
+          </View>
+        </View>
+      ) : null}
     </MallPage>
   )
+}
+
+function buildAddOnPrompt(cart: MallCart) {
+  const gap = cart.nextDiscountGapCents || 0
+  const discount = cart.nextDiscountCents || cart.discountRuleCents || 0
+  if (gap <= 0 || discount <= 0) return ''
+  return `差 ${mallYuan(gap)} 即可再减 ${mallYuan(discount)}`
 }
 
 function showError(error: unknown, fallback: string) {
