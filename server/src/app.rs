@@ -8,7 +8,7 @@ use crate::{
         account_settings, address_books, admin, auth, cancellations, demand_schedules,
         demand_templates, demands, enterprise, enterprise_demands, enterprise_vehicles, fare,
         favorite_routes, health, home, mall, notifications, orders, owner_wallet, payments,
-        platform, rental_reminders, station, user_roles, vehicle_rentals, vehicles,
+        platform, rental_reminders, station, trips, user_roles, vehicle_rentals, vehicles,
     },
     storage::Storage,
 };
@@ -151,6 +151,13 @@ where
     router
         .merge(mall::router::<S>())
         .merge(payments::router::<S>())
+        .merge(trips::router::<S>())
+        .merge(
+            trips::admin_router::<S>().route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                auth::admin_guard::<S>,
+            )),
+        )
         .merge(
             mall::admin_router::<S>().route_layer(middleware::from_fn_with_state(
                 state.clone(),
@@ -163,7 +170,5 @@ fn platform_routes<S>(router: Router<AppState<S>>, _state: &AppState<S>) -> Rout
 where
     S: Storage + Send + Sync + 'static,
 {
-    router
-        .merge(platform::router::<S>())
-        .merge(payments::router::<S>())
+    router.merge(platform::router::<S>())
 }
