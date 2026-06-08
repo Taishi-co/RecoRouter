@@ -87,6 +87,10 @@ interface DashboardData {
   supportSessions: JsonRecord[];
   supportTickets: JsonRecord[];
   supportKnowledge: JsonRecord[];
+  enterprises: JsonRecord[];
+  demands: JsonRecord[];
+  cancellations: JsonRecord[];
+  ownerWithdrawals: JsonRecord[];
 }
 
 interface ProductForm {
@@ -427,6 +431,10 @@ const initialData: DashboardData = {
   supportSessions: [],
   supportTickets: [],
   supportKnowledge: [],
+  enterprises: [],
+  demands: [],
+  cancellations: [],
+  ownerWithdrawals: [],
 };
 
 const initialProductForm: ProductForm = {
@@ -614,6 +622,10 @@ async function fetchDashboardData(
     supportSessions,
     supportTickets,
     supportKnowledge,
+    enterprises,
+    demands,
+    cancellations,
+    ownerWithdrawals,
   ] = await Promise.all([
     loadWithFallback('平台统计', {}, errors, () => apiGet<JsonRecord>('/api/admin/statistics')),
     loadWithFallback('账号列表', [], errors, () => apiGet<JsonRecord[]>('/api/admin/users', { limit: 80 })),
@@ -646,6 +658,10 @@ async function fetchDashboardData(
     loadWithFallback('客服会话', [], errors, () => apiGet<JsonRecord[]>('/api/support/sessions')),
     loadWithFallback('客服工单', [], errors, () => apiGet<JsonRecord[]>('/api/support/tickets')),
     loadWithFallback('知识库', [], errors, () => apiGet<JsonRecord[]>('/api/support/knowledge')),
+    loadWithFallback('企业列表', [], errors, () => apiGet<JsonRecord[]>('/api/enterprise', { limit: 100 }).catch(() => apiGet<JsonRecord[]>('/api/enterprise/admin/' + (getStoredAdminSession()?.user?.id || ''), { limit: 100 }))),
+    loadWithFallback('需求列表', [], errors, () => apiGet<JsonRecord[]>('/api/demands', { limit: 100 })),
+    loadWithFallback('取消申请', [], errors, () => apiGet<JsonRecord[]>('/api/cancellations/pending')),
+    loadWithFallback('提现记录', [], errors, () => apiGet<JsonRecord[]>('/api/admin/owner-withdrawals')),
   ]);
 
   return {
@@ -667,6 +683,10 @@ async function fetchDashboardData(
       supportSessions,
       supportTickets,
       supportKnowledge,
+      enterprises,
+      demands,
+      cancellations,
+      ownerWithdrawals,
     },
     errors,
   };
@@ -1114,6 +1134,303 @@ function fallbackDesignRows(page: AdminPageSpec): JsonRecord[] {
       updatedAt: '2026-06-04 18:22',
     },
   ];
+}
+
+function EnterpriseSection({
+  enterprises,
+  onUpdateStatus,
+}: {
+  enterprises: JsonRecord[];
+  onUpdateStatus: (id: string, status: string) => Promise<void>;
+}) {
+  return (
+    <Panel title="企业管理" description="管理入驻企业主体、认证状态和运营信息">
+      <div className="stat-grid compact">
+        <StatCard label="企业总数" value={String(enterprises.length)} detail="已注册企业" />
+        <StatCard label="已认证" value={String(enterprises.filter(e => stringValue(e, 'status') === 'active' || stringValue(e, 'verified') === 'true').length)} detail="通过审核" />
+        <StatCard label="待审核" value={String(enterprises.filter(e => stringValue(e, 'status') === 'pending').length)} detail="等待审核" />
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>企业名称</th>
+              <th>联系人</th>
+              <th>联系电话</th>
+              <th>状态</th>
+              <th>创建时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {enterprises.map(enterprise => {
+              const id = stringValue(enterprise, 'id');
+              const status = stringValue(enterprise, 'status', 'pending');
+              return (
+                <tr key={id}>
+                  <td>
+                    <strong>{stringValue(enterprise, 'name', stringValue(enterprise, 'companyName', '未填写'))}</strong>
+                    <small>{stringValue(enterprise, 'unifiedSocialCode', stringValue(enterprise, 'creditCode', ''))}</small>
+                  </td>
+                  <td>{stringValue(enterprise, 'contactName', stringValue(enterprise, 'legalPerson', '-'))}</td>
+                  <td>{stringValue(enterprise, 'contactPhone', stringValue(enterprise, 'phone', '-'))}</td>
+                  <td>
+                    <span className={badgeClass(status)}>{statusLabel(status)}</span>
+                  </td>
+                  <td>{formatDate(stringValue(enterprise, 'created_at', stringValue(enterprise, 'createdAt')))}</td>
+                  <td className="actions">
+                    {status === 'pending' ? (
+                      <>
+                        <button className="ghost-button" type="button" onClick={() => onUpdateStatus(id, 'active')}>
+                          <Icon name="check" />通过
+                        </button>
+                        <button className="ghost-button danger" type="button" onClick={() => onUpdateStatus(id, 'rejected')}>
+                          <Icon name="x" />拒绝
+                        </button>
+                      </>
+                    ) : status === 'active' ? (
+                      <button className="ghost-button danger" type="button" onClick={() => onUpdateStatus(id, 'disabled')}>
+                        <Icon name="x" />停用
+                      </button>
+                    ) : (
+                      <button className="ghost-button" type="button" onClick={() => onUpdateStatus(id, 'active')}>
+                        <Icon name="check" />启用
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {!enterprises.length ? <EmptyState text="暂无企业数据" /> : null}
+    </Panel>
+  );
+}
+
+function DemandsSection({
+  demands,
+  vehicles,
+}: {
+  demands: JsonRecord[];
+  vehicles: JsonRecord[];
+}) {
+  const [demandFilter, setDemandFilter] = useState('');
+  const filtered = demandFilter ? demands.filter(d => stringValue(d, 'status') === demandFilter) : demands;
+  const activeVehicles = vehicles.filter(v => stringValue(v, 'status') === 'active' && boolValue(v, 'is_available', true));
+
+  return (
+    <div className="page-grid">
+      <div className="stat-grid compact">
+        <StatCard label="需求总数" value={String(demands.length)} detail="全部需求" />
+        <StatCard label="待接单" value={String(demands.filter(d => stringValue(d, 'status') === 'pending').length)} detail="等待运力" />
+        <StatCard label="运输中" value={String(demands.filter(d => stringValue(d, 'status') === 'in_transit').length)} detail="正在配送" />
+        <StatCard label="可用车辆" value={String(activeVehicles.length)} detail="在线可调度" />
+      </div>
+
+      <div className="admin-filterbar">
+        <select value={demandFilter} onChange={e => setDemandFilter(e.target.value)}>
+          <option value="">全部状态</option>
+          <option value="pending">待接单</option>
+          <option value="accepted">已接单</option>
+          <option value="in_transit">运输中</option>
+          <option value="completed">已完成</option>
+          <option value="cancelled">已取消</option>
+        </select>
+      </div>
+
+      <Panel title="需求列表" description="查看所有运输需求，监控需求和运力匹配状态">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>货品</th>
+                <th>发货地址</th>
+                <th>收货地址</th>
+                <th>重量/体积</th>
+                <th>需求方</th>
+                <th>状态</th>
+                <th>创建时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.slice(0, 50).map(demand => {
+                const id = stringValue(demand, 'id');
+                return (
+                  <tr key={id}>
+                    <td>
+                      <strong>{stringValue(demand, 'cargo_name', stringValue(demand, 'cargoName', '未填写'))}</strong>
+                      <small>{stringValue(demand, 'cargo_type', stringValue(demand, 'cargoType', ''))}</small>
+                    </td>
+                    <td>{stringValue(demand, 'pickup_address', stringValue(demand, 'pickupAddress', '-'))}</td>
+                    <td>{stringValue(demand, 'delivery_address', stringValue(demand, 'deliveryAddress', '-'))}</td>
+                    <td>
+                      <span>{numberValue(demand, 'weight', numberValue(demand, 'cargoWeight'))}kg</span>
+                      <small>{numberValue(demand, 'volume', numberValue(demand, 'cargoVolume'))}m³</small>
+                    </td>
+                    <td>{shortId(stringValue(demand, 'merchant_id', stringValue(demand, 'merchantId', stringValue(demand, 'enterprise_id', '-'))))}</td>
+                    <td>
+                      <span className={badgeClass(stringValue(demand, 'status'))}>{statusLabel(stringValue(demand, 'status'))}</span>
+                    </td>
+                    <td>{formatDate(stringValue(demand, 'created_at', stringValue(demand, 'createdAt')))}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {!filtered.length ? <EmptyState text="暂无需求数据" /> : null}
+      </Panel>
+    </div>
+  );
+}
+
+function CancellationsSection({
+  cancellations,
+  onHandle,
+}: {
+  cancellations: JsonRecord[];
+  onHandle: (id: string, action: string, reason?: string) => Promise<void>;
+}) {
+  return (
+    <Panel title="取消申请" description="处理需求方和车主的订单取消申请，审核赔付和协商结果">
+      <div className="stat-grid compact">
+        <StatCard label="待处理" value={String(cancellations.filter(c => stringValue(c, 'status') === 'pending' || stringValue(c, 'status') === 'open').length)} detail="等待审核" />
+        <StatCard label="已处理" value={String(cancellations.filter(c => stringValue(c, 'status') === 'approved' || stringValue(c, 'status') === 'resolved').length)} detail="已完结" />
+        <StatCard label="总申请" value={String(cancellations.length)} detail="全部取消记录" />
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>申请方</th>
+              <th>订单</th>
+              <th>取消原因</th>
+              <th>状态</th>
+              <th>申请时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cancellations.map(cancel => {
+              const id = stringValue(cancel, 'id');
+              const status = stringValue(cancel, 'status', 'pending');
+              const isPending = status === 'pending' || status === 'open';
+              return (
+                <tr key={id}>
+                  <td>
+                    <strong>{stringValue(cancel, 'requester_role', stringValue(cancel, 'requesterRole', stringValue(cancel, 'cancelled_by', '未知')))}</strong>
+                    <small>{shortId(stringValue(cancel, 'requester_id', stringValue(cancel, 'requesterId', '')))}</small>
+                  </td>
+                  <td>{shortId(stringValue(cancel, 'order_id', stringValue(cancel, 'orderId', '')))}</td>
+                  <td>{stringValue(cancel, 'reason', stringValue(cancel, 'cancel_reason', '-'))}</td>
+                  <td>
+                    <span className={badgeClass(status)}>{statusLabel(status)}</span>
+                  </td>
+                  <td>{formatDate(stringValue(cancel, 'created_at', stringValue(cancel, 'createdAt')))}</td>
+                  <td className="actions">
+                    {isPending ? (
+                      <>
+                        <button className="ghost-button" type="button" onClick={() => onHandle(id, 'approve')}>
+                          <Icon name="check" />同意
+                        </button>
+                        <button className="ghost-button danger" type="button" onClick={() => onHandle(id, 'reject', '平台审核不通过')}>
+                          <Icon name="x" />拒绝
+                        </button>
+                      </>
+                    ) : (
+                      <span className="badge badge-gray">已处理</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {!cancellations.length ? <EmptyState text="暂无取消申请" /> : null}
+    </Panel>
+  );
+}
+
+function OwnerWalletSection({
+  withdrawals,
+  onManualComplete,
+  onManualFail,
+}: {
+  withdrawals: JsonRecord[];
+  onManualComplete: (id: string) => Promise<void>;
+  onManualFail: (id: string) => Promise<void>;
+}) {
+  const pending = withdrawals.filter(w => stringValue(w, 'status') === 'pending' || stringValue(w, 'status') === 'processing');
+  const completed = withdrawals.filter(w => stringValue(w, 'status') === 'completed' || stringValue(w, 'status') === 'success');
+  const failed = withdrawals.filter(w => stringValue(w, 'status') === 'failed');
+
+  return (
+    <div className="page-grid">
+      <div className="stat-grid compact">
+        <StatCard label="待处理提现" value={String(pending.length)} detail="等待平台确认" />
+        <StatCard label="已完成" value={String(completed.length)} detail="提现成功" />
+        <StatCard label="失败/异常" value={String(failed.length)} detail="需人工处理" />
+      </div>
+
+      <Panel title="车主提现记录" description="管理车主钱包提现申请，处理微信转账失败和人工确认">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>车主</th>
+                <th>提现金额</th>
+                <th>状态</th>
+                <th>微信交易号</th>
+                <th>申请时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {withdrawals.map(withdrawal => {
+                const id = stringValue(withdrawal, 'id');
+                const status = stringValue(withdrawal, 'status', 'pending');
+                const isPending = status === 'pending' || status === 'processing';
+                const isFailed = status === 'failed';
+                return (
+                  <tr key={id}>
+                    <td>
+                      <strong>{stringValue(withdrawal, 'owner_name', stringValue(withdrawal, 'ownerName', '车主'))}</strong>
+                      <small>{shortId(stringValue(withdrawal, 'owner_id', stringValue(withdrawal, 'ownerId', '')))}</small>
+                    </td>
+                    <td>{yuan(Math.round(numberValue(withdrawal, 'amount', numberValue(withdrawal, 'amountCents', 0)) * (numberValue(withdrawal, 'amountCents') > 0 ? 1 : 100)))}</td>
+                    <td>
+                      <span className={badgeClass(status)}>{statusLabel(status)}</span>
+                    </td>
+                    <td>{stringValue(withdrawal, 'wechat_transaction_id', stringValue(withdrawal, 'transactionId', '-'))}</td>
+                    <td>{formatDate(stringValue(withdrawal, 'created_at', stringValue(withdrawal, 'createdAt')))}</td>
+                    <td className="actions">
+                      {isPending && (
+                        <button className="primary-button small" type="button" onClick={() => onManualComplete(id)}>
+                          <Icon name="check" />确认完成
+                        </button>
+                      )}
+                      {isFailed && (
+                        <button className="ghost-button" type="button" onClick={() => onManualFail(id)}>
+                          <Icon name="refresh" />标记失败
+                        </button>
+                      )}
+                      {!isPending && !isFailed && (
+                        <span className="badge badge-gray">已处理</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {!withdrawals.length ? <EmptyState text="暂无提现记录" /> : null}
+      </Panel>
+    </div>
+  );
 }
 
 function DesignPlaceholderPage({
@@ -2714,6 +3031,34 @@ function App() {
     });
   };
 
+  const updateEnterpriseStatus = async (id: string, status: string) => {
+    await runAction('企业状态更新', async () => {
+      await apiPut(`/api/enterprise/${id}`, { status });
+      setData(current => ({ ...current, enterprises: updateRecordList(current.enterprises, id, { status }) }));
+    });
+  };
+
+  const handleCancellation = async (id: string, action: string, reason?: string) => {
+    await runAction('取消申请处理', async () => {
+      await apiPut(`/api/cancellations/${id}/handle`, { action, reason });
+      await reload();
+    });
+  };
+
+  const manualCompleteWithdrawal = async (id: string) => {
+    await runAction('提现确认完成', async () => {
+      await apiPost(`/api/admin/owner-withdrawals/${id}/manual-complete`);
+      await reload();
+    });
+  };
+
+  const manualFailWithdrawal = async (id: string) => {
+    await runAction('提现标记失败', async () => {
+      await apiPost(`/api/admin/owner-withdrawals/${id}/manual-fail`);
+      await reload();
+    });
+  };
+
   const createProduct = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     await runAction('商品创建', async () => {
@@ -2996,6 +3341,18 @@ function App() {
     }
     if (activePageKey === 'vehicle.review' || activePageKey === 'vehicle.vehicleList') {
       return <VehiclesSection vehicles={data.vehicles} onReview={reviewVehicle} />;
+    }
+    if (activePageKey === 'vehicle.enterpriseReview' || activePageKey === 'platform.enterpriseAudit') {
+      return <EnterpriseSection enterprises={data.enterprises} onUpdateStatus={updateEnterpriseStatus} />;
+    }
+    if (activePageKey === 'vehicle.dispatch' || activePageKey === 'vehicle.ownerReview') {
+      return <DemandsSection demands={data.demands} vehicles={data.vehicles} />;
+    }
+    if (activePageKey === 'vehicle.cancellations') {
+      return <CancellationsSection cancellations={data.cancellations} onHandle={handleCancellation} />;
+    }
+    if (activePageKey === 'vehicle.wallet') {
+      return <OwnerWalletSection withdrawals={data.ownerWithdrawals} onManualComplete={manualCompleteWithdrawal} onManualFail={manualFailWithdrawal} />;
     }
     if (activePageKey === 'vehicle.transportOrders' || activePageKey === 'vehicle.commission' || activePageKey === 'platform.commission') {
       return (
