@@ -1,0 +1,2 @@
+-- Placeholder: trip_id column was already added in 0019_vehicle_trips.sql
+-- This migration exists to satisfy sqlx sequential version requirement
