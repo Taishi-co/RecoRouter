@@ -1750,6 +1750,188 @@ textarea:focus {
   background: #fff5f5;
 }
 
+.ops-page {
+  min-width: 0;
+}
+
+.ops-filterbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) minmax(140px, 0.7fr) minmax(150px, 0.7fr) minmax(180px, 0.9fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid #d7ead1;
+  border-radius: 8px;
+}
+
+.ops-filterbar label,
+.ops-withdrawal-form label {
+  display: grid;
+  gap: 6px;
+  color: #526078;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ops-filterbar input,
+.ops-filterbar select {
+  min-width: 0;
+}
+
+.ops-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ops-summary-list,
+.ops-rank-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ops-summary-row,
+.ops-rank-row {
+  display: grid;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  background: #fbfdf8;
+  border: 1px solid #dcebd5;
+  border-radius: 8px;
+}
+
+.ops-summary-row {
+  grid-template-columns: minmax(260px, 1fr) auto auto auto auto;
+}
+
+.ops-summary-row strong,
+.ops-summary-row small,
+.ops-rank-row strong,
+.ops-rank-row small,
+.ops-contact-card strong,
+.ops-contact-card small {
+  display: block;
+  min-width: 0;
+}
+
+.ops-summary-row small,
+.ops-rank-row small,
+.ops-contact-card small {
+  margin-top: 4px;
+  color: #697386;
+  font-size: 12px;
+}
+
+.ops-summary-row span,
+.ops-rank-row span {
+  color: #1d4f2b;
+  font-weight: 800;
+}
+
+.ops-contact-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.ops-contact-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px;
+  background: #fbfdf8;
+  border: 1px solid #dcebd5;
+  border-radius: 8px;
+}
+
+.ops-contact-card span {
+  color: #172033;
+  font-weight: 800;
+}
+
+.ops-contact-card p {
+  margin: 0;
+  color: #526078;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.ops-withdrawal-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.5fr) minmax(260px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.ops-split-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.ops-rank-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.ops-rank-row.hot {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.ops-rank-row em {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  color: #ffffff;
+  font-style: normal;
+  font-weight: 900;
+  background: #2f7d32;
+  border-radius: 8px;
+}
+
+.ops-revenue-bars {
+  display: grid;
+  gap: 10px;
+}
+
+.ops-revenue-row {
+  display: grid;
+  grid-template-columns: 84px minmax(180px, 1fr) 110px 60px;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #e6efdf;
+}
+
+.ops-revenue-row:last-child {
+  border-bottom: 0;
+}
+
+.ops-revenue-row span,
+.ops-revenue-row small {
+  color: #697386;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ops-revenue-row div {
+  height: 10px;
+  overflow: hidden;
+  background: #edf7e7;
+  border-radius: 999px;
+}
+
+.ops-revenue-row i {
+  display: block;
+  height: 100%;
+  background: #63bf54;
+  border-radius: inherit;
+}
+
 .support-layout {
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr);
@@ -2028,7 +2210,10 @@ textarea:focus {
   .operations-main-grid,
   .operations-bottom-grid,
   .permission-admin-grid,
-  .permission-summary-grid {
+  .permission-summary-grid,
+  .ops-summary-grid,
+  .ops-contact-grid,
+  .ops-split-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2036,7 +2221,9 @@ textarea:focus {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .support-filterbar {
+  .support-filterbar,
+  .ops-filterbar,
+  .ops-withdrawal-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2114,7 +2301,16 @@ textarea:focus {
   .permission-module-grid,
   .permission-checkbox-grid,
   .permission-filterbar,
-  .permission-row {
+  .permission-row,
+  .ops-filterbar,
+  .ops-summary-grid,
+  .ops-summary-row,
+  .ops-contact-grid,
+  .ops-withdrawal-form,
+  .ops-split-grid,
+  .ops-rank-row,
+  .ops-rank-row.hot,
+  .ops-revenue-row {
     grid-template-columns: 1fr;
   }
 

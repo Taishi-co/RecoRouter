@@ -80,6 +80,7 @@ const itemGroups = {
 interface BottomNavProps {
   type: keyof typeof itemGroups
   active: string
+  tone?: 'default' | 'mall'
 }
 
 const readStoredActiveKey = (storageKey: string, items: BottomNavItem[], fallback: string) => {
@@ -94,8 +95,9 @@ const writeStoredActiveKey = (storageKey: string, activeKey: string) => {
   window.sessionStorage.setItem(storageKey, activeKey)
 }
 
-export const BottomNav = ({ type, active }: BottomNavProps) => {
+export const BottomNav = ({ type, active, tone = 'default' }: BottomNavProps) => {
   const items = itemGroups[type]
+  const isMallTone = tone === 'mall'
   const bottomPadding = IS_H5_ENV ? 'max(14px, env(safe-area-inset-bottom))' : `${getFixedBottomPadding(14)}px`
   const navStateKey = `recorouter-bottom-nav:${type}`
   const [activeKey, setActiveKey] = useState(() => readStoredActiveKey(navStateKey, items, active))
@@ -209,15 +211,27 @@ export const BottomNav = ({ type, active }: BottomNavProps) => {
       }}
     >
       <View
-        className="pointer-events-auto relative flex h-16 items-center gap-1 overflow-hidden rounded-full border border-gray-200 bg-white p-1 shadow-xl"
-        style={{ boxSizing: 'border-box', width: 'min(350px, calc(100vw - 40px))' }}
+        className={cn(
+          'pointer-events-auto relative flex h-16 items-center gap-1 overflow-hidden rounded-full border bg-white p-1 shadow-xl',
+          isMallTone ? '' : 'border-gray-200',
+        )}
+        style={{
+          boxSizing: 'border-box',
+          width: 'min(350px, calc(100vw - 40px))',
+          borderColor: isMallTone ? '#DDE7D6' : undefined,
+          backgroundColor: isMallTone ? '#FFFFFF' : undefined,
+        }}
       >
         <View
-          className="absolute left-1 top-1 h-14 rounded-full bg-primary shadow-sm transition-transform duration-500 ease-out"
+          className={cn(
+            'absolute left-1 top-1 h-14 rounded-full shadow-sm transition-transform duration-500 ease-out',
+            isMallTone ? '' : 'bg-primary',
+          )}
           style={{
             width: activeIndicatorWidth,
             transform: activeIndicatorTransform,
             transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+            backgroundColor: isMallTone ? '#2F7D32' : undefined,
           }}
         />
         {items.map((item) => {
@@ -234,8 +248,11 @@ export const BottomNav = ({ type, active }: BottomNavProps) => {
               style={{ flex: '1 1 0', minWidth: 0 }}
               onClick={() => navigateTo(item)}
             >
-              <Icon size={16} color={selected ? '#FFFFFF' : '#8B95A7'} strokeWidth={2.2} />
-              <Text className={cn('text-xs font-bold leading-none transition-colors duration-300', selected ? 'text-white' : 'text-gray-500')}>
+              <Icon size={16} color={selected ? '#FFFFFF' : isMallTone ? '#6C7568' : '#8B95A7'} strokeWidth={2.2} />
+              <Text
+                className={cn('text-xs font-bold leading-none transition-colors duration-300', selected ? 'text-white' : 'text-gray-500')}
+                style={!selected && isMallTone ? { color: '#6C7568' } : undefined}
+              >
                 {item.label}
               </Text>
             </View>

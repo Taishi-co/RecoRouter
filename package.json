@@ -17,6 +17,7 @@
     "build:web": "vite build --config web-admin/vite.config.ts",
     "build:web:vehicle": "RECO_APP_PROFILE=vehicle OUTPUT_ROOT=dist-web-vehicle taro build --type h5",
     "build:web:mall": "RECO_APP_PROFILE=mall OUTPUT_ROOT=dist-web-mall taro build --type h5",
+    "build:web:admin": "RECO_APP_PROFILE=admin OUTPUT_ROOT=dist-web-admin taro build --type h5",
     "build:web:demo": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n vehicle,mall -c blue,green \"pnpm build:web:vehicle\" \"pnpm build:web:mall\"",
     "check:admin-mall-auth": "node scripts/check-admin-mall-auth.mjs",
     "check:admin-mall-ops": "node scripts/check-admin-mall-ops.mjs",
@@ -27,6 +28,7 @@
     "check:mall-wechat-auth": "node scripts/check-mall-wechat-auth.mjs",
     "check:mall-h5-width": "node scripts/check-mall-h5-width.mjs",
     "check:mall-v7-customer-experience": "node scripts/check-mall-v7-customer-experience.mjs",
+    "check:mall-ops-dual-surface": "node scripts/check-mall-ops-dual-surface.mjs",
     "check:no-physical-fks": "node scripts/check-no-physical-foreign-keys.mjs",
     "check:no-deprecated-wechat-api": "node scripts/check-no-deprecated-wechat-api.mjs",
     "check:mall-product-refresh": "node scripts/check-mall-product-refresh.mjs",
@@ -72,7 +74,7 @@
     "test:service-routers": "cargo test --manifest-path server/Cargo.toml --test service_routers",
     "tsc": "npx tsc --noEmit --skipLibCheck",
     "validate:split": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n routers,apis,no-fks,boundary,deploy-sh -c blue,magenta,cyan,yellow,green \"pnpm test:service-routers\" \"pnpm build:apis\" \"pnpm check:no-physical-fks\" \"pnpm check:merchant-enterprise-boundary\" \"pnpm check:deploy-scripts\"",
-    "validate": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n lint,tsc,sqlx-migrations,miniapp-version,wechat-api,mall-refresh,network-query,web-auth,admin-mall,admin-ops,mall-cos,mall-auth,mall-real,mall-wechat,mall-width,mall-v7,web-order-detail,web-marketing,web-ops-data,web-permissions,web-support -c red,blue,magenta,cyan,yellow,green,white,gray,redBright,blueBright,magentaBright,greenBright,cyanBright,yellowBright,whiteBright,blue,magenta,cyan,red,blueBright,green \"pnpm lint:build\" \"pnpm tsc\" \"pnpm check:sqlx-migration-immutability\" \"pnpm check:miniapp-version\" \"pnpm check:no-deprecated-wechat-api\" \"pnpm check:mall-product-refresh\" \"pnpm check:network-query-sanitization\" \"pnpm check:web-admin-auth\" \"pnpm check:admin-mall-auth\" \"pnpm check:admin-mall-ops\" \"pnpm check:mall-cos-image-paths\" \"pnpm check:mall-auth-profile\" \"pnpm check:mall-real-checkout\" \"pnpm check:mall-wechat-auth\" \"pnpm check:mall-h5-width\" \"pnpm check:mall-v7-customer-experience\" \"pnpm check:web-admin-mall-order-detail\" \"pnpm check:web-admin-mall-marketing\" \"pnpm check:web-admin-operations-dashboard\" \"pnpm check:web-admin-mall-permissions\" \"pnpm check:web-admin-support-workbench\""
+    "validate": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n lint,tsc,sqlx-migrations,miniapp-version,wechat-api,mall-refresh,network-query,web-auth,admin-mall,admin-ops,mall-cos,mall-auth,mall-real,mall-wechat,mall-width,mall-v7,mall-ops-dual,web-order-detail,web-marketing,web-ops-data,web-permissions,web-support -c red,blue,magenta,cyan,yellow,green,white,gray,redBright,blueBright,magentaBright,greenBright,cyanBright,yellowBright,whiteBright,blue,magenta,cyan,red,blueBright,green,cyanBright \"pnpm lint:build\" \"pnpm tsc\" \"pnpm check:sqlx-migration-immutability\" \"pnpm check:miniapp-version\" \"pnpm check:no-deprecated-wechat-api\" \"pnpm check:mall-product-refresh\" \"pnpm check:network-query-sanitization\" \"pnpm check:web-admin-auth\" \"pnpm check:admin-mall-auth\" \"pnpm check:admin-mall-ops\" \"pnpm check:mall-cos-image-paths\" \"pnpm check:mall-auth-profile\" \"pnpm check:mall-real-checkout\" \"pnpm check:mall-wechat-auth\" \"pnpm check:mall-h5-width\" \"pnpm check:mall-v7-customer-experience\" \"pnpm check:mall-ops-dual-surface\" \"pnpm check:web-admin-mall-order-detail\" \"pnpm check:web-admin-mall-marketing\" \"pnpm check:web-admin-operations-dashboard\" \"pnpm check:web-admin-mall-permissions\" \"pnpm check:web-admin-support-workbench\""
   },
   "lint-staged": {
     "src/**/*.{js,jsx,ts,tsx,css}": [

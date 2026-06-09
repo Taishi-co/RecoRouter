@@ -102,10 +102,45 @@ where
 {
     Router::new()
         .route("/api/admin/mall/overview", get(admin_overview::<S>))
+        .route("/api/admin/mall/ops/overview", get(admin_ops_overview::<S>))
         .route(
             "/api/admin/mall/pickup-points",
             get(admin_list_pickup_points::<S>),
         )
+        .route(
+            "/api/admin/mall/listing-requests",
+            get(admin_list_product_listing_requests::<S>)
+                .post(admin_create_product_listing_request::<S>),
+        )
+        .route(
+            "/api/admin/mall/listing-requests/:id/review",
+            post(admin_review_product_listing_request::<S>),
+        )
+        .route(
+            "/api/admin/mall/delivery-sheets",
+            get(admin_list_delivery_sheets::<S>),
+        )
+        .route(
+            "/api/admin/mall/delivery-sheets/generate",
+            post(admin_generate_delivery_sheet::<S>),
+        )
+        .route(
+            "/api/admin/mall/delivery-sheets/:id/status",
+            put(admin_update_delivery_sheet_status::<S>),
+        )
+        .route(
+            "/api/admin/mall/finance/bills",
+            get(admin_list_finance_bills::<S>),
+        )
+        .route(
+            "/api/admin/mall/finance/settlements",
+            get(admin_list_settlement_records::<S>),
+        )
+        .route(
+            "/api/admin/mall/finance/withdrawals",
+            get(admin_list_withdrawal_requests::<S>).post(admin_create_withdrawal::<S>),
+        )
+        .route("/api/admin/mall/stats/sales", get(admin_sales_stats::<S>))
         .route(
             "/api/admin/mall/categories",
             get(admin_list_categories::<S>).post(admin_create_category::<S>),
@@ -255,6 +290,112 @@ struct PickupPointQuery {
     status: Option<String>,
     #[serde(alias = "community_name")]
     community_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProductListingRequestQuery {
+    status: Option<String>,
+    #[serde(alias = "product_id")]
+    product_id: Option<String>,
+    #[serde(alias = "request_type")]
+    request_type: Option<String>,
+    #[serde(alias = "supplier_id")]
+    supplier_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProductListingRequestMutation {
+    #[serde(alias = "product_id")]
+    product_id: Option<String>,
+    #[serde(alias = "request_type")]
+    request_type: Option<String>,
+    #[serde(alias = "requested_status")]
+    requested_status: Option<String>,
+    #[serde(alias = "requester_id")]
+    requester_id: Option<String>,
+    #[serde(alias = "requester_role")]
+    requester_role: Option<String>,
+    #[serde(alias = "supplier_id")]
+    supplier_id: Option<String>,
+    reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProductListingReviewRequest {
+    status: String,
+    #[serde(alias = "reviewed_by")]
+    reviewed_by: Option<String>,
+    #[serde(alias = "review_note")]
+    review_note: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeliverySheetQuery {
+    #[serde(alias = "sheet_date")]
+    sheet_date: Option<String>,
+    status: Option<String>,
+    #[serde(alias = "pickup_point_id")]
+    pickup_point_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GenerateDeliverySheetRequest {
+    #[serde(alias = "sheet_date")]
+    sheet_date: Option<String>,
+    #[serde(alias = "pickup_point_id")]
+    pickup_point_id: Option<String>,
+    #[serde(alias = "generated_by")]
+    generated_by: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateDeliverySheetStatusRequest {
+    status: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FinanceQuery {
+    period: Option<String>,
+    #[serde(alias = "start_date")]
+    start_date: Option<String>,
+    #[serde(alias = "end_date")]
+    end_date: Option<String>,
+    #[serde(alias = "supplier_id")]
+    supplier_id: Option<String>,
+    status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WithdrawalMutationRequest {
+    #[serde(alias = "requester_id")]
+    requester_id: Option<String>,
+    #[serde(alias = "requester_role")]
+    requester_role: Option<String>,
+    #[serde(alias = "supplier_id")]
+    supplier_id: Option<String>,
+    #[serde(alias = "amount_cents")]
+    amount_cents: Option<i64>,
+    #[serde(alias = "bank_account_snapshot")]
+    bank_account_snapshot: Option<Value>,
+    note: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SalesStatsQuery {
+    period: Option<String>,
+    #[serde(alias = "start_date")]
+    start_date: Option<String>,
+    #[serde(alias = "end_date")]
+    end_date: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -449,6 +590,8 @@ struct ProductMutationRequest {
     description: Option<String>,
     #[serde(alias = "image_url")]
     image_url: Option<String>,
+    #[serde(alias = "supply_price_cents")]
+    supply_price_cents: Option<i64>,
     #[serde(alias = "price_cents")]
     price_cents: Option<i64>,
     #[serde(alias = "original_price_cents")]
@@ -2152,6 +2295,7 @@ where
     ensure_category(&state.db, &category_code).await?;
     let tags = serde_json::to_value(body.tags.unwrap_or_default())
         .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+    validate_optional_non_negative_i64(body.supply_price_cents, "供货价不能小于0")?;
     validate_optional_non_negative_i32(body.stock_alert_threshold, "库存预警阈值不能小于0")?;
     validate_optional_non_negative_f64(body.length_cm, "长不能小于0")?;
     validate_optional_non_negative_f64(body.width_cm, "宽不能小于0")?;
@@ -2163,15 +2307,15 @@ where
         r#"
         INSERT INTO mall_products (
           category_id, category_code, sku, name, subtitle, description, image_url,
-          price_cents, original_price_cents, stock, status, tags, delivery_minutes,
+          supply_price_cents, price_cents, original_price_cents, stock, status, tags, delivery_minutes,
           cold_chain_required, length_cm, width_cm, height_cm, volume_liters,
           weight_kg, stock_alert_threshold
         )
         VALUES (
           (SELECT id FROM mall_categories WHERE code = $1),
-          $1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, 0),
-          COALESCE($10, 'on_sale'), $11, COALESCE($12, 18), COALESCE($13, false),
-          $14, $15, $16, $17, $18, COALESCE($19, 15)
+          $1, $2, $3, $4, $5, $6, COALESCE($7, 0), $8, $9, COALESCE($10, 0),
+          COALESCE($11, 'on_sale'), $12, COALESCE($13, 18), COALESCE($14, false),
+          $15, $16, $17, $18, $19, COALESCE($20, 15)
         )
         RETURNING id
         "#,
@@ -2182,6 +2326,7 @@ where
     .bind(body.subtitle)
     .bind(body.description)
     .bind(body.image_url)
+    .bind(body.supply_price_cents)
     .bind(price_cents)
     .bind(body.original_price_cents)
     .bind(body.stock)
@@ -2214,6 +2359,7 @@ where
     if let Some(category_code) = body.category_code.as_deref() {
         ensure_category(&state.db, category_code).await?;
     }
+    validate_optional_non_negative_i64(body.supply_price_cents, "供货价不能小于0")?;
     validate_optional_non_negative_i32(body.stock_alert_threshold, "库存预警阈值不能小于0")?;
     validate_optional_non_negative_f64(body.length_cm, "长不能小于0")?;
     validate_optional_non_negative_f64(body.width_cm, "宽不能小于0")?;
@@ -2236,19 +2382,20 @@ where
             subtitle = COALESCE($5, subtitle),
             description = COALESCE($6, description),
             image_url = COALESCE($7, image_url),
-            price_cents = COALESCE($8, price_cents),
-            original_price_cents = COALESCE($9, original_price_cents),
-            stock = COALESCE($10, stock),
-            status = COALESCE($11, status),
-            tags = COALESCE($12, tags),
-            delivery_minutes = COALESCE($13, delivery_minutes),
-            cold_chain_required = COALESCE($14, cold_chain_required),
-            length_cm = COALESCE($15, length_cm),
-            width_cm = COALESCE($16, width_cm),
-            height_cm = COALESCE($17, height_cm),
-            volume_liters = COALESCE($18, volume_liters),
-            weight_kg = COALESCE($19, weight_kg),
-            stock_alert_threshold = COALESCE($20, stock_alert_threshold),
+            supply_price_cents = COALESCE($8, supply_price_cents),
+            price_cents = COALESCE($9, price_cents),
+            original_price_cents = COALESCE($10, original_price_cents),
+            stock = COALESCE($11, stock),
+            status = COALESCE($12, status),
+            tags = COALESCE($13, tags),
+            delivery_minutes = COALESCE($14, delivery_minutes),
+            cold_chain_required = COALESCE($15, cold_chain_required),
+            length_cm = COALESCE($16, length_cm),
+            width_cm = COALESCE($17, width_cm),
+            height_cm = COALESCE($18, height_cm),
+            volume_liters = COALESCE($19, volume_liters),
+            weight_kg = COALESCE($20, weight_kg),
+            stock_alert_threshold = COALESCE($21, stock_alert_threshold),
             updated_at = now()
         WHERE id = $1
         RETURNING id
@@ -2261,6 +2408,7 @@ where
     .bind(body.subtitle)
     .bind(body.description)
     .bind(body.image_url)
+    .bind(body.supply_price_cents)
     .bind(body.price_cents)
     .bind(body.original_price_cents)
     .bind(body.stock)
@@ -3125,6 +3273,718 @@ where
     .fetch_one(&state.db)
     .await?;
     Ok(ok("查询成功", overview))
+}
+
+async fn admin_ops_overview<S>(
+    State(state): State<AppState<S>>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let overview = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT jsonb_build_object(
+          'onSaleProducts', (SELECT count(*) FROM mall_products WHERE status = 'on_sale'),
+          'stockAlerts', (SELECT count(*) FROM mall_products WHERE stock <= stock_alert_threshold),
+          'pendingListingRequests', (SELECT count(*) FROM mall_product_listing_requests WHERE status = 'pending'),
+          'todayOrders', (SELECT count(*) FROM mall_orders WHERE created_at >= date_trunc('day', now())),
+          'historyOrders', (SELECT count(*) FROM mall_orders),
+          'exceptionOrders', (
+            SELECT count(*) FROM mall_orders
+            WHERE status = 'cancelled'
+               OR refund_status IS NOT NULL
+               OR after_sale_status IS NOT NULL
+          ),
+          'deliverySheets', (SELECT count(*) FROM mall_delivery_sheets WHERE sheet_date = CURRENT_DATE),
+          'pendingWithdrawals', (SELECT count(*) FROM mall_withdrawal_requests WHERE status IN ('submitted', 'reviewing')),
+          'todayRevenueCents', COALESCE((
+            SELECT sum(payable_cents)
+            FROM mall_orders
+            WHERE payment_status = 'paid'
+              AND created_at >= date_trunc('day', now())
+          ), 0),
+          'todaySupplyCents', COALESCE((
+            SELECT sum(item.quantity * COALESCE(NULLIF(product.supply_price_cents, 0), item.unit_price_cents))
+            FROM mall_order_items item
+            JOIN mall_orders orders ON orders.id = item.order_id
+            LEFT JOIN mall_products product ON product.id = item.product_id
+            WHERE orders.payment_status = 'paid'
+              AND orders.created_at >= date_trunc('day', now())
+          ), 0)
+        )
+        "#,
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(ok("查询成功", overview))
+}
+
+async fn admin_list_product_listing_requests<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<ProductListingRequestQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT jsonb_build_object(
+          'id', request.id,
+          'productId', request.product_id,
+          'productName', product.name,
+          'sku', product.sku,
+          'currentStatus', product.status,
+          'requestType', request.request_type,
+          'requestedStatus', request.requested_status,
+          'requesterId', request.requester_id,
+          'requesterRole', request.requester_role,
+          'supplierId', request.supplier_id,
+          'reason', request.reason,
+          'status', request.status,
+          'reviewedBy', request.reviewed_by,
+          'reviewedAt', request.reviewed_at,
+          'reviewNote', request.review_note,
+          'createdAt', request.created_at,
+          'updatedAt', request.updated_at
+        )
+        FROM mall_product_listing_requests request
+        LEFT JOIN mall_products product ON product.id = request.product_id
+        WHERE 1 = 1
+        "#,
+    );
+
+    if let Some(status) = non_empty(query.status) {
+        builder.push(" AND request.status = ");
+        builder.push_bind(status);
+    }
+    if let Some(product_id) = non_empty(query.product_id) {
+        builder.push(" AND request.product_id = ");
+        builder.push_bind(product_id);
+    }
+    if let Some(request_type) = non_empty(query.request_type) {
+        builder.push(" AND request.request_type = ");
+        builder.push_bind(request_type);
+    }
+    if let Some(supplier_id) = non_empty(query.supplier_id) {
+        builder.push(" AND request.supplier_id = ");
+        builder.push_bind(supplier_id);
+    }
+    builder.push(" ORDER BY request.created_at DESC LIMIT 100");
+
+    Ok(ok(
+        "查询成功",
+        builder
+            .build_query_scalar::<Value>()
+            .fetch_all(&state.db)
+            .await?,
+    ))
+}
+
+async fn admin_create_product_listing_request<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<ProductListingRequestMutation>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let product_id = require_non_empty(body.product_id, "商品ID不能为空")?;
+    let requested_status = normalize_product_status(&require_non_empty(
+        body.requested_status,
+        "目标上下架状态不能为空",
+    )?)?;
+    ensure_product_exists(&state.db, &product_id).await?;
+
+    let request_type = non_empty(body.request_type).unwrap_or_else(|| "status_change".to_string());
+    validate_listing_request_type(&request_type)?;
+    let requester_role = non_empty(body.requester_role).unwrap_or_else(|| "admin".to_string());
+    validate_listing_requester_role(&requester_role)?;
+
+    let request = sqlx::query_scalar::<_, Value>(
+        r#"
+        INSERT INTO mall_product_listing_requests (
+          product_id, request_type, requested_status, requester_id, requester_role,
+          supplier_id, reason, status
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
+        RETURNING jsonb_build_object(
+          'id', id,
+          'productId', product_id,
+          'requestType', request_type,
+          'requestedStatus', requested_status,
+          'requesterId', requester_id,
+          'requesterRole', requester_role,
+          'supplierId', supplier_id,
+          'reason', reason,
+          'status', status,
+          'createdAt', created_at,
+          'updatedAt', updated_at
+        )
+        "#,
+    )
+    .bind(product_id)
+    .bind(request_type)
+    .bind(requested_status)
+    .bind(non_empty(body.requester_id))
+    .bind(requester_role)
+    .bind(non_empty(body.supplier_id))
+    .bind(non_empty(body.reason))
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(ok("上下架申请已提交", request))
+}
+
+async fn admin_review_product_listing_request<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<ProductListingReviewRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let status = normalize_listing_review_status(&body.status)?;
+    let request = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_product_listing_requests
+        SET status = $2,
+            reviewed_by = $3,
+            reviewed_at = now(),
+            review_note = $4,
+            updated_at = now()
+        WHERE id = $1
+          AND status = 'pending'
+        RETURNING jsonb_build_object(
+          'id', id,
+          'productId', product_id,
+          'requestedStatus', requested_status,
+          'status', status,
+          'reviewedBy', reviewed_by,
+          'reviewedAt', reviewed_at,
+          'reviewNote', review_note
+        )
+        "#,
+    )
+    .bind(&id)
+    .bind(&status)
+    .bind(non_empty(body.reviewed_by))
+    .bind(non_empty(body.review_note))
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("待审核申请不存在".to_string()))?;
+
+    if status == "approved" {
+        let product_id = string_field(&request, "productId");
+        let requested_status = string_field(&request, "requestedStatus");
+        sqlx::query(
+            r#"
+            UPDATE mall_products
+            SET status = $2,
+                updated_at = now()
+            WHERE id = $1
+            "#,
+        )
+        .bind(product_id)
+        .bind(requested_status)
+        .execute(&state.db)
+        .await?;
+    }
+
+    Ok(ok("上下架申请已审核", request))
+}
+
+async fn admin_list_delivery_sheets<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<DeliverySheetQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT delivery_sheet_json(sheet)
+        FROM mall_delivery_sheets sheet
+        WHERE 1 = 1
+        "#,
+    );
+
+    if let Some(sheet_date) = non_empty(query.sheet_date) {
+        builder.push(" AND sheet.sheet_date = ");
+        builder.push_bind(sheet_date);
+        builder.push("::date");
+    }
+    if let Some(status) = non_empty(query.status) {
+        builder.push(" AND sheet.status = ");
+        builder.push_bind(status);
+    }
+    if let Some(pickup_point_id) = non_empty(query.pickup_point_id) {
+        builder.push(" AND sheet.pickup_point_id = ");
+        builder.push_bind(pickup_point_id);
+    }
+    builder.push(" ORDER BY sheet.sheet_date DESC, sheet.pickup_point_name ASC LIMIT 100");
+
+    Ok(ok(
+        "查询成功",
+        builder
+            .build_query_scalar::<Value>()
+            .fetch_all(&state.db)
+            .await?,
+    ))
+}
+
+async fn admin_generate_delivery_sheet<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<GenerateDeliverySheetRequest>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let sheet_date =
+        non_empty(body.sheet_date).unwrap_or_else(|| chrono::Utc::now().date_naive().to_string());
+    let pickup_point_id = non_empty(body.pickup_point_id);
+
+    sqlx::query(
+        r#"
+        WITH order_scope AS (
+          SELECT
+            orders.id,
+            COALESCE(orders.pickup_point_id, 'unassigned') AS pickup_point_id,
+            COALESCE(point.name, '未分配自提点') AS pickup_point_name,
+            point.community_name,
+            orders.payable_cents
+          FROM mall_orders orders
+          LEFT JOIN mall_pickup_points point ON point.id = orders.pickup_point_id
+          WHERE orders.created_at >= $1::date
+            AND orders.created_at < ($1::date + INTERVAL '1 day')
+            AND ($3::text IS NULL OR orders.pickup_point_id = $3)
+            AND orders.status IN ('paid', 'ready_for_pickup', 'dispatching', 'delivering')
+        ),
+        item_counts AS (
+          SELECT
+            scope.pickup_point_id,
+            COALESCE(sum(item.quantity), 0)::integer AS item_count
+          FROM order_scope scope
+          LEFT JOIN mall_order_items item ON item.order_id = scope.id
+          GROUP BY scope.pickup_point_id
+        ),
+        grouped AS (
+          SELECT
+            $1::date AS sheet_date,
+            scope.pickup_point_id,
+            max(scope.pickup_point_name) AS pickup_point_name,
+            max(scope.community_name) AS community_name,
+            count(scope.id)::integer AS order_count,
+            max(item_counts.item_count) AS item_count,
+            COALESCE(sum(scope.payable_cents), 0) AS total_payable_cents
+          FROM order_scope scope
+          LEFT JOIN item_counts ON item_counts.pickup_point_id = scope.pickup_point_id
+          GROUP BY scope.pickup_point_id
+        )
+        INSERT INTO mall_delivery_sheets (
+          sheet_date, pickup_point_id, pickup_point_name, community_name, status,
+          order_count, item_count, total_payable_cents, generated_by, metadata
+        )
+        SELECT
+          sheet_date, pickup_point_id, pickup_point_name, community_name, 'generated',
+          order_count, item_count, total_payable_cents, $2,
+          jsonb_build_object('generatedFrom', 'mall_orders')
+        FROM grouped
+        ON CONFLICT (sheet_date, pickup_point_id)
+        DO UPDATE SET
+          pickup_point_name = EXCLUDED.pickup_point_name,
+          community_name = EXCLUDED.community_name,
+          order_count = EXCLUDED.order_count,
+          item_count = EXCLUDED.item_count,
+          total_payable_cents = EXCLUDED.total_payable_cents,
+          generated_by = EXCLUDED.generated_by,
+          generated_at = now(),
+          updated_at = now()
+        "#,
+    )
+    .bind(&sheet_date)
+    .bind(non_empty(body.generated_by))
+    .bind(pickup_point_id)
+    .execute(&state.db)
+    .await?;
+
+    let sheets = fetch_delivery_sheets_for_date(&state.db, &sheet_date).await?;
+    Ok(ok("配送单已生成", sheets))
+}
+
+async fn admin_update_delivery_sheet_status<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<UpdateDeliverySheetStatusRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let status = normalize_delivery_sheet_status(&body.status)?;
+    let sheet = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_delivery_sheets
+        SET status = $2,
+            shipped_at = CASE WHEN $2 = 'shipped' THEN COALESCE(shipped_at, now()) ELSE shipped_at END,
+            delivered_at = CASE WHEN $2 = 'delivered' THEN COALESCE(delivered_at, now()) ELSE delivered_at END,
+            updated_at = now()
+        WHERE id = $1
+        RETURNING delivery_sheet_json(mall_delivery_sheets)
+        "#,
+    )
+    .bind(id)
+    .bind(status)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("配送单不存在".to_string()))?;
+
+    Ok(ok("配送状态已更新", sheet))
+}
+
+async fn admin_list_finance_bills<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<FinanceQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let period = normalize_stats_period(query.period.as_deref().unwrap_or("day"))?;
+    let bills = sqlx::query_scalar::<_, Value>(
+        r#"
+        WITH paid_orders AS (
+          SELECT
+            date_trunc($1, orders.created_at)::date AS period_start,
+            orders.id,
+            orders.payable_cents
+          FROM mall_orders orders
+          WHERE orders.payment_status = 'paid'
+            AND ($2::date IS NULL OR orders.created_at >= $2::date)
+            AND ($3::date IS NULL OR orders.created_at < ($3::date + INTERVAL '1 day'))
+        ),
+        item_cost AS (
+          SELECT
+            paid_orders.period_start,
+            COALESCE(sum(item.quantity * COALESCE(NULLIF(product.supply_price_cents, 0), item.unit_price_cents)), 0) AS supply_amount_cents
+          FROM paid_orders
+          JOIN mall_order_items item ON item.order_id = paid_orders.id
+          LEFT JOIN mall_products product ON product.id = item.product_id
+          GROUP BY paid_orders.period_start
+        ),
+        refunds AS (
+          SELECT
+            date_trunc($1, sale.created_at)::date AS period_start,
+            COALESCE(sum(sale.amount_cents), 0) AS refund_amount_cents
+          FROM mall_after_sales sale
+          WHERE sale.status IN ('submitted', 'approved', 'refunded')
+            AND ($2::date IS NULL OR sale.created_at >= $2::date)
+            AND ($3::date IS NULL OR sale.created_at < ($3::date + INTERVAL '1 day'))
+          GROUP BY date_trunc($1, sale.created_at)::date
+        ),
+        grouped AS (
+          SELECT
+            paid_orders.period_start,
+            count(DISTINCT paid_orders.id) AS order_count,
+            COALESCE(sum(paid_orders.payable_cents), 0) AS payable_cents,
+            COALESCE(max(item_cost.supply_amount_cents), 0) AS supply_amount_cents,
+            COALESCE(max(refunds.refund_amount_cents), 0) AS refund_amount_cents
+          FROM paid_orders
+          LEFT JOIN item_cost ON item_cost.period_start = paid_orders.period_start
+          LEFT JOIN refunds ON refunds.period_start = paid_orders.period_start
+          GROUP BY paid_orders.period_start
+        )
+        SELECT jsonb_build_object(
+          'period', $1,
+          'periodStart', period_start,
+          'periodEnd',
+            CASE
+              WHEN $1 = 'week' THEN period_start + 6
+              WHEN $1 = 'month' THEN (period_start + INTERVAL '1 month' - INTERVAL '1 day')::date
+              ELSE period_start
+            END,
+          'orderCount', order_count,
+          'payableCents', payable_cents,
+          'supplyAmountCents', supply_amount_cents,
+          'refundAmountCents', refund_amount_cents,
+          'settlementAmountCents', GREATEST(supply_amount_cents - refund_amount_cents, 0)
+        )
+        FROM grouped
+        ORDER BY period_start DESC
+        LIMIT 60
+        "#,
+    )
+    .bind(period)
+    .bind(non_empty(query.start_date))
+    .bind(non_empty(query.end_date))
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(ok("查询成功", bills))
+}
+
+async fn admin_list_settlement_records<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<FinanceQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT jsonb_build_object(
+          'id', id,
+          'periodType', period_type,
+          'periodStart', period_start,
+          'periodEnd', period_end,
+          'supplierId', supplier_id,
+          'supplyAmountCents', supply_amount_cents,
+          'refundAmountCents', refund_amount_cents,
+          'settlementAmountCents', settlement_amount_cents,
+          'status', status,
+          'voucherUrl', voucher_url,
+          'paidAt', paid_at,
+          'createdAt', created_at,
+          'updatedAt', updated_at
+        )
+        FROM mall_settlement_records
+        WHERE 1 = 1
+        "#,
+    );
+
+    if let Some(status) = non_empty(query.status) {
+        builder.push(" AND status = ");
+        builder.push_bind(status);
+    }
+    if let Some(period) = non_empty(query.period) {
+        builder.push(" AND period_type = ");
+        builder.push_bind(period);
+    }
+    if let Some(supplier_id) = non_empty(query.supplier_id) {
+        builder.push(" AND supplier_id = ");
+        builder.push_bind(supplier_id);
+    }
+    builder.push(" ORDER BY period_start DESC, created_at DESC LIMIT 100");
+
+    Ok(ok(
+        "查询成功",
+        builder
+            .build_query_scalar::<Value>()
+            .fetch_all(&state.db)
+            .await?,
+    ))
+}
+
+async fn admin_list_withdrawal_requests<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<FinanceQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT jsonb_build_object(
+          'id', id,
+          'requesterId', requester_id,
+          'requesterRole', requester_role,
+          'supplierId', supplier_id,
+          'amountCents', amount_cents,
+          'status', status,
+          'bankAccountSnapshot', bank_account_snapshot,
+          'reviewedBy', reviewed_by,
+          'reviewedAt', reviewed_at,
+          'paidAt', paid_at,
+          'voucherUrl', voucher_url,
+          'note', note,
+          'createdAt', created_at,
+          'updatedAt', updated_at
+        )
+        FROM mall_withdrawal_requests
+        WHERE 1 = 1
+        "#,
+    );
+
+    if let Some(status) = non_empty(query.status) {
+        builder.push(" AND status = ");
+        builder.push_bind(status);
+    }
+    if let Some(supplier_id) = non_empty(query.supplier_id) {
+        builder.push(" AND supplier_id = ");
+        builder.push_bind(supplier_id);
+    }
+    builder.push(" ORDER BY created_at DESC LIMIT 100");
+
+    Ok(ok(
+        "查询成功",
+        builder
+            .build_query_scalar::<Value>()
+            .fetch_all(&state.db)
+            .await?,
+    ))
+}
+
+async fn admin_create_withdrawal<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<WithdrawalMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let amount_cents = body.amount_cents.unwrap_or(0);
+    if amount_cents <= 0 {
+        return Err(ApiError::BadRequest("提现金额必须大于0".to_string()));
+    }
+    let requester_role = non_empty(body.requester_role).unwrap_or_else(|| "admin".to_string());
+    validate_listing_requester_role(&requester_role)?;
+
+    let withdrawal = sqlx::query_scalar::<_, Value>(
+        r#"
+        INSERT INTO mall_withdrawal_requests (
+          requester_id, requester_role, supplier_id, amount_cents,
+          bank_account_snapshot, note
+        )
+        VALUES ($1, $2, $3, $4, COALESCE($5, '{}'::jsonb), $6)
+        RETURNING jsonb_build_object(
+          'id', id,
+          'requesterId', requester_id,
+          'requesterRole', requester_role,
+          'supplierId', supplier_id,
+          'amountCents', amount_cents,
+          'status', status,
+          'bankAccountSnapshot', bank_account_snapshot,
+          'note', note,
+          'createdAt', created_at,
+          'updatedAt', updated_at
+        )
+        "#,
+    )
+    .bind(non_empty(body.requester_id))
+    .bind(requester_role)
+    .bind(non_empty(body.supplier_id))
+    .bind(amount_cents)
+    .bind(body.bank_account_snapshot)
+    .bind(non_empty(body.note))
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(ok("提现申请已提交", withdrawal))
+}
+
+async fn admin_sales_stats<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<SalesStatsQuery>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let period = normalize_stats_period(query.period.as_deref().unwrap_or("day"))?;
+    let stats = sqlx::query_scalar::<_, Value>(
+        r#"
+        WITH paid_orders AS (
+          SELECT
+            id,
+            created_at,
+            payable_cents
+          FROM mall_orders
+          WHERE payment_status = 'paid'
+            AND ($2::date IS NULL OR created_at >= $2::date)
+            AND ($3::date IS NULL OR created_at < ($3::date + INTERVAL '1 day'))
+        ),
+        sales AS (
+          SELECT
+            item.product_id,
+            item.product_name,
+            COALESCE(item.category_code, product.category_code, 'uncategorized') AS category_code,
+            COALESCE(category.name, item.category_code, '未分类') AS category_name,
+            item.quantity,
+            item.line_total_cents,
+            paid_orders.created_at
+          FROM paid_orders
+          JOIN mall_order_items item ON item.order_id = paid_orders.id
+          LEFT JOIN mall_products product ON product.id = item.product_id
+          LEFT JOIN mall_categories category ON category.code = COALESCE(item.category_code, product.category_code)
+        ),
+        product_stats AS (
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'productId', product_rows.product_id,
+              'productName', product_rows.product_name,
+              'quantity', product_rows.quantity,
+              'salesCents', product_rows.sales_cents
+            )
+            ORDER BY product_rows.quantity DESC, product_rows.sales_cents DESC
+          ) AS rows
+          FROM (
+            SELECT
+              product_id,
+              product_name,
+              sum(quantity)::integer AS quantity,
+              sum(line_total_cents) AS sales_cents
+            FROM sales
+            GROUP BY product_id, product_name
+            ORDER BY sum(quantity) DESC, sum(line_total_cents) DESC
+            LIMIT 20
+          ) product_rows
+        ),
+        category_stats AS (
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'categoryCode', category_rows.category_code,
+              'categoryName', category_rows.category_name,
+              'quantity', category_rows.quantity,
+              'salesCents', category_rows.sales_cents
+            )
+            ORDER BY category_rows.sales_cents DESC
+          ) AS rows
+          FROM (
+            SELECT
+              category_code,
+              category_name,
+              sum(quantity)::integer AS quantity,
+              sum(line_total_cents) AS sales_cents
+            FROM sales
+            GROUP BY category_code, category_name
+            ORDER BY sum(line_total_cents) DESC
+          ) category_rows
+        ),
+        trend AS (
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'bucket', trend_rows.bucket,
+              'orderCount', trend_rows.order_count,
+              'salesCents', trend_rows.sales_cents
+            )
+            ORDER BY trend_rows.bucket ASC
+          ) AS rows
+          FROM (
+            SELECT
+              date_trunc($1, paid_orders.created_at)::date AS bucket,
+              count(*)::integer AS order_count,
+              sum(paid_orders.payable_cents) AS sales_cents
+            FROM paid_orders
+            GROUP BY date_trunc($1, paid_orders.created_at)::date
+            ORDER BY bucket ASC
+          ) trend_rows
+        )
+        SELECT jsonb_build_object(
+          'period', $1,
+          'summary', jsonb_build_object(
+            'orderCount', COALESCE((SELECT count(*) FROM paid_orders), 0),
+            'salesCents', COALESCE((SELECT sum(payable_cents) FROM paid_orders), 0),
+            'itemQuantity', COALESCE((SELECT sum(quantity) FROM sales), 0)
+          ),
+          'productStats', COALESCE((SELECT rows FROM product_stats), '[]'::jsonb),
+          'categoryStats', COALESCE((SELECT rows FROM category_stats), '[]'::jsonb),
+          'topProducts', COALESCE((SELECT rows FROM product_stats), '[]'::jsonb),
+          'trend', COALESCE((SELECT rows FROM trend), '[]'::jsonb)
+        )
+        "#,
+    )
+    .bind(period)
+    .bind(non_empty(query.start_date))
+    .bind(non_empty(query.end_date))
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(ok("查询成功", stats))
 }
 
 async fn create_support_session<S>(
@@ -5217,6 +6077,20 @@ async fn fetch_order_detail(pool: &PgPool, order_identifier: &str) -> ApiResult<
     .ok_or_else(|| ApiError::NotFound("订单不存在".to_string()))
 }
 
+async fn fetch_delivery_sheets_for_date(pool: &PgPool, sheet_date: &str) -> ApiResult<Vec<Value>> {
+    Ok(sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT delivery_sheet_json(sheet)
+        FROM mall_delivery_sheets sheet
+        WHERE sheet.sheet_date = $1::date
+        ORDER BY sheet.pickup_point_name ASC
+        "#,
+    )
+    .bind(sheet_date)
+    .fetch_all(pool)
+    .await?)
+}
+
 async fn fetch_order_events(pool: &PgPool, order_id: &str) -> ApiResult<Vec<Value>> {
     Ok(sqlx::query_scalar::<_, Value>(
         r#"
@@ -5321,6 +6195,18 @@ async fn ensure_product_can_sell(pool: &PgPool, product_id: &str, quantity: i32)
     let stock = stock.ok_or_else(|| ApiError::NotFound("商品不存在或已下架".to_string()))?;
     if stock < quantity {
         return Err(ApiError::BadRequest("商品库存不足".to_string()));
+    }
+    Ok(())
+}
+
+async fn ensure_product_exists(pool: &PgPool, product_id: &str) -> ApiResult<()> {
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM mall_products WHERE id = $1)")
+            .bind(product_id)
+            .fetch_one(pool)
+            .await?;
+    if !exists {
+        return Err(ApiError::NotFound("商品不存在".to_string()));
     }
     Ok(())
 }
@@ -5836,6 +6722,68 @@ fn validate_home_banner_status(status: &str) -> ApiResult<()> {
     }
 }
 
+fn normalize_product_status(status: &str) -> ApiResult<String> {
+    let normalized = status.trim().to_ascii_lowercase();
+    if matches!(
+        normalized.as_str(),
+        "on_sale" | "off_sale" | "draft" | "inactive"
+    ) {
+        Ok(normalized)
+    } else {
+        Err(ApiError::BadRequest("商品上下架状态不正确".to_string()))
+    }
+}
+
+fn validate_listing_request_type(request_type: &str) -> ApiResult<()> {
+    if matches!(
+        request_type,
+        "status_change" | "new_product" | "stock_update" | "listing" | "delisting"
+    ) {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest("上下架申请类型不正确".to_string()))
+    }
+}
+
+fn validate_listing_requester_role(role: &str) -> ApiResult<()> {
+    if matches!(role, "admin" | "supplier") {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest("运营账号类型不正确".to_string()))
+    }
+}
+
+fn normalize_listing_review_status(status: &str) -> ApiResult<String> {
+    let normalized = status.trim().to_ascii_lowercase();
+    if matches!(normalized.as_str(), "approved" | "rejected") {
+        Ok(normalized)
+    } else {
+        Err(ApiError::BadRequest("审核状态不正确".to_string()))
+    }
+}
+
+fn normalize_delivery_sheet_status(status: &str) -> ApiResult<String> {
+    let normalized = status.trim().to_ascii_lowercase();
+    if matches!(
+        normalized.as_str(),
+        "generated" | "shipped" | "delivered" | "cancelled"
+    ) {
+        Ok(normalized)
+    } else {
+        Err(ApiError::BadRequest("配送单状态不正确".to_string()))
+    }
+}
+
+fn normalize_stats_period(period: &str) -> ApiResult<String> {
+    let normalized = period.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "day" | "7d" | "14d" | "30d" | "90d" => Ok("day".to_string()),
+        "week" => Ok("week".to_string()),
+        "month" => Ok("month".to_string()),
+        _ => Err(ApiError::BadRequest("统计周期不正确".to_string())),
+    }
+}
+
 fn validate_home_banner_link_type(link_type: &str) -> ApiResult<()> {
     if matches!(
         link_type,
@@ -5968,6 +6916,14 @@ fn validate_positive_i32(value: i32, message: &str) -> ApiResult<()> {
 }
 
 fn validate_optional_non_negative_i32(value: Option<i32>, message: &str) -> ApiResult<()> {
+    if value.is_some_and(|next| next < 0) {
+        Err(ApiError::BadRequest(message.to_string()))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_optional_non_negative_i64(value: Option<i64>, message: &str) -> ApiResult<()> {
     if value.is_some_and(|next| next < 0) {
         Err(ApiError::BadRequest(message.to_string()))
     } else {

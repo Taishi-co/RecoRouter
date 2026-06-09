@@ -18,6 +18,7 @@ export interface MallProduct {
   subtitle?: string | null
   description?: string | null
   imageUrl?: string | null
+  supplyPriceCents?: number | null
   priceCents: number
   originalPriceCents?: number | null
   stock: number
@@ -444,6 +445,132 @@ export interface MallSettings {
   riskThresholds: Record<string, unknown>
 }
 
+export interface MallOpsOverview {
+  onSaleProducts?: number
+  stockAlerts?: number
+  pendingListingRequests?: number
+  todayOrders?: number
+  historyOrders?: number
+  exceptionOrders?: number
+  deliverySheets?: number
+  pendingWithdrawals?: number
+  todayRevenueCents?: number
+  todaySupplyCents?: number
+}
+
+export interface MallProductListingRequest {
+  id: string
+  productId: string
+  productName?: string | null
+  sku?: string | null
+  currentStatus?: string | null
+  requestType: string
+  requestedStatus: string
+  requesterId?: string | null
+  requesterRole?: string | null
+  supplierId?: string | null
+  reason?: string | null
+  status: string
+  reviewedBy?: string | null
+  reviewedAt?: string | null
+  reviewNote?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface MallDeliverySheet {
+  id: string
+  sheetDate: string
+  pickupPointId: string
+  pickupPointName: string
+  communityName?: string | null
+  status: string
+  orderCount: number
+  itemCount: number
+  totalPayableCents: number
+  generatedBy?: string | null
+  generatedAt?: string
+  shippedAt?: string | null
+  deliveredAt?: string | null
+  metadata?: Record<string, unknown>
+}
+
+export interface MallFinanceBill {
+  period?: string
+  periodStart: string
+  periodEnd?: string
+  orderCount?: number
+  payableCents?: number
+  supplyAmountCents?: number
+  refundAmountCents?: number
+  settlementAmountCents?: number
+}
+
+export interface MallSettlementRecord {
+  id: string
+  periodType: string
+  periodStart: string
+  periodEnd: string
+  supplierId?: string | null
+  supplyAmountCents: number
+  refundAmountCents: number
+  settlementAmountCents: number
+  status: string
+  voucherUrl?: string | null
+  paidAt?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface MallWithdrawalRequest {
+  id: string
+  requesterId?: string | null
+  requesterRole: string
+  supplierId?: string | null
+  amountCents: number
+  status: string
+  bankAccountSnapshot?: Record<string, unknown>
+  reviewedBy?: string | null
+  reviewedAt?: string | null
+  paidAt?: string | null
+  voucherUrl?: string | null
+  note?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface MallSalesStats {
+  period: string
+  summary?: {
+    orderCount?: number
+    salesCents?: number
+    itemQuantity?: number
+  }
+  productStats?: Array<{
+    productId: string
+    productName: string
+    quantity: number
+    salesCents: number
+  }>
+  categoryStats?: Array<{
+    categoryCode: string
+    categoryName: string
+    quantity: number
+    salesCents: number
+  }>
+  topProducts?: Array<{
+    productId: string
+    productName: string
+    quantity: number
+    salesCents: number
+  }>
+  trend?: Array<{
+    bucket: string
+    orderCount: number
+    salesCents: number
+  }>
+}
+
 export interface SupportSession {
   id: string
   userId: string
@@ -602,6 +729,17 @@ export async function adminListMallProducts(): Promise<MallProduct[]> {
   return apiGet('/api/admin/mall/products')
 }
 
+export async function adminGetMallOpsOverview(): Promise<MallOpsOverview> {
+  return apiGet('/api/admin/mall/ops/overview')
+}
+
+export async function adminListMallPickupPoints(params: {
+  status?: string
+  communityName?: string
+} = {}): Promise<MallPickupPoint[]> {
+  return apiGet('/api/admin/mall/pickup-points', params)
+}
+
 export async function adminCreateMallProduct(data: Partial<MallProduct> & { categoryCode: string; priceCents: number }) {
   return apiPost<MallProduct>('/api/admin/mall/products', data)
 }
@@ -631,6 +769,99 @@ export async function adminRefundMallOrder(id: string, data: {
   handlingMethod?: string
 }) {
   return apiPost(`/api/admin/mall/orders/${id}/refund`, data)
+}
+
+export async function adminListMallProductListingRequests(params: {
+  status?: string
+  productId?: string
+  requestType?: string
+  supplierId?: string
+} = {}): Promise<MallProductListingRequest[]> {
+  return apiGet('/api/admin/mall/listing-requests', params)
+}
+
+export async function adminCreateMallProductListingRequest(data: {
+  productId: string
+  requestType?: string
+  requestedStatus: string
+  requesterId?: string
+  requesterRole?: string
+  supplierId?: string
+  reason?: string
+}): Promise<MallProductListingRequest> {
+  return apiPost('/api/admin/mall/listing-requests', data)
+}
+
+export async function adminReviewMallProductListingRequest(id: string, data: {
+  status: 'approved' | 'rejected' | string
+  reviewStatus?: 'approved' | 'rejected' | string
+  reviewedBy?: string
+  reviewNote?: string
+}): Promise<MallProductListingRequest> {
+  return apiPost(`/api/admin/mall/listing-requests/${id}/review`, data)
+}
+
+export async function adminListMallDeliverySheets(params: {
+  sheetDate?: string
+  status?: string
+  pickupPointId?: string
+} = {}): Promise<MallDeliverySheet[]> {
+  return apiGet('/api/admin/mall/delivery-sheets', params)
+}
+
+export async function adminGenerateMallDeliverySheet(data: {
+  sheetDate?: string
+  pickupPointId?: string
+  generatedBy?: string
+} = {}): Promise<MallDeliverySheet[]> {
+  return apiPost('/api/admin/mall/delivery-sheets/generate', data)
+}
+
+export async function adminUpdateMallDeliverySheetStatus(id: string, status: string | { status: string }): Promise<MallDeliverySheet> {
+  return apiPut(`/api/admin/mall/delivery-sheets/${id}/status`, typeof status === 'string' ? { status } : status)
+}
+
+export async function adminListMallFinanceBills(params: {
+  period?: 'day' | 'week' | 'month' | string
+  startDate?: string
+  endDate?: string
+  supplierId?: string
+} = {}): Promise<MallFinanceBill[]> {
+  return apiGet('/api/admin/mall/finance/bills', params)
+}
+
+export async function adminListMallSettlementRecords(params: {
+  period?: 'day' | 'week' | 'month' | string
+  status?: string
+  supplierId?: string
+} = {}): Promise<MallSettlementRecord[]> {
+  return apiGet('/api/admin/mall/finance/settlements', params)
+}
+
+export async function adminListMallWithdrawalRequests(params: {
+  status?: string
+  supplierId?: string
+} = {}): Promise<MallWithdrawalRequest[]> {
+  return apiGet('/api/admin/mall/finance/withdrawals', params)
+}
+
+export async function adminCreateMallWithdrawal(data: {
+  requesterId?: string
+  requesterRole?: string
+  supplierId?: string
+  amountCents: number
+  bankAccountSnapshot?: Record<string, unknown>
+  note?: string
+}): Promise<MallWithdrawalRequest> {
+  return apiPost('/api/admin/mall/finance/withdrawals', data)
+}
+
+export async function adminGetMallSalesStats(params: {
+  period?: 'day' | 'week' | 'month' | string
+  startDate?: string
+  endDate?: string
+} = {}): Promise<MallSalesStats> {
+  return apiGet('/api/admin/mall/stats/sales', params)
 }
 
 export async function adminCreateFulfillmentCode(orderId: string, data: {

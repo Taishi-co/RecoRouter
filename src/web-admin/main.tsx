@@ -25,6 +25,10 @@ interface NavigationItem {
 }
 
 type AdminModuleKey = 'platform' | 'vehicle' | 'mall';
+type MallOrderOpsMode = 'today' | 'history' | 'abnormal';
+type MallDeliveryOpsMode = 'sheets' | 'tracking' | 'pickup';
+type MallFinanceOpsMode = 'bills' | 'settlements' | 'withdrawals';
+type MallStatsOpsMode = 'sales' | 'revenue' | 'hot';
 
 interface AdminPageSpec {
   key: string;
@@ -81,6 +85,14 @@ interface DashboardData {
   mallProducts: JsonRecord[];
   mallInventoryAlerts: JsonRecord[];
   mallOrders: JsonRecord[];
+  mallOpsOverview: JsonRecord;
+  mallListingRequests: JsonRecord[];
+  mallDeliverySheets: JsonRecord[];
+  mallPickupPoints: JsonRecord[];
+  mallFinanceBills: JsonRecord[];
+  mallSettlementRecords: JsonRecord[];
+  mallWithdrawalRequests: JsonRecord[];
+  mallSalesStats: JsonRecord;
   campaigns: JsonRecord[];
   mallCoupons: JsonRecord[];
   mallHomeBanners: JsonRecord[];
@@ -194,6 +206,18 @@ interface MallPermissionFilterState {
   keyword: string;
   status: string;
   module: string;
+}
+
+interface MallOpsFilterState {
+  keyword: string;
+  status: string;
+  date: string;
+  community: string;
+}
+
+interface WithdrawalForm {
+  amountYuan: string;
+  note: string;
 }
 
 interface SupportForm {
@@ -492,13 +516,20 @@ const adminModules: AdminModuleSpec[] = [
       designPage('mall.products', '商品上架', '商品管理', '商品创建、上下架、库存和图片', 'shop', 'mallProducts'),
       designPage('mall.productList', '商品列表', '商品管理', '在售、售罄和下架商品管理', 'shop', 'mallProducts'),
       designPage('mall.categories', '品类管理', '品类管理', '社区团购类目、排序和状态', 'dashboard'),
-      designPage('mall.inventory', '库存预警', '商品管理', '低库存、缺货替换和补货提醒', 'support'),
+      designPage('mall.inventory', '库存预警', '商品管理', '库存管理、低库存、缺货替换和补货提醒', 'support'),
+      designPage('mall.listingRequests', '商品上下架申请', '商品管理', '商品上架、下架申请与平台审核', 'check', 'mallProducts'),
+      designPage('mall.todayOrders', '今日订单', '订单管理', '按小区汇总今日订单并生成分拣单', 'orders', 'mallOrders'),
+      designPage('mall.historyOrders', '历史订单', '订单管理', '历史订单明细检索与履约回溯', 'orders', 'mallOrders'),
+      designPage('mall.abnormalOrders', '异常订单', '订单管理', '退款、售后和履约异常处理', 'refund', 'mallOrders'),
       designPage('mall.orders', '订单管理', '订单管理', '商城订单、履约和退款售后', 'orders', 'mallOrders'),
       designPage('mall.orderDetail', '订单详情', '订单管理', '订单明细、支付、自提和客服记录', 'orders'),
       designPage('mall.fulfillment', '自提核销', '订单管理', '提货码生成、团长核销和异常处理', 'check'),
       designPage('mall.refunds', '退款售后', '订单管理', '售后申请、坏果包赔和退款处理', 'refund', 'mallOrders'),
       designPage('mall.pickup', '自提点管理', '订单管理', '自提点、团长和营业时间管理', 'route'),
       designPage('mall.leaders', '团长管理', '订单管理', '团长中心、核销权限和服务质量', 'users'),
+      designPage('mall.deliverySheets', '配送单生成', '配送管理', '按日期和小区生成配送单', 'send', 'operations'),
+      designPage('mall.deliveryTracking', '配送状态跟踪', '配送管理', '配送单发货、送达状态跟踪', 'route', 'operations'),
+      designPage('mall.pickupConnect', '自提点对接', '配送管理', '团长联系方式、自提点地址和小区覆盖', 'users', 'operations'),
       designPage('mall.community', '邻里圈', '营销中心', '自提点动态、拼团和用户互动', 'megaphone'),
       designPage('mall.campaignCreate', '新增营销活动', '营销中心', '创建满减、券包、拼团和配送补贴活动', 'plus'),
       designPage('mall.campaigns', '营销活动列表', '营销中心', '活动启停、预算消耗和投放状态', 'megaphone', 'operations'),
@@ -512,6 +543,12 @@ const adminModules: AdminModuleSpec[] = [
       designPage('mall.deliveryRules', '配送规则', '运营设置', '自提窗口、冷链承诺和服务费', 'route'),
       designPage('mall.paymentSplit', '分账规则', '运营设置', '商城分账、团长佣金和商户结算', 'refund'),
       designPage('mall.risk', '风险审核', '运营设置', '售后异常、频控和恶意退款拦截', 'x'),
+      designPage('mall.financeBills', '账单明细', '财务结算', '每日、每周、每月账单明细', 'orders', 'operations'),
+      designPage('mall.settlements', '结算记录', '财务结算', '结算状态、金额和打款凭证', 'refund', 'operations'),
+      designPage('mall.withdrawals', '提现申请', '财务结算', '平台运营提现申请与审核状态', 'send', 'operations'),
+      designPage('mall.salesStats', '销量统计', '数据', '按商品、分类和时间查看销量', 'dashboard'),
+      designPage('mall.revenueStats', '收益统计', '数据', '每日、每周、每月收益趋势', 'dashboard'),
+      designPage('mall.hotProducts', '热销商品排行', '数据', '热销商品排名和销售贡献', 'shop'),
       designPage('mall.data', '运营数据', '数据', '商城收入、订单、复购和售后指标', 'dashboard'),
       designPage('mall.permissions', '运营权限', '设置', '商品、客服、财务和团长权限', 'users'),
     ],
@@ -530,6 +567,14 @@ const initialData: DashboardData = {
   mallProducts: [],
   mallInventoryAlerts: [],
   mallOrders: [],
+  mallOpsOverview: {},
+  mallListingRequests: [],
+  mallDeliverySheets: [],
+  mallPickupPoints: [],
+  mallFinanceBills: [],
+  mallSettlementRecords: [],
+  mallWithdrawalRequests: [],
+  mallSalesStats: {},
   campaigns: [],
   mallCoupons: [],
   mallHomeBanners: [],
@@ -681,6 +726,18 @@ const initialPermissionFilters: MallPermissionFilterState = {
   module: '',
 };
 
+const initialMallOpsFilters: MallOpsFilterState = {
+  keyword: '',
+  status: '',
+  date: '',
+  community: '',
+};
+
+const initialWithdrawalForm: WithdrawalForm = {
+  amountYuan: '',
+  note: '平台运营提现申请',
+};
+
 const initialSupportForm: SupportForm = {
   userId: '',
   topic: '订单配送咨询',
@@ -805,6 +862,14 @@ async function fetchDashboardData(
     mallProducts,
     mallInventoryAlerts,
     mallOrders,
+    mallOpsOverview,
+    mallListingRequests,
+    mallDeliverySheets,
+    mallPickupPoints,
+    mallFinanceBills,
+    mallSettlementRecords,
+    mallWithdrawalRequests,
+    mallSalesStats,
     campaigns,
     mallCoupons,
     mallHomeBanners,
@@ -847,6 +912,14 @@ async function fetchDashboardData(
       stockStatus: inventoryFilters.stockStatus,
     })),
     loadWithFallback('商城订单', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/orders')),
+    loadWithFallback('商城运营概览', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/ops/overview')),
+    loadWithFallback('商品上下架申请', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/listing-requests', { limit: 100 })),
+    loadWithFallback('配送单', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/delivery-sheets', { limit: 100 })),
+    loadWithFallback('自提点', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/pickup-points', { limit: 100 })),
+    loadWithFallback('账单明细', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/finance/bills', { limit: 100 })),
+    loadWithFallback('结算记录', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/finance/settlements', { limit: 100 })),
+    loadWithFallback('提现申请', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/finance/withdrawals', { limit: 100 })),
+    loadWithFallback('销量统计', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/stats/sales', { period: '30d' })),
     loadWithFallback('营销活动', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/campaigns')),
     loadWithFallback('优惠券', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/coupons', {
       keyword: couponFilters.keyword,
@@ -889,6 +962,14 @@ async function fetchDashboardData(
       mallProducts,
       mallInventoryAlerts,
       mallOrders,
+      mallOpsOverview,
+      mallListingRequests,
+      mallDeliverySheets,
+      mallPickupPoints,
+      mallFinanceBills,
+      mallSettlementRecords,
+      mallWithdrawalRequests,
+      mallSalesStats,
       campaigns,
       mallCoupons,
       mallHomeBanners,
@@ -1139,8 +1220,16 @@ function statusLabel(value: string) {
     pending_payment: '待支付',
     dispatching: '派送中',
     delivering: '配送中',
+    generated: '已生成',
+    shipping: '已发货',
+    shipped: '已发货',
+    delivered: '已送达',
     completed: '已完成',
     cancelled: '已取消',
+    refund_pending: '待退款',
+    after_sales: '售后中',
+    exception: '异常',
+    failed: '失败',
     open: '处理中',
     closed: '已关闭',
     resolved: '已解决',
@@ -1170,13 +1259,13 @@ function roleLabel(value: string) {
 }
 
 function badgeClass(status: string) {
-  if (['active', 'on_sale', 'paid', 'completed', 'approved', 'published', 'resolved'].includes(status)) {
+  if (['active', 'on_sale', 'paid', 'completed', 'approved', 'published', 'resolved', 'delivered', 'shipped'].includes(status)) {
     return 'badge badge-green';
   }
-  if (['pending', 'pending_payment', 'dispatching', 'delivering', 'open', 'submitted', 'processing', 'refunding', 'commission_pending'].includes(status)) {
+  if (['pending', 'pending_payment', 'dispatching', 'delivering', 'generated', 'shipping', 'open', 'submitted', 'processing', 'refunding', 'refund_pending', 'commission_pending'].includes(status)) {
     return 'badge badge-blue';
   }
-  if (['rejected', 'cancelled', 'off_sale', 'inactive', 'closed', 'expired'].includes(status)) {
+  if (['rejected', 'cancelled', 'off_sale', 'inactive', 'closed', 'expired', 'failed'].includes(status)) {
     return 'badge badge-gray';
   }
   return 'badge badge-amber';
@@ -1325,6 +1414,239 @@ function recentDaySlots(count: number) {
       revenueCents: 0,
     };
   });
+}
+
+function recordDateKey(record: JsonRecord, ...keys: string[]) {
+  for (const key of keys) {
+    const value = stringValue(record, key);
+    if (!value) continue;
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) return dayKey(date);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  }
+  return '';
+}
+
+function recordCommunityName(record: JsonRecord) {
+  return stringValue(
+    record,
+    'communityName',
+    stringValue(record, 'community', stringValue(record, 'neighborhoodName', stringValue(record, 'areaName'))),
+  );
+}
+
+function recordPickupPointName(record: JsonRecord) {
+  return stringValue(
+    record,
+    'pickupPointName',
+    stringValue(record, 'pickupName', stringValue(record, 'stationName', stringValue(record, 'selfPickupPointName'))),
+  );
+}
+
+function recordLeaderName(record: JsonRecord) {
+  return stringValue(record, 'groupLeaderName', stringValue(record, 'leaderName', stringValue(record, 'contactName')));
+}
+
+function recordLeaderPhone(record: JsonRecord) {
+  return stringValue(record, 'groupLeaderPhone', stringValue(record, 'leaderPhone', stringValue(record, 'contactPhone')));
+}
+
+function recordAddress(record: JsonRecord) {
+  return stringValue(record, 'address', stringValue(record, 'addressText', stringValue(record, 'pickupAddress')));
+}
+
+function orderItemCount(order: JsonRecord) {
+  const explicit = numberValue(order, 'itemCount', numberValue(order, 'itemsCount'));
+  if (explicit) return explicit;
+  return arrayValue(order, 'items').reduce((total, item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return total;
+    return total + numberValue(item as JsonRecord, 'quantity', 1);
+  }, 0);
+}
+
+function mallOrderPayableCents(order: JsonRecord) {
+  return amountCentsFromRecord(order, [
+    'payableCents',
+    'payableAmountCents',
+    'paidAmountCents',
+    'totalAmountCents',
+    'amountCents',
+  ]);
+}
+
+function mallOpsRecordSearchText(record: JsonRecord, keys: string[]) {
+  return keys
+    .map(key => {
+      const direct = stringValue(record, key);
+      if (direct) return direct;
+      const nested = recordValue(record, key);
+      return Object.values(nested).map(value => String(value)).join(' ');
+    })
+    .join(' ')
+    .toLowerCase();
+}
+
+function filterMallOpsRecords(records: JsonRecord[], filters: MallOpsFilterState, keys: string[], dateKeys: string[] = []) {
+  const keyword = filters.keyword.trim().toLowerCase();
+  const community = filters.community.trim().toLowerCase();
+  return records.filter(record => {
+    const status = orderStatus(record) || stringValue(record, 'status');
+    if (filters.status && status !== filters.status) return false;
+    if (filters.date && recordDateKey(record, ...dateKeys) !== filters.date) return false;
+    if (community && !recordCommunityName(record).toLowerCase().includes(community)) return false;
+    if (keyword && !mallOpsRecordSearchText(record, keys).includes(keyword)) return false;
+    return true;
+  });
+}
+
+function isTodayMallOrder(order: JsonRecord, dateFilter = '') {
+  const date = businessOrderTime(order);
+  if (!date) return false;
+  return dayKey(date) === (dateFilter || dayKey(new Date()));
+}
+
+function isAbnormalMallOrder(order: JsonRecord) {
+  const status = orderStatus(order);
+  const afterSales = arrayValue(order, 'afterSales');
+  return (
+    ['cancelled', 'refunding', 'refund_pending', 'after_sales', 'exception', 'failed'].includes(status)
+    || afterSales.length > 0
+    || numberValue(order, 'refundCents') > 0
+    || numberValue(order, 'refundAmountCents') > 0
+  );
+}
+
+function filterMallOrdersByMode(orders: JsonRecord[], mode: 'today' | 'history' | 'abnormal', filters: MallOpsFilterState) {
+  const scoped = orders.filter(order => {
+    if (mode === 'today') return isTodayMallOrder(order, filters.date);
+    if (mode === 'abnormal') return isAbnormalMallOrder(order);
+    return true;
+  });
+  return filterMallOpsRecords(
+    scoped,
+    filters,
+    ['id', 'orderNo', 'recipientName', 'recipientPhone', 'addressText', 'pickupPointName', 'groupLeaderName', 'status'],
+    ['createdAt', 'created_at', 'paidAt', 'updatedAt'],
+  );
+}
+
+function buildCommunityOrderSummaries(orders: JsonRecord[]) {
+  const map = new Map<string, {
+    community: string;
+    pickupPoint: string;
+    leader: string;
+    phone: string;
+    orderCount: number;
+    itemCount: number;
+    amountCents: number;
+  }>();
+
+  orders.forEach(order => {
+    const community = recordCommunityName(order) || '未分配小区';
+    const current = map.get(community) || {
+      community,
+      pickupPoint: recordPickupPointName(order) || '-',
+      leader: recordLeaderName(order) || '-',
+      phone: recordLeaderPhone(order) || '-',
+      orderCount: 0,
+      itemCount: 0,
+      amountCents: 0,
+    };
+    current.orderCount += 1;
+    current.itemCount += orderItemCount(order);
+    current.amountCents += mallOrderPayableCents(order) || mallOrderRevenueCents(order);
+    map.set(community, current);
+  });
+
+  return Array.from(map.values()).sort((left, right) => right.orderCount - left.orderCount);
+}
+
+function derivePickupPoints(points: JsonRecord[], orders: JsonRecord[], deliverySheets: JsonRecord[]) {
+  if (points.length) return points;
+  const map = new Map<string, JsonRecord>();
+  [...orders, ...deliverySheets].forEach(record => {
+    const name = recordPickupPointName(record);
+    if (!name) return;
+    const key = `${name}-${recordCommunityName(record)}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        id: key,
+        name,
+        communityName: recordCommunityName(record),
+        leaderName: recordLeaderName(record),
+        leaderPhone: recordLeaderPhone(record),
+        address: recordAddress(record),
+        status: stringValue(record, 'status', 'active'),
+      });
+    }
+  });
+  return Array.from(map.values());
+}
+
+function salesStatsArray(stats: JsonRecord, ...keys: string[]) {
+  for (const key of keys) {
+    const value = arrayValue(stats, key);
+    if (value.length) return value.filter(item => item && typeof item === 'object' && !Array.isArray(item)) as JsonRecord[];
+  }
+  return [];
+}
+
+function buildProductSalesRows(stats: JsonRecord, orders: JsonRecord[]) {
+  const rows = salesStatsArray(stats, 'productSales', 'salesByProduct', 'products', 'topProducts');
+  if (rows.length) return rows;
+  const map = new Map<string, JsonRecord>();
+  orders.forEach(order => {
+    arrayValue(order, 'items').forEach(item => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return;
+      const row = item as JsonRecord;
+      const key = stringValue(row, 'productId', stringValue(row, 'sku', stringValue(row, 'productName')));
+      const current = map.get(key) || {
+        id: key,
+        productName: stringValue(row, 'productName', '-'),
+        categoryName: stringValue(row, 'categoryName', stringValue(row, 'categoryCode')),
+        quantity: 0,
+        revenueCents: 0,
+      };
+      current.quantity = numberValue(current, 'quantity') + numberValue(row, 'quantity', 1);
+      current.revenueCents = numberValue(current, 'revenueCents') + itemLineTotal(row);
+      map.set(key, current);
+    });
+  });
+  return Array.from(map.values()).sort((left, right) => numberValue(right, 'revenueCents') - numberValue(left, 'revenueCents'));
+}
+
+function buildCategorySalesRows(stats: JsonRecord, orders: JsonRecord[]) {
+  const rows = salesStatsArray(stats, 'categorySales', 'salesByCategory', 'categories');
+  if (rows.length) return rows;
+  const map = new Map<string, JsonRecord>();
+  orders.forEach(order => {
+    arrayValue(order, 'items').forEach(item => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return;
+      const row = item as JsonRecord;
+      const key = stringValue(row, 'categoryName', stringValue(row, 'categoryCode', '未分类'));
+      const current = map.get(key) || { id: key, categoryName: key, quantity: 0, revenueCents: 0 };
+      current.quantity = numberValue(current, 'quantity') + numberValue(row, 'quantity', 1);
+      current.revenueCents = numberValue(current, 'revenueCents') + itemLineTotal(row);
+      map.set(key, current);
+    });
+  });
+  return Array.from(map.values()).sort((left, right) => numberValue(right, 'revenueCents') - numberValue(left, 'revenueCents'));
+}
+
+function buildRevenueRows(stats: JsonRecord, orders: JsonRecord[]) {
+  const rows = salesStatsArray(stats, 'revenueTrend', 'dailyRevenue', 'revenue');
+  if (rows.length) return rows;
+  const slots = recentDaySlots(14);
+  const slotMap = new Map(slots.map(slot => [slot.key, { ...slot }]));
+  orders.forEach(order => {
+    const date = businessOrderTime(order);
+    if (!date) return;
+    const slot = slotMap.get(dayKey(date));
+    if (!slot) return;
+    slot.orders += 1;
+    slot.revenueCents += mallOrderPayableCents(order) || mallOrderRevenueCents(order);
+  });
+  return Array.from(slotMap.values());
 }
 
 function operationsTrendBars(data: DashboardData): OperationsTrendBar[] {
@@ -4040,6 +4362,678 @@ function MallOrdersSection({
   );
 }
 
+function MallOpsFilterbar({
+  filters,
+  placeholder,
+  statusOptions = [
+    ['pending', '待处理'],
+    ['approved', '已通过'],
+    ['rejected', '已拒绝'],
+    ['completed', '已完成'],
+  ],
+  onFiltersChange,
+  onSearch,
+}: {
+  filters: MallOpsFilterState;
+  placeholder: string;
+  statusOptions?: Array<[string, string]>;
+  onFiltersChange: (patch: Partial<MallOpsFilterState>) => void;
+  onSearch: () => Promise<void>;
+}) {
+  return (
+    <div className="ops-filterbar">
+      <label>
+        关键词
+        <input value={filters.keyword} onChange={event => onFiltersChange({ keyword: event.target.value })} placeholder={placeholder} />
+      </label>
+      <label>
+        状态
+        <select value={filters.status} onChange={event => onFiltersChange({ status: event.target.value })}>
+          <option value="">全部状态</option>
+          {statusOptions.map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+      </label>
+      <label>
+        日期
+        <input type="date" value={filters.date} onChange={event => onFiltersChange({ date: event.target.value })} />
+      </label>
+      <label>
+        小区
+        <input value={filters.community} onChange={event => onFiltersChange({ community: event.target.value })} placeholder="小区/自提点" />
+      </label>
+      <button className="primary-button" type="button" onClick={() => void onSearch()}>
+        <Icon name="refresh" />
+        查询
+      </button>
+    </div>
+  );
+}
+
+function MallListingRequestsSection({
+  requests,
+  filters,
+  onFiltersChange,
+  onReview,
+  onSearch,
+}: {
+  requests: JsonRecord[];
+  filters: MallOpsFilterState;
+  onFiltersChange: (patch: Partial<MallOpsFilterState>) => void;
+  onReview: (id: string, action: 'approve' | 'reject') => Promise<void>;
+  onSearch: () => Promise<void>;
+}) {
+  const filteredRequests = filterMallOpsRecords(
+    requests,
+    filters,
+    ['id', 'productId', 'productName', 'sku', 'requestType', 'requesterName', 'requesterRole', 'reason', 'status'],
+    ['createdAt', 'updatedAt', 'reviewedAt'],
+  );
+  const pendingCount = requests.filter(request => ['pending', 'submitted'].includes(stringValue(request, 'status'))).length;
+  const approvedCount = requests.filter(request => stringValue(request, 'status') === 'approved').length;
+
+  return (
+    <div className="page-grid ops-page">
+      <MallOpsFilterbar
+        filters={filters}
+        placeholder="搜索商品、SKU、申请人"
+        statusOptions={[
+          ['pending', '待审核'],
+          ['submitted', '已提交'],
+          ['approved', '已通过'],
+          ['rejected', '已拒绝'],
+        ]}
+        onFiltersChange={onFiltersChange}
+        onSearch={onSearch}
+      />
+      <div className="ops-summary-grid">
+        <StatCard label="待审核" value={String(pendingCount)} detail="上下架申请队列" />
+        <StatCard label="已通过" value={String(approvedCount)} detail="平台审核后同步用户端" />
+        <StatCard label="申请总数" value={String(requests.length)} detail="包含上架、下架和草稿转正" />
+      </div>
+      <Panel title="商品上下架申请" description="平台运营审核商品上架、下架申请，第一期仅管理员账号处理">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>商品</th>
+                <th>申请类型</th>
+                <th>申请人</th>
+                <th>目标状态</th>
+                <th>状态</th>
+                <th>时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRequests.map(request => {
+                const id = stringValue(request, 'id');
+                const status = stringValue(request, 'status');
+                const canReview = ['pending', 'submitted'].includes(status);
+                return (
+                  <tr key={id}>
+                    <td>
+                      <strong>{stringValue(request, 'productName', stringValue(request, 'name', shortId(stringValue(request, 'productId'))))}</strong>
+                      <small>{stringValue(request, 'sku', stringValue(request, 'reason', '-'))}</small>
+                    </td>
+                    <td>{statusLabel(stringValue(request, 'requestType', stringValue(request, 'type')))}</td>
+                    <td>
+                      <span>{stringValue(request, 'requesterName', stringValue(request, 'requesterRole', '平台运营'))}</span>
+                      <small>{stringValue(request, 'supplierName', 'A/平台运营')}</small>
+                    </td>
+                    <td>{statusLabel(stringValue(request, 'requestedStatus', stringValue(request, 'targetStatus')))}</td>
+                    <td><span className={badgeClass(status)}>{statusLabel(status)}</span></td>
+                    <td>
+                      <span>{formatDate(stringValue(request, 'createdAt'))}</span>
+                      <small>{formatDate(stringValue(request, 'reviewedAt'))}</small>
+                    </td>
+                    <td className="actions">
+                      <button className="ghost-button" type="button" disabled={!canReview} onClick={() => void onReview(id, 'approve')}>
+                        <Icon name="check" />
+                        通过
+                      </button>
+                      <button className="ghost-button danger" type="button" disabled={!canReview} onClick={() => void onReview(id, 'reject')}>
+                        <Icon name="x" />
+                        拒绝
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {!filteredRequests.length ? <EmptyState text="暂无上下架申请" /> : null}
+      </Panel>
+    </div>
+  );
+}
+
+function MallOrderOpsSection({
+  mode,
+  orders,
+  filters,
+  onDispatch,
+  onFiltersChange,
+  onRefund,
+  onSearch,
+  onStatus,
+  onViewDetail,
+}: {
+  mode: MallOrderOpsMode;
+  orders: JsonRecord[];
+  filters: MallOpsFilterState;
+  onDispatch: (id: string) => Promise<void>;
+  onFiltersChange: (patch: Partial<MallOpsFilterState>) => void;
+  onRefund: (id: string, amountCents: number) => Promise<void>;
+  onSearch: () => Promise<void>;
+  onStatus: (id: string, status: string) => Promise<void>;
+  onViewDetail: (id: string) => Promise<void>;
+}) {
+  const visibleOrders = filterMallOrdersByMode(orders, mode, filters);
+  const summaries = buildCommunityOrderSummaries(visibleOrders);
+  const title = mode === 'today' ? '今日订单' : mode === 'abnormal' ? '异常订单' : '历史订单';
+  const description = mode === 'today'
+    ? '按小区汇总今日订单，可直接打印分拣单'
+    : mode === 'abnormal'
+      ? '集中处理退款、售后和履约异常'
+      : '查看全部历史订单明细和履约状态';
+
+  return (
+    <div className="page-grid ops-page">
+      <MallOpsFilterbar
+        filters={filters}
+        placeholder="搜索订单号、收货人、电话"
+        statusOptions={[
+          ['pending_payment', '待支付'],
+          ['paid', '已支付'],
+          ['dispatching', '派送中'],
+          ['delivering', '配送中'],
+          ['completed', '已完成'],
+          ['refunding', '退款中'],
+          ['cancelled', '已取消'],
+        ]}
+        onFiltersChange={onFiltersChange}
+        onSearch={onSearch}
+      />
+
+      {mode === 'today' ? (
+        <Panel title="小区分拣汇总" description="按小区、自提点和团长汇总今日订单">
+          <div className="ops-summary-list">
+            {summaries.map(summary => (
+              <article className="ops-summary-row" key={summary.community}>
+                <div>
+                  <strong>{summary.community}</strong>
+                  <small>{summary.pickupPoint} · {summary.leader} {summary.phone}</small>
+                </div>
+                <span>{summary.orderCount} 单</span>
+                <span>{summary.itemCount} 件</span>
+                <span>{yuan(summary.amountCents)}</span>
+                <button className="ghost-button" type="button" onClick={() => window.print()}>
+                  <Icon name="orders" />
+                  打印分拣单
+                </button>
+              </article>
+            ))}
+            {!summaries.length ? <EmptyState text="暂无今日小区汇总" /> : null}
+          </div>
+        </Panel>
+      ) : null}
+
+      <Panel title={title} description={description}>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>订单</th>
+                <th>小区/自提点</th>
+                <th>团长</th>
+                <th>件数</th>
+                <th>金额</th>
+                <th>状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleOrders.map(order => {
+                const id = stringValue(order, 'id');
+                const status = orderStatus(order);
+                return (
+                  <tr key={id}>
+                    <td>
+                      <strong>{stringValue(order, 'orderNo', shortId(id))}</strong>
+                      <small>{formatDate(stringValue(order, 'createdAt'))}</small>
+                    </td>
+                    <td>
+                      <span>{recordCommunityName(order) || '-'}</span>
+                      <small>{recordPickupPointName(order) || recordAddress(order) || '-'}</small>
+                    </td>
+                    <td>
+                      <span>{recordLeaderName(order) || '-'}</span>
+                      <small>{recordLeaderPhone(order) || '-'}</small>
+                    </td>
+                    <td>{orderItemCount(order)}</td>
+                    <td>
+                      <strong>{yuan(mallOrderPayableCents(order) || mallOrderRevenueCents(order))}</strong>
+                      <small>{statusLabel(orderPaymentStatus(order))}</small>
+                    </td>
+                    <td><span className={badgeClass(status)}>{statusLabel(status)}</span></td>
+                    <td className="actions column-actions">
+                      <button className="ghost-button" type="button" onClick={() => void onViewDetail(id)}>
+                        <Icon name="orders" />
+                        详情
+                      </button>
+                      {mode !== 'history' ? (
+                        <button className="ghost-button" type="button" onClick={() => void onDispatch(id)}>
+                          <Icon name="truck" />
+                          派送
+                        </button>
+                      ) : null}
+                      <button className="ghost-button" type="button" onClick={() => void onStatus(id, status === 'completed' ? 'delivering' : 'completed')}>
+                        <Icon name="check" />
+                        {status === 'completed' ? '改配送中' : '完成'}
+                      </button>
+                      {mode === 'abnormal' ? (
+                        <button className="ghost-button danger" type="button" onClick={() => void onRefund(id, mallOrderPayableCents(order) || mallOrderRevenueCents(order))}>
+                          <Icon name="refund" />
+                          退款
+                        </button>
+                      ) : null}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {!visibleOrders.length ? <EmptyState text={`暂无${title}`} /> : null}
+      </Panel>
+    </div>
+  );
+}
+
+function MallDeliveryOpsSection({
+  mode,
+  deliverySheets,
+  filters,
+  orders,
+  pickupPoints,
+  onFiltersChange,
+  onGenerate,
+  onSearch,
+  onUpdateStatus,
+}: {
+  mode: MallDeliveryOpsMode;
+  deliverySheets: JsonRecord[];
+  filters: MallOpsFilterState;
+  orders: JsonRecord[];
+  pickupPoints: JsonRecord[];
+  onFiltersChange: (patch: Partial<MallOpsFilterState>) => void;
+  onGenerate: () => Promise<void>;
+  onSearch: () => Promise<void>;
+  onUpdateStatus: (id: string, status: string) => Promise<void>;
+}) {
+  const visibleSheets = filterMallOpsRecords(
+    deliverySheets,
+    filters,
+    ['id', 'sheetNo', 'communityName', 'pickupPointName', 'leaderName', 'status'],
+    ['sheetDate', 'generatedAt', 'createdAt'],
+  );
+  const contacts = filterMallOpsRecords(
+    derivePickupPoints(pickupPoints, orders, deliverySheets),
+    filters,
+    ['id', 'name', 'pickupPointName', 'communityName', 'leaderName', 'leaderPhone', 'address', 'status'],
+    ['createdAt', 'updatedAt'],
+  );
+  const isPickup = mode === 'pickup';
+  const title = mode === 'sheets' ? '配送单生成' : mode === 'tracking' ? '配送状态跟踪' : '自提点对接';
+
+  return (
+    <div className="page-grid ops-page">
+      <MallOpsFilterbar
+        filters={filters}
+        placeholder={isPickup ? '搜索自提点、团长、地址' : '搜索配送单、小区、自提点'}
+        statusOptions={[
+          ['generated', '已生成'],
+          ['shipping', '已发货'],
+          ['shipped', '已发货'],
+          ['delivered', '已送达'],
+          ['completed', '已完成'],
+        ]}
+        onFiltersChange={onFiltersChange}
+        onSearch={onSearch}
+      />
+
+      {isPickup ? (
+        <Panel title={title} description="查看各团长联系方式和自提点地址">
+          <div className="ops-contact-grid">
+            {contacts.map(point => {
+              const id = stringValue(point, 'id', `${recordPickupPointName(point)}-${recordLeaderPhone(point)}`);
+              const phone = recordLeaderPhone(point);
+              return (
+                <article className="ops-contact-card" key={id}>
+                  <div>
+                    <strong>{stringValue(point, 'name', recordPickupPointName(point)) || '-'}</strong>
+                    <small>{recordCommunityName(point) || '未配置小区'}</small>
+                  </div>
+                  <span>{recordLeaderName(point) || '-'}</span>
+                  <small>{phone || '-'}</small>
+                  <p>{recordAddress(point) || '-'}</p>
+                  <button className="ghost-button" type="button" disabled={!phone} onClick={() => void navigator.clipboard?.writeText(phone)}>
+                    <Icon name="send" />
+                    复制电话
+                  </button>
+                </article>
+              );
+            })}
+            {!contacts.length ? <EmptyState text="暂无自提点数据" /> : null}
+          </div>
+        </Panel>
+      ) : (
+        <Panel
+          title={title}
+          description={mode === 'sheets' ? '每日固定时间或手动生成当日配送单' : '标记配送单已发货、已送达'}
+          action={mode === 'sheets' ? (
+            <button className="primary-button" type="button" onClick={() => void onGenerate()}>
+              <Icon name="plus" />
+              生成配送单
+            </button>
+          ) : null}
+        >
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>配送单</th>
+                  <th>小区/自提点</th>
+                  <th>订单</th>
+                  <th>金额</th>
+                  <th>状态</th>
+                  <th>生成时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleSheets.map(sheet => {
+                  const id = stringValue(sheet, 'id');
+                  const status = stringValue(sheet, 'status');
+                  return (
+                    <tr key={id}>
+                      <td>
+                        <strong>{stringValue(sheet, 'sheetNo', shortId(id))}</strong>
+                        <small>{stringValue(sheet, 'sheetDate', '-')}</small>
+                      </td>
+                      <td>
+                        <span>{recordCommunityName(sheet) || '-'}</span>
+                        <small>{recordPickupPointName(sheet) || '-'}</small>
+                      </td>
+                      <td>
+                        <span>{numberValue(sheet, 'orderCount')} 单</span>
+                        <small>{numberValue(sheet, 'itemCount')} 件</small>
+                      </td>
+                      <td>{yuan(numberValue(sheet, 'totalPayableCents', numberValue(sheet, 'amountCents')))}</td>
+                      <td><span className={badgeClass(status)}>{statusLabel(status)}</span></td>
+                      <td>{formatDate(stringValue(sheet, 'generatedAt', stringValue(sheet, 'createdAt')))}</td>
+                      <td className="actions">
+                        <button className="ghost-button" type="button" onClick={() => void onUpdateStatus(id, 'shipped')}>
+                          <Icon name="truck" />
+                          已发货
+                        </button>
+                        <button className="ghost-button" type="button" onClick={() => void onUpdateStatus(id, 'delivered')}>
+                          <Icon name="check" />
+                          已送达
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {!visibleSheets.length ? <EmptyState text="暂无配送单" /> : null}
+        </Panel>
+      )}
+    </div>
+  );
+}
+
+function MallFinanceOpsSection({
+  mode,
+  bills,
+  filters,
+  settlements,
+  withdrawalForm,
+  withdrawals,
+  onCreateWithdrawal,
+  onFiltersChange,
+  onSearch,
+  onWithdrawalChange,
+}: {
+  mode: MallFinanceOpsMode;
+  bills: JsonRecord[];
+  filters: MallOpsFilterState;
+  settlements: JsonRecord[];
+  withdrawalForm: WithdrawalForm;
+  withdrawals: JsonRecord[];
+  onCreateWithdrawal: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onFiltersChange: (patch: Partial<MallOpsFilterState>) => void;
+  onSearch: () => Promise<void>;
+  onWithdrawalChange: (patch: Partial<WithdrawalForm>) => void;
+}) {
+  const records = mode === 'bills' ? bills : mode === 'settlements' ? settlements : withdrawals;
+  const visibleRecords = filterMallOpsRecords(
+    records,
+    filters,
+    ['id', 'billNo', 'settlementNo', 'requestNo', 'periodType', 'supplierName', 'status', 'note'],
+    ['billDate', 'periodStart', 'periodEnd', 'createdAt', 'paidAt'],
+  );
+  const title = mode === 'bills' ? '账单明细' : mode === 'settlements' ? '结算记录' : '提现申请';
+  const totalSettlementCents = visibleRecords.reduce((total, record) => total + numberValue(record, 'settlementAmountCents', numberValue(record, 'amountCents')), 0);
+
+  return (
+    <div className="page-grid ops-page">
+      <MallOpsFilterbar
+        filters={filters}
+        placeholder="搜索账单号、结算号、备注"
+        statusOptions={[
+          ['pending', '待处理'],
+          ['submitted', '已提交'],
+          ['approved', '已通过'],
+          ['paid', '已打款'],
+          ['rejected', '已拒绝'],
+        ]}
+        onFiltersChange={onFiltersChange}
+        onSearch={onSearch}
+      />
+      <div className="ops-summary-grid">
+        <StatCard label={title} value={String(visibleRecords.length)} detail="当前筛选结果" />
+        <StatCard label="实际结算" value={yuan(totalSettlementCents)} detail="按筛选记录合计" />
+        <StatCard label="退款抵扣" value={yuan(visibleRecords.reduce((total, record) => total + numberValue(record, 'refundAmountCents'), 0))} detail="账单退款金额" />
+      </div>
+
+      {mode === 'withdrawals' ? (
+        <Panel title="提交提现申请" description="第一期由平台运营账号发起，不开放供应商注册">
+          <form className="ops-withdrawal-form" onSubmit={onCreateWithdrawal}>
+            <label>
+              提现金额
+              <input value={withdrawalForm.amountYuan} type="number" min="0.01" step="0.01" onChange={event => onWithdrawalChange({ amountYuan: event.target.value })} />
+            </label>
+            <label>
+              备注
+              <input value={withdrawalForm.note} onChange={event => onWithdrawalChange({ note: event.target.value })} />
+            </label>
+            <button className="primary-button" type="submit" disabled={moneyFromYuan(withdrawalForm.amountYuan) <= 0}>
+              <Icon name="send" />
+              提交申请
+            </button>
+          </form>
+        </Panel>
+      ) : null}
+
+      <Panel title={title} description="查看账单、结算和打款凭证状态">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>编号</th>
+                <th>周期</th>
+                <th>供货金额</th>
+                <th>退款金额</th>
+                <th>实际结算</th>
+                <th>状态</th>
+                <th>凭证</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleRecords.map(record => {
+                const id = stringValue(record, 'id');
+                const voucherUrl = stringValue(record, 'voucherUrl', stringValue(record, 'paymentVoucherUrl'));
+                return (
+                  <tr key={id}>
+                    <td>
+                      <strong>{stringValue(record, 'billNo', stringValue(record, 'settlementNo', stringValue(record, 'requestNo', shortId(id))))}</strong>
+                      <small>{stringValue(record, 'periodType', stringValue(record, 'requesterRole', 'platform'))}</small>
+                    </td>
+                    <td>
+                      <span>{stringValue(record, 'periodStart', stringValue(record, 'billDate', '-'))}</span>
+                      <small>{stringValue(record, 'periodEnd', formatDate(stringValue(record, 'createdAt')))}</small>
+                    </td>
+                    <td>{yuan(numberValue(record, 'supplyAmountCents'))}</td>
+                    <td>{yuan(numberValue(record, 'refundAmountCents'))}</td>
+                    <td><strong>{yuan(numberValue(record, 'settlementAmountCents', numberValue(record, 'amountCents')))}</strong></td>
+                    <td><span className={badgeClass(stringValue(record, 'status'))}>{statusLabel(stringValue(record, 'status'))}</span></td>
+                    <td>{voucherUrl ? <a href={resolveImage(voucherUrl)} target="_blank" rel="noreferrer">查看凭证</a> : '-'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {!visibleRecords.length ? <EmptyState text={`暂无${title}`} /> : null}
+      </Panel>
+    </div>
+  );
+}
+
+function MallStatsOpsSection({
+  mode,
+  orders,
+  stats,
+  filters,
+  onFiltersChange,
+  onSearch,
+}: {
+  mode: MallStatsOpsMode;
+  orders: JsonRecord[];
+  stats: JsonRecord;
+  filters: MallOpsFilterState;
+  onFiltersChange: (patch: Partial<MallOpsFilterState>) => void;
+  onSearch: () => Promise<void>;
+}) {
+  const productRows = buildProductSalesRows(stats, orders);
+  const categoryRows = buildCategorySalesRows(stats, orders);
+  const revenueRows = buildRevenueRows(stats, orders);
+  const hotRows = productRows.slice(0, 10);
+  const title = mode === 'sales' ? '销量统计' : mode === 'revenue' ? '收益统计' : '热销商品排行';
+
+  return (
+    <div className="page-grid ops-page">
+      <MallOpsFilterbar
+        filters={filters}
+        placeholder="搜索商品、分类、日期"
+        statusOptions={[
+          ['paid', '已支付'],
+          ['completed', '已完成'],
+          ['refunding', '退款中'],
+        ]}
+        onFiltersChange={onFiltersChange}
+        onSearch={onSearch}
+      />
+      {mode === 'sales' ? (
+        <div className="ops-split-grid">
+          <Panel title="按商品销量" description="商品维度销量、销售额和分类贡献">
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>商品</th>
+                    <th>分类</th>
+                    <th>销量</th>
+                    <th>销售额</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {productRows.map(row => (
+                    <tr key={stringValue(row, 'id', stringValue(row, 'productName'))}>
+                      <td><strong>{stringValue(row, 'productName', stringValue(row, 'name'))}</strong></td>
+                      <td>{stringValue(row, 'categoryName', stringValue(row, 'categoryCode'))}</td>
+                      <td>{numberValue(row, 'quantity', numberValue(row, 'salesCount'))}</td>
+                      <td>{yuan(numberValue(row, 'revenueCents', numberValue(row, 'amountCents')))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!productRows.length ? <EmptyState text="暂无商品销量" /> : null}
+          </Panel>
+          <Panel title="按分类销量" description="分类维度销售结构">
+            <div className="ops-rank-list">
+              {categoryRows.map(row => (
+                <article className="ops-rank-row" key={stringValue(row, 'id', stringValue(row, 'categoryName'))}>
+                  <div>
+                    <strong>{stringValue(row, 'categoryName', stringValue(row, 'categoryCode'))}</strong>
+                    <small>{numberValue(row, 'quantity', numberValue(row, 'salesCount'))} 件</small>
+                  </div>
+                  <span>{yuan(numberValue(row, 'revenueCents', numberValue(row, 'amountCents')))}</span>
+                </article>
+              ))}
+              {!categoryRows.length ? <EmptyState text="暂无分类销量" /> : null}
+            </div>
+          </Panel>
+        </div>
+      ) : null}
+
+      {mode === 'revenue' ? (
+        <Panel title={title} description="按时间查看收益变化">
+          <div className="ops-revenue-bars">
+            {revenueRows.map(row => {
+              const revenue = numberValue(row, 'revenueCents', numberValue(row, 'amountCents'));
+              const maxRevenue = Math.max(...revenueRows.map(item => numberValue(item, 'revenueCents', numberValue(item, 'amountCents'))), 1);
+              return (
+                <article className="ops-revenue-row" key={stringValue(row, 'key', stringValue(row, 'date', stringValue(row, 'label')))}>
+                  <span>{stringValue(row, 'label', stringValue(row, 'date', stringValue(row, 'key')))}</span>
+                  <div><i style={{ width: `${percentValue(revenue, maxRevenue)}%` }} /></div>
+                  <strong>{yuan(revenue)}</strong>
+                  <small>{numberValue(row, 'orders', numberValue(row, 'orderCount'))} 单</small>
+                </article>
+              );
+            })}
+          </div>
+        </Panel>
+      ) : null}
+
+      {mode === 'hot' ? (
+        <Panel title={title} description="平台销量 TOP10 自动更新">
+          <div className="ops-rank-list">
+            {hotRows.map((row, index) => (
+              <article className="ops-rank-row hot" key={stringValue(row, 'id', stringValue(row, 'productName'))}>
+                <em>{index + 1}</em>
+                <div>
+                  <strong>{stringValue(row, 'productName', stringValue(row, 'name'))}</strong>
+                  <small>{stringValue(row, 'categoryName', stringValue(row, 'categoryCode'))} · {numberValue(row, 'quantity', numberValue(row, 'salesCount'))} 件</small>
+                </div>
+                <span>{yuan(numberValue(row, 'revenueCents', numberValue(row, 'amountCents')))}</span>
+              </article>
+            ))}
+            {!hotRows.length ? <EmptyState text="暂无热销商品" /> : null}
+          </div>
+        </Panel>
+      ) : null}
+    </div>
+  );
+}
+
 function MallCouponCreateSection({
   form,
   onChange,
@@ -5041,6 +6035,8 @@ function App() {
   const [couponFilters, setCouponFilters] = useState<MallFilterState>(initialProductFilters);
   const [homeBannerFilters, setHomeBannerFilters] = useState<MallFilterState>(initialProductFilters);
   const [permissionFilters, setPermissionFilters] = useState<MallPermissionFilterState>(initialPermissionFilters);
+  const [mallOpsFilters, setMallOpsFilters] = useState<MallOpsFilterState>(initialMallOpsFilters);
+  const [withdrawalForm, setWithdrawalForm] = useState<WithdrawalForm>(initialWithdrawalForm);
   const [supportFilters, setSupportFilters] = useState<SupportFilterState>(initialSupportFilters);
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [supportMessages, setSupportMessages] = useState<JsonRecord[]>([]);
@@ -5094,6 +6090,8 @@ function App() {
     setCouponFilters(initialProductFilters);
     setHomeBannerFilters(initialProductFilters);
     setPermissionFilters(initialPermissionFilters);
+    setMallOpsFilters(initialMallOpsFilters);
+    setWithdrawalForm(initialWithdrawalForm);
     setBusy('');
     setLoading(false);
   };
@@ -5165,6 +6163,52 @@ function App() {
     } finally {
       setBusy('');
     }
+  };
+
+  const searchMallOpsData = async () => {
+    await runAction('商城运营数据查询', async () => {
+      const query = {
+        keyword: mallOpsFilters.keyword,
+        status: mallOpsFilters.status,
+        date: mallOpsFilters.date,
+        community: mallOpsFilters.community,
+        limit: 100,
+      };
+      const [
+        mallOpsOverview,
+        mallOrders,
+        mallListingRequests,
+        mallDeliverySheets,
+        mallPickupPoints,
+        mallFinanceBills,
+        mallSettlementRecords,
+        mallWithdrawalRequests,
+        mallSalesStats,
+      ] = await Promise.all([
+        apiGet<JsonRecord>('/api/admin/mall/ops/overview', query),
+        apiGet<JsonRecord[]>('/api/admin/mall/orders', query),
+        apiGet<JsonRecord[]>('/api/admin/mall/listing-requests', query),
+        apiGet<JsonRecord[]>('/api/admin/mall/delivery-sheets', query),
+        apiGet<JsonRecord[]>('/api/admin/mall/pickup-points', query),
+        apiGet<JsonRecord[]>('/api/admin/mall/finance/bills', query),
+        apiGet<JsonRecord[]>('/api/admin/mall/finance/settlements', query),
+        apiGet<JsonRecord[]>('/api/admin/mall/finance/withdrawals', query),
+        apiGet<JsonRecord>('/api/admin/mall/stats/sales', query),
+      ]);
+
+      setData(current => ({
+        ...current,
+        mallOpsOverview,
+        mallOrders,
+        mallListingRequests,
+        mallDeliverySheets,
+        mallPickupPoints,
+        mallFinanceBills,
+        mallSettlementRecords,
+        mallWithdrawalRequests,
+        mallSalesStats,
+      }));
+    });
   };
 
   const handleLogin = async ({ phone, password }: LoginForm) => {
@@ -5531,6 +6575,52 @@ function App() {
         reason: '管理端发起退款',
         handlingMethod: '原路退回',
       });
+      await reload();
+    });
+  };
+
+  const reviewListingRequest = async (id: string, action: 'approve' | 'reject') => {
+    await runAction('上下架申请审核', async () => {
+      await apiPost(`/api/admin/mall/listing-requests/${id}/review`, {
+        action,
+        reviewNote: action === 'approve' ? '平台运营审核通过' : '平台运营审核拒绝',
+      });
+      await reload();
+    });
+  };
+
+  const generateDeliverySheet = async () => {
+    await runAction('配送单生成', async () => {
+      await apiPost('/api/admin/mall/delivery-sheets/generate', {
+        sheetDate: mallOpsFilters.date || dayKey(new Date()),
+        community: mallOpsFilters.community || undefined,
+      });
+      await reload();
+    });
+  };
+
+  const updateDeliverySheetStatus = async (id: string, status: string) => {
+    await runAction('配送状态更新', async () => {
+      await apiPut(`/api/admin/mall/delivery-sheets/${id}/status`, {
+        status,
+        description: statusLabel(status),
+      });
+      setData(current => ({
+        ...current,
+        mallDeliverySheets: updateRecordList(current.mallDeliverySheets, id, { status }),
+      }));
+    });
+  };
+
+  const createWithdrawal = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await runAction('提现申请提交', async () => {
+      await apiPost('/api/admin/mall/finance/withdrawals', {
+        amountCents: moneyFromYuan(withdrawalForm.amountYuan),
+        note: withdrawalForm.note,
+        requesterRole: 'admin',
+      });
+      setWithdrawalForm(initialWithdrawalForm);
       await reload();
     });
   };
@@ -5905,6 +6995,37 @@ function App() {
         />
       );
     }
+    if (activePageKey === 'mall.listingRequests') {
+      return (
+        <MallListingRequestsSection
+          filters={mallOpsFilters}
+          requests={data.mallListingRequests}
+          onFiltersChange={patch => setMallOpsFilters(current => ({ ...current, ...patch }))}
+          onReview={reviewListingRequest}
+          onSearch={searchMallOpsData}
+        />
+      );
+    }
+    if (activePageKey === 'mall.todayOrders' || activePageKey === 'mall.historyOrders' || activePageKey === 'mall.abnormalOrders') {
+      const mode: MallOrderOpsMode = activePageKey === 'mall.todayOrders'
+        ? 'today'
+        : activePageKey === 'mall.abnormalOrders'
+          ? 'abnormal'
+          : 'history';
+      return (
+        <MallOrderOpsSection
+          filters={mallOpsFilters}
+          mode={mode}
+          orders={data.mallOrders}
+          onDispatch={dispatchMallOrder}
+          onFiltersChange={patch => setMallOpsFilters(current => ({ ...current, ...patch }))}
+          onRefund={refundMallOrder}
+          onSearch={searchMallOpsData}
+          onStatus={updateMallOrderStatus}
+          onViewDetail={openMallOrderDetail}
+        />
+      );
+    }
     if (activePageKey === 'mall.orderDetail') {
       return (
         <MallOrderDetailSearchSection
@@ -5918,6 +7039,26 @@ function App() {
         />
       );
     }
+    if (activePageKey === 'mall.deliverySheets' || activePageKey === 'mall.deliveryTracking' || activePageKey === 'mall.pickupConnect') {
+      const mode: MallDeliveryOpsMode = activePageKey === 'mall.deliverySheets'
+        ? 'sheets'
+        : activePageKey === 'mall.deliveryTracking'
+          ? 'tracking'
+          : 'pickup';
+      return (
+        <MallDeliveryOpsSection
+          deliverySheets={data.mallDeliverySheets}
+          filters={mallOpsFilters}
+          mode={mode}
+          orders={data.mallOrders}
+          pickupPoints={data.mallPickupPoints}
+          onFiltersChange={patch => setMallOpsFilters(current => ({ ...current, ...patch }))}
+          onGenerate={generateDeliverySheet}
+          onSearch={searchMallOpsData}
+          onUpdateStatus={updateDeliverySheetStatus}
+        />
+      );
+    }
     if (activePageKey === 'mall.orders' || activePageKey === 'mall.refunds') {
       return (
         <MallOrdersSection
@@ -5926,6 +7067,44 @@ function App() {
           onRefund={refundMallOrder}
           onStatus={updateMallOrderStatus}
           onViewDetail={openMallOrderDetail}
+        />
+      );
+    }
+    if (activePageKey === 'mall.financeBills' || activePageKey === 'mall.settlements' || activePageKey === 'mall.withdrawals') {
+      const mode: MallFinanceOpsMode = activePageKey === 'mall.financeBills'
+        ? 'bills'
+        : activePageKey === 'mall.settlements'
+          ? 'settlements'
+          : 'withdrawals';
+      return (
+        <MallFinanceOpsSection
+          bills={data.mallFinanceBills}
+          filters={mallOpsFilters}
+          mode={mode}
+          settlements={data.mallSettlementRecords}
+          withdrawalForm={withdrawalForm}
+          withdrawals={data.mallWithdrawalRequests}
+          onCreateWithdrawal={createWithdrawal}
+          onFiltersChange={patch => setMallOpsFilters(current => ({ ...current, ...patch }))}
+          onSearch={searchMallOpsData}
+          onWithdrawalChange={patch => setWithdrawalForm(current => ({ ...current, ...patch }))}
+        />
+      );
+    }
+    if (activePageKey === 'mall.salesStats' || activePageKey === 'mall.revenueStats' || activePageKey === 'mall.hotProducts') {
+      const mode: MallStatsOpsMode = activePageKey === 'mall.salesStats'
+        ? 'sales'
+        : activePageKey === 'mall.revenueStats'
+          ? 'revenue'
+          : 'hot';
+      return (
+        <MallStatsOpsSection
+          filters={mallOpsFilters}
+          mode={mode}
+          orders={data.mallOrders}
+          stats={data.mallSalesStats}
+          onFiltersChange={patch => setMallOpsFilters(current => ({ ...current, ...patch }))}
+          onSearch={searchMallOpsData}
         />
       );
     }
