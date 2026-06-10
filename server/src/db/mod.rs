@@ -20,9 +20,6 @@ pub async fn run_migrations(pool: &PgPool) -> Result<(), sqlx::migrate::MigrateE
         let version = migration.version;
         let checksum = &migration.checksum;
 
-        // Compute the hex representation of the checksum bytes
-        let checksum_hex: String = checksum.iter().map(|b| format!("{:02x}", b)).collect();
-
         let result = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM _sqlx_migrations WHERE version = $1",
         )
@@ -32,9 +29,10 @@ pub async fn run_migrations(pool: &PgPool) -> Result<(), sqlx::migrate::MigrateE
 
         if let Ok(1) = result {
             // Migration was already applied — update checksum to match current file
-            sqlx::query("UPDATE _sqlx_migrations SET checksum = $2 WHERE version = $1 AND checksum != $2")
+            // checksum is stored as bytea in PostgreSQL, so we pass it directly as &[u8]
+            sqlx::query("UPDATE _sqlx_migrations SET checksum = $2 WHERE version = $1")
                 .bind(version as i64)
-                .bind(&checksum_hex)
+                .bind(checksum.as_ref())
                 .execute(pool)
                 .await
                 .ok();
