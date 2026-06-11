@@ -207,14 +207,19 @@ where
             "/api/admin/mall/campaigns",
             get(list_campaigns::<S>).post(create_campaign::<S>),
         )
-        .route("/api/admin/mall/campaigns/:id", put(update_campaign::<S>))
+        .route(
+            "/api/admin/mall/campaigns/:id",
+            put(update_campaign::<S>).delete(delete_campaign::<S>),
+        )
         .route(
             "/api/admin/mall/coupons",
             get(admin_list_coupons::<S>).post(admin_create_coupon::<S>),
         )
         .route(
             "/api/admin/mall/coupons/:id",
-            get(admin_get_coupon::<S>).put(admin_update_coupon::<S>),
+            get(admin_get_coupon::<S>)
+                .put(admin_update_coupon::<S>)
+                .delete(admin_delete_coupon::<S>),
         )
         .route(
             "/api/admin/mall/home-banners",
@@ -721,6 +726,17 @@ struct CampaignMutationRequest {
     budget_cents: Option<i64>,
     rules: Option<Value>,
     status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CampaignQuery {
+    keyword: Option<String>,
+    status: Option<String>,
+    #[serde(alias = "campaign_type")]
+    campaign_type: Option<String>,
+    #[serde(alias = "page_size", alias = "limit")]
+    page_size: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3058,19 +3074,54 @@ where
 
 async fn list_campaigns<S>(
     State(state): State<AppState<S>>,
+    Query(query): Query<CampaignQuery>,
 ) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
 where
     S: Storage,
 {
-    let campaigns = sqlx::query_scalar::<_, Value>(
-        r#"
-        SELECT campaign_json(c)
-        FROM mall_campaigns c
-        ORDER BY created_at DESC
-        "#,
-    )
-    .fetch_all(&state.db)
-    .await?;
+    let mut builder =
+        QueryBuilder::<Postgres>::new("SELECT campaign_json(c) FROM mall_campaigns c WHERE 1 = 1");
+
+    if let Some(keyword) = query
+        .keyword
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        let pattern = format!("%{}%", keyword);
+        builder.push(" AND (lower(c.name) LIKE lower(");
+        builder.push_bind(pattern.clone());
+        builder.push(") OR lower(c.campaign_type) LIKE lower(");
+        builder.push_bind(pattern);
+        builder.push("))");
+    }
+
+    if let Some(status) = query
+        .status
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        builder.push(" AND c.status = ");
+        builder.push_bind(status);
+    } else {
+        builder.push(" AND c.status <> 'deleted'");
+    }
+
+    if let Some(campaign_type) = query
+        .campaign_type
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        builder.push(" AND c.campaign_type = ");
+        builder.push_bind(campaign_type);
+    }
+
+    let limit = query.page_size.unwrap_or(200).clamp(1, 500);
+    builder.push(" ORDER BY c.created_at DESC LIMIT ");
+    builder.push_bind(limit);
+    let campaigns = builder
+        .build_query_scalar::<Value>()
+        .fetch_all(&state.db)
+        .await?;
     Ok(ok("查询成功", campaigns))
 }
 
@@ -3134,6 +3185,29 @@ where
     Ok(ok("活动更新成功", campaign))
 }
 
+async fn delete_campaign<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let campaign = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_campaigns
+        SET status = 'deleted', updated_at = now()
+        WHERE id = $1
+        RETURNING campaign_json(mall_campaigns)
+        "#,
+    )
+    .bind(&id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("活动不存在".to_string()))?;
+
+    Ok(ok("活动删除成功", campaign))
+}
+
 async fn admin_list_coupons<S>(
     State(state): State<AppState<S>>,
     Query(query): Query<CouponQuery>,
@@ -3164,6 +3238,8 @@ where
     {
         builder.push(" AND c.status = ");
         builder.push_bind(status);
+    } else {
+        builder.push(" AND c.status <> 'deleted'");
     }
 
     if let Some(coupon_type) = query
@@ -3330,6 +3406,29 @@ where
     .ok_or_else(|| ApiError::NotFound("优惠券不存在".to_string()))?;
 
     Ok(ok("优惠券更新成功", coupon))
+}
+
+async fn admin_delete_coupon<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let coupon = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_coupons
+        SET status = 'deleted', updated_at = now()
+        WHERE id = $1
+        RETURNING coupon_json(mall_coupons)
+        "#,
+    )
+    .bind(&id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("优惠券不存在".to_string()))?;
+
+    Ok(ok("优惠券删除成功", coupon))
 }
 
 async fn list_home_banners<S>(
@@ -7369,7 +7468,10 @@ fn validate_coupon_type(coupon_type: &str) -> ApiResult<()> {
 }
 
 fn validate_coupon_status(status: &str) -> ApiResult<()> {
-    if matches!(status, "active" | "draft" | "inactive" | "expired") {
+    if matches!(
+        status,
+        "active" | "draft" | "inactive" | "expired" | "deleted"
+    ) {
         Ok(())
     } else {
         Err(ApiError::BadRequest("优惠券状态不正确".to_string()))
