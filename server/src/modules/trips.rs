@@ -21,16 +21,33 @@ where
 {
     Router::new()
         .route("/api/trips", get(list_trips::<S>).post(create_trip::<S>))
-        .route("/api/trips/:id", get(get_trip::<S>).put(update_trip::<S>).delete(delete_trip::<S>))
+        .route(
+            "/api/trips/:id",
+            get(get_trip::<S>)
+                .put(update_trip::<S>)
+                .delete(delete_trip::<S>),
+        )
         .route("/api/trips/:id/lock", post(lock_trip::<S>))
         .route("/api/trips/:id/unlock", post(unlock_trip::<S>))
         .route("/api/trips/:id/start", post(start_trip::<S>))
         .route("/api/trips/:id/complete", post(complete_trip::<S>))
         .route("/api/trips/:id/stops", post(add_stop::<S>))
-        .route("/api/trips/:id/stops/:stop_id", put(update_stop::<S>).delete(remove_stop::<S>))
-        .route("/api/trips/:id/stops/:stop_id/complete", post(complete_stop::<S>))
-        .route("/api/trips/undispatched-orders", get(undispatched_orders::<S>))
-        .route("/api/trips/available-vehicles", get(available_vehicles::<S>))
+        .route(
+            "/api/trips/:id/stops/:stop_id",
+            put(update_stop::<S>).delete(remove_stop::<S>),
+        )
+        .route(
+            "/api/trips/:id/stops/:stop_id/complete",
+            post(complete_stop::<S>),
+        )
+        .route(
+            "/api/trips/undispatched-orders",
+            get(undispatched_orders::<S>),
+        )
+        .route(
+            "/api/trips/available-vehicles",
+            get(available_vehicles::<S>),
+        )
 }
 
 pub fn admin_router<S>() -> Router<AppState<S>>
@@ -38,15 +55,30 @@ where
     S: Storage,
 {
     Router::new()
-        .route("/api/admin/trips", get(admin_list_trips::<S>).post(admin_create_trip::<S>))
+        .route(
+            "/api/admin/trips",
+            get(admin_list_trips::<S>).post(admin_create_trip::<S>),
+        )
         .route("/api/admin/trips/:id", get(admin_get_trip::<S>))
-        .route("/api/admin/trips/:id/assign-orders", post(admin_assign_orders::<S>))
-        .route("/api/admin/trips/:id/remove-order/:order_id", delete(admin_remove_order::<S>))
-        .route("/api/admin/trips/:id/reorder-stops", put(admin_reorder_stops::<S>))
+        .route(
+            "/api/admin/trips/:id/assign-orders",
+            post(admin_assign_orders::<S>),
+        )
+        .route(
+            "/api/admin/trips/:id/remove-order/:order_id",
+            delete(admin_remove_order::<S>),
+        )
+        .route(
+            "/api/admin/trips/:id/reorder-stops",
+            put(admin_reorder_stops::<S>),
+        )
         .route("/api/admin/trips/:id/lock", post(admin_lock_trip::<S>))
         .route("/api/admin/trips/:id/unlock", post(admin_unlock_trip::<S>))
         .route("/api/admin/trips/:id/start", post(admin_start_trip::<S>))
-        .route("/api/admin/trips/:id/complete", post(admin_complete_trip::<S>))
+        .route(
+            "/api/admin/trips/:id/complete",
+            post(admin_complete_trip::<S>),
+        )
 }
 
 #[derive(Debug, Deserialize)]
@@ -155,9 +187,8 @@ where
     }
     let where_clause = conditions.join(" AND ");
 
-    let trips = sqlx::query_scalar::<_, Value>(
-        &format!(
-            r#"
+    let trips = sqlx::query_scalar::<_, Value>(&format!(
+        r#"
             SELECT row_to_json(trip_row)
             FROM (
                 SELECT t.*,
@@ -190,11 +221,10 @@ where
                 LIMIT {limit} OFFSET {offset}
             ) trip_row
             "#,
-            where_clause = where_clause,
-            limit = pagination.limit,
-            offset = pagination.offset,
-        ),
-    )
+        where_clause = where_clause,
+        limit = pagination.limit,
+        offset = pagination.offset,
+    ))
     .fetch_all(&state.db)
     .await
     .map_err(|err| ApiError::BadRequest(format!("查询行程失败: {err}")))?;
@@ -260,17 +290,18 @@ async fn delete_trip<S>(
 where
     S: Storage,
 {
-    let status: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM vehicle_trips WHERE id = $1",
-    )
-    .bind(&id)
-    .fetch_optional(&state.db)
-    .await?
-    .flatten();
+    let status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM vehicle_trips WHERE id = $1")
+            .bind(&id)
+            .fetch_optional(&state.db)
+            .await?
+            .flatten();
 
     let status = status.ok_or_else(|| ApiError::NotFound("行程不存在".to_string()))?;
     if status == "in_progress" || status == "locked" {
-        return Err(ApiError::BadRequest("进行中或已锁定的行程不能删除".to_string()));
+        return Err(ApiError::BadRequest(
+            "进行中或已锁定的行程不能删除".to_string(),
+        ));
     }
 
     // Unlink mall orders from this trip
@@ -280,18 +311,19 @@ where
         .await?;
 
     // Reset vehicle trip_status if it was linked
-    let vehicle_id: Option<String> = sqlx::query_scalar(
-        "SELECT vehicle_id FROM vehicle_trips WHERE id = $1",
-    )
-    .bind(&id)
-    .fetch_optional(&state.db)
-    .await?
-    .flatten();
+    let vehicle_id: Option<String> =
+        sqlx::query_scalar("SELECT vehicle_id FROM vehicle_trips WHERE id = $1")
+            .bind(&id)
+            .fetch_optional(&state.db)
+            .await?
+            .flatten();
     if let Some(vid) = vehicle_id {
-        let _ = sqlx::query("UPDATE vehicles SET trip_status = 'idle' WHERE id = $1 AND trip_status = 'in_transit'")
-            .bind(&vid)
-            .execute(&state.db)
-            .await;
+        let _ = sqlx::query(
+            "UPDATE vehicles SET trip_status = 'idle' WHERE id = $1 AND trip_status = 'in_transit'",
+        )
+        .bind(&vid)
+        .execute(&state.db)
+        .await;
     }
 
     sqlx::query("DELETE FROM vehicle_trips WHERE id = $1")
@@ -403,13 +435,12 @@ async fn remove_stop<S>(
 where
     S: Storage,
 {
-    let mall_order_id: Option<String> = sqlx::query_scalar(
-        "SELECT mall_order_id FROM trip_stops WHERE id = $1",
-    )
-    .bind(&stop_id)
-    .fetch_optional(&state.db)
-    .await?
-    .flatten();
+    let mall_order_id: Option<String> =
+        sqlx::query_scalar("SELECT mall_order_id FROM trip_stops WHERE id = $1")
+            .bind(&stop_id)
+            .fetch_optional(&state.db)
+            .await?
+            .flatten();
 
     if let Some(order_id) = &mall_order_id {
         sqlx::query("UPDATE mall_orders SET trip_id = NULL, status = 'dispatching' WHERE id = $1")
@@ -455,13 +486,12 @@ where
     .await?;
 
     // If this stop has a mall_order_id and it's a delivery stop, mark the order as completed
-    let mall_order_id: Option<String> = sqlx::query_scalar(
-        "SELECT mall_order_id FROM trip_stops WHERE id = $1",
-    )
-    .bind(&stop_id)
-    .fetch_optional(&state.db)
-    .await?
-    .flatten();
+    let mall_order_id: Option<String> =
+        sqlx::query_scalar("SELECT mall_order_id FROM trip_stops WHERE id = $1")
+            .bind(&stop_id)
+            .fetch_optional(&state.db)
+            .await?
+            .flatten();
 
     if let Some(order_id) = &mall_order_id {
         let _ = sqlx::query(
@@ -616,17 +646,18 @@ where
         return Err(ApiError::BadRequest("请选择要分配的订单".to_string()));
     }
 
-    let trip_status: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM vehicle_trips WHERE id = $1",
-    )
-    .bind(&trip_id)
-    .fetch_optional(&state.db)
-    .await?
-    .flatten();
+    let trip_status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM vehicle_trips WHERE id = $1")
+            .bind(&trip_id)
+            .fetch_optional(&state.db)
+            .await?
+            .flatten();
 
     let trip_status = trip_status.ok_or_else(|| ApiError::NotFound("行程不存在".to_string()))?;
     if trip_status != "planned" && trip_status != "locked" {
-        return Err(ApiError::BadRequest("只有未锁定或已锁定的行程可以添加订单".to_string()));
+        return Err(ApiError::BadRequest(
+            "只有未锁定或已锁定的行程可以添加订单".to_string(),
+        ));
     }
 
     let mut tx = state.db.begin().await?;
@@ -859,9 +890,21 @@ async fn do_create_trip(pool: &sqlx::PgPool, body: &CreateTripRequest) -> ApiRes
         }
     }
 
-    let vehicle_code = vehicle.as_ref().and_then(|v| v.get("vehicleCode")).and_then(Value::as_str).map(String::from);
-    let license_plate = vehicle.as_ref().and_then(|v| v.get("licensePlate")).and_then(Value::as_str).map(String::from);
-    let vehicle_type = vehicle.as_ref().and_then(|v| v.get("vehicleType")).and_then(Value::as_str).map(String::from);
+    let vehicle_code = vehicle
+        .as_ref()
+        .and_then(|v| v.get("vehicleCode"))
+        .and_then(Value::as_str)
+        .map(String::from);
+    let license_plate = vehicle
+        .as_ref()
+        .and_then(|v| v.get("licensePlate"))
+        .and_then(Value::as_str)
+        .map(String::from);
+    let vehicle_type = vehicle
+        .as_ref()
+        .and_then(|v| v.get("vehicleType"))
+        .and_then(Value::as_str)
+        .map(String::from);
 
     let trip: Value = sqlx::query_scalar(
         r#"
@@ -944,26 +987,24 @@ async fn do_create_trip(pool: &sqlx::PgPool, body: &CreateTripRequest) -> ApiRes
 }
 
 async fn do_start_trip(pool: &sqlx::PgPool, id: &str) -> ApiResult<Json<ApiEnvelope<Value>>> {
-    let status: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM vehicle_trips WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?
-    .flatten();
+    let status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM vehicle_trips WHERE id = $1")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?
+            .flatten();
 
     let status = status.ok_or_else(|| ApiError::NotFound("行程不存在".to_string()))?;
     if status != "locked" {
         return Err(ApiError::BadRequest("只有已锁定的行程可以出发".to_string()));
     }
 
-    let vehicle_id: Option<String> = sqlx::query_scalar(
-        "SELECT vehicle_id FROM vehicle_trips WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?
-    .flatten();
+    let vehicle_id: Option<String> =
+        sqlx::query_scalar("SELECT vehicle_id FROM vehicle_trips WHERE id = $1")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?
+            .flatten();
 
     let mut tx = pool.begin().await?;
 
@@ -987,26 +1028,24 @@ async fn do_start_trip(pool: &sqlx::PgPool, id: &str) -> ApiResult<Json<ApiEnvel
 }
 
 async fn do_complete_trip(pool: &sqlx::PgPool, id: &str) -> ApiResult<Json<ApiEnvelope<Value>>> {
-    let status: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM vehicle_trips WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?
-    .flatten();
+    let status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM vehicle_trips WHERE id = $1")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?
+            .flatten();
 
     let status = status.ok_or_else(|| ApiError::NotFound("行程不存在".to_string()))?;
     if status != "in_progress" {
         return Err(ApiError::BadRequest("只有进行中的行程可以完成".to_string()));
     }
 
-    let vehicle_id: Option<String> = sqlx::query_scalar(
-        "SELECT vehicle_id FROM vehicle_trips WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?
-    .flatten();
+    let vehicle_id: Option<String> =
+        sqlx::query_scalar("SELECT vehicle_id FROM vehicle_trips WHERE id = $1")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?
+            .flatten();
 
     let mut tx = pool.begin().await?;
 
@@ -1042,13 +1081,12 @@ async fn do_complete_trip(pool: &sqlx::PgPool, id: &str) -> ApiResult<Json<ApiEn
 }
 
 async fn do_lock_trip(pool: &sqlx::PgPool, id: &str) -> ApiResult<Json<ApiEnvelope<Value>>> {
-    let status: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM vehicle_trips WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?
-    .flatten();
+    let status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM vehicle_trips WHERE id = $1")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?
+            .flatten();
 
     let status = status.ok_or_else(|| ApiError::NotFound("行程不存在".to_string()))?;
     if status != "planned" {
@@ -1065,13 +1103,12 @@ async fn do_lock_trip(pool: &sqlx::PgPool, id: &str) -> ApiResult<Json<ApiEnvelo
 }
 
 async fn do_unlock_trip(pool: &sqlx::PgPool, id: &str) -> ApiResult<Json<ApiEnvelope<Value>>> {
-    let status: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM vehicle_trips WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?
-    .flatten();
+    let status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM vehicle_trips WHERE id = $1")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?
+            .flatten();
 
     let status = status.ok_or_else(|| ApiError::NotFound("行程不存在".to_string()))?;
     if status != "locked" {
@@ -1087,7 +1124,11 @@ async fn do_unlock_trip(pool: &sqlx::PgPool, id: &str) -> ApiResult<Json<ApiEnve
     Ok(ok("行程已解锁", trip))
 }
 
-async fn do_add_stop(pool: &sqlx::PgPool, trip_id: &str, body: &AddStopRequest) -> ApiResult<Json<ApiEnvelope<Value>>> {
+async fn do_add_stop(
+    pool: &sqlx::PgPool,
+    trip_id: &str,
+    body: &AddStopRequest,
+) -> ApiResult<Json<ApiEnvelope<Value>>> {
     let stop_type = body.stop_type.as_deref().unwrap_or("delivery");
     let sequence = body.stop_sequence.unwrap_or_else(|| {
         // Default to end of list
