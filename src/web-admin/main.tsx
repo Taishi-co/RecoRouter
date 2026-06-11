@@ -563,8 +563,8 @@ const adminModules: AdminModuleSpec[] = [
       designPage('platform.paymentRecon', '支付对账', '财务', '微信支付、退款和异常账单', 'refund'),
       designPage('platform.splitLedger', '分账台账', '财务', '无人车与商城业务分账记录', 'orders'),
       designPage('platform.commission', '佣金审核', '财务', '运力订单佣金确认与异常处理', 'route', 'transportOrders'),
-      designPage('platform.cos', 'COS资源', '公共服务', '商品图、资质图和上传资源治理', 'shop'),
-      designPage('platform.logs', '日志检索', '公共服务', '接口日志、错误日志和审计日志', 'support'),
+      designPage('platform.cos', '素材资源', '公共服务', '商品图、资质图和上传资源治理', 'shop'),
+      designPage('platform.logs', '日志检索', '公共服务', '业务日志、错误日志和审计日志', 'support'),
       designPage('platform.apiHealth', '服务健康', '公共服务', '无人车、商城、平台服务健康检查', 'refresh'),
       designPage('platform.risk', '风控规则', '安全', '支付、售后、账号和频控策略', 'x'),
       designPage('platform.auditLog', '操作审计', '安全', '管理员操作轨迹与敏感动作', 'orders'),
@@ -611,7 +611,7 @@ const adminModules: AdminModuleSpec[] = [
     moduleLabel: '商城业务',
     theme: 'green',
     pages: [
-      designPage('mall.products', '商品上架', '商品管理', '商品创建、上下架、库存和图片', 'shop', 'mallProducts'),
+      designPage('mall.products', '商品上架', '商品管理', '维护商品资料、价格、库存和图片', 'shop', 'mallProducts'),
       designPage('mall.productList', '商品列表', '商品管理', '在售、售罄和下架商品管理', 'shop', 'mallProducts'),
       designPage('mall.categories', '品类管理', '品类管理', '社区团购类目、排序和状态', 'dashboard'),
       designPage('mall.inventory', '库存预警', '商品管理', '库存管理、低库存、缺货替换和补货提醒', 'support'),
@@ -2183,8 +2183,8 @@ function operationsModuleCards(data: DashboardData, errors: LoadErrors): Operati
     {
       label: '公共服务',
       value: errorCount ? `${errorCount} 项异常` : '在线',
-      detail: '支付、分账、COS、日志和管理接口',
-      status: errorCount ? '接口降级' : '健康',
+      detail: '支付、分账、文件上传和日志服务',
+      status: errorCount ? '需处理' : '健康',
       progress: errorCount ? 58 : 100,
     },
   ];
@@ -2221,9 +2221,9 @@ function operationsRiskItems(data: DashboardData, errors: LoadErrors): Operation
       tone: openTickets ? 'blue' : 'green',
     },
     {
-      label: '服务接口',
+      label: '公共服务',
       value: errorCount ? `${errorCount} 项` : '正常',
-      detail: errorCount ? Object.keys(errors).join(' / ') : '所有已加载接口可用',
+      detail: errorCount ? '部分公共服务需要处理' : '关键服务运行正常',
       tone: errorCount ? 'gray' : 'green',
     },
   ];
@@ -2547,7 +2547,7 @@ function ErrorStrip({ errors }: { errors: LoadErrors }) {
   if (!entries.length) return null;
   return (
     <div className="error-strip">
-      <strong>部分接口加载失败</strong>
+      <strong>部分数据加载失败</strong>
       <span>{entries.map(([key, value]) => `${key}: ${value}`).join('；')}</span>
     </div>
   );
@@ -3496,7 +3496,7 @@ function MallProductDesignSection({
       <div className="mall-admin-kpis">
         <StatCard label="商品总数" value={String(products.length)} detail="当前筛选商品池" />
         <StatCard label="库存预警" value={String(alertCount)} detail="低于商品级阈值" />
-        <StatCard label="报价字段完整" value={String(completeCount)} detail="含图片、规格和售卖方式" />
+        <StatCard label="报价资料完整" value={String(completeCount)} detail="含图片、规格和售卖方式" />
       </div>
 
       <section className="mall-admin-form-panel">
@@ -3510,11 +3510,11 @@ function MallProductDesignSection({
         <div className="coverage-grid">
           <div>
             <strong>图片上传</strong>
-            <span>运营选择本地图片后上传到后端存储，商品主图保存 storage key</span>
+            <span>运营上传商品主图后，系统会保存到商品资料</span>
           </div>
           <div>
             <strong>规格校验</strong>
-            <span>销售规格和售卖方式对外展示，长宽高、体积、重量和冷链字段仅用于内部装载判断</span>
+            <span>销售规格和售卖方式对外展示，长宽高、体积、重量和冷链信息仅用于内部装载判断</span>
           </div>
           <div>
             <strong>库存预警</strong>
@@ -3582,7 +3582,7 @@ function ProductFormFields({
       <label className={fieldClass}>
         商品主图
         <input accept="image/*" type="file" onChange={event => void upload(event.currentTarget.files?.[0])} />
-        <input value={form.imageUrl} onChange={event => onChange({ imageUrl: event.target.value })} placeholder="上传后自动填入 storage key" />
+        <input value={form.imageUrl} onChange={event => onChange({ imageUrl: event.target.value })} placeholder="上传后自动填入图片地址" />
       </label>
       <label className={fieldClass}>
         <span className="field-label">售价<span className="required-mark">*</span></span>
@@ -3704,12 +3704,12 @@ function OperationsDataScreen({ data, errors = {} }: { data: DashboardData; erro
         <div>
           <span className="operations-eyebrow">运营数据大屏</span>
           <h2>平台实时运营中心</h2>
-          <p>聚合商城交易、无人车履约、客服售后和公共服务状态，给运营值班看当天是否需要介入。</p>
+          <p>聚合商城交易、无人车履约、客服售后和平台运行状态，帮助运营判断当天重点事项。</p>
         </div>
         <div className="operations-clock">
           <span>数据来源</span>
-          <strong>管理端实时接口</strong>
-          <small>近 7 日趋势 · 当前加载状态</small>
+          <strong>运营实时数据</strong>
+          <small>近 7 日趋势 · 当前数据</small>
         </div>
       </section>
 
@@ -3739,7 +3739,7 @@ function OperationsDataScreen({ data, errors = {} }: { data: DashboardData; erro
           <div className="operations-panel-head">
             <div>
               <h3>交易趋势</h3>
-              <p>商城订单与运力订单合并统计，金额优先取实付/运费字段</p>
+              <p>展示近 7 日订单量和交易额变化</p>
             </div>
             <span>{peakTrend ? `峰值 ${yuan(peakTrend)}` : '暂无交易峰值'}</span>
           </div>
@@ -3785,7 +3785,7 @@ function OperationsDataScreen({ data, errors = {} }: { data: DashboardData; erro
           <div className="operations-panel-head">
             <div>
               <h3>品类销售</h3>
-              <p>按实付订单商品行聚合，帮助运营判断补货和首页露出顺序</p>
+              <p>按品类汇总销量和销售额，帮助运营判断补货和首页露出顺序</p>
             </div>
           </div>
           <div className="operations-category-bars">
@@ -3808,7 +3808,7 @@ function OperationsDataScreen({ data, errors = {} }: { data: DashboardData; erro
           <div className="operations-panel-head">
             <div>
               <h3>热销商品排行</h3>
-              <p>优先读取销量统计接口，缺失时从商品销量字段兜底</p>
+              <p>按销量和销售额排序，帮助运营优先关注重点商品</p>
             </div>
           </div>
           <div className="operations-rank-table">
@@ -3856,7 +3856,7 @@ function OperationsDataScreen({ data, errors = {} }: { data: DashboardData; erro
           <div className="operations-panel-head">
             <div>
               <h3>风险队列</h3>
-              <p>把需要运营介入的售后、库存、履约和接口问题集中展示</p>
+              <p>把需要运营介入的售后、库存和履约事项集中展示</p>
             </div>
           </div>
           <div className="operations-risk-list">
@@ -4292,7 +4292,7 @@ function ProductEditModal({
         <div className="panel-head">
           <div>
             <h2>编辑商品</h2>
-            <p>维护报价表字段、商品说明和内部装载规格</p>
+            <p>维护报价表信息、商品说明和内部装载规格</p>
           </div>
           <button className="ghost-button" type="button" onClick={onClose}>
             <Icon name="x" />
@@ -6447,7 +6447,7 @@ function MallHomeBannersSection({
           </label>
           <label className="wide">
             图片
-            <input value={form.imageUrl} placeholder="可输入 COS key 或上传图片" onChange={event => onChange({ imageUrl: event.target.value })} />
+            <input value={form.imageUrl} placeholder="可粘贴图片地址或上传图片" onChange={event => onChange({ imageUrl: event.target.value })} />
             <input
               accept="image/*"
               type="file"
@@ -6624,13 +6624,13 @@ function MallHomeSectionsSection({
           </label>
           {!isAnnouncement ? (
             <label className="wide">
-              商品 ID / SKU
+              商品编号
               <input value={form.productIds} placeholder="按展示顺序填写，英文逗号分隔；为空则按规则自动选品" onChange={event => onChange({ productIds: event.target.value })} />
             </label>
           ) : null}
           <label className="wide">
             图片
-            <input value={form.imageUrl} placeholder="可输入 COS key 或上传图片" onChange={event => onChange({ imageUrl: event.target.value })} />
+            <input value={form.imageUrl} placeholder="可粘贴图片地址或上传图片" onChange={event => onChange({ imageUrl: event.target.value })} />
             <input
               accept="image/*"
               type="file"
@@ -6656,7 +6656,7 @@ function MallHomeSectionsSection({
           </label>
           {!isAnnouncement ? (
             <label className="wide">
-              规则 JSON
+              展示规则
               <textarea value={form.rules} onChange={event => onChange({ rules: event.target.value })} />
             </label>
           ) : null}
@@ -6671,7 +6671,7 @@ function MallHomeSectionsSection({
         </form>
       </Panel>
 
-      <Panel title={`${title}列表`} description="启用后供 C 端商城首页实时读取；拖动排序后续可扩展，当前按排序值升序展示">
+      <Panel title={`${title}列表`} description="启用后展示在商城首页，列表按排序值升序排列">
         <div className="list-stack">
           {visibleSections.map(section => {
             const id = stringValue(section, 'id');
@@ -6860,7 +6860,7 @@ function MallCampaignsSection({
                 </select>
               </label>
               <label className="wide">
-                规则 JSON
+                活动规则
                 <textarea value={form.rules} onChange={event => onChange({ rules: event.target.value })} />
               </label>
             </div>
@@ -7078,7 +7078,7 @@ function MallDeliveryRulesSection({
 }) {
   return (
     <div className="page-grid">
-      <Panel title="配送规则" description="维护 C 端结算、自提窗口、配送批次、冷链和退款审核规则">
+      <Panel title="配送规则" description="维护用户结算、自提窗口、配送批次、冷链和退款审核规则">
         <form className="form-grid settings-form" onSubmit={onSettingsSubmit}>
           <label>
             自提开始时间
@@ -7201,7 +7201,7 @@ function SupportDataSection({
             <article>
               <span>满意度</span>
               <strong>{stats.satisfaction || 0}%</strong>
-              <small>来自客服指标接口</small>
+              <small>来自客服服务记录</small>
             </article>
             <article>
               <span>会话总量</span>
@@ -7285,7 +7285,7 @@ function SupportSection({
         <div className="support-filterbar support-filterbar-sessions">
           <label>
             关键词
-            <input value={filters.keyword} onChange={event => onFiltersChange({ keyword: event.target.value })} placeholder="用户 ID / 主题 / 最近消息" />
+            <input value={filters.keyword} onChange={event => onFiltersChange({ keyword: event.target.value })} placeholder="用户编号 / 主题 / 最近消息" />
           </label>
           <label>
             状态
@@ -7306,7 +7306,7 @@ function SupportSection({
       <div className="support-session-shell">
         <Panel title="会话队列" description="按最近更新时间排序，客服先看用户、主题和最后一句话">
           <form className="inline-form support-create-session" onSubmit={onCreateSession}>
-            <input value={form.userId} onChange={event => onFormChange({ userId: event.target.value })} placeholder="用户 ID" />
+            <input value={form.userId} onChange={event => onFormChange({ userId: event.target.value })} placeholder="用户编号" />
             <input value={form.topic} onChange={event => onFormChange({ topic: event.target.value })} placeholder="会话主题" />
             <button className="primary-button small" type="submit">
               <Icon name="plus" />
@@ -7439,7 +7439,7 @@ function AfterSalesSection({
         </div>
       </Panel>
 
-      <Panel title="售后申请列表" description="每条售后都来自真实申请表，处理后同步订单售后状态和订单事件">
+      <Panel title="售后申请列表" description="按订单售后记录处理退款、补偿和驳回">
         <div className="support-after-sales">
           {afterSales.map(item => {
             const id = stringValue(item, 'id');
@@ -7552,8 +7552,8 @@ function SupportTicketsSection({
         <Panel title="内部跟进工单" description="客服把需要其他岗位介入的事项放到这里，处理完关闭">
           <form className="support-ticket-form" onSubmit={onCreateTicket}>
             <input required value={form.ticketTitle} onChange={event => onFormChange({ ticketTitle: event.target.value })} placeholder="工单标题" />
-            <input value={form.userId} onChange={event => onFormChange({ userId: event.target.value })} placeholder="用户 ID" />
-            <input value={form.ticketOrderId} onChange={event => onFormChange({ ticketOrderId: event.target.value })} placeholder="订单 ID" />
+            <input value={form.userId} onChange={event => onFormChange({ userId: event.target.value })} placeholder="用户编号" />
+            <input value={form.ticketOrderId} onChange={event => onFormChange({ ticketOrderId: event.target.value })} placeholder="订单编号" />
             <select value={form.ticketCategory} onChange={event => onFormChange({ ticketCategory: event.target.value })}>
               <option value="delivery">配送</option>
               <option value="after_sales">售后</option>
@@ -7733,7 +7733,7 @@ function App() {
   const [errors, setErrors] = useState<LoadErrors>({});
   const [loading, setLoading] = useState(() => Boolean(getStoredAdminSession()));
   const [busy, setBusy] = useState('');
-  const [notice, setNotice] = useState('正在连接后端管理接口');
+  const [notice, setNotice] = useState('正在加载管理数据');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   const [productForm, setProductForm] = useState<ProductForm>(initialProductForm);
@@ -7855,7 +7855,7 @@ function App() {
     setData(result.data);
     setErrors(result.errors);
     setLoading(false);
-    setNotice(Object.keys(result.errors).length ? '部分接口暂不可用，已显示可用数据' : '后端接口连接正常');
+    setNotice(Object.keys(result.errors).length ? '部分数据暂不可用，已显示可用内容' : '管理数据已更新');
   };
 
   useEffect(() => {
@@ -7985,7 +7985,7 @@ function App() {
       clearStoredAdminSession();
       resetDashboardState();
       setSession(null);
-      setAuthError('当前账号不是管理员，无法登录 Web 管理端');
+      setAuthError('当前账号不是管理员，无法登录管理端');
       setNotice('非管理员账号已退出');
     } catch (error) {
       clearStoredAdminSession();
@@ -8885,7 +8885,7 @@ function App() {
         category: supportForm.ticketCategory,
         priority: supportForm.ticketPriority,
         title: supportForm.ticketTitle,
-        description: '由 Web 管理端创建',
+        description: '运营手动创建',
       });
       setSupportForm(current => ({
         ...current,
