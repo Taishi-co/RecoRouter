@@ -161,16 +161,35 @@ export interface MallPickupPoint {
   id: string
   name: string
   addressText: string
+  communityName?: string | null
   contactName?: string | null
   contactPhone?: string | null
+  leaderName?: string | null
+  leaderPhone?: string | null
   latitude?: number | null
   longitude?: number | null
   businessHours?: string | null
   distanceMeters?: number | null
   groupLeaderId?: string | null
   groupLeaderName?: string | null
+  sortOrder?: number | null
   status: string
   isDefault?: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface MallGroupLeader {
+  id: string
+  pickupPointId: string
+  pickupPointName?: string | null
+  pickupPointAddress?: string | null
+  communityName?: string | null
+  userId?: string | null
+  name: string
+  phone?: string | null
+  status: string
+  serviceNote?: string | null
   createdAt?: string
   updatedAt?: string
 }
@@ -736,10 +755,44 @@ export async function adminGetMallOpsOverview(): Promise<MallOpsOverview> {
 }
 
 export async function adminListMallPickupPoints(params: {
+  keyword?: string
   status?: string
   communityName?: string
+  community?: string
 } = {}): Promise<MallPickupPoint[]> {
   return apiGet('/api/admin/mall/pickup-points', params)
+}
+
+export async function adminCreateMallPickupPoint(data: Partial<MallPickupPoint> & Record<string, unknown>) {
+  return apiPost<MallPickupPoint>('/api/admin/mall/pickup-points', data)
+}
+
+export async function adminUpdateMallPickupPoint(id: string, data: Partial<MallPickupPoint> & Record<string, unknown>) {
+  return apiPut<MallPickupPoint>(`/api/admin/mall/pickup-points/${id}`, data)
+}
+
+export async function adminDeleteMallPickupPoint(id: string) {
+  return apiDelete(`/api/admin/mall/pickup-points/${id}`)
+}
+
+export async function adminListMallGroupLeaders(params: {
+  keyword?: string
+  status?: string
+  pickupPointId?: string
+} = {}): Promise<MallGroupLeader[]> {
+  return apiGet('/api/admin/mall/group-leaders', params)
+}
+
+export async function adminCreateMallGroupLeader(data: Partial<MallGroupLeader> & { pickupPointId: string; name: string }) {
+  return apiPost<MallGroupLeader>('/api/admin/mall/group-leaders', data)
+}
+
+export async function adminUpdateMallGroupLeader(id: string, data: Partial<MallGroupLeader>) {
+  return apiPut<MallGroupLeader>(`/api/admin/mall/group-leaders/${id}`, data)
+}
+
+export async function adminDeleteMallGroupLeader(id: string) {
+  return apiDelete(`/api/admin/mall/group-leaders/${id}`)
 }
 
 export async function adminCreateMallProduct(data: Partial<MallProduct> & { categoryCode: string; priceCents: number }) {

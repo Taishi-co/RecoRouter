@@ -105,7 +105,19 @@ where
         .route("/api/admin/mall/ops/overview", get(admin_ops_overview::<S>))
         .route(
             "/api/admin/mall/pickup-points",
-            get(admin_list_pickup_points::<S>),
+            get(admin_list_pickup_points::<S>).post(admin_create_pickup_point::<S>),
+        )
+        .route(
+            "/api/admin/mall/pickup-points/:id",
+            put(admin_update_pickup_point::<S>).delete(admin_delete_pickup_point::<S>),
+        )
+        .route(
+            "/api/admin/mall/group-leaders",
+            get(admin_list_group_leaders::<S>).post(admin_create_group_leader::<S>),
+        )
+        .route(
+            "/api/admin/mall/group-leaders/:id",
+            put(admin_update_group_leader::<S>).delete(admin_delete_group_leader::<S>),
         )
         .route(
             "/api/admin/mall/listing-requests",
@@ -306,9 +318,59 @@ struct AddressQuery {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PickupPointQuery {
+    keyword: Option<String>,
     status: Option<String>,
     #[serde(alias = "community_name")]
     community_name: Option<String>,
+    community: Option<String>,
+    #[serde(alias = "page_size", alias = "limit")]
+    page_size: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PickupPointMutationRequest {
+    name: Option<String>,
+    #[serde(alias = "address_text", alias = "address")]
+    address_text: Option<String>,
+    latitude: Option<f64>,
+    longitude: Option<f64>,
+    #[serde(alias = "business_hours")]
+    business_hours: Option<String>,
+    status: Option<String>,
+    #[serde(alias = "community_name")]
+    community_name: Option<String>,
+    #[serde(alias = "leader_name")]
+    leader_name: Option<String>,
+    #[serde(alias = "leader_phone")]
+    leader_phone: Option<String>,
+    #[serde(alias = "sort_order")]
+    sort_order: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GroupLeaderQuery {
+    keyword: Option<String>,
+    status: Option<String>,
+    #[serde(alias = "pickup_point_id")]
+    pickup_point_id: Option<String>,
+    #[serde(alias = "page_size", alias = "limit")]
+    page_size: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GroupLeaderMutationRequest {
+    #[serde(alias = "pickup_point_id")]
+    pickup_point_id: Option<String>,
+    #[serde(alias = "user_id")]
+    user_id: Option<String>,
+    name: Option<String>,
+    phone: Option<String>,
+    status: Option<String>,
+    #[serde(alias = "service_note")]
+    service_note: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1693,6 +1755,338 @@ where
 {
     let points = fetch_pickup_points(&state.db, query, false).await?;
     Ok(ok("查询成功", points))
+}
+
+async fn admin_create_pickup_point<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<PickupPointMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let name = require_non_empty(body.name, "自提点名称不能为空")?;
+    let address_text = require_non_empty(body.address_text, "自提点地址不能为空")?;
+    let status = body.status.unwrap_or_else(|| "active".to_string());
+    validate_pickup_point_status(&status)?;
+    validate_optional_non_negative_i32(body.sort_order, "排序不能小于0")?;
+
+    let point = sqlx::query_scalar::<_, Value>(
+        r#"
+        INSERT INTO mall_pickup_points (
+          name, address_text, latitude, longitude, business_hours, status,
+          community_name, leader_name, leader_phone, sort_order
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, 0))
+        RETURNING jsonb_build_object(
+          'id', id,
+          'name', name,
+          'addressText', address_text,
+          'latitude', latitude,
+          'longitude', longitude,
+          'businessHours', business_hours,
+          'status', status,
+          'communityName', community_name,
+          'leaderName', leader_name,
+          'leaderPhone', leader_phone,
+          'sortOrder', sort_order,
+          'createdAt', created_at,
+          'updatedAt', updated_at
+        )
+        "#,
+    )
+    .bind(name)
+    .bind(address_text)
+    .bind(body.latitude)
+    .bind(body.longitude)
+    .bind(non_empty(body.business_hours))
+    .bind(status)
+    .bind(non_empty(body.community_name))
+    .bind(non_empty(body.leader_name))
+    .bind(non_empty(body.leader_phone))
+    .bind(body.sort_order)
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(ok("自提点创建成功", point))
+}
+
+async fn admin_update_pickup_point<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<PickupPointMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    if let Some(status) = body.status.as_deref() {
+        validate_pickup_point_status(status)?;
+    }
+    validate_optional_non_negative_i32(body.sort_order, "排序不能小于0")?;
+    let name = optional_non_empty(body.name, "自提点名称不能为空")?;
+    let address_text = optional_non_empty(body.address_text, "自提点地址不能为空")?;
+
+    let point = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_pickup_points
+        SET name = COALESCE($2, name),
+            address_text = COALESCE($3, address_text),
+            latitude = COALESCE($4, latitude),
+            longitude = COALESCE($5, longitude),
+            business_hours = COALESCE($6, business_hours),
+            status = COALESCE($7, status),
+            community_name = COALESCE($8, community_name),
+            leader_name = COALESCE($9, leader_name),
+            leader_phone = COALESCE($10, leader_phone),
+            sort_order = COALESCE($11, sort_order),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING jsonb_build_object(
+          'id', id,
+          'name', name,
+          'addressText', address_text,
+          'latitude', latitude,
+          'longitude', longitude,
+          'businessHours', business_hours,
+          'status', status,
+          'communityName', community_name,
+          'leaderName', leader_name,
+          'leaderPhone', leader_phone,
+          'sortOrder', sort_order,
+          'createdAt', created_at,
+          'updatedAt', updated_at
+        )
+        "#,
+    )
+    .bind(&id)
+    .bind(name)
+    .bind(address_text)
+    .bind(body.latitude)
+    .bind(body.longitude)
+    .bind(non_empty(body.business_hours))
+    .bind(body.status)
+    .bind(non_empty(body.community_name))
+    .bind(non_empty(body.leader_name))
+    .bind(non_empty(body.leader_phone))
+    .bind(body.sort_order)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("自提点不存在".to_string()))?;
+
+    Ok(ok("自提点更新成功", point))
+}
+
+async fn admin_delete_pickup_point<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let point = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_pickup_points
+        SET status = 'deleted',
+            updated_at = now()
+        WHERE id = $1
+        RETURNING jsonb_build_object(
+          'id', id,
+          'name', name,
+          'addressText', address_text,
+          'status', status,
+          'communityName', community_name,
+          'leaderName', leader_name,
+          'leaderPhone', leader_phone,
+          'updatedAt', updated_at
+        )
+        "#,
+    )
+    .bind(&id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("自提点不存在".to_string()))?;
+
+    sqlx::query(
+        r#"
+        UPDATE mall_group_leaders
+        SET status = 'inactive',
+            updated_at = now()
+        WHERE pickup_point_id = $1
+          AND status <> 'deleted'
+        "#,
+    )
+    .bind(&id)
+    .execute(&state.db)
+    .await?;
+
+    Ok(ok("自提点已删除", point))
+}
+
+async fn admin_list_group_leaders<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<GroupLeaderQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let leaders = fetch_group_leaders(&state.db, query).await?;
+    Ok(ok("查询成功", leaders))
+}
+
+async fn admin_create_group_leader<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<GroupLeaderMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let pickup_point_id = require_non_empty(body.pickup_point_id, "绑定自提点不能为空")?;
+    let name = require_non_empty(body.name, "团长姓名不能为空")?;
+    let status = body.status.unwrap_or_else(|| "active".to_string());
+    validate_group_leader_status(&status)?;
+    ensure_pickup_point_exists_for_admin(&state.db, &pickup_point_id).await?;
+
+    let leader = sqlx::query_scalar::<_, Value>(
+        r#"
+        INSERT INTO mall_group_leaders (
+          pickup_point_id, user_id, name, phone, status, service_note
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING jsonb_build_object(
+          'id', id,
+          'pickupPointId', pickup_point_id,
+          'userId', user_id,
+          'name', name,
+          'phone', phone,
+          'status', status,
+          'serviceNote', service_note,
+          'createdAt', created_at,
+          'updatedAt', updated_at
+        )
+        "#,
+    )
+    .bind(&pickup_point_id)
+    .bind(non_empty(body.user_id))
+    .bind(name)
+    .bind(non_empty(body.phone))
+    .bind(status)
+    .bind(non_empty(body.service_note))
+    .fetch_one(&state.db)
+    .await?;
+
+    sync_pickup_point_leader_contact(&state.db, &pickup_point_id).await?;
+    Ok(ok("团长创建成功", leader))
+}
+
+async fn admin_update_group_leader<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<GroupLeaderMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    if let Some(status) = body.status.as_deref() {
+        validate_group_leader_status(status)?;
+    }
+    if let Some(pickup_point_id) = body.pickup_point_id.as_deref().and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    }) {
+        ensure_pickup_point_exists_for_admin(&state.db, pickup_point_id).await?;
+    }
+
+    let name = optional_non_empty(body.name, "团长姓名不能为空")?;
+    let next_pickup_point_id = non_empty(body.pickup_point_id);
+    let original_pickup_point_id = sqlx::query_scalar::<_, String>(
+        "SELECT pickup_point_id FROM mall_group_leaders WHERE id = $1",
+    )
+    .bind(&id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("团长不存在".to_string()))?;
+
+    let leader = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_group_leaders
+        SET pickup_point_id = COALESCE($2, pickup_point_id),
+            user_id = COALESCE($3, user_id),
+            name = COALESCE($4, name),
+            phone = COALESCE($5, phone),
+            status = COALESCE($6, status),
+            service_note = COALESCE($7, service_note),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING jsonb_build_object(
+          'id', id,
+          'pickupPointId', pickup_point_id,
+          'userId', user_id,
+          'name', name,
+          'phone', phone,
+          'status', status,
+          'serviceNote', service_note,
+          'createdAt', created_at,
+          'updatedAt', updated_at
+        )
+        "#,
+    )
+    .bind(&id)
+    .bind(next_pickup_point_id.as_deref())
+    .bind(non_empty(body.user_id))
+    .bind(name)
+    .bind(non_empty(body.phone))
+    .bind(body.status)
+    .bind(non_empty(body.service_note))
+    .fetch_one(&state.db)
+    .await?;
+
+    sync_pickup_point_leader_contact(&state.db, &original_pickup_point_id).await?;
+    if let Some(next_pickup_point_id) = next_pickup_point_id {
+        if next_pickup_point_id != original_pickup_point_id {
+            sync_pickup_point_leader_contact(&state.db, &next_pickup_point_id).await?;
+        }
+    }
+
+    Ok(ok("团长更新成功", leader))
+}
+
+async fn admin_delete_group_leader<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let leader = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_group_leaders
+        SET status = 'deleted',
+            updated_at = now()
+        WHERE id = $1
+        RETURNING jsonb_build_object(
+          'id', id,
+          'pickupPointId', pickup_point_id,
+          'name', name,
+          'phone', phone,
+          'status', status,
+          'serviceNote', service_note,
+          'updatedAt', updated_at
+        )
+        "#,
+    )
+    .bind(&id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("团长不存在".to_string()))?;
+
+    if let Some(pickup_point_id) = leader.get("pickupPointId").and_then(Value::as_str) {
+        sync_pickup_point_leader_contact(&state.db, pickup_point_id).await?;
+    }
+
+    Ok(ok("团长已删除", leader))
 }
 
 async fn get_mall_profile<S>(
@@ -4716,16 +5110,152 @@ async fn fetch_pickup_points(
     } else if let Some(status) = non_empty(query.status) {
         builder.push(" AND status = ");
         builder.push_bind(status);
+    } else {
+        builder.push(" AND status <> 'deleted'");
     }
-    if let Some(community_name) = non_empty(query.community_name) {
-        builder.push(" AND community_name = ");
-        builder.push_bind(community_name);
+    if let Some(keyword) = non_empty(query.keyword) {
+        let pattern = format!("%{keyword}%");
+        builder.push(" AND (name ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR address_text ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR community_name ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR leader_name ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR leader_phone ILIKE ");
+        builder.push_bind(pattern);
+        builder.push(")");
     }
-    builder.push(" ORDER BY sort_order ASC, created_at DESC LIMIT 100");
+    let community = query.community_name.or(query.community);
+    if let Some(community_name) = non_empty(community) {
+        builder.push(" AND community_name ILIKE ");
+        let community_pattern = format!("%{community_name}%");
+        builder.push_bind(community_pattern);
+    }
+    let limit = query.page_size.unwrap_or(100).clamp(1, 200);
+    builder.push(" ORDER BY sort_order ASC, created_at DESC LIMIT ");
+    builder.push_bind(limit);
     Ok(builder
         .build_query_scalar::<Value>()
         .fetch_all(pool)
         .await?)
+}
+
+async fn fetch_group_leaders(pool: &PgPool, query: GroupLeaderQuery) -> ApiResult<Vec<Value>> {
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT jsonb_build_object(
+          'id', leader.id,
+          'pickupPointId', leader.pickup_point_id,
+          'pickupPointName', point.name,
+          'pickupPointAddress', point.address_text,
+          'communityName', point.community_name,
+          'userId', leader.user_id,
+          'name', leader.name,
+          'phone', leader.phone,
+          'status', leader.status,
+          'serviceNote', leader.service_note,
+          'createdAt', leader.created_at,
+          'updatedAt', leader.updated_at
+        )
+        FROM mall_group_leaders leader
+        JOIN mall_pickup_points point ON point.id = leader.pickup_point_id
+        WHERE leader.status <> 'deleted'
+        "#,
+    );
+
+    if let Some(status) = non_empty(query.status) {
+        builder.push(" AND leader.status = ");
+        builder.push_bind(status);
+    }
+    if let Some(pickup_point_id) = non_empty(query.pickup_point_id) {
+        builder.push(" AND leader.pickup_point_id = ");
+        builder.push_bind(pickup_point_id);
+    }
+    if let Some(keyword) = non_empty(query.keyword) {
+        let pattern = format!("%{keyword}%");
+        builder.push(" AND (leader.name ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR leader.phone ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR leader.user_id ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR point.name ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR point.community_name ILIKE ");
+        builder.push_bind(pattern);
+        builder.push(")");
+    }
+
+    let limit = query.page_size.unwrap_or(100).clamp(1, 200);
+    builder.push(" ORDER BY leader.updated_at DESC, leader.created_at DESC LIMIT ");
+    builder.push_bind(limit);
+    Ok(builder
+        .build_query_scalar::<Value>()
+        .fetch_all(pool)
+        .await?)
+}
+
+async fn sync_pickup_point_leader_contact(pool: &PgPool, pickup_point_id: &str) -> ApiResult<()> {
+    sqlx::query(
+        r#"
+        WITH active_leader AS (
+          SELECT name, phone
+          FROM mall_group_leaders
+          WHERE pickup_point_id = $1
+            AND status = 'active'
+          ORDER BY updated_at DESC, created_at DESC
+          LIMIT 1
+        )
+        UPDATE mall_pickup_points point
+        SET leader_name = active_leader.name,
+            leader_phone = active_leader.phone,
+            updated_at = now()
+        FROM active_leader
+        WHERE point.id = $1
+        "#,
+    )
+    .bind(pickup_point_id)
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        UPDATE mall_pickup_points
+        SET leader_name = NULL,
+            leader_phone = NULL,
+            updated_at = now()
+        WHERE id = $1
+          AND NOT EXISTS (
+            SELECT 1
+            FROM mall_group_leaders
+            WHERE pickup_point_id = $1
+              AND status = 'active'
+          )
+        "#,
+    )
+    .bind(pickup_point_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+async fn ensure_pickup_point_exists_for_admin(
+    pool: &PgPool,
+    pickup_point_id: &str,
+) -> ApiResult<()> {
+    let exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM mall_pickup_points WHERE id = $1 AND status <> 'deleted')",
+    )
+    .bind(pickup_point_id)
+    .fetch_one(pool)
+    .await?;
+    if !exists {
+        return Err(ApiError::BadRequest("自提点不存在或已删除".to_string()));
+    }
+    Ok(())
 }
 
 async fn fetch_member_profile(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
@@ -6808,6 +7338,22 @@ fn validate_category_status(status: &str) -> ApiResult<()> {
         Ok(())
     } else {
         Err(ApiError::BadRequest("品类状态不正确".to_string()))
+    }
+}
+
+fn validate_pickup_point_status(status: &str) -> ApiResult<()> {
+    if matches!(status, "active" | "inactive" | "deleted") {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest("自提点状态不正确".to_string()))
+    }
+}
+
+fn validate_group_leader_status(status: &str) -> ApiResult<()> {
+    if matches!(status, "active" | "inactive" | "deleted") {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest("团长状态不正确".to_string()))
     }
 }
 

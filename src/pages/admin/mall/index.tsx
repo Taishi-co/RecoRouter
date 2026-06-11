@@ -14,6 +14,7 @@ import {
   Trophy,
   TriangleAlert,
   Truck,
+  Users,
   Wallet,
 } from 'lucide-react-taro'
 import { AppPageShell } from '@/components/layout/app-page-shell'
@@ -22,6 +23,10 @@ import { Input } from '@/components/ui/input'
 import {
   adminCreateMallProduct,
   adminCreateMallProductListingRequest,
+  adminCreateMallGroupLeader,
+  adminCreateMallPickupPoint,
+  adminDeleteMallGroupLeader,
+  adminDeleteMallPickupPoint,
   adminCreateMallWithdrawal,
   adminDispatchMallOrder,
   adminGenerateMallDeliverySheet,
@@ -29,6 +34,7 @@ import {
   adminGetMallSalesStats,
   adminListMallDeliverySheets,
   adminListMallFinanceBills,
+  adminListMallGroupLeaders,
   adminListMallOrders,
   adminListMallPickupPoints,
   adminListMallProductListingRequests,
@@ -37,15 +43,18 @@ import {
   adminRefundMallOrder,
   adminReviewMallProductListingRequest,
   adminUpdateMallDeliverySheetStatus,
+  adminUpdateMallGroupLeader,
   adminUpdateMallOrderStatus,
   adminUpdateMallProduct,
+  adminUpdateMallPickupPoint,
+  type MallGroupLeader,
   type MallOrder,
   type MallPickupPoint,
   type MallProduct,
   yuan,
 } from '@/services/mall'
 
-type PanelKey = 'products' | 'orders' | 'delivery' | 'finance' | 'stats'
+type PanelKey = 'products' | 'orders' | 'pickup' | 'leaders' | 'delivery' | 'finance' | 'stats'
 type RecordItem = Record<string, any>
 type IconType = ComponentType<any>
 
@@ -73,6 +82,30 @@ interface ProductForm {
   heightCm: string
   volumeLiters: string
   weightKg: string
+}
+
+interface PickupPointForm {
+  id: string
+  name: string
+  addressText: string
+  communityName: string
+  businessHours: string
+  leaderName: string
+  leaderPhone: string
+  sortOrder: string
+  latitude: string
+  longitude: string
+  status: string
+}
+
+interface GroupLeaderForm {
+  id: string
+  pickupPointId: string
+  userId: string
+  name: string
+  phone: string
+  status: string
+  serviceNote: string
 }
 
 const theme = {
@@ -109,9 +142,35 @@ const emptyProductForm: ProductForm = {
   weightKg: '0.5',
 }
 
+const emptyPickupPointForm: PickupPointForm = {
+  id: '',
+  name: '',
+  addressText: '',
+  communityName: '',
+  businessHours: '08:00-20:00',
+  leaderName: '',
+  leaderPhone: '',
+  sortOrder: '10',
+  latitude: '',
+  longitude: '',
+  status: 'active',
+}
+
+const emptyGroupLeaderForm: GroupLeaderForm = {
+  id: '',
+  pickupPointId: '',
+  userId: '',
+  name: '',
+  phone: '',
+  status: 'active',
+  serviceNote: '',
+}
+
 const panelTabs: Array<{ key: PanelKey; label: string; icon: IconType }> = [
   { key: 'products', label: '商品', icon: PackagePlus },
   { key: 'orders', label: '订单', icon: ClipboardList },
+  { key: 'pickup', label: '自提点', icon: MapPin },
+  { key: 'leaders', label: '团长', icon: Users },
   { key: 'delivery', label: '配送', icon: Truck },
   { key: 'finance', label: '财务', icon: Wallet },
   { key: 'stats', label: '数据', icon: ChartNoAxesCombined },
@@ -124,16 +183,21 @@ export default function AdminMallWorkbench() {
   const [products, setProducts] = useState<MallProduct[]>([])
   const [orders, setOrders] = useState<MallOrder[]>([])
   const [pickupPoints, setPickupPoints] = useState<MallPickupPoint[]>([])
+  const [groupLeaders, setGroupLeaders] = useState<MallGroupLeader[]>([])
   const [listingRequests, setListingRequests] = useState<RecordItem[]>([])
   const [deliverySheets, setDeliverySheets] = useState<RecordItem[]>([])
   const [financeBills, setFinanceBills] = useState<RecordItem[]>([])
   const [settlements, setSettlements] = useState<RecordItem[]>([])
   const [salesStats, setSalesStats] = useState<RecordItem | null>(null)
   const [productForm, setProductForm] = useState<ProductForm>(emptyProductForm)
+  const [pickupPointForm, setPickupPointForm] = useState<PickupPointForm>(emptyPickupPointForm)
+  const [groupLeaderForm, setGroupLeaderForm] = useState<GroupLeaderForm>(emptyGroupLeaderForm)
   const [inventoryTargetStock, setInventoryTargetStock] = useState('80')
   const [inventoryAlertThreshold, setInventoryAlertThreshold] = useState('12')
   const [vehicleCode, setVehicleCode] = useState('Car R-08')
   const [selectedPickupPointId, setSelectedPickupPointId] = useState('')
+  const [pickupKeyword, setPickupKeyword] = useState('')
+  const [leaderKeyword, setLeaderKeyword] = useState('')
   const [withdrawalAmountYuan, setWithdrawalAmountYuan] = useState('1000')
 
   useEffect(() => {
@@ -177,6 +241,30 @@ export default function AdminMallWorkbench() {
       }))
   }, [products, salesStats])
 
+  const visiblePickupPoints = useMemo(() => {
+    const keyword = pickupKeyword.trim().toLowerCase()
+    if (!keyword) return pickupPoints
+    return pickupPoints.filter((point) => {
+      const text = [point.name, point.addressText, point.communityName, point.leaderName, point.leaderPhone, point.groupLeaderName]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      return text.includes(keyword)
+    })
+  }, [pickupKeyword, pickupPoints])
+
+  const visibleGroupLeaders = useMemo(() => {
+    const keyword = leaderKeyword.trim().toLowerCase()
+    if (!keyword) return groupLeaders
+    return groupLeaders.filter((leader) => {
+      const text = [leader.name, leader.phone, leader.pickupPointName, leader.pickupPointAddress, leader.communityName, leader.serviceNote]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      return text.includes(keyword)
+    })
+  }, [groupLeaders, leaderKeyword])
+
   const loadAll = async () => {
     setLoading(true)
     const results = await Promise.allSettled([
@@ -184,6 +272,7 @@ export default function AdminMallWorkbench() {
       adminListMallProducts(),
       adminListMallOrders(),
       adminListMallPickupPoints(),
+      adminListMallGroupLeaders(),
       adminListMallProductListingRequests(),
       adminListMallDeliverySheets(),
       adminListMallFinanceBills(),
@@ -195,11 +284,12 @@ export default function AdminMallWorkbench() {
     if (results[1].status === 'fulfilled') setProducts(toList<MallProduct>(results[1].value))
     if (results[2].status === 'fulfilled') setOrders(toList<MallOrder>(results[2].value))
     if (results[3].status === 'fulfilled') setPickupPoints(toList<MallPickupPoint>(results[3].value))
-    if (results[4].status === 'fulfilled') setListingRequests(toList<RecordItem>(results[4].value))
-    if (results[5].status === 'fulfilled') setDeliverySheets(toList<RecordItem>(results[5].value))
-    if (results[6].status === 'fulfilled') setFinanceBills(toList<RecordItem>(results[6].value))
-    if (results[7].status === 'fulfilled') setSettlements(toList<RecordItem>(results[7].value))
-    if (results[8].status === 'fulfilled') setSalesStats(asRecord(results[8].value))
+    if (results[4].status === 'fulfilled') setGroupLeaders(toList<MallGroupLeader>(results[4].value))
+    if (results[5].status === 'fulfilled') setListingRequests(toList<RecordItem>(results[5].value))
+    if (results[6].status === 'fulfilled') setDeliverySheets(toList<RecordItem>(results[6].value))
+    if (results[7].status === 'fulfilled') setFinanceBills(toList<RecordItem>(results[7].value))
+    if (results[8].status === 'fulfilled') setSettlements(toList<RecordItem>(results[8].value))
+    if (results[9].status === 'fulfilled') setSalesStats(asRecord(results[9].value))
 
     const failed = results.find((result) => result.status === 'rejected')
     if (failed?.status === 'rejected') {
@@ -365,6 +455,120 @@ export default function AdminMallWorkbench() {
     }
   }
 
+  const savePickupPoint = async () => {
+    if (!pickupPointForm.name.trim() || !pickupPointForm.addressText.trim()) {
+      Taro.showToast({ title: '请填写自提点名称和地址', icon: 'none' })
+      return
+    }
+
+    const payload = {
+      name: pickupPointForm.name.trim(),
+      addressText: pickupPointForm.addressText.trim(),
+      communityName: pickupPointForm.communityName.trim() || undefined,
+      businessHours: pickupPointForm.businessHours.trim() || undefined,
+      leaderName: pickupPointForm.leaderName.trim() || undefined,
+      leaderPhone: pickupPointForm.leaderPhone.trim() || undefined,
+      sortOrder: parseInteger(pickupPointForm.sortOrder, 0),
+      latitude: parseDecimal(pickupPointForm.latitude),
+      longitude: parseDecimal(pickupPointForm.longitude),
+      status: pickupPointForm.status || 'active',
+    }
+
+    try {
+      if (pickupPointForm.id) {
+        await adminUpdateMallPickupPoint(pickupPointForm.id, payload)
+        Taro.showToast({ title: '自提点已更新', icon: 'success' })
+      } else {
+        await adminCreateMallPickupPoint(payload)
+        Taro.showToast({ title: '自提点已新增', icon: 'success' })
+      }
+      setPickupPointForm(emptyPickupPointForm)
+      await loadAll()
+    } catch (error) {
+      showError(error, pickupPointForm.id ? '自提点更新失败' : '自提点新增失败')
+    }
+  }
+
+  const editPickupPoint = (point: MallPickupPoint) => {
+    setPanel('pickup')
+    setPickupPointForm(pickupPointToForm(point))
+  }
+
+  const togglePickupPoint = async (point: MallPickupPoint) => {
+    try {
+      await adminUpdateMallPickupPoint(point.id, { status: point.status === 'active' ? 'inactive' : 'active' })
+      Taro.showToast({ title: point.status === 'active' ? '自提点已停用' : '自提点已启用', icon: 'success' })
+      await loadAll()
+    } catch (error) {
+      showError(error, '自提点状态更新失败')
+    }
+  }
+
+  const deletePickupPoint = async (point: MallPickupPoint) => {
+    try {
+      await adminDeleteMallPickupPoint(point.id)
+      Taro.showToast({ title: '自提点已删除', icon: 'success' })
+      await loadAll()
+    } catch (error) {
+      showError(error, '自提点删除失败')
+    }
+  }
+
+  const saveGroupLeader = async () => {
+    if (!groupLeaderForm.pickupPointId || !groupLeaderForm.name.trim()) {
+      Taro.showToast({ title: '请选择自提点并填写团长姓名', icon: 'none' })
+      return
+    }
+
+    const payload = {
+      pickupPointId: groupLeaderForm.pickupPointId,
+      userId: groupLeaderForm.userId.trim() || undefined,
+      name: groupLeaderForm.name.trim(),
+      phone: groupLeaderForm.phone.trim() || undefined,
+      status: groupLeaderForm.status || 'active',
+      serviceNote: groupLeaderForm.serviceNote.trim() || undefined,
+    }
+
+    try {
+      if (groupLeaderForm.id) {
+        await adminUpdateMallGroupLeader(groupLeaderForm.id, payload)
+        Taro.showToast({ title: '团长已更新', icon: 'success' })
+      } else {
+        await adminCreateMallGroupLeader(payload)
+        Taro.showToast({ title: '团长已新增', icon: 'success' })
+      }
+      setGroupLeaderForm(emptyGroupLeaderForm)
+      await loadAll()
+    } catch (error) {
+      showError(error, groupLeaderForm.id ? '团长更新失败' : '团长新增失败')
+    }
+  }
+
+  const editGroupLeader = (leader: MallGroupLeader) => {
+    setPanel('leaders')
+    setGroupLeaderForm(groupLeaderToForm(leader))
+  }
+
+  const toggleGroupLeader = async (leader: MallGroupLeader) => {
+    try {
+      await adminUpdateMallGroupLeader(leader.id, { status: leader.status === 'active' ? 'inactive' : 'active' })
+      Taro.showToast({ title: leader.status === 'active' ? '团长已停用' : '团长已启用', icon: 'success' })
+      await loadAll()
+    } catch (error) {
+      showError(error, '团长状态更新失败')
+    }
+  }
+
+  const deleteGroupLeader = async (leader: MallGroupLeader) => {
+    try {
+      await adminDeleteMallGroupLeader(leader.id)
+      Taro.showToast({ title: '团长已删除', icon: 'success' })
+      await loadAll()
+    } catch (error) {
+      showError(error, '团长删除失败')
+    }
+  }
+
   const createWithdrawal = async () => {
     const amountCents = parseCents(withdrawalAmountYuan)
     if (amountCents <= 0) {
@@ -511,6 +715,106 @@ export default function AdminMallWorkbench() {
             <RecordList emptyText="暂无异常订单">
               {abnormalOrders.map((order) => (
                 <OrderRow key={order.id} order={order} onDispatch={dispatchOrder} onAdvance={advanceOrder} onRefund={refundOrder} />
+              ))}
+            </RecordList>
+          </Section>
+        </View>
+      )}
+
+      {panel === 'pickup' && (
+        <View className="space-y-3">
+          <Section icon={MapPin} title="自提点管理" caption="维护用户下单可选自提点、团长联系方式、营业时间和小区覆盖">
+            <View className="grid grid-cols-2 gap-2">
+              <Field label="自提点名称" value={pickupPointForm.name} placeholder="叁友甄选 · 中庭自提点" onChange={(value) => updatePickupPointForm(setPickupPointForm, 'name', value)} />
+              <Field label="小区" value={pickupPointForm.communityName} placeholder="Haymarket 邻里" onChange={(value) => updatePickupPointForm(setPickupPointForm, 'communityName', value)} />
+              <Field label="自提点地址" value={pickupPointForm.addressText} placeholder="小区中庭 1 层服务台" full onChange={(value) => updatePickupPointForm(setPickupPointForm, 'addressText', value)} />
+              <Field label="营业时间" value={pickupPointForm.businessHours} placeholder="08:00-20:00" onChange={(value) => updatePickupPointForm(setPickupPointForm, 'businessHours', value)} />
+              <Field label="排序" type="number" value={pickupPointForm.sortOrder} onChange={(value) => updatePickupPointForm(setPickupPointForm, 'sortOrder', value)} />
+              <Field label="团长姓名" value={pickupPointForm.leaderName} onChange={(value) => updatePickupPointForm(setPickupPointForm, 'leaderName', value)} />
+              <Field label="团长手机号" value={pickupPointForm.leaderPhone} onChange={(value) => updatePickupPointForm(setPickupPointForm, 'leaderPhone', value)} />
+              <Field label="纬度" type="digit" value={pickupPointForm.latitude} onChange={(value) => updatePickupPointForm(setPickupPointForm, 'latitude', value)} />
+              <Field label="经度" type="digit" value={pickupPointForm.longitude} onChange={(value) => updatePickupPointForm(setPickupPointForm, 'longitude', value)} />
+            </View>
+            <View className="flex flex-row flex-wrap gap-2">
+              <ChoicePill label="启用" active={pickupPointForm.status === 'active'} onClick={() => updatePickupPointForm(setPickupPointForm, 'status', 'active')} />
+              <ChoicePill label="停用" active={pickupPointForm.status === 'inactive'} onClick={() => updatePickupPointForm(setPickupPointForm, 'status', 'inactive')} />
+            </View>
+            <View className="grid grid-cols-2 gap-2">
+              <ActionButton icon={MapPin} label={pickupPointForm.id ? '更新自提点' : '新增自提点'} onClick={savePickupPoint} />
+              <ActionButton label="清空表单" variant="outline" onClick={() => setPickupPointForm(emptyPickupPointForm)} />
+            </View>
+          </Section>
+
+          <Section icon={MapPin} title="自提点列表" caption="支持按名称、地址、小区和团长搜索；停用后用户端不可选择">
+            <Field label="搜索自提点" value={pickupKeyword} placeholder="名称 / 地址 / 团长手机号" onChange={setPickupKeyword} />
+            <RecordList emptyText="暂无自提点">
+              {visiblePickupPoints.map((point) => (
+                <RecordRow
+                  key={point.id}
+                  title={point.name}
+                  subtitle={`${point.communityName || '未配置小区'} · ${point.addressText} · ${point.businessHours || '未配置营业时间'} · ${pickupPointLeaderText(point)}`}
+                  badge={point.status === 'active' ? '启用' : '停用'}
+                  tone={point.status === 'active' ? 'normal' : 'warn'}
+                >
+                  <ActionButton label="编辑" size="sm" variant="outline" onClick={() => editPickupPoint(point)} />
+                  <ActionButton label={point.status === 'active' ? '停用' : '启用'} size="sm" onClick={() => togglePickupPoint(point)} />
+                  <ActionButton label="删除" size="sm" variant="danger" onClick={() => deletePickupPoint(point)} />
+                </RecordRow>
+              ))}
+            </RecordList>
+          </Section>
+        </View>
+      )}
+
+      {panel === 'leaders' && (
+        <View className="space-y-3">
+          <Section icon={Users} title="团长管理" caption="维护团长账号、核销权限范围和服务说明，绑定自提点后同步用户端取货联系人">
+            <View className="rounded-xl p-3" style={{ background: theme.primarySoft }}>
+              <Text className="block text-xs font-bold" style={{ color: theme.muted }}>
+                绑定自提点
+              </Text>
+              <View className="mt-2 flex flex-row flex-wrap gap-2">
+                {pickupPoints.map((point) => (
+                  <ChoicePill
+                    key={point.id}
+                    label={point.name}
+                    active={groupLeaderForm.pickupPointId === point.id}
+                    onClick={() => updateGroupLeaderForm(setGroupLeaderForm, 'pickupPointId', point.id)}
+                  />
+                ))}
+              </View>
+            </View>
+            <View className="grid grid-cols-2 gap-2">
+              <Field label="团长姓名" value={groupLeaderForm.name} placeholder="林团长" onChange={(value) => updateGroupLeaderForm(setGroupLeaderForm, 'name', value)} />
+              <Field label="团长手机号" value={groupLeaderForm.phone} placeholder="13950003001" onChange={(value) => updateGroupLeaderForm(setGroupLeaderForm, 'phone', value)} />
+              <Field label="关联用户ID" value={groupLeaderForm.userId} placeholder="可选，用于微信身份匹配" full onChange={(value) => updateGroupLeaderForm(setGroupLeaderForm, 'userId', value)} />
+              <Field label="服务说明" value={groupLeaderForm.serviceNote} placeholder="负责晚间自提、坏果登记和取货核销" full onChange={(value) => updateGroupLeaderForm(setGroupLeaderForm, 'serviceNote', value)} />
+            </View>
+            <View className="flex flex-row flex-wrap gap-2">
+              <ChoicePill label="启用" active={groupLeaderForm.status === 'active'} onClick={() => updateGroupLeaderForm(setGroupLeaderForm, 'status', 'active')} />
+              <ChoicePill label="停用" active={groupLeaderForm.status === 'inactive'} onClick={() => updateGroupLeaderForm(setGroupLeaderForm, 'status', 'inactive')} />
+            </View>
+            <View className="grid grid-cols-2 gap-2">
+              <ActionButton icon={Users} label={groupLeaderForm.id ? '更新团长' : '新增团长'} onClick={saveGroupLeader} />
+              <ActionButton label="清空表单" variant="outline" onClick={() => setGroupLeaderForm(emptyGroupLeaderForm)} />
+            </View>
+          </Section>
+
+          <Section icon={Users} title="团长列表" caption="支持按团长姓名、手机号、自提点和服务说明搜索">
+            <Field label="搜索团长" value={leaderKeyword} placeholder="团长 / 手机号 / 自提点" onChange={setLeaderKeyword} />
+            <RecordList emptyText="暂无团长">
+              {visibleGroupLeaders.map((leader) => (
+                <RecordRow
+                  key={leader.id}
+                  title={`${leader.name}${leader.phone ? ` · ${leader.phone}` : ''}`}
+                  subtitle={`${leader.pickupPointName || '未绑定自提点'} · ${leader.communityName || '未配置小区'} · ${leader.serviceNote || '未填写服务说明'}`}
+                  badge={leader.status === 'active' ? '启用' : '停用'}
+                  tone={leader.status === 'active' ? 'normal' : 'warn'}
+                >
+                  <ActionButton label="编辑" size="sm" variant="outline" onClick={() => editGroupLeader(leader)} />
+                  <ActionButton label={leader.status === 'active' ? '停用' : '启用'} size="sm" onClick={() => toggleGroupLeader(leader)} />
+                  <ActionButton label="删除" size="sm" variant="danger" onClick={() => deleteGroupLeader(leader)} />
+                </RecordRow>
               ))}
             </RecordList>
           </Section>
@@ -914,6 +1218,57 @@ function updateProductForm(
   value: string,
 ) {
   setter((current) => ({ ...current, [key]: value }))
+}
+
+function updatePickupPointForm(
+  setter: (next: (current: PickupPointForm) => PickupPointForm) => void,
+  key: keyof PickupPointForm,
+  value: string,
+) {
+  setter((current) => ({ ...current, [key]: value }))
+}
+
+function updateGroupLeaderForm(
+  setter: (next: (current: GroupLeaderForm) => GroupLeaderForm) => void,
+  key: keyof GroupLeaderForm,
+  value: string,
+) {
+  setter((current) => ({ ...current, [key]: value }))
+}
+
+function pickupPointToForm(point: MallPickupPoint): PickupPointForm {
+  return {
+    id: point.id,
+    name: point.name || '',
+    addressText: point.addressText || '',
+    communityName: point.communityName || '',
+    businessHours: point.businessHours || '',
+    leaderName: point.leaderName || point.groupLeaderName || point.contactName || '',
+    leaderPhone: point.leaderPhone || point.contactPhone || '',
+    sortOrder: String(point.sortOrder ?? 0),
+    latitude: point.latitude === null || point.latitude === undefined ? '' : String(point.latitude),
+    longitude: point.longitude === null || point.longitude === undefined ? '' : String(point.longitude),
+    status: point.status || 'active',
+  }
+}
+
+function groupLeaderToForm(leader: MallGroupLeader): GroupLeaderForm {
+  return {
+    id: leader.id,
+    pickupPointId: leader.pickupPointId || '',
+    userId: leader.userId || '',
+    name: leader.name || '',
+    phone: leader.phone || '',
+    status: leader.status || 'active',
+    serviceNote: leader.serviceNote || '',
+  }
+}
+
+function pickupPointLeaderText(point: MallPickupPoint) {
+  const name = point.leaderName || point.groupLeaderName || point.contactName
+  const phone = point.leaderPhone || point.contactPhone
+  if (!name && !phone) return '未配置团长'
+  return [name, phone].filter(Boolean).join(' ')
 }
 
 function asRecord(value: unknown): RecordItem {

@@ -1204,6 +1204,14 @@ td small {
   border-radius: 8px;
 }
 
+.pickup-admin-filterbar {
+  grid-template-columns: minmax(240px, 1.4fr) minmax(160px, 0.8fr) minmax(130px, 0.7fr) auto auto;
+}
+
+.pickup-leader-admin-page .stat-grid {
+  margin-bottom: 0;
+}
+
 table {
   width: 100%;
   min-width: 760px;
@@ -2314,6 +2322,7 @@ textarea:focus {
   }
 
   .support-filterbar,
+  .pickup-admin-filterbar,
   .ops-filterbar,
   .ops-withdrawal-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2394,6 +2403,7 @@ textarea:focus {
   .permission-checkbox-grid,
   .permission-filterbar,
   .permission-row,
+  .pickup-admin-filterbar,
   .ops-filterbar,
   .ops-summary-grid,
   .ops-summary-row,

@@ -89,6 +89,7 @@ interface DashboardData {
   mallListingRequests: JsonRecord[];
   mallDeliverySheets: JsonRecord[];
   mallPickupPoints: JsonRecord[];
+  mallGroupLeaders: JsonRecord[];
   mallFinanceBills: JsonRecord[];
   mallSettlementRecords: JsonRecord[];
   mallWithdrawalRequests: JsonRecord[];
@@ -148,6 +149,42 @@ interface MallFilterState {
   categoryCode: string;
   status: string;
   stockStatus: string;
+}
+
+interface PickupPointForm {
+  id: string;
+  name: string;
+  addressText: string;
+  latitude: string;
+  longitude: string;
+  businessHours: string;
+  status: string;
+  communityName: string;
+  leaderName: string;
+  leaderPhone: string;
+  sortOrder: string;
+}
+
+interface PickupPointFilterState {
+  keyword: string;
+  status: string;
+  community: string;
+}
+
+interface GroupLeaderForm {
+  id: string;
+  pickupPointId: string;
+  userId: string;
+  name: string;
+  phone: string;
+  status: string;
+  serviceNote: string;
+}
+
+interface GroupLeaderFilterState {
+  keyword: string;
+  status: string;
+  pickupPointId: string;
 }
 
 interface CampaignForm {
@@ -581,6 +618,7 @@ const initialData: DashboardData = {
   mallListingRequests: [],
   mallDeliverySheets: [],
   mallPickupPoints: [],
+  mallGroupLeaders: [],
   mallFinanceBills: [],
   mallSettlementRecords: [],
   mallWithdrawalRequests: [],
@@ -633,6 +671,42 @@ const initialCategoryForm: CategoryForm = {
   name: '',
   sortOrder: '0',
   status: 'active',
+};
+
+const initialPickupPointForm: PickupPointForm = {
+  id: '',
+  name: '',
+  addressText: '',
+  latitude: '',
+  longitude: '',
+  businessHours: '08:00-20:00',
+  status: 'active',
+  communityName: '',
+  leaderName: '',
+  leaderPhone: '',
+  sortOrder: '10',
+};
+
+const initialPickupPointFilters: PickupPointFilterState = {
+  keyword: '',
+  status: '',
+  community: '',
+};
+
+const initialGroupLeaderForm: GroupLeaderForm = {
+  id: '',
+  pickupPointId: '',
+  userId: '',
+  name: '',
+  phone: '',
+  status: 'active',
+  serviceNote: '',
+};
+
+const initialGroupLeaderFilters: GroupLeaderFilterState = {
+  keyword: '',
+  status: '',
+  pickupPointId: '',
 };
 
 const initialProductFilters: MallFilterState = {
@@ -868,6 +942,8 @@ async function fetchDashboardData(
   couponFilters: MallFilterState = initialProductFilters,
   homeBannerFilters: MallFilterState = initialProductFilters,
   permissionFilters: MallPermissionFilterState = initialPermissionFilters,
+  pickupPointFilters: PickupPointFilterState = initialPickupPointFilters,
+  groupLeaderFilters: GroupLeaderFilterState = initialGroupLeaderFilters,
 ) {
   const errors: LoadErrors = {};
   const [
@@ -886,6 +962,7 @@ async function fetchDashboardData(
     mallListingRequests,
     mallDeliverySheets,
     mallPickupPoints,
+    mallGroupLeaders,
     mallFinanceBills,
     mallSettlementRecords,
     mallWithdrawalRequests,
@@ -935,7 +1012,18 @@ async function fetchDashboardData(
     loadWithFallback('商城运营概览', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/ops/overview')),
     loadWithFallback('商品上下架申请', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/listing-requests', { limit: 100 })),
     loadWithFallback('配送单', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/delivery-sheets', { limit: 100 })),
-    loadWithFallback('自提点', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/pickup-points', { limit: 100 })),
+    loadWithFallback('自提点', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/pickup-points', {
+      limit: 100,
+      keyword: pickupPointFilters.keyword,
+      status: pickupPointFilters.status,
+      community: pickupPointFilters.community,
+    })),
+    loadWithFallback('团长', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/group-leaders', {
+      limit: 100,
+      keyword: groupLeaderFilters.keyword,
+      status: groupLeaderFilters.status,
+      pickupPointId: groupLeaderFilters.pickupPointId,
+    })),
     loadWithFallback('账单明细', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/finance/bills', { limit: 100 })),
     loadWithFallback('结算记录', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/finance/settlements', { limit: 100 })),
     loadWithFallback('提现申请', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/finance/withdrawals', { limit: 100 })),
@@ -986,6 +1074,7 @@ async function fetchDashboardData(
       mallListingRequests,
       mallDeliverySheets,
       mallPickupPoints,
+      mallGroupLeaders,
       mallFinanceBills,
       mallSettlementRecords,
       mallWithdrawalRequests,
@@ -1155,6 +1244,62 @@ function categoryToForm(category: JsonRecord): CategoryForm {
   };
 }
 
+function pickupPointToForm(point: JsonRecord): PickupPointForm {
+  return {
+    id: stringValue(point, 'id'),
+    name: stringValue(point, 'name', recordPickupPointName(point)),
+    addressText: stringValue(point, 'addressText', recordAddress(point)),
+    latitude: stringValue(point, 'latitude'),
+    longitude: stringValue(point, 'longitude'),
+    businessHours: stringValue(point, 'businessHours'),
+    status: stringValue(point, 'status', 'active'),
+    communityName: recordCommunityName(point),
+    leaderName: recordLeaderName(point),
+    leaderPhone: recordLeaderPhone(point),
+    sortOrder: String(numberValue(point, 'sortOrder')),
+  };
+}
+
+function groupLeaderToForm(leader: JsonRecord): GroupLeaderForm {
+  return {
+    id: stringValue(leader, 'id'),
+    pickupPointId: stringValue(leader, 'pickupPointId'),
+    userId: stringValue(leader, 'userId'),
+    name: stringValue(leader, 'name', recordLeaderName(leader)),
+    phone: stringValue(leader, 'phone', recordLeaderPhone(leader)),
+    status: stringValue(leader, 'status', 'active'),
+    serviceNote: stringValue(leader, 'serviceNote'),
+  };
+}
+
+function validatePickupPointForm(form: PickupPointForm) {
+  for (const [label, value] of [
+    ['自提点名称', form.name],
+    ['自提点地址', form.addressText],
+    ['状态', form.status],
+  ]) {
+    if (!String(value).trim()) {
+      throw new Error(`${label}不能为空`);
+    }
+  }
+  const sortOrder = Number(form.sortOrder);
+  if (!Number.isFinite(sortOrder) || sortOrder < 0) {
+    throw new Error('排序不能小于0');
+  }
+}
+
+function validateGroupLeaderForm(form: GroupLeaderForm) {
+  for (const [label, value] of [
+    ['绑定自提点', form.pickupPointId],
+    ['团长姓名', form.name],
+    ['状态', form.status],
+  ]) {
+    if (!String(value).trim()) {
+      throw new Error(`${label}不能为空`);
+    }
+  }
+}
+
 function stockLevelLabel(product: JsonRecord) {
   const stock = numberValue(product, 'stock');
   const threshold = numberValue(product, 'stockAlertThreshold', 15);
@@ -1260,6 +1405,7 @@ function statusLabel(value: string) {
   const labels: Record<string, string> = {
     active: '启用',
     inactive: '停用',
+    deleted: '已删除',
     pending: '待审核',
     approved: '已通过',
     rejected: '已拒绝',
@@ -1315,7 +1461,7 @@ function badgeClass(status: string) {
   if (['pending', 'pending_payment', 'dispatching', 'delivering', 'generated', 'shipping', 'open', 'submitted', 'processing', 'refunding', 'refund_pending', 'commission_pending'].includes(status)) {
     return 'badge badge-blue';
   }
-  if (['rejected', 'cancelled', 'off_sale', 'inactive', 'closed', 'expired', 'failed'].includes(status)) {
+  if (['rejected', 'cancelled', 'off_sale', 'inactive', 'closed', 'expired', 'failed', 'deleted'].includes(status)) {
     return 'badge badge-gray';
   }
   return 'badge badge-amber';
@@ -4983,6 +5129,413 @@ function MallDeliveryOpsSection({
   );
 }
 
+function MallPickupPointsSection({
+  filters,
+  pickupPoints,
+  onDelete,
+  onFiltersChange,
+  onSave,
+  onSearch,
+  onStatus,
+}: {
+  filters: PickupPointFilterState;
+  pickupPoints: JsonRecord[];
+  onDelete: (id: string) => Promise<void>;
+  onFiltersChange: (patch: Partial<PickupPointFilterState>) => void;
+  onSave: (form: PickupPointForm) => Promise<void>;
+  onSearch: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onStatus: (id: string, status: string) => Promise<void>;
+}) {
+  const [editingForm, setEditingForm] = useState<PickupPointForm | null>(null);
+  const activeCount = pickupPoints.filter(point => stringValue(point, 'status') === 'active').length;
+  const communities = new Set(pickupPoints.map(recordCommunityName).filter(Boolean));
+  const leaderReadyCount = pickupPoints.filter(point => recordLeaderName(point) || recordLeaderPhone(point)).length;
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingForm) return;
+    await onSave(editingForm);
+    setEditingForm(null);
+  };
+
+  return (
+    <div className="page-grid pickup-leader-admin-page">
+      <div className="stat-grid compact">
+        <StatCard label="自提点" value={String(pickupPoints.length)} detail="当前管理范围" />
+        <StatCard label="启用中" value={String(activeCount)} detail="用户端可选择" />
+        <StatCard label="覆盖小区" value={String(communities.size)} detail="按小区聚合配送" />
+        <StatCard label="团长信息" value={String(leaderReadyCount)} detail="已配置联系方式" />
+      </div>
+
+      <Panel
+        title="自提点管理"
+        description="维护自提点名称、地址、小区、营业时间和团长联系方式，启用状态会影响用户下单可选范围"
+        action={(
+          <button className="primary-button" type="button" onClick={() => setEditingForm(initialPickupPointForm)}>
+            <Icon name="plus" />
+            新增自提点
+          </button>
+        )}
+      >
+        <form className="admin-filterbar pickup-admin-filterbar" onSubmit={event => void onSearch(event)}>
+          <input
+            value={filters.keyword}
+            placeholder="搜索自提点名称、地址、团长手机号"
+            onChange={event => onFiltersChange({ keyword: event.target.value })}
+          />
+          <input
+            value={filters.community}
+            placeholder="小区"
+            onChange={event => onFiltersChange({ community: event.target.value })}
+          />
+          <select value={filters.status} onChange={event => onFiltersChange({ status: event.target.value })}>
+            <option value="">全部状态</option>
+            <option value="active">启用</option>
+            <option value="inactive">停用</option>
+          </select>
+          <button className="primary-button" type="submit">
+            <Icon name="route" />
+            搜索
+          </button>
+          <button className="ghost-button" type="button" onClick={() => onFiltersChange(initialPickupPointFilters)}>
+            <Icon name="refresh" />
+            重置
+          </button>
+        </form>
+
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>自提点名称</th>
+                <th>小区/地址</th>
+                <th>营业时间</th>
+                <th>团长</th>
+                <th>排序</th>
+                <th>状态</th>
+                <th>更新时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pickupPoints.map(point => {
+                const id = stringValue(point, 'id');
+                const status = stringValue(point, 'status', 'active');
+                return (
+                  <tr key={id}>
+                    <td>
+                      <strong>{stringValue(point, 'name', recordPickupPointName(point))}</strong>
+                      <small>{shortId(id)}</small>
+                    </td>
+                    <td>
+                      <span>{recordCommunityName(point) || '-'}</span>
+                      <small>{recordAddress(point) || '-'}</small>
+                    </td>
+                    <td>{stringValue(point, 'businessHours', '-')}</td>
+                    <td>
+                      <span>{recordLeaderName(point) || '-'}</span>
+                      <small>{recordLeaderPhone(point) || '-'}</small>
+                    </td>
+                    <td>{numberValue(point, 'sortOrder')}</td>
+                    <td><span className={badgeClass(status)}>{statusLabel(status)}</span></td>
+                    <td>{formatDate(stringValue(point, 'updatedAt', stringValue(point, 'createdAt')))}</td>
+                    <td className="actions column-actions">
+                      <button className="ghost-button" type="button" onClick={() => setEditingForm(pickupPointToForm(point))}>
+                        <Icon name="save" />
+                        编辑
+                      </button>
+                      <button className="ghost-button" type="button" onClick={() => void onStatus(id, status === 'active' ? 'inactive' : 'active')}>
+                        <Icon name={status === 'active' ? 'x' : 'check'} />
+                        {status === 'active' ? '停用' : '启用'}
+                      </button>
+                      <button className="ghost-button danger" type="button" onClick={() => void onDelete(id)}>
+                        <Icon name="x" />
+                        删除
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {!pickupPoints.length ? <EmptyState text="暂无自提点数据" /> : null}
+      </Panel>
+
+      {editingForm ? (
+        <div className="modal-backdrop">
+          <form className="modal-panel" onSubmit={submit}>
+            <div className="modal-title-row">
+              <div>
+                <h2>{editingForm.id ? '编辑自提点' : '新增自提点'}</h2>
+                <p>必填项：自提点名称、地址、状态。团长联系方式可在团长管理中同步维护。</p>
+              </div>
+              <button className="ghost-button icon-only" type="button" onClick={() => setEditingForm(null)}>
+                <Icon name="x" />
+              </button>
+            </div>
+            <div className="form-grid">
+              <label>
+                <span className="field-label">自提点名称<span className="required-mark">*</span></span>
+                <input required value={editingForm.name} onChange={event => setEditingForm(current => current ? { ...current, name: event.target.value } : current)} />
+              </label>
+              <label>
+                小区
+                <input value={editingForm.communityName} onChange={event => setEditingForm(current => current ? { ...current, communityName: event.target.value } : current)} />
+              </label>
+              <label className="wide">
+                <span className="field-label">自提点地址<span className="required-mark">*</span></span>
+                <input required value={editingForm.addressText} onChange={event => setEditingForm(current => current ? { ...current, addressText: event.target.value } : current)} />
+              </label>
+              <label>
+                营业时间
+                <input value={editingForm.businessHours} onChange={event => setEditingForm(current => current ? { ...current, businessHours: event.target.value } : current)} placeholder="08:00-20:00" />
+              </label>
+              <label>
+                状态
+                <select required value={editingForm.status} onChange={event => setEditingForm(current => current ? { ...current, status: event.target.value } : current)}>
+                  <option value="active">启用</option>
+                  <option value="inactive">停用</option>
+                </select>
+              </label>
+              <label>
+                团长姓名
+                <input value={editingForm.leaderName} onChange={event => setEditingForm(current => current ? { ...current, leaderName: event.target.value } : current)} />
+              </label>
+              <label>
+                团长手机号
+                <input value={editingForm.leaderPhone} onChange={event => setEditingForm(current => current ? { ...current, leaderPhone: event.target.value } : current)} />
+              </label>
+              <label>
+                纬度
+                <input value={editingForm.latitude} type="number" step="0.000001" onChange={event => setEditingForm(current => current ? { ...current, latitude: event.target.value } : current)} />
+              </label>
+              <label>
+                经度
+                <input value={editingForm.longitude} type="number" step="0.000001" onChange={event => setEditingForm(current => current ? { ...current, longitude: event.target.value } : current)} />
+              </label>
+              <label>
+                排序
+                <input required value={editingForm.sortOrder} type="number" min="0" onChange={event => setEditingForm(current => current ? { ...current, sortOrder: event.target.value } : current)} />
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button className="ghost-button" type="button" onClick={() => setEditingForm(null)}>取消</button>
+              <button className="primary-button" type="submit">
+                <Icon name="save" />
+                保存自提点
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MallGroupLeadersSection({
+  filters,
+  leaders,
+  pickupPoints,
+  onDelete,
+  onFiltersChange,
+  onSave,
+  onSearch,
+  onStatus,
+}: {
+  filters: GroupLeaderFilterState;
+  leaders: JsonRecord[];
+  pickupPoints: JsonRecord[];
+  onDelete: (id: string) => Promise<void>;
+  onFiltersChange: (patch: Partial<GroupLeaderFilterState>) => void;
+  onSave: (form: GroupLeaderForm) => Promise<void>;
+  onSearch: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onStatus: (id: string, status: string) => Promise<void>;
+}) {
+  const [editingForm, setEditingForm] = useState<GroupLeaderForm | null>(null);
+  const activeCount = leaders.filter(leader => stringValue(leader, 'status') === 'active').length;
+  const boundPickupCount = new Set(leaders.map(leader => stringValue(leader, 'pickupPointId')).filter(Boolean)).size;
+  const phoneReadyCount = leaders.filter(leader => stringValue(leader, 'phone', recordLeaderPhone(leader))).length;
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingForm) return;
+    await onSave(editingForm);
+    setEditingForm(null);
+  };
+
+  const openCreate = () => setEditingForm({
+    ...initialGroupLeaderForm,
+    pickupPointId: stringValue(pickupPoints[0], 'id'),
+  });
+
+  return (
+    <div className="page-grid pickup-leader-admin-page">
+      <div className="stat-grid compact">
+        <StatCard label="团长" value={String(leaders.length)} detail="已建档团长" />
+        <StatCard label="启用中" value={String(activeCount)} detail="可进入团长中心" />
+        <StatCard label="绑定自提点" value={String(boundPickupCount)} detail="核销权限范围" />
+        <StatCard label="联系方式" value={String(phoneReadyCount)} detail="可联系团长" />
+      </div>
+
+      <Panel
+        title="团长管理"
+        description="维护团长账号、绑定自提点和服务说明；绑定后团长可在小程序团长中心查看订单并核销取货"
+        action={(
+          <button className="primary-button" type="button" onClick={openCreate}>
+            <Icon name="plus" />
+            新增团长
+          </button>
+        )}
+      >
+        <form className="admin-filterbar pickup-admin-filterbar" onSubmit={event => void onSearch(event)}>
+          <input
+            value={filters.keyword}
+            placeholder="搜索团长姓名、手机号、自提点"
+            onChange={event => onFiltersChange({ keyword: event.target.value })}
+          />
+          <select value={filters.pickupPointId} onChange={event => onFiltersChange({ pickupPointId: event.target.value })}>
+            <option value="">全部自提点</option>
+            {pickupPoints.map(point => (
+              <option key={stringValue(point, 'id')} value={stringValue(point, 'id')}>
+                {stringValue(point, 'name', recordPickupPointName(point))}
+              </option>
+            ))}
+          </select>
+          <select value={filters.status} onChange={event => onFiltersChange({ status: event.target.value })}>
+            <option value="">全部状态</option>
+            <option value="active">启用</option>
+            <option value="inactive">停用</option>
+          </select>
+          <button className="primary-button" type="submit">
+            <Icon name="users" />
+            搜索
+          </button>
+          <button className="ghost-button" type="button" onClick={() => onFiltersChange(initialGroupLeaderFilters)}>
+            <Icon name="refresh" />
+            重置
+          </button>
+        </form>
+
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>团长</th>
+                <th>绑定自提点</th>
+                <th>小区/地址</th>
+                <th>服务说明</th>
+                <th>状态</th>
+                <th>更新时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {leaders.map(leader => {
+                const id = stringValue(leader, 'id');
+                const status = stringValue(leader, 'status', 'active');
+                return (
+                  <tr key={id}>
+                    <td>
+                      <strong>{stringValue(leader, 'name', recordLeaderName(leader))}</strong>
+                      <small>{stringValue(leader, 'phone', recordLeaderPhone(leader)) || '-'}</small>
+                    </td>
+                    <td>
+                      <span>{stringValue(leader, 'pickupPointName', '-')}</span>
+                      <small>{shortId(stringValue(leader, 'pickupPointId'))}</small>
+                    </td>
+                    <td>
+                      <span>{recordCommunityName(leader) || '-'}</span>
+                      <small>{stringValue(leader, 'pickupPointAddress', '-')}</small>
+                    </td>
+                    <td>{stringValue(leader, 'serviceNote', '-')}</td>
+                    <td><span className={badgeClass(status)}>{statusLabel(status)}</span></td>
+                    <td>{formatDate(stringValue(leader, 'updatedAt', stringValue(leader, 'createdAt')))}</td>
+                    <td className="actions column-actions">
+                      <button className="ghost-button" type="button" onClick={() => setEditingForm(groupLeaderToForm(leader))}>
+                        <Icon name="save" />
+                        编辑
+                      </button>
+                      <button className="ghost-button" type="button" onClick={() => void onStatus(id, status === 'active' ? 'inactive' : 'active')}>
+                        <Icon name={status === 'active' ? 'x' : 'check'} />
+                        {status === 'active' ? '停用' : '启用'}
+                      </button>
+                      <button className="ghost-button danger" type="button" onClick={() => void onDelete(id)}>
+                        <Icon name="x" />
+                        删除
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {!leaders.length ? <EmptyState text="暂无团长数据" /> : null}
+      </Panel>
+
+      {editingForm ? (
+        <div className="modal-backdrop">
+          <form className="modal-panel" onSubmit={submit}>
+            <div className="modal-title-row">
+              <div>
+                <h2>{editingForm.id ? '编辑团长' : '新增团长'}</h2>
+                <p>必填项：绑定自提点、团长姓名、状态。手机号用于联系和匹配小程序团长身份。</p>
+              </div>
+              <button className="ghost-button icon-only" type="button" onClick={() => setEditingForm(null)}>
+                <Icon name="x" />
+              </button>
+            </div>
+            <div className="form-grid">
+              <label>
+                <span className="field-label">绑定自提点<span className="required-mark">*</span></span>
+                <select required value={editingForm.pickupPointId} onChange={event => setEditingForm(current => current ? { ...current, pickupPointId: event.target.value } : current)}>
+                  <option value="">请选择自提点</option>
+                  {pickupPoints.map(point => (
+                    <option key={stringValue(point, 'id')} value={stringValue(point, 'id')}>
+                      {stringValue(point, 'name', recordPickupPointName(point))}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                状态
+                <select required value={editingForm.status} onChange={event => setEditingForm(current => current ? { ...current, status: event.target.value } : current)}>
+                  <option value="active">启用</option>
+                  <option value="inactive">停用</option>
+                </select>
+              </label>
+              <label>
+                <span className="field-label">团长姓名<span className="required-mark">*</span></span>
+                <input required value={editingForm.name} onChange={event => setEditingForm(current => current ? { ...current, name: event.target.value } : current)} />
+              </label>
+              <label>
+                团长手机号
+                <input value={editingForm.phone} onChange={event => setEditingForm(current => current ? { ...current, phone: event.target.value } : current)} />
+              </label>
+              <label>
+                关联用户ID（可选）
+                <input value={editingForm.userId} onChange={event => setEditingForm(current => current ? { ...current, userId: event.target.value } : current)} />
+              </label>
+              <label className="wide">
+                服务说明
+                <textarea value={editingForm.serviceNote} onChange={event => setEditingForm(current => current ? { ...current, serviceNote: event.target.value } : current)} placeholder="例如 负责晚间自提、坏果登记和取货核销" />
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button className="ghost-button" type="button" onClick={() => setEditingForm(null)}>取消</button>
+              <button className="primary-button" type="submit">
+                <Icon name="save" />
+                保存团长
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function MallFinanceOpsSection({
   mode,
   bills,
@@ -6217,6 +6770,8 @@ function App() {
   const [productFilters, setProductFilters] = useState<MallFilterState>(initialProductFilters);
   const [categoryFilters, setCategoryFilters] = useState<MallFilterState>(initialCategoryFilters);
   const [inventoryFilters, setInventoryFilters] = useState<MallFilterState>(initialInventoryFilters);
+  const [pickupPointFilters, setPickupPointFilters] = useState<PickupPointFilterState>(initialPickupPointFilters);
+  const [groupLeaderFilters, setGroupLeaderFilters] = useState<GroupLeaderFilterState>(initialGroupLeaderFilters);
   const [couponFilters, setCouponFilters] = useState<MallFilterState>(initialProductFilters);
   const [homeBannerFilters, setHomeBannerFilters] = useState<MallFilterState>(initialProductFilters);
   const [permissionFilters, setPermissionFilters] = useState<MallPermissionFilterState>(initialPermissionFilters);
@@ -6275,6 +6830,8 @@ function App() {
     setCouponFilters(initialProductFilters);
     setHomeBannerFilters(initialProductFilters);
     setPermissionFilters(initialPermissionFilters);
+    setPickupPointFilters(initialPickupPointFilters);
+    setGroupLeaderFilters(initialGroupLeaderFilters);
     setMallOpsFilters(initialMallOpsFilters);
     setWithdrawalForm(initialWithdrawalForm);
     setBusy('');
@@ -6288,7 +6845,16 @@ function App() {
     }
 
     setLoading(true);
-    const result = await fetchDashboardData(productFilters, categoryFilters, inventoryFilters, couponFilters, homeBannerFilters, permissionFilters);
+    const result = await fetchDashboardData(
+      productFilters,
+      categoryFilters,
+      inventoryFilters,
+      couponFilters,
+      homeBannerFilters,
+      permissionFilters,
+      pickupPointFilters,
+      groupLeaderFilters,
+    );
 
     if (!getStoredAdminSession()) {
       setLoading(false);
@@ -6838,6 +7404,107 @@ function App() {
     });
   };
 
+  const searchPickupPoints = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await runAction('自提点查询', async () => {
+      const mallPickupPoints = await apiGet<JsonRecord[]>('/api/admin/mall/pickup-points', {
+        limit: 100,
+        keyword: pickupPointFilters.keyword,
+        status: pickupPointFilters.status,
+        community: pickupPointFilters.community,
+      });
+      setData(current => ({ ...current, mallPickupPoints }));
+    });
+  };
+
+  const savePickupPoint = async (form: PickupPointForm) => {
+    await runAction(form.id ? '自提点更新' : '自提点创建', async () => {
+      validatePickupPointForm(form);
+      const payload = {
+        name: form.name,
+        addressText: form.addressText,
+        latitude: optionalNumber(form.latitude),
+        longitude: optionalNumber(form.longitude),
+        businessHours: form.businessHours || undefined,
+        status: form.status,
+        communityName: form.communityName || undefined,
+        leaderName: form.leaderName || undefined,
+        leaderPhone: form.leaderPhone || undefined,
+        sortOrder: Number(form.sortOrder) || 0,
+      };
+      if (form.id) {
+        await apiPut(`/api/admin/mall/pickup-points/${form.id}`, payload);
+      } else {
+        await apiPost('/api/admin/mall/pickup-points', payload);
+      }
+      await reload();
+    });
+  };
+
+  const updatePickupPointStatus = async (id: string, status: string) => {
+    await runAction('自提点状态更新', async () => {
+      await apiPut(`/api/admin/mall/pickup-points/${id}`, { status });
+      setData(current => ({
+        ...current,
+        mallPickupPoints: updateRecordList(current.mallPickupPoints, id, { status }),
+      }));
+    });
+  };
+
+  const deletePickupPoint = async (id: string) => {
+    await runAction('自提点删除', async () => {
+      await apiDelete(`/api/admin/mall/pickup-points/${id}`);
+      await reload();
+    });
+  };
+
+  const searchGroupLeaders = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await runAction('团长查询', async () => {
+      const mallGroupLeaders = await apiGet<JsonRecord[]>('/api/admin/mall/group-leaders', {
+        limit: 100,
+        keyword: groupLeaderFilters.keyword,
+        status: groupLeaderFilters.status,
+        pickupPointId: groupLeaderFilters.pickupPointId,
+      });
+      setData(current => ({ ...current, mallGroupLeaders }));
+    });
+  };
+
+  const saveGroupLeader = async (form: GroupLeaderForm) => {
+    await runAction(form.id ? '团长更新' : '团长创建', async () => {
+      validateGroupLeaderForm(form);
+      const payload = {
+        pickupPointId: form.pickupPointId,
+        userId: form.userId || undefined,
+        name: form.name,
+        phone: form.phone || undefined,
+        status: form.status,
+        serviceNote: form.serviceNote || undefined,
+      };
+      if (form.id) {
+        await apiPut(`/api/admin/mall/group-leaders/${form.id}`, payload);
+      } else {
+        await apiPost('/api/admin/mall/group-leaders', payload);
+      }
+      await reload();
+    });
+  };
+
+  const updateGroupLeaderStatus = async (id: string, status: string) => {
+    await runAction('团长状态更新', async () => {
+      await apiPut(`/api/admin/mall/group-leaders/${id}`, { status });
+      await reload();
+    });
+  };
+
+  const deleteGroupLeader = async (id: string) => {
+    await runAction('团长删除', async () => {
+      await apiDelete(`/api/admin/mall/group-leaders/${id}`);
+      await reload();
+    });
+  };
+
   const createWithdrawal = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     await runAction('提现申请提交', async () => {
@@ -7264,6 +7931,33 @@ function App() {
           onFiltersChange={patch => setMallOrderSearchFilters(current => ({ ...current, ...patch }))}
           onSearch={searchMallOrderDetail}
           onViewDetail={openMallOrderDetail}
+        />
+      );
+    }
+    if (activePageKey === 'mall.pickup') {
+      return (
+        <MallPickupPointsSection
+          filters={pickupPointFilters}
+          pickupPoints={data.mallPickupPoints}
+          onDelete={deletePickupPoint}
+          onFiltersChange={patch => setPickupPointFilters(current => ({ ...current, ...patch }))}
+          onSave={savePickupPoint}
+          onSearch={searchPickupPoints}
+          onStatus={updatePickupPointStatus}
+        />
+      );
+    }
+    if (activePageKey === 'mall.leaders') {
+      return (
+        <MallGroupLeadersSection
+          filters={groupLeaderFilters}
+          leaders={data.mallGroupLeaders}
+          pickupPoints={data.mallPickupPoints}
+          onDelete={deleteGroupLeader}
+          onFiltersChange={patch => setGroupLeaderFilters(current => ({ ...current, ...patch }))}
+          onSave={saveGroupLeader}
+          onSearch={searchGroupLeaders}
+          onStatus={updateGroupLeaderStatus}
         />
       );
     }
