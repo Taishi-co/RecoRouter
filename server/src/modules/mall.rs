@@ -901,6 +901,10 @@ struct SettingsMutationRequest {
     roles: Option<Value>,
     #[serde(alias = "risk_thresholds")]
     risk_thresholds: Option<Value>,
+    #[serde(alias = "delivery_rules")]
+    delivery_rules: Option<Value>,
+    #[serde(alias = "payment_split_rules")]
+    payment_split_rules: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -4141,7 +4145,7 @@ where
         INSERT INTO mall_operation_settings (
           id, free_delivery_threshold_cents, default_delivery_fee_cents,
           delivery_promise_minutes, cold_chain_enabled, refund_review_minutes,
-          roles, risk_thresholds
+          roles, risk_thresholds, delivery_rules, payment_split_rules
         )
         VALUES (
           'default',
@@ -4151,16 +4155,33 @@ where
           COALESCE($4, true),
           COALESCE($5, 10),
           COALESCE($6, '{}'::jsonb),
-          COALESCE($7, '{}'::jsonb)
+          COALESCE($7, '{}'::jsonb),
+          COALESCE($8, '{
+            "pickupWindowStart": "16:00",
+            "pickupWindowEnd": "20:00",
+            "deliveryBatchTimes": "10:00,14:00,18:00",
+            "deliveryFeeCents": 600,
+            "freeDeliveryThresholdCents": 9900,
+            "coldChainRequired": true,
+            "refundReviewMinutes": 10
+          }'::jsonb),
+          COALESCE($9, '{
+            "leaderCommissionRate": 8,
+            "platformServiceRate": 3,
+            "supplierSettlementCycle": "T+7",
+            "withdrawMinCents": 10000
+          }'::jsonb)
         )
-        ON CONFLICT (id)
-        DO UPDATE SET free_delivery_threshold_cents = COALESCE(EXCLUDED.free_delivery_threshold_cents, mall_operation_settings.free_delivery_threshold_cents),
-                      default_delivery_fee_cents = COALESCE(EXCLUDED.default_delivery_fee_cents, mall_operation_settings.default_delivery_fee_cents),
-                      delivery_promise_minutes = COALESCE(EXCLUDED.delivery_promise_minutes, mall_operation_settings.delivery_promise_minutes),
-                      cold_chain_enabled = COALESCE(EXCLUDED.cold_chain_enabled, mall_operation_settings.cold_chain_enabled),
-                      refund_review_minutes = COALESCE(EXCLUDED.refund_review_minutes, mall_operation_settings.refund_review_minutes),
-                      roles = COALESCE(EXCLUDED.roles, mall_operation_settings.roles),
-                      risk_thresholds = COALESCE(EXCLUDED.risk_thresholds, mall_operation_settings.risk_thresholds),
+        ON CONFLICT (id) DO UPDATE
+        SET free_delivery_threshold_cents = COALESCE($1, mall_operation_settings.free_delivery_threshold_cents),
+                      default_delivery_fee_cents = COALESCE($2, mall_operation_settings.default_delivery_fee_cents),
+                      delivery_promise_minutes = COALESCE($3, mall_operation_settings.delivery_promise_minutes),
+                      cold_chain_enabled = COALESCE($4, mall_operation_settings.cold_chain_enabled),
+                      refund_review_minutes = COALESCE($5, mall_operation_settings.refund_review_minutes),
+                      roles = COALESCE($6, mall_operation_settings.roles),
+                      risk_thresholds = COALESCE($7, mall_operation_settings.risk_thresholds),
+                      delivery_rules = COALESCE($8, mall_operation_settings.delivery_rules),
+                      payment_split_rules = COALESCE($9, mall_operation_settings.payment_split_rules),
                       updated_at = now()
         RETURNING settings_json(mall_operation_settings)
         "#,
@@ -4172,6 +4193,8 @@ where
     .bind(body.refund_review_minutes)
     .bind(body.roles)
     .bind(body.risk_thresholds)
+    .bind(body.delivery_rules)
+    .bind(body.payment_split_rules)
     .fetch_one(&state.db)
     .await?;
 

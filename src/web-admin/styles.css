@@ -722,7 +722,14 @@ nav {
   gap: 12px;
 }
 
+.operations-insight-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .operations-kpi,
+.operations-insight-card,
 .operations-panel {
   min-width: 0;
   background: #181d1a;
@@ -734,6 +741,14 @@ nav {
   min-height: 126px;
   padding: 15px;
   position: relative;
+}
+
+.operations-insight-card {
+  display: grid;
+  gap: 7px;
+  min-height: 96px;
+  padding: 13px;
+  background: #20261f;
 }
 
 .operations-kpi strong {
@@ -757,6 +772,7 @@ nav {
 }
 
 .operations-main-grid,
+.operations-chart-grid,
 .operations-bottom-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
@@ -849,7 +865,9 @@ nav {
 }
 
 .operations-funnel-step strong,
-.operations-risk-item strong {
+.operations-risk-item strong,
+.operations-category-row strong,
+.operations-rank-row strong {
   display: block;
   color: #ffffff;
   font-size: 14px;
@@ -952,6 +970,71 @@ nav {
 
 .operations-risk-item.gray {
   border-color: #59635b;
+}
+
+.operations-category-bars,
+.operations-rank-table {
+  display: grid;
+  gap: 10px;
+}
+
+.operations-category-row {
+  display: grid;
+  gap: 8px;
+  padding: 11px 12px;
+  background: #20261f;
+  border: 1px solid #344034;
+  border-radius: 8px;
+}
+
+.operations-category-row small,
+.operations-rank-row small,
+.operations-insight-card small {
+  color: #a9b7ae;
+  font-size: 12px;
+}
+
+.operations-insight-card span {
+  color: #9ad9a1;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.operations-insight-card strong {
+  color: #ffffff;
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.operations-rank-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 12px;
+  background: #20261f;
+  border: 1px solid #344034;
+  border-radius: 8px;
+}
+
+.operations-rank-row em {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: #172018;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+  background: #f5c542;
+  border-radius: 50%;
+}
+
+.operations-rank-row span {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 900;
 }
 
 .primary-button.small,
@@ -1674,6 +1757,56 @@ textarea:focus {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.split-settings-form {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.settings-campaign-list {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-campaign-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #e3e8ef;
+  border-radius: 8px;
+}
+
+.settings-campaign-row strong,
+.settings-campaign-row small {
+  display: block;
+}
+
+.settings-campaign-row small {
+  margin-top: 4px;
+  color: #697386;
+}
+
+.settings-rule-note {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  color: #465366;
+  background: #f8fafc;
+  border: 1px solid #e3e8ef;
+  border-radius: 8px;
+}
+
+.settings-rule-note strong {
+  color: #1f2937;
+  font-size: 13px;
+}
+
+.settings-rule-note span {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .list-stack {
   display: grid;
   gap: 10px;
@@ -1704,12 +1837,6 @@ textarea:focus {
   display: grid;
   gap: 14px;
   min-width: 0;
-}
-
-.permission-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
 }
 
 .permission-admin-grid {
@@ -2453,10 +2580,11 @@ textarea:focus {
   .order-detail-grid,
   .order-detail-columns,
   .operations-kpi-grid,
+  .operations-insight-grid,
   .operations-main-grid,
+  .operations-chart-grid,
   .operations-bottom-grid,
   .permission-admin-grid,
-  .permission-summary-grid,
   .ops-summary-grid,
   .ops-contact-grid,
   .ops-split-grid {
@@ -2537,15 +2665,18 @@ textarea:focus {
   .support-filterbar,
   .support-workbench-grid,
   .settings-form,
+  .split-settings-form,
+  .settings-campaign-row,
   .order-search-form,
   .order-detail-grid,
   .order-detail-columns,
   .operations-kpi-grid,
+  .operations-insight-grid,
   .operations-main-grid,
+  .operations-chart-grid,
   .operations-bottom-grid,
   .operations-module-grid,
   .permission-admin-grid,
-  .permission-summary-grid,
   .permission-editor,
   .permission-module-grid,
   .permission-checkbox-grid,
@@ -2558,6 +2689,7 @@ textarea:focus {
   .ops-contact-grid,
   .ops-withdrawal-form,
   .ops-split-grid,
+  .operations-rank-row,
   .ops-rank-row,
   .ops-rank-row.hot,
   .ops-revenue-row {

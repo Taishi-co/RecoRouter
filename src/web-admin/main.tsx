@@ -250,6 +250,13 @@ interface SettingsForm {
   deliveryPromiseMinutes: string;
   refundReviewMinutes: string;
   coldChainEnabled: boolean;
+  pickupWindowStart: string;
+  pickupWindowEnd: string;
+  deliveryBatchTimes: string;
+  leaderCommissionRate: string;
+  platformServiceRate: string;
+  supplierSettlementCycle: string;
+  withdrawMinYuan: string;
 }
 
 interface MallPermissionForm {
@@ -338,6 +345,26 @@ interface OperationsRiskItem {
   tone: 'blue' | 'green' | 'amber' | 'gray';
 }
 
+interface OperationsInsightCard {
+  label: string;
+  value: string;
+  detail: string;
+}
+
+interface OperationsCategorySale {
+  name: string;
+  quantity: number;
+  revenueCents: number;
+  percentage: number;
+}
+
+interface OperationsHotProduct {
+  name: string;
+  category: string;
+  quantity: number;
+  revenueCents: number;
+}
+
 interface OperationsScreenModel {
   kpis: Array<{
     label: string;
@@ -349,6 +376,9 @@ interface OperationsScreenModel {
   funnel: OperationsFunnelStep[];
   modules: OperationsModuleCard[];
   risks: OperationsRiskItem[];
+  insights: OperationsInsightCard[];
+  categorySales: OperationsCategorySale[];
+  hotProducts: OperationsHotProduct[];
 }
 
 type IconName =
@@ -611,7 +641,7 @@ const adminModules: AdminModuleSpec[] = [
       designPage('mall.afterSales', '售后申请', '客服售后', '售后单审核、证据图片和退款流转', 'refund', 'mallOrders'),
       designPage('mall.supportTickets', '客服工单', '客服售后', '内部跟进工单、跨岗位协同和处理结果', 'check', 'support'),
       designPage('mall.knowledge', '客服知识库', '客服售后', '商城 FAQ、坏果包赔和履约话术', 'support', 'support'),
-      designPage('mall.settings', '运营设置', '运营设置', '配送费、售后时效和冷链规则', 'save', 'operations'),
+      designPage('mall.settings', '运营设置', '运营设置', '活动启停快捷操作', 'save', 'operations'),
       designPage('mall.deliveryRules', '配送规则', '运营设置', '自提窗口、冷链承诺和服务费', 'route'),
       designPage('mall.paymentSplit', '分账规则', '运营设置', '商城分账、团长佣金和商户结算', 'refund'),
       designPage('mall.risk', '风险审核', '运营设置', '售后异常、频控和恶意退款拦截', 'x'),
@@ -878,6 +908,13 @@ const initialSettingsForm: SettingsForm = {
   deliveryPromiseMinutes: '18',
   refundReviewMinutes: '10',
   coldChainEnabled: true,
+  pickupWindowStart: '16:00',
+  pickupWindowEnd: '20:00',
+  deliveryBatchTimes: '10:00,14:00,18:00',
+  leaderCommissionRate: '8',
+  platformServiceRate: '3',
+  supplierSettlementCycle: 'T+7',
+  withdrawMinYuan: '100',
 };
 
 const permissionModuleOptions = [
@@ -1998,8 +2035,13 @@ function salesStatsArray(stats: JsonRecord, ...keys: string[]) {
 }
 
 function buildProductSalesRows(stats: JsonRecord, orders: JsonRecord[]) {
-  const rows = salesStatsArray(stats, 'productSales', 'salesByProduct', 'products', 'topProducts');
-  if (rows.length) return rows;
+  const rows = salesStatsArray(stats, 'productStats', 'productSales', 'salesByProduct', 'products', 'topProducts');
+  if (rows.length) {
+    return rows.map(row => ({
+      ...row,
+      revenueCents: numberValue(row, 'revenueCents', numberValue(row, 'salesCents', numberValue(row, 'amountCents'))),
+    }));
+  }
   const map = new Map<string, JsonRecord>();
   orders.forEach(order => {
     arrayValue(order, 'items').forEach(item => {
@@ -2022,8 +2064,13 @@ function buildProductSalesRows(stats: JsonRecord, orders: JsonRecord[]) {
 }
 
 function buildCategorySalesRows(stats: JsonRecord, orders: JsonRecord[]) {
-  const rows = salesStatsArray(stats, 'categorySales', 'salesByCategory', 'categories');
-  if (rows.length) return rows;
+  const rows = salesStatsArray(stats, 'categoryStats', 'categorySales', 'salesByCategory', 'categories');
+  if (rows.length) {
+    return rows.map(row => ({
+      ...row,
+      revenueCents: numberValue(row, 'revenueCents', numberValue(row, 'salesCents', numberValue(row, 'amountCents'))),
+    }));
+  }
   const map = new Map<string, JsonRecord>();
   orders.forEach(order => {
     arrayValue(order, 'items').forEach(item => {
@@ -2040,8 +2087,16 @@ function buildCategorySalesRows(stats: JsonRecord, orders: JsonRecord[]) {
 }
 
 function buildRevenueRows(stats: JsonRecord, orders: JsonRecord[]) {
-  const rows = salesStatsArray(stats, 'revenueTrend', 'dailyRevenue', 'revenue');
-  if (rows.length) return rows;
+  const rows = salesStatsArray(stats, 'trend', 'revenueTrend', 'dailyRevenue', 'revenue');
+  if (rows.length) {
+    return rows.map(row => ({
+      ...row,
+      key: stringValue(row, 'key', stringValue(row, 'bucket')),
+      label: stringValue(row, 'label', stringValue(row, 'bucket')),
+      orders: numberValue(row, 'orders', numberValue(row, 'orderCount')),
+      revenueCents: numberValue(row, 'revenueCents', numberValue(row, 'salesCents', numberValue(row, 'amountCents'))),
+    }));
+  }
   const slots = recentDaySlots(14);
   const slotMap = new Map(slots.map(slot => [slot.key, { ...slot }]));
   orders.forEach(order => {
@@ -2176,6 +2231,70 @@ function operationsRiskItems(data: DashboardData, errors: LoadErrors): Operation
   return risks;
 }
 
+function operationsInsightCards(data: DashboardData): OperationsInsightCard[] {
+  const openSupport = data.supportTickets.filter(ticket => isOpenSupportStatus(orderStatus(ticket))).length;
+  const afterSalesQueue = buildAfterSalesQueue(data.mallOrders).length || data.mallAfterSales.filter(item => isOpenSupportStatus(orderStatus(item))).length;
+  const pendingDeliverySheets = data.mallDeliverySheets.filter(sheet => {
+    const status = orderStatus(sheet) || stringValue(sheet, 'status');
+    return ['generated', 'dispatching', 'shipping', 'delivering'].includes(status);
+  }).length;
+  const pendingWithdrawals = data.mallWithdrawalRequests.filter(item => {
+    const status = orderStatus(item) || stringValue(item, 'status');
+    return ['pending', 'reviewing', 'processing'].includes(status);
+  }).length;
+
+  return [
+    {
+      label: '履约配送看板',
+      value: `${pendingDeliverySheets} 单`,
+      detail: `${data.mallDeliverySheets.length} 张配送单 · ${data.mallPickupPoints.length} 个自提点`,
+    },
+    {
+      label: '客服售后看板',
+      value: `${afterSalesQueue} 件`,
+      detail: `${openSupport} 个工单待处理 · ${metricValue(data.supportMetrics, ['openSessions'])} 个会话`,
+    },
+    {
+      label: '库存供给',
+      value: `${data.mallInventoryAlerts.length || numberValue(data.mallOverview, 'stockAlerts')} 个`,
+      detail: `${data.mallProducts.length} 个商品 · ${data.mallCategories.length} 个类目`,
+    },
+    {
+      label: '财务结算',
+      value: `${pendingWithdrawals} 笔`,
+      detail: `${data.mallFinanceBills.length} 条账单 · ${data.mallSettlementRecords.length} 条结算记录`,
+    },
+  ];
+}
+
+function operationsCategorySales(data: DashboardData): OperationsCategorySale[] {
+  const rows = buildCategorySalesRows(data.mallSalesStats, data.mallOrders).slice(0, 6);
+  const maxRevenue = Math.max(...rows.map(row => numberValue(row, 'revenueCents')), 0);
+  return rows.map(row => {
+    const revenueCents = numberValue(row, 'revenueCents');
+    return {
+      name: stringValue(row, 'categoryName', stringValue(row, 'name', stringValue(row, 'categoryCode', '未分类'))),
+      quantity: numberValue(row, 'quantity', numberValue(row, 'salesCount')),
+      revenueCents,
+      percentage: percentValue(revenueCents, Math.max(maxRevenue, 1)),
+    };
+  });
+}
+
+function operationsHotProducts(data: DashboardData): OperationsHotProduct[] {
+  const statRows = buildProductSalesRows(data.mallSalesStats, data.mallOrders);
+  const productRows = statRows.length
+    ? statRows
+    : [...data.mallProducts].sort((left, right) => numberValue(right, 'soldCount') - numberValue(left, 'soldCount'));
+
+  return productRows.slice(0, 8).map(row => ({
+    name: stringValue(row, 'productName', stringValue(row, 'name', '未命名商品')),
+    category: stringValue(row, 'categoryName', stringValue(row, 'categoryCode', '未分类')),
+    quantity: numberValue(row, 'quantity', numberValue(row, 'salesCount', numberValue(row, 'soldCount'))),
+    revenueCents: numberValue(row, 'revenueCents', numberValue(row, 'priceCents') * numberValue(row, 'soldCount')),
+  }));
+}
+
 function buildOperationsScreenModel(data: DashboardData, errors: LoadErrors = {}): OperationsScreenModel {
   const trends = operationsTrendBars(data);
   const todayTrend = trends[trends.length - 1];
@@ -2218,6 +2337,9 @@ function buildOperationsScreenModel(data: DashboardData, errors: LoadErrors = {}
     funnel: operationsFunnelSteps(data),
     modules: operationsModuleCards(data, errors),
     risks: operationsRiskItems(data, errors),
+    insights: operationsInsightCards(data),
+    categorySales: operationsCategorySales(data),
+    hotProducts: operationsHotProducts(data),
   };
 }
 
@@ -3602,6 +3724,16 @@ function OperationsDataScreen({ data, errors = {} }: { data: DashboardData; erro
         ))}
       </div>
 
+      <div className="operations-insight-grid">
+        {model.insights.map(item => (
+          <section className="operations-insight-card" key={item.label}>
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+            <small>{item.detail}</small>
+          </section>
+        ))}
+      </div>
+
       <div className="operations-main-grid">
         <section className="operations-panel operations-trend-panel">
           <div className="operations-panel-head">
@@ -3644,6 +3776,53 @@ function OperationsDataScreen({ data, errors = {} }: { data: DashboardData; erro
                 </div>
               </article>
             ))}
+          </div>
+        </section>
+      </div>
+
+      <div className="operations-chart-grid">
+        <section className="operations-panel">
+          <div className="operations-panel-head">
+            <div>
+              <h3>品类销售</h3>
+              <p>按实付订单商品行聚合，帮助运营判断补货和首页露出顺序</p>
+            </div>
+          </div>
+          <div className="operations-category-bars">
+            {model.categorySales.map(category => (
+              <article className="operations-category-row" key={category.name}>
+                <div>
+                  <strong>{category.name}</strong>
+                  <small>{category.quantity} 件 · {yuan(category.revenueCents)}</small>
+                </div>
+                <div className="operations-progress">
+                  <i style={{ width: `${category.percentage}%` }} />
+                </div>
+              </article>
+            ))}
+            {!model.categorySales.length ? <EmptyState text="暂无品类销售数据" /> : null}
+          </div>
+        </section>
+
+        <section className="operations-panel">
+          <div className="operations-panel-head">
+            <div>
+              <h3>热销商品排行</h3>
+              <p>优先读取销量统计接口，缺失时从商品销量字段兜底</p>
+            </div>
+          </div>
+          <div className="operations-rank-table">
+            {model.hotProducts.map((product, index) => (
+              <article className="operations-rank-row" key={`${product.name}-${index}`}>
+                <em>{index + 1}</em>
+                <div>
+                  <strong>{product.name}</strong>
+                  <small>{product.category} · {product.quantity} 件</small>
+                </div>
+                <span>{yuan(product.revenueCents)}</span>
+              </article>
+            ))}
+            {!model.hotProducts.length ? <EmptyState text="暂无热销商品数据" /> : null}
           </div>
         </section>
       </div>
@@ -6694,30 +6873,8 @@ function MallPermissionsSection({
   onToggleAction: (action: string) => void;
   onToggleModule: (module: string) => void;
 }) {
-  const activeCount = permissions.filter(permission => stringValue(permission, 'status') === 'active').length;
-  const inactiveCount = permissions.filter(permission => stringValue(permission, 'status') === 'inactive').length;
-  const draftCount = permissions.filter(permission => stringValue(permission, 'status') === 'draft').length;
-
   return (
     <div className="permission-admin">
-      <div className="permission-summary-grid">
-        <div className="metric-card">
-          <span>权限总数</span>
-          <strong>{permissions.length}</strong>
-          <small>商品、订单、营销、客服、财务等运营角色</small>
-        </div>
-        <div className="metric-card">
-          <span>启用权限</span>
-          <strong>{activeCount}</strong>
-          <small>当前可分配给运营账号</small>
-        </div>
-        <div className="metric-card">
-          <span>停用/草稿</span>
-          <strong>{inactiveCount + draftCount}</strong>
-          <small>停用 {inactiveCount} · 草稿 {draftCount}</small>
-        </div>
-      </div>
-
       <div className="permission-admin-grid">
         <Panel title={form.id ? '编辑权限' : '新增权限'} description="维护商城运营角色可访问的模块和动作">
           <form className="permission-editor" onSubmit={onSubmit}>
@@ -6843,6 +7000,42 @@ function MallPermissionsSection({
 }
 
 function MallSettingsSection({
+  campaigns,
+  onCampaignStatus,
+}: {
+  campaigns: JsonRecord[];
+  onCampaignStatus: (id: string, status: string) => Promise<void>;
+}) {
+  const visibleCampaigns = campaigns.filter(campaign => ['active', 'inactive', 'draft'].includes(stringValue(campaign, 'status')));
+  return (
+    <div className="page-grid">
+      <Panel title="活动启停快捷操作" description="运营设置只保留高频启停入口，活动创建、规则编辑和预算维护仍在营销活动页完成">
+        <div className="settings-campaign-list">
+          {visibleCampaigns.map(campaign => {
+            const id = stringValue(campaign, 'id');
+            const status = stringValue(campaign, 'status');
+            return (
+              <article className="settings-campaign-row" key={id}>
+                <div>
+                  <strong>{stringValue(campaign, 'name', '未命名活动')}</strong>
+                  <small>{campaignTypeLabel(stringValue(campaign, 'campaignType'))} · 预算 {yuan(numberValue(campaign, 'budgetCents'))} · 已消耗 {yuan(numberValue(campaign, 'spentCents'))}</small>
+                </div>
+                <span className={badgeClass(status)}>{statusLabel(status)}</span>
+                <button className="ghost-button" type="button" onClick={() => void onCampaignStatus(id, status === 'active' ? 'inactive' : 'active')}>
+                  <Icon name={status === 'active' ? 'x' : 'check'} />
+                  {status === 'active' ? '停用' : '启用'}
+                </button>
+              </article>
+            );
+          })}
+          {!visibleCampaigns.length ? <EmptyState text="暂无可操作活动" /> : null}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function MallDeliveryRulesSection({
   settingsForm,
   onSettingsChange,
   onSettingsSubmit,
@@ -6853,8 +7046,20 @@ function MallSettingsSection({
 }) {
   return (
     <div className="page-grid">
-      <Panel title="商城与配送配置" description="保存长期配送费、承诺时效、冷链与退款审核规则；临时配送补贴在营销活动中创建">
+      <Panel title="配送规则" description="维护 C 端结算、自提窗口、配送批次、冷链和退款审核规则">
         <form className="form-grid settings-form" onSubmit={onSettingsSubmit}>
+          <label>
+            自提开始时间
+            <input value={settingsForm.pickupWindowStart} type="time" onChange={event => onSettingsChange({ pickupWindowStart: event.target.value })} />
+          </label>
+          <label>
+            自提结束时间
+            <input value={settingsForm.pickupWindowEnd} type="time" onChange={event => onSettingsChange({ pickupWindowEnd: event.target.value })} />
+          </label>
+          <label>
+            配送批次
+            <input value={settingsForm.deliveryBatchTimes} placeholder="10:00,14:00,18:00" onChange={event => onSettingsChange({ deliveryBatchTimes: event.target.value })} />
+          </label>
           <label>
             免配送费门槛
             <input value={settingsForm.freeDeliveryThresholdYuan} type="number" min="0" step="0.01" onChange={event => onSettingsChange({ freeDeliveryThresholdYuan: event.target.value })} />
@@ -6877,7 +7082,55 @@ function MallSettingsSection({
           </label>
           <button className="primary-button" type="submit">
             <Icon name="save" />
-            保存配置
+            保存配送规则
+          </button>
+        </form>
+      </Panel>
+    </div>
+  );
+}
+
+function MallPaymentSplitRulesSection({
+  settingsForm,
+  onSettingsChange,
+  onSettingsSubmit,
+}: {
+  settingsForm: SettingsForm;
+  onSettingsChange: (patch: Partial<SettingsForm>) => void;
+  onSettingsSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+}) {
+  return (
+    <div className="page-grid">
+      <Panel title="分账规则" description="维护商城订单的团长佣金、平台服务费、供应商结算周期和提现门槛">
+        <form className="form-grid settings-form split-settings-form" onSubmit={onSettingsSubmit}>
+          <label>
+            团长佣金比例
+            <input value={settingsForm.leaderCommissionRate} type="number" min="0" max="100" step="0.1" onChange={event => onSettingsChange({ leaderCommissionRate: event.target.value })} />
+          </label>
+          <label>
+            平台服务费比例
+            <input value={settingsForm.platformServiceRate} type="number" min="0" max="100" step="0.1" onChange={event => onSettingsChange({ platformServiceRate: event.target.value })} />
+          </label>
+          <label>
+            供应商结算周期
+            <select value={settingsForm.supplierSettlementCycle} onChange={event => onSettingsChange({ supplierSettlementCycle: event.target.value })}>
+              <option value="T+1">T+1</option>
+              <option value="T+3">T+3</option>
+              <option value="T+7">T+7</option>
+              <option value="monthly">月结</option>
+            </select>
+          </label>
+          <label>
+            最低提现金额
+            <input value={settingsForm.withdrawMinYuan} type="number" min="0" step="0.01" onChange={event => onSettingsChange({ withdrawMinYuan: event.target.value })} />
+          </label>
+          <div className="settings-rule-note wide">
+            <strong>当前口径</strong>
+            <span>团长佣金按自提点订单实付金额计算；平台服务费从商家结算金额中扣减；供应商结算周期用于账单和提现审核提示。</span>
+          </div>
+          <button className="primary-button" type="submit">
+            <Icon name="save" />
+            保存分账规则
           </button>
         </form>
       </Panel>
@@ -7601,12 +7854,21 @@ function App() {
 
   useEffect(() => {
     if (!Object.keys(data.mallSettings).length) return;
+    const deliveryRules = recordValue(data.mallSettings, 'deliveryRules');
+    const paymentSplitRules = recordValue(data.mallSettings, 'paymentSplitRules');
     setSettingsForm({
-      freeDeliveryThresholdYuan: String((numberValue(data.mallSettings, 'freeDeliveryThresholdCents') / 100).toFixed(2)),
-      defaultDeliveryFeeYuan: String((numberValue(data.mallSettings, 'defaultDeliveryFeeCents') / 100).toFixed(2)),
+      freeDeliveryThresholdYuan: String((numberValue(deliveryRules, 'freeDeliveryThresholdCents', numberValue(data.mallSettings, 'freeDeliveryThresholdCents')) / 100).toFixed(2)),
+      defaultDeliveryFeeYuan: String((numberValue(deliveryRules, 'deliveryFeeCents', numberValue(data.mallSettings, 'defaultDeliveryFeeCents')) / 100).toFixed(2)),
       deliveryPromiseMinutes: String(numberValue(data.mallSettings, 'deliveryPromiseMinutes', 18)),
-      refundReviewMinutes: String(numberValue(data.mallSettings, 'refundReviewMinutes', 10)),
-      coldChainEnabled: boolValue(data.mallSettings, 'coldChainEnabled', true),
+      refundReviewMinutes: String(numberValue(deliveryRules, 'refundReviewMinutes', numberValue(data.mallSettings, 'refundReviewMinutes', 10))),
+      coldChainEnabled: boolValue(deliveryRules, 'coldChainRequired', boolValue(data.mallSettings, 'coldChainEnabled', true)),
+      pickupWindowStart: stringValue(deliveryRules, 'pickupWindowStart', '16:00'),
+      pickupWindowEnd: stringValue(deliveryRules, 'pickupWindowEnd', '20:00'),
+      deliveryBatchTimes: stringValue(deliveryRules, 'deliveryBatchTimes', '10:00,14:00,18:00'),
+      leaderCommissionRate: String(numberValue(paymentSplitRules, 'leaderCommissionRate', 8)),
+      platformServiceRate: String(numberValue(paymentSplitRules, 'platformServiceRate', 3)),
+      supplierSettlementCycle: stringValue(paymentSplitRules, 'supplierSettlementCycle', 'T+7'),
+      withdrawMinYuan: String((numberValue(paymentSplitRules, 'withdrawMinCents', 10000) / 100).toFixed(2)),
     });
   }, [data.mallSettings]);
 
@@ -8449,12 +8711,30 @@ function App() {
   const saveSettings = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     await runAction('运营配置保存', async () => {
+      const freeDeliveryThresholdCents = moneyFromYuan(settingsForm.freeDeliveryThresholdYuan);
+      const defaultDeliveryFeeCents = moneyFromYuan(settingsForm.defaultDeliveryFeeYuan);
+      const refundReviewMinutes = Number(settingsForm.refundReviewMinutes) || 10;
       await apiPut('/api/admin/mall/settings', {
-        freeDeliveryThresholdCents: moneyFromYuan(settingsForm.freeDeliveryThresholdYuan),
-        defaultDeliveryFeeCents: moneyFromYuan(settingsForm.defaultDeliveryFeeYuan),
+        freeDeliveryThresholdCents,
+        defaultDeliveryFeeCents,
         deliveryPromiseMinutes: Number(settingsForm.deliveryPromiseMinutes) || 18,
-        refundReviewMinutes: Number(settingsForm.refundReviewMinutes) || 10,
+        refundReviewMinutes,
         coldChainEnabled: settingsForm.coldChainEnabled,
+        deliveryRules: {
+          pickupWindowStart: settingsForm.pickupWindowStart,
+          pickupWindowEnd: settingsForm.pickupWindowEnd,
+          deliveryBatchTimes: settingsForm.deliveryBatchTimes,
+          deliveryFeeCents: defaultDeliveryFeeCents,
+          freeDeliveryThresholdCents,
+          coldChainRequired: settingsForm.coldChainEnabled,
+          refundReviewMinutes,
+        },
+        paymentSplitRules: {
+          leaderCommissionRate: Number(settingsForm.leaderCommissionRate) || 0,
+          platformServiceRate: Number(settingsForm.platformServiceRate) || 0,
+          supplierSettlementCycle: settingsForm.supplierSettlementCycle,
+          withdrawMinCents: moneyFromYuan(settingsForm.withdrawMinYuan),
+        },
         roles: recordValue(data.mallSettings, 'roles'),
         riskThresholds: recordValue(data.mallSettings, 'riskThresholds'),
       });
@@ -8971,6 +9251,23 @@ function App() {
     if (activePageKey === 'mall.settings') {
       return (
         <MallSettingsSection
+          campaigns={data.campaigns}
+          onCampaignStatus={updateCampaignStatus}
+        />
+      );
+    }
+    if (activePageKey === 'mall.deliveryRules') {
+      return (
+        <MallDeliveryRulesSection
+          settingsForm={settingsForm}
+          onSettingsChange={patch => setSettingsForm(current => ({ ...current, ...patch }))}
+          onSettingsSubmit={saveSettings}
+        />
+      );
+    }
+    if (activePageKey === 'mall.paymentSplit') {
+      return (
+        <MallPaymentSplitRulesSection
           settingsForm={settingsForm}
           onSettingsChange={patch => setSettingsForm(current => ({ ...current, ...patch }))}
           onSettingsSubmit={saveSettings}

@@ -13,10 +13,18 @@ function assert(condition, message) {
   }
 }
 
+function extractFunction(source, name) {
+  const start = source.indexOf(`function ${name}(`);
+  assert(start >= 0, `${name} must exist.`);
+  const next = source.indexOf('\nfunction ', start + 1);
+  return source.slice(start, next === -1 ? source.length : next);
+}
+
 const adminMain = read('src/web-admin/main.tsx');
 const adminStyles = read('src/web-admin/styles.css');
 const mallBackend = read('server/src/modules/mall.rs');
 const packageJson = JSON.parse(read('package.json'));
+const permissionsSection = extractFunction(adminMain, 'MallPermissionsSection');
 
 assert(/interface MallPermissionForm/.test(adminMain), 'Web admin must define a mall permission form model.');
 assert(/interface MallPermissionFilterState/.test(adminMain), 'Web admin must define mall permission filters.');
@@ -34,6 +42,8 @@ assert(/新增权限/.test(adminMain), 'Mall permissions page must support creat
 assert(/编辑权限/.test(adminMain), 'Mall permissions page must support edit.');
 assert(/删除/.test(adminMain), 'Mall permissions page must support delete.');
 assert(/权限搜索/.test(adminMain), 'Mall permissions page must support search.');
+assert(!/permission-summary-grid/.test(permissionsSection), 'Mall permissions page must not render metrics or data summary cards.');
+assert(!/权限总数|启用权限|停用\/草稿/.test(permissionsSection), 'Mall permissions page must only focus on permission CRUD.');
 
 assert(/\/api\/admin\/mall\/permissions/.test(mallBackend), 'Backend must expose admin mall permission routes.');
 assert(/struct PermissionMutationRequest/.test(mallBackend), 'Backend must define permission mutation request.');
@@ -46,6 +56,7 @@ assert(/mall_operation_settings/.test(mallBackend) && /roles/.test(mallBackend),
 assert(/\.permission-admin/.test(adminStyles), 'Permissions page CSS shell must exist.');
 assert(/\.permission-editor/.test(adminStyles), 'Permissions editor CSS must exist.');
 assert(/\.permission-module-grid/.test(adminStyles), 'Permissions module selector CSS must exist.');
+assert(!/\.permission-summary-grid/.test(adminStyles), 'Permissions summary card CSS must be removed.');
 
 assert(
   packageJson.scripts['check:web-admin-mall-permissions'] === 'node scripts/check-web-admin-mall-permissions.mjs',

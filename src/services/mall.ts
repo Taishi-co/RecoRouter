@@ -472,6 +472,23 @@ export interface MallCampaign {
   status: string
 }
 
+export interface MallDeliveryRules {
+  pickupWindowStart?: string
+  pickupWindowEnd?: string
+  deliveryBatchTimes?: string
+  deliveryFeeCents?: number
+  freeDeliveryThresholdCents?: number
+  coldChainRequired?: boolean
+  refundReviewMinutes?: number
+}
+
+export interface MallPaymentSplitRules {
+  leaderCommissionRate?: number
+  platformServiceRate?: number
+  supplierSettlementCycle?: string
+  withdrawMinCents?: number
+}
+
 export interface MallSettings {
   id: string
   freeDeliveryThresholdCents: number
@@ -479,6 +496,8 @@ export interface MallSettings {
   deliveryPromiseMinutes: number
   coldChainEnabled: boolean
   refundReviewMinutes: number
+  deliveryRules: MallDeliveryRules
+  paymentSplitRules: MallPaymentSplitRules
   roles: Record<string, unknown>
   riskThresholds: Record<string, unknown>
 }

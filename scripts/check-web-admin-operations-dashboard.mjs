@@ -30,6 +30,13 @@ assert(/交易趋势/.test(adminMain), 'Operations big screen must show the tran
 assert(/业务漏斗/.test(adminMain), 'Operations big screen must show the business funnel section.');
 assert(/模块健康/.test(adminMain), 'Operations big screen must show module health.');
 assert(/风险队列/.test(adminMain), 'Operations big screen must show risk queue.');
+assert(/品类销售/.test(adminMain), 'Operations big screen must show category sales analysis.');
+assert(/热销商品排行/.test(adminMain), 'Operations big screen must show hot product ranking.');
+assert(/客服售后看板/.test(adminMain), 'Operations big screen must show support and after-sales data.');
+assert(/履约配送看板/.test(adminMain), 'Operations big screen must show fulfillment and delivery data.');
+assert(/operationsInsightCards/.test(adminMain), 'Operations dashboard must derive insight cards from loaded data.');
+assert(/operationsCategorySales/.test(adminMain), 'Operations dashboard must derive category sales from loaded data.');
+assert(/operationsHotProducts/.test(adminMain), 'Operations dashboard must derive hot products from loaded data.');
 
 assert(/\.operations-screen/.test(adminStyles), 'Operations dashboard styles must define the screen shell.');
 assert(/\.operations-hero/.test(adminStyles), 'Operations dashboard styles must define the hero region.');
@@ -37,6 +44,9 @@ assert(/\.operations-kpi-grid/.test(adminStyles), 'Operations dashboard styles m
 assert(/\.operations-trend-bars/.test(adminStyles), 'Operations dashboard styles must define trend bars.');
 assert(/\.operations-funnel/.test(adminStyles), 'Operations dashboard styles must define funnel layout.');
 assert(/\.operations-risk-list/.test(adminStyles), 'Operations dashboard styles must define risk list layout.');
+assert(/\.operations-chart-grid/.test(adminStyles), 'Operations dashboard styles must define chart grid layout.');
+assert(/\.operations-rank-table/.test(adminStyles), 'Operations dashboard styles must define ranking table layout.');
+assert(/\.operations-insight-grid/.test(adminStyles), 'Operations dashboard styles must define insight card layout.');
 assert(/@media \(max-width: 860px\)[\s\S]*\.operations-screen/.test(adminStyles), 'Operations dashboard must have mobile responsive rules.');
 
 assert(

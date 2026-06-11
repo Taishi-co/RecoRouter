@@ -13,6 +13,13 @@ function assert(condition, message) {
   }
 }
 
+function extractFunction(source, name) {
+  const start = source.indexOf(`function ${name}(`);
+  assert(start >= 0, `${name} must exist.`);
+  const next = source.indexOf('\nfunction ', start + 1);
+  return source.slice(start, next === -1 ? source.length : next);
+}
+
 const adminMain = read('src/web-admin/main.tsx');
 const mallService = read('src/services/mall.ts');
 const mallHome = read('src/pages/mall/index/index.tsx');
@@ -23,6 +30,7 @@ const migrations = readdirSync(resolve(root, 'server/migrations'))
   .filter(name => name.endsWith('.sql'))
   .map(name => read(`server/migrations/${name}`))
   .join('\n');
+const settingsSection = extractFunction(adminMain, 'MallSettingsSection');
 
 assert(!/designPage\('mall\.couponCreate'/.test(adminMain), 'Mall admin coupon creation must be folded into coupon center, not a separate page.');
 assert(/designPage\('mall\.coupons', '券中心'/.test(adminMain), 'Mall admin coupon page must be renamed to coupon center.');
@@ -38,11 +46,18 @@ assert(/designPage\('mall\.homeHotProducts', '爆款推荐'/.test(adminMain), 'M
 assert(/function MallHomeSectionsSection\(/.test(adminMain), 'Web admin must render real homepage section configuration pages.');
 assert(/function MallCampaignsSection\(/.test(adminMain), 'Web admin must render a real campaign list section.');
 assert(/function MallSettingsSection\(/.test(adminMain), 'Web admin must keep operation settings separate from campaign management.');
+assert(/function MallDeliveryRulesSection\(/.test(adminMain), 'Web admin must render a real delivery rules section.');
+assert(/function MallPaymentSplitRulesSection\(/.test(adminMain), 'Web admin must render a real payment split rules section.');
+assert(/活动启停快捷操作/.test(settingsSection), 'Operation settings page must be a quick activity enable/disable workbench.');
+assert(/onCampaignStatus/.test(settingsSection), 'Operation settings quick workbench must toggle campaign status through the campaign API.');
+assert(!/freeDeliveryThresholdYuan|defaultDeliveryFeeYuan|coldChainEnabled|refundReviewMinutes/.test(settingsSection), 'Operation settings page must not contain delivery or refund rule form fields.');
 assert(/activePageKey === 'mall\.coupons'[\s\S]*<MallCouponCenterSection/.test(adminMain), 'mall.coupons must route to MallCouponCenterSection.');
 assert(/activePageKey === 'mall\.banners'[\s\S]*<MallHomeBannersSection/.test(adminMain), 'mall.banners must route to MallHomeBannersSection.');
 assert(/homeSectionPageConfigs\[activePageKey\][\s\S]*<MallHomeSectionsSection/.test(adminMain), 'Homepage section pages must route to MallHomeSectionsSection.');
 assert(/activePageKey === 'mall\.campaigns'[\s\S]*<MallCampaignsSection/.test(adminMain), 'mall.campaigns must route to MallCampaignsSection.');
 assert(/activePageKey === 'mall\.settings'[\s\S]*<MallSettingsSection/.test(adminMain), 'mall.settings must route to MallSettingsSection.');
+assert(/activePageKey === 'mall\.deliveryRules'[\s\S]*<MallDeliveryRulesSection/.test(adminMain), 'mall.deliveryRules must route to MallDeliveryRulesSection.');
+assert(/activePageKey === 'mall\.paymentSplit'[\s\S]*<MallPaymentSplitRulesSection/.test(adminMain), 'mall.paymentSplit must route to MallPaymentSplitRulesSection.');
 assert(/apiPost(?:<[^>]+>)?\('\/api\/admin\/mall\/coupons'/.test(adminMain), 'Coupon creation must call the real admin coupon API.');
 assert(/apiPut<JsonRecord>\(`\/api\/admin\/mall\/coupons\/\$\{[^}]+\}`/.test(adminMain), 'Coupon edit must call the real admin coupon update API.');
 assert(/apiDelete\(`\/api\/admin\/mall\/coupons\/\$\{[^}]+\}`/.test(adminMain), 'Coupon delete must call the real admin coupon delete API.');
@@ -72,6 +87,15 @@ assert(/resolveSectionProducts\(products, newArrivalSection/.test(mallHome), 'Ma
 assert(/resolveSectionProducts\(products, bestSellerSection/.test(mallHome), 'Mall home page must apply configured hot products.');
 assert(/resolveMallImageUrl\(primaryBanner\?\.imageUrl\)/.test(mallHome), 'Mall home page must render configured banner images.');
 assert(/categoryCode=\$\{encodeURIComponent\(target\)\}/.test(mallHome), 'Mall home banner category links must navigate with categoryCode.');
+
+assert(/deliveryRules/.test(adminMain), 'Web admin must save delivery rules into mall settings.');
+assert(/paymentSplitRules/.test(adminMain), 'Web admin must save payment split rules into mall settings.');
+assert(/delivery_rules/.test(mallBackend), 'Backend settings mutation must accept delivery_rules.');
+assert(/payment_split_rules/.test(mallBackend), 'Backend settings mutation must accept payment_split_rules.');
+assert(/delivery_rules jsonb/.test(migrations), 'Migrations must add delivery_rules JSON settings.');
+assert(/payment_split_rules jsonb/.test(migrations), 'Migrations must add payment_split_rules JSON settings.');
+assert(/'deliveryRules'/.test(migrations), 'settings_json must expose deliveryRules.');
+assert(/'paymentSplitRules'/.test(migrations), 'settings_json must expose paymentSplitRules.');
 
 assert(/\/api\/admin\/mall\/coupons/.test(mallBackend), 'Backend must expose admin coupon routes.');
 assert(/\/api\/admin\/mall\/home-banners/.test(mallBackend), 'Backend must expose admin home banner routes.');
