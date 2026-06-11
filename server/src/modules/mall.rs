@@ -197,6 +197,14 @@ where
             post(admin_refund_order::<S>),
         )
         .route(
+            "/api/admin/mall/after-sales",
+            get(admin_list_after_sales::<S>),
+        )
+        .route(
+            "/api/admin/mall/after-sales/:id",
+            put(admin_update_after_sale::<S>),
+        )
+        .route(
             "/api/admin/mall/orders/:id/fulfillment-code",
             post(admin_generate_fulfillment_code::<S>),
         )
@@ -508,6 +516,17 @@ struct SupportListQuery {
     #[serde(alias = "user_id")]
     user_id: Option<String>,
     status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminAfterSaleQuery {
+    keyword: Option<String>,
+    status: Option<String>,
+    #[serde(alias = "start_date")]
+    start_date: Option<String>,
+    #[serde(alias = "end_date")]
+    end_date: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -923,6 +942,15 @@ struct AfterSaleRequest {
     amount_cents: Option<i64>,
     #[serde(alias = "evidence_images")]
     evidence_images: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateAfterSaleRequest {
+    status: Option<String>,
+    #[serde(alias = "handling_method")]
+    handling_method: Option<String>,
+    resolution: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3083,6 +3111,213 @@ where
     .await?;
 
     Ok(ok("退款处理成功", after_sale))
+}
+
+async fn admin_list_after_sales<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<AdminAfterSaleQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT jsonb_build_object(
+          'id', sale.id,
+          'orderId', sale.order_id,
+          'orderNo', orders.order_no,
+          'userId', sale.user_id,
+          'userPhone', users.phone,
+          'recipientName', orders.recipient_name,
+          'recipientPhone', orders.recipient_phone,
+          'productName', first_item.product_name,
+          'reason', sale.reason,
+          'description', sale.description,
+          'amountCents', sale.amount_cents,
+          'evidenceImages', sale.evidence_images,
+          'status', sale.status,
+          'handlingMethod', sale.handling_method,
+          'createdAt', sale.created_at,
+          'updatedAt', sale.updated_at
+        )
+        FROM mall_after_sales sale
+        JOIN mall_orders orders ON orders.id = sale.order_id
+        LEFT JOIN users ON users.id = sale.user_id
+        LEFT JOIN LATERAL (
+          SELECT item.product_name
+          FROM mall_order_items item
+          WHERE item.order_id = sale.order_id
+          ORDER BY item.created_at ASC
+          LIMIT 1
+        ) first_item ON true
+        WHERE 1 = 1
+        "#,
+    );
+
+    if let Some(keyword) = query
+        .keyword
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        let pattern = format!("%{}%", keyword);
+        builder.push(" AND (lower(orders.order_no) LIKE lower(");
+        builder.push_bind(pattern.clone());
+        builder.push(") OR lower(COALESCE(users.phone, '')) LIKE lower(");
+        builder.push_bind(pattern.clone());
+        builder.push(") OR lower(COALESCE(orders.recipient_phone, '')) LIKE lower(");
+        builder.push_bind(pattern.clone());
+        builder.push(") OR lower(COALESCE(orders.recipient_name, '')) LIKE lower(");
+        builder.push_bind(pattern.clone());
+        builder.push(") OR lower(COALESCE(first_item.product_name, '')) LIKE lower(");
+        builder.push_bind(pattern.clone());
+        builder.push(") OR lower(sale.reason) LIKE lower(");
+        builder.push_bind(pattern.clone());
+        builder.push(") OR lower(COALESCE(sale.description, '')) LIKE lower(");
+        builder.push_bind(pattern);
+        builder.push("))");
+    }
+
+    if let Some(status) = query
+        .status
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        builder.push(" AND sale.status = ");
+        builder.push_bind(status);
+    }
+
+    if let Some(start_date) = query
+        .start_date
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        builder.push(" AND sale.created_at >= ");
+        builder.push_bind(start_date);
+        builder.push("::date");
+    }
+
+    if let Some(end_date) = query
+        .end_date
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        builder.push(" AND sale.created_at < (");
+        builder.push_bind(end_date);
+        builder.push("::date + INTERVAL '1 day')");
+    }
+
+    builder.push(" ORDER BY sale.created_at DESC LIMIT 200");
+    let rows = builder
+        .build_query_scalar::<Value>()
+        .fetch_all(&state.db)
+        .await?;
+    Ok(ok("查询成功", rows))
+}
+
+async fn admin_update_after_sale<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<UpdateAfterSaleRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    if let Some(status) = body.status.as_deref() {
+        validate_after_sale_status(status)?;
+    }
+
+    let handling_method = non_empty(body.handling_method);
+    let resolution = non_empty(body.resolution);
+    let after_sale = sqlx::query_scalar::<_, Value>(
+        r#"
+        WITH updated AS (
+          UPDATE mall_after_sales
+          SET status = COALESCE($2, status),
+              handling_method = COALESCE($3, handling_method),
+              description = COALESCE($4, description),
+              updated_at = now()
+          WHERE id = $1
+          RETURNING *
+        )
+        SELECT jsonb_build_object(
+          'id', sale.id,
+          'orderId', sale.order_id,
+          'orderNo', orders.order_no,
+          'userId', sale.user_id,
+          'userPhone', users.phone,
+          'recipientName', orders.recipient_name,
+          'recipientPhone', orders.recipient_phone,
+          'productName', first_item.product_name,
+          'reason', sale.reason,
+          'description', sale.description,
+          'amountCents', sale.amount_cents,
+          'evidenceImages', sale.evidence_images,
+          'status', sale.status,
+          'handlingMethod', sale.handling_method,
+          'createdAt', sale.created_at,
+          'updatedAt', sale.updated_at
+        )
+        FROM updated sale
+        JOIN mall_orders orders ON orders.id = sale.order_id
+        LEFT JOIN users ON users.id = sale.user_id
+        LEFT JOIN LATERAL (
+          SELECT item.product_name
+          FROM mall_order_items item
+          WHERE item.order_id = sale.order_id
+          ORDER BY item.created_at ASC
+          LIMIT 1
+        ) first_item ON true
+        "#,
+    )
+    .bind(&id)
+    .bind(body.status.as_deref())
+    .bind(handling_method)
+    .bind(resolution.clone())
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("售后申请不存在".to_string()))?;
+
+    if let Some(status) = body.status.as_deref() {
+        let order_id = after_sale
+            .get("orderId")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let refund_status = refund_status_for_after_sale(status);
+        let after_sale_status = order_after_sale_status(status);
+        sqlx::query(
+            r#"
+            UPDATE mall_orders
+            SET refund_status = COALESCE($2, refund_status),
+                after_sale_status = $3,
+                updated_at = now()
+            WHERE id = $1
+            "#,
+        )
+        .bind(&order_id)
+        .bind(refund_status)
+        .bind(after_sale_status)
+        .execute(&state.db)
+        .await?;
+
+        insert_order_event(
+            &state.db,
+            &order_id,
+            status,
+            after_sale_status_title(status),
+            resolution
+                .as_deref()
+                .unwrap_or_else(|| after_sale_status_title(status)),
+            if matches!(status, "refunded" | "rejected" | "closed" | "resolved") {
+                "done"
+            } else {
+                "active"
+            },
+        )
+        .await?;
+    }
+
+    Ok(ok("售后申请处理成功", after_sale))
 }
 
 async fn admin_generate_fulfillment_code<S>(
@@ -8014,6 +8249,46 @@ fn validate_order_status(status: &str) -> ApiResult<()> {
     }
 }
 
+fn validate_after_sale_status(status: &str) -> ApiResult<()> {
+    if matches!(
+        status,
+        "submitted"
+            | "approved"
+            | "processing"
+            | "refunding"
+            | "refunded"
+            | "rejected"
+            | "resolved"
+            | "closed"
+    ) {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest("售后状态不正确".to_string()))
+    }
+}
+
+fn refund_status_for_after_sale(status: &str) -> Option<&'static str> {
+    match status {
+        "approved" | "refunding" => Some("approved"),
+        "refunded" | "resolved" | "closed" => Some("refunded"),
+        "rejected" => Some("rejected"),
+        _ => None,
+    }
+}
+
+fn order_after_sale_status(status: &str) -> &'static str {
+    match status {
+        "approved" => "approved",
+        "processing" => "processing",
+        "refunding" => "refunding",
+        "refunded" => "refunded",
+        "rejected" => "rejected",
+        "resolved" => "resolved",
+        "closed" => "closed",
+        _ => "processing",
+    }
+}
+
 fn normalize_community_interaction(interaction_type: &str) -> ApiResult<&'static str> {
     match interaction_type.trim() {
         "like" => Ok("like"),
@@ -8032,6 +8307,19 @@ fn order_status_title(status: &str) -> &'static str {
         "completed" => "已完成签收",
         "cancelled" => "订单已取消",
         _ => "订单状态更新",
+    }
+}
+
+fn after_sale_status_title(status: &str) -> &'static str {
+    match status {
+        "approved" => "售后审核通过",
+        "processing" => "售后处理中",
+        "refunding" => "退款处理中",
+        "refunded" => "退款已完成",
+        "rejected" => "售后已驳回",
+        "resolved" => "售后已解决",
+        "closed" => "售后已关闭",
+        _ => "售后申请已提交",
     }
 }
 

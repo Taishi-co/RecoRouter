@@ -85,6 +85,7 @@ interface DashboardData {
   mallProducts: JsonRecord[];
   mallInventoryAlerts: JsonRecord[];
   mallOrders: JsonRecord[];
+  mallAfterSales: JsonRecord[];
   mallOpsOverview: JsonRecord;
   mallListingRequests: JsonRecord[];
   mallDeliverySheets: JsonRecord[];
@@ -605,8 +606,10 @@ const adminModules: AdminModuleSpec[] = [
       designPage('mall.homeFlashSale', '秒杀专区', '首页配置', '每日两场秒杀、倒计时、库存和商品池', 'shop', 'mallProducts'),
       designPage('mall.homeNewArrivals', '新上专区', '首页配置', '每日上新 10-15 款和今日刚到标签', 'plus', 'mallProducts'),
       designPage('mall.homeHotProducts', '爆款推荐', '首页配置', '平台销量 TOP10 和排序规则', 'shop', 'mallProducts'),
-      designPage('mall.support', '客服售后', '客服售后', '会话、工单、知识库和响应指标', 'support', 'support'),
+      designPage('mall.supportData', '客服数据', '客服售后', '响应、会话、售后和知识库指标', 'dashboard', 'support'),
+      designPage('mall.support', '客服售后', '客服售后', '用户咨询会话、消息回复和用户上下文', 'support', 'support'),
       designPage('mall.afterSales', '售后申请', '客服售后', '售后单审核、证据图片和退款流转', 'refund', 'mallOrders'),
+      designPage('mall.supportTickets', '客服工单', '客服售后', '内部跟进工单、跨岗位协同和处理结果', 'check', 'support'),
       designPage('mall.knowledge', '客服知识库', '客服售后', '商城 FAQ、坏果包赔和履约话术', 'support', 'support'),
       designPage('mall.settings', '运营设置', '运营设置', '配送费、售后时效和冷链规则', 'save', 'operations'),
       designPage('mall.deliveryRules', '配送规则', '运营设置', '自提窗口、冷链承诺和服务费', 'route'),
@@ -636,6 +639,7 @@ const initialData: DashboardData = {
   mallProducts: [],
   mallInventoryAlerts: [],
   mallOrders: [],
+  mallAfterSales: [],
   mallOpsOverview: {},
   mallListingRequests: [],
   mallDeliverySheets: [],
@@ -942,9 +946,9 @@ const initialSupportForm: SupportForm = {
   ticketCategory: 'delivery',
   ticketPriority: 'normal',
   ticketOrderId: '',
-  knowledgeTitle: '无人车配送取货说明',
-  knowledgeCategory: '配送',
-  knowledgeContent: '用户收到开舱码后，可在无人车到达后输入取货码完成取货。',
+  knowledgeTitle: '坏果包赔处理口径',
+  knowledgeCategory: '售后',
+  knowledgeContent: '用户上传商品破损或坏果照片后，客服核对订单、配送记录和证据图片，符合规则的按原路退款或补发处理。',
 };
 
 const initialSupportFilters: SupportFilterState = {
@@ -1061,6 +1065,7 @@ async function fetchDashboardData(
     mallProducts,
     mallInventoryAlerts,
     mallOrders,
+    mallAfterSales,
     mallOpsOverview,
     mallListingRequests,
     mallDeliverySheets,
@@ -1113,6 +1118,7 @@ async function fetchDashboardData(
       stockStatus: inventoryFilters.stockStatus,
     })),
     loadWithFallback('商城订单', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/orders')),
+    loadWithFallback('售后申请', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/after-sales')),
     loadWithFallback('商城运营概览', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/ops/overview')),
     loadWithFallback('商品上下架申请', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/listing-requests', { limit: 100 })),
     loadWithFallback('配送单', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/delivery-sheets', { limit: 100 })),
@@ -1180,6 +1186,7 @@ async function fetchDashboardData(
       mallProducts,
       mallInventoryAlerts,
       mallOrders,
+      mallAfterSales,
       mallOpsOverview,
       mallListingRequests,
       mallDeliverySheets,
@@ -1696,6 +1703,28 @@ function buildAfterSalesQueue(orders: JsonRecord[]) {
       });
     })
     .sort((left, right) => new Date(stringValue(right, 'createdAt')).getTime() - new Date(stringValue(left, 'createdAt')).getTime());
+}
+
+function supportDashboardStats(data: DashboardData, afterSales: JsonRecord[]) {
+  const openSessions = data.supportSessions.filter(session => isOpenSupportStatus(orderStatus(session))).length;
+  const openTickets = data.supportTickets.filter(ticket => isOpenSupportStatus(orderStatus(ticket))).length;
+  const pendingAfterSales = afterSales.filter(item => isOpenSupportStatus(orderStatus(item))).length;
+  const refundingAfterSales = afterSales.filter(item => ['approved', 'refunding'].includes(orderStatus(item))).length;
+  const afterSalesAmountCents = afterSales.reduce((total, item) => total + numberValue(item, 'amountCents'), 0);
+  const resolvedTickets = data.supportTickets.filter(ticket => ['resolved', 'closed'].includes(orderStatus(ticket))).length;
+  const ticketTotal = Math.max(data.supportTickets.length, 1);
+
+  return {
+    openSessions,
+    openTickets,
+    pendingAfterSales,
+    refundingAfterSales,
+    afterSalesAmountCents,
+    knowledgeArticles: data.supportKnowledge.length,
+    avgFirstResponseMinutes: numberValue(data.supportMetrics, 'avgFirstResponseMinutes'),
+    satisfaction: numberValue(data.supportMetrics, 'satisfaction'),
+    ticketResolutionRate: percentValue(resolvedTickets, ticketTotal),
+  };
 }
 
 function clampPercent(value: number) {
@@ -6856,12 +6885,84 @@ function MallSettingsSection({
   );
 }
 
+function SupportDataSection({
+  stats,
+  sessions,
+  tickets,
+  afterSales,
+  knowledge,
+}: {
+  stats: ReturnType<typeof supportDashboardStats>;
+  sessions: JsonRecord[];
+  tickets: JsonRecord[];
+  afterSales: JsonRecord[];
+  knowledge: JsonRecord[];
+}) {
+  const pendingTickets = tickets.filter(ticket => isOpenSupportStatus(orderStatus(ticket))).slice(0, 5);
+  const pendingAfterSales = afterSales.filter(item => isOpenSupportStatus(orderStatus(item))).slice(0, 5);
+
+  return (
+    <div className="page-grid support-data-page">
+      <div className="stat-grid compact">
+        <StatCard label="待响应会话" value={String(stats.openSessions)} detail={`${stats.avgFirstResponseMinutes || 0} 分钟首响`} />
+        <StatCard label="未结工单" value={String(stats.openTickets)} detail={`${stats.ticketResolutionRate}% 工单解决率`} />
+        <StatCard label="待处理售后" value={String(stats.pendingAfterSales)} detail={`${stats.refundingAfterSales} 单退款中`} />
+        <StatCard label="售后金额" value={yuan(stats.afterSalesAmountCents)} detail={`${stats.knowledgeArticles || knowledge.length} 篇知识库`} />
+      </div>
+
+      <div className="support-data-grid">
+        <Panel title="服务质量" description="单独展示客服售后指标，避免干扰会话处理">
+          <div className="support-data-board">
+            <article>
+              <span>满意度</span>
+              <strong>{stats.satisfaction || 0}%</strong>
+              <small>来自客服指标接口</small>
+            </article>
+            <article>
+              <span>会话总量</span>
+              <strong>{sessions.length}</strong>
+              <small>小程序与 Web 咨询</small>
+            </article>
+            <article>
+              <span>工单总量</span>
+              <strong>{tickets.length}</strong>
+              <small>内部跟进和跨岗位协同</small>
+            </article>
+            <article>
+              <span>售后总量</span>
+              <strong>{afterSales.length}</strong>
+              <small>退款、坏果包赔、缺件</small>
+            </article>
+          </div>
+        </Panel>
+
+        <Panel title="今日优先处理" description="给客服主管看当前最该处理的事项">
+          <div className="support-priority-list">
+            {pendingAfterSales.map(item => (
+              <article key={`sale-${stringValue(item, 'id')}`}>
+                <strong>{stringValue(item, 'orderNo', shortId(stringValue(item, 'orderId')))}</strong>
+                <span>{stringValue(item, 'reason', '售后申请')} · {yuan(numberValue(item, 'amountCents'))}</span>
+                <small>{stringValue(item, 'recipientName', stringValue(item, 'userPhone', '用户'))} · {formatDate(stringValue(item, 'createdAt'))}</small>
+              </article>
+            ))}
+            {pendingTickets.map(ticket => (
+              <article key={`ticket-${stringValue(ticket, 'id')}`}>
+                <strong>{stringValue(ticket, 'title')}</strong>
+                <span>{supportCategoryLabel(stringValue(ticket, 'category'))} · {priorityLabel(stringValue(ticket, 'priority'))}</span>
+                <small>{statusLabel(stringValue(ticket, 'status'))} · {formatDate(stringValue(ticket, 'updatedAt'))}</small>
+              </article>
+            ))}
+            {!pendingAfterSales.length && !pendingTickets.length ? <EmptyState text="暂无优先待办" /> : null}
+          </div>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
 function SupportSection({
   metrics,
   sessions,
-  tickets,
-  knowledge,
-  afterSales,
   filters,
   form,
   selectedSessionId,
@@ -6872,16 +6973,9 @@ function SupportSection({
   onSelectSession,
   onCreateSession,
   onSendMessage,
-  onResolveTicket,
-  onCreateTicket,
-  onCreateKnowledge,
-  onViewAfterSaleOrder,
 }: {
   metrics: JsonRecord;
   sessions: JsonRecord[];
-  tickets: JsonRecord[];
-  knowledge: JsonRecord[];
-  afterSales: JsonRecord[];
   filters: SupportFilterState;
   form: SupportForm;
   selectedSessionId: string;
@@ -6892,32 +6986,153 @@ function SupportSection({
   onSelectSession: (id: string) => Promise<void>;
   onCreateSession: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onSendMessage: (event: FormEvent<HTMLFormElement>) => Promise<void>;
-  onResolveTicket: (id: string) => Promise<void>;
-  onCreateTicket: (event: FormEvent<HTMLFormElement>) => Promise<void>;
-  onCreateKnowledge: (event: FormEvent<HTMLFormElement>) => Promise<void>;
-  onViewAfterSaleOrder: (id: string) => Promise<void>;
 }) {
   const selectedSession = sessions.find(session => stringValue(session, 'id') === selectedSessionId);
   const quickReplies = [
     '您好，已收到反馈，我先核实订单和配送记录。',
-    '已为您标记售后优先处理，预计 10 分钟内给出处理方案。',
-    '如果商品有破损或少件，请补充照片，我们会按坏果包赔规则处理。',
+    '这边已经为您标记优先处理，会在 10 分钟内给出处理方案。',
+    '如果商品有破损、坏果或少件，请补充照片，我们会按售后规则处理。',
   ];
 
   return (
     <div className="page-grid support-workbench">
-      <div className="stat-grid compact">
-        <StatCard label="打开会话" value={metricValue(metrics, ['openSessions'])} detail="小程序与 Web 统一客服入口" />
-        <StatCard label="打开工单" value={metricValue(metrics, ['openTickets'])} detail="售后、配送、支付问题" />
-        <StatCard label="售后申请" value={String(numberValue(metrics, 'afterSales', afterSales.length))} detail="待核实退款与坏果包赔" />
-        <StatCard label="首响分钟" value={metricValue(metrics, ['avgFirstResponseMinutes'])} detail="客服响应 SLA" />
-      </div>
+      <Panel title="客服会话筛选" description="会话页只处理用户咨询和消息回复；售后、工单、知识库在独立页面处理">
+        <div className="support-filterbar support-filterbar-sessions">
+          <label>
+            关键词
+            <input value={filters.keyword} onChange={event => onFiltersChange({ keyword: event.target.value })} placeholder="用户 ID / 主题 / 最近消息" />
+          </label>
+          <label>
+            状态
+            <select value={filters.status} onChange={event => onFiltersChange({ status: event.target.value })}>
+              <option value="open">待处理</option>
+              <option value="">全部</option>
+              <option value="resolved">已解决</option>
+              <option value="closed">已关闭</option>
+            </select>
+          </label>
+          <button className="ghost-button" type="button" onClick={onClearFilters}>
+            <Icon name="refresh" />
+            重置
+          </button>
+        </div>
+      </Panel>
 
-      <Panel title="客服售后筛选" description="按关键词、状态、分类和优先级快速收敛会话、工单与售后申请">
+      <div className="support-session-shell">
+        <Panel title="会话队列" description="按最近更新时间排序，客服先看用户、主题和最后一句话">
+          <form className="inline-form support-create-session" onSubmit={onCreateSession}>
+            <input value={form.userId} onChange={event => onFormChange({ userId: event.target.value })} placeholder="用户 ID" />
+            <input value={form.topic} onChange={event => onFormChange({ topic: event.target.value })} placeholder="会话主题" />
+            <button className="primary-button small" type="submit">
+              <Icon name="plus" />
+              新建
+            </button>
+          </form>
+          <div className="support-session-list">
+            {sessions.map(session => {
+              const id = stringValue(session, 'id');
+              const status = stringValue(session, 'status');
+              return (
+                <button className={`session-row ${selectedSessionId === id ? 'selected' : ''}`} key={id} type="button" onClick={() => onSelectSession(id)}>
+                  <div>
+                    <strong>{stringValue(session, 'topic', '未命名咨询')}</strong>
+                    <span className={badgeClass(status)}>{statusLabel(status)}</span>
+                  </div>
+                  <p>{stringValue(session, 'lastMessage', '暂无消息')}</p>
+                  <small>{shortId(stringValue(session, 'userId'))} · {stringValue(session, 'channel', 'web')} · {formatDate(stringValue(session, 'updatedAt'))}</small>
+                </button>
+              );
+            })}
+            {!sessions.length ? <EmptyState text="暂无匹配会话" /> : null}
+          </div>
+        </Panel>
+
+        <div className="support-conversation">
+          <Panel
+            title={selectedSession ? stringValue(selectedSession, 'topic') : '当前会话'}
+            description={selectedSession ? `用户 ${shortId(stringValue(selectedSession, 'userId'))} · ${formatDate(stringValue(selectedSession, 'updatedAt'))}` : '从左侧选择会话后查看上下文并回复'}
+            action={selectedSession ? <span className={badgeClass(stringValue(selectedSession, 'status'))}>{statusLabel(stringValue(selectedSession, 'status'))}</span> : null}
+          >
+            <div className="message-list">
+              {messages.map(message => {
+                const senderRole = stringValue(message, 'senderRole');
+                const isAgent = ['agent', 'admin', 'support'].includes(senderRole);
+                return (
+                  <article className={`message ${isAgent ? 'agent' : 'customer'}`} key={stringValue(message, 'id')}>
+                    <span>{roleLabel(senderRole)} · {formatDate(stringValue(message, 'createdAt'))}</span>
+                    <p>{stringValue(message, 'content')}</p>
+                  </article>
+                );
+              })}
+              {!messages.length ? <EmptyState text="选择会话后显示消息" /> : null}
+            </div>
+            <div className="quick-replies">
+              {quickReplies.map(reply => (
+                <button className="ghost-button small" key={reply} type="button" onClick={() => onFormChange({ message: reply })}>
+                  {reply}
+                </button>
+              ))}
+            </div>
+            <form className="send-form support-message-composer" onSubmit={onSendMessage}>
+              <textarea value={form.message} placeholder="输入给用户的回复" onChange={event => onFormChange({ message: event.target.value })} />
+              <button className="primary-button" type="submit" disabled={!selectedSessionId || !form.message.trim()}>
+                <Icon name="send" />
+                发送
+              </button>
+            </form>
+          </Panel>
+        </div>
+
+        <Panel title="用户上下文" description="客服回复前需要先看用户、渠道和 SLA">
+          <div className="support-context-panel">
+            <article>
+              <span>用户</span>
+              <strong>{selectedSession ? shortId(stringValue(selectedSession, 'userId')) : '-'}</strong>
+            </article>
+            <article>
+              <span>渠道</span>
+              <strong>{selectedSession ? stringValue(selectedSession, 'channel', 'web') : '-'}</strong>
+            </article>
+            <article>
+              <span>首响 SLA</span>
+              <strong>{metricValue(metrics, ['avgFirstResponseMinutes'])} 分钟</strong>
+            </article>
+            <article>
+              <span>最近更新</span>
+              <strong>{selectedSession ? formatDate(stringValue(selectedSession, 'updatedAt')) : '-'}</strong>
+            </article>
+            <div className="support-context-note">
+              会话页只处理即时沟通。需要退款、补发或跨岗位确认时，进入“售后申请”或“客服工单”页面处理。
+            </div>
+          </div>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+function AfterSalesSection({
+  afterSales,
+  filters,
+  onFiltersChange,
+  onClearFilters,
+  onViewAfterSaleOrder,
+  onUpdateAfterSale,
+}: {
+  afterSales: JsonRecord[];
+  filters: SupportFilterState;
+  onFiltersChange: (patch: Partial<SupportFilterState>) => void;
+  onClearFilters: () => void;
+  onViewAfterSaleOrder: (id: string) => Promise<void>;
+  onUpdateAfterSale: (id: string, status: string, handlingMethod: string, resolution: string) => Promise<void>;
+}) {
+  return (
+    <div className="page-grid support-workbench">
+      <Panel title="售后申请筛选" description="处理坏果包赔、少件、退款和补偿申请">
         <div className="support-filterbar">
           <label>
             关键词
-            <input value={filters.keyword} onChange={event => onFiltersChange({ keyword: event.target.value })} placeholder="订单号/用户/问题描述" />
+            <input value={filters.keyword} onChange={event => onFiltersChange({ keyword: event.target.value })} placeholder="订单号/手机号/商品/原因" />
           </label>
           <label>
             状态
@@ -6927,6 +7142,95 @@ function SupportSection({
               <option value="submitted">已提交</option>
               <option value="approved">已通过</option>
               <option value="refunding">退款中</option>
+              <option value="refunded">已退款</option>
+              <option value="rejected">已驳回</option>
+              <option value="closed">已关闭</option>
+            </select>
+          </label>
+          <button className="ghost-button" type="button" onClick={onClearFilters}>
+            <Icon name="refresh" />
+            重置
+          </button>
+        </div>
+      </Panel>
+
+      <Panel title="售后申请列表" description="每条售后都来自真实申请表，处理后同步订单售后状态和订单事件">
+        <div className="support-after-sales">
+          {afterSales.map(item => {
+            const id = stringValue(item, 'id');
+            const orderId = stringValue(item, 'orderId');
+            const status = stringValue(item, 'status');
+            const evidenceImages = arrayValue(item, 'evidenceImages');
+            return (
+              <article className="support-after-sale-row" key={id}>
+                <div>
+                  <strong>{stringValue(item, 'orderNo', shortId(orderId))}</strong>
+                  <span>{stringValue(item, 'reason', '售后申请')} · {stringValue(item, 'productName', '订单商品')}</span>
+                  <small>{stringValue(item, 'recipientName', stringValue(item, 'userPhone', '用户'))} · {stringValue(item, 'recipientPhone')} · {formatDate(stringValue(item, 'createdAt'))}</small>
+                  <p>{stringValue(item, 'description', '暂无说明')}</p>
+                  <small>{yuan(numberValue(item, 'amountCents'))} · {stringValue(item, 'handlingMethod', '极速退款')} · 证据 {evidenceImages.length} 张</small>
+                </div>
+                <span className={badgeClass(status)}>{statusLabel(status)}</span>
+                <div className="support-row-actions">
+                  <button className="ghost-button small" type="button" onClick={() => onViewAfterSaleOrder(orderId)}>
+                    <Icon name="orders" />
+                    查看订单
+                  </button>
+                  <button className="ghost-button small" type="button" onClick={() => onUpdateAfterSale(id, 'approved', '极速退款', '审核通过，进入退款处理')}>
+                    <Icon name="check" />
+                    通过
+                  </button>
+                  <button className="ghost-button small" type="button" onClick={() => onUpdateAfterSale(id, 'refunded', '原路退款', '退款已完成')}>
+                    <Icon name="refund" />
+                    已退款
+                  </button>
+                  <button className="ghost-button small danger" type="button" onClick={() => onUpdateAfterSale(id, 'rejected', '人工驳回', '证据不足或不符合售后规则')}>
+                    <Icon name="x" />
+                    驳回
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+          {!afterSales.length ? <EmptyState text="暂无售后申请" /> : null}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function SupportTicketsSection({
+  tickets,
+  filters,
+  form,
+  onFiltersChange,
+  onClearFilters,
+  onFormChange,
+  onCreateTicket,
+  onResolveTicket,
+}: {
+  tickets: JsonRecord[];
+  filters: SupportFilterState;
+  form: SupportForm;
+  onFiltersChange: (patch: Partial<SupportFilterState>) => void;
+  onClearFilters: () => void;
+  onFormChange: (patch: Partial<SupportForm>) => void;
+  onCreateTicket: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onResolveTicket: (id: string) => Promise<void>;
+}) {
+  return (
+    <div className="page-grid support-workbench">
+      <Panel title="客服工单筛选" description="工单用于内部跟进，不是用户直接提交；例如财务退款、配送异常、商品补发">
+        <div className="support-filterbar">
+          <label>
+            关键词
+            <input value={filters.keyword} onChange={event => onFiltersChange({ keyword: event.target.value })} placeholder="标题/订单/用户/说明" />
+          </label>
+          <label>
+            状态
+            <select value={filters.status} onChange={event => onFiltersChange({ status: event.target.value })}>
+              <option value="open">待处理</option>
+              <option value="">全部</option>
               <option value="resolved">已解决</option>
               <option value="closed">已关闭</option>
             </select>
@@ -6959,189 +7263,113 @@ function SupportSection({
         </div>
       </Panel>
 
-      <div className="support-workbench-grid">
-        <div className="support-stack">
-          <Panel title="售后申请队列" description="优先处理坏果包赔、退款和缺件问题">
-            <div className="support-after-sales">
-              {afterSales.map(item => {
-                const orderId = stringValue(item, 'orderId');
-                return (
-                  <article className="support-after-sale-row" key={stringValue(item, 'id')}>
-                    <div>
-                      <strong>{stringValue(item, 'orderNo')}</strong>
-                      <span>{stringValue(item, 'reason', '售后申请')} · {stringValue(item, 'productName')}</span>
-                      <small>{yuan(numberValue(item, 'amountCents'))} · {formatDate(stringValue(item, 'createdAt'))}</small>
-                    </div>
-                    <span className={badgeClass(stringValue(item, 'status'))}>{statusLabel(stringValue(item, 'status'))}</span>
-                    <div className="support-row-actions">
-                      <button className="ghost-button small" type="button" onClick={() => onViewAfterSaleOrder(orderId)}>
-                        <Icon name="orders" />
-                        订单
-                      </button>
-                      <button
-                        className="ghost-button small"
-                        type="button"
-                        onClick={() => onFormChange({
-                          userId: stringValue(item, 'userId'),
-                          ticketCategory: 'after_sales',
-                          ticketOrderId: orderId,
-                          ticketPriority: stringValue(item, 'priority', 'normal'),
-                          ticketTitle: `售后处理：${stringValue(item, 'orderNo')}`,
-                        })}
-                      >
-                        <Icon name="plus" />
-                        转工单
-                      </button>
-                    </div>
-                  </article>
-                );
-              })}
-              {!afterSales.length ? <EmptyState text="暂无待处理售后申请" /> : null}
-            </div>
-          </Panel>
-
-          <Panel title="会话队列" description="选择会话后可回复用户">
-            <form className="inline-form support-create-session" onSubmit={onCreateSession}>
-              <input value={form.userId} onChange={event => onFormChange({ userId: event.target.value })} placeholder="用户 ID" />
-              <input value={form.topic} onChange={event => onFormChange({ topic: event.target.value })} placeholder="会话主题" />
-              <button className="primary-button small" type="submit">
-                <Icon name="plus" />
-                新建
-              </button>
-            </form>
-            <div className="list-stack">
-              {sessions.map(session => {
-                const id = stringValue(session, 'id');
-                const status = stringValue(session, 'status');
-                return (
-                  <button className={`session-row ${selectedSessionId === id ? 'selected' : ''}`} key={id} type="button" onClick={() => onSelectSession(id)}>
-                    <strong>{stringValue(session, 'topic')}</strong>
-                    <span>{stringValue(session, 'lastMessage', '暂无消息')}</span>
-                    <small>{statusLabel(status)} · {formatDate(stringValue(session, 'updatedAt'))}</small>
+      <div className="support-ticket-board">
+        <Panel title="内部跟进工单" description="客服把需要其他岗位介入的事项放到这里，处理完关闭">
+          <form className="support-ticket-form" onSubmit={onCreateTicket}>
+            <input required value={form.ticketTitle} onChange={event => onFormChange({ ticketTitle: event.target.value })} placeholder="工单标题" />
+            <input value={form.userId} onChange={event => onFormChange({ userId: event.target.value })} placeholder="用户 ID" />
+            <input value={form.ticketOrderId} onChange={event => onFormChange({ ticketOrderId: event.target.value })} placeholder="订单 ID" />
+            <select value={form.ticketCategory} onChange={event => onFormChange({ ticketCategory: event.target.value })}>
+              <option value="delivery">配送</option>
+              <option value="after_sales">售后</option>
+              <option value="payment">支付</option>
+              <option value="product">商品</option>
+              <option value="account">账号</option>
+            </select>
+            <select value={form.ticketPriority} onChange={event => onFormChange({ ticketPriority: event.target.value })}>
+              <option value="urgent">紧急</option>
+              <option value="high">高</option>
+              <option value="normal">普通</option>
+              <option value="low">低</option>
+            </select>
+            <button className="primary-button" type="submit">
+              <Icon name="plus" />
+              新建工单
+            </button>
+          </form>
+          <div className="list-stack">
+            {tickets.map(ticket => {
+              const id = stringValue(ticket, 'id');
+              const status = stringValue(ticket, 'status');
+              return (
+                <article className="list-row support-ticket-row" key={id}>
+                  <div>
+                    <strong>{stringValue(ticket, 'title')}</strong>
+                    <small>{supportCategoryLabel(stringValue(ticket, 'category'))} · {priorityLabel(stringValue(ticket, 'priority'))} · {formatDate(stringValue(ticket, 'updatedAt'))}</small>
+                    <small>{stringValue(ticket, 'description', '暂无说明')}</small>
+                  </div>
+                  <span className={badgeClass(status)}>{statusLabel(status)}</span>
+                  <button className="ghost-button" type="button" onClick={() => onResolveTicket(id)} disabled={status === 'resolved'}>
+                    <Icon name="check" />
+                    解决
                   </button>
-                );
-              })}
-              {!sessions.length ? <EmptyState text="暂无匹配会话" /> : null}
-            </div>
-          </Panel>
-        </div>
-
-        <div className="support-conversation">
-          <Panel
-            title={selectedSession ? stringValue(selectedSession, 'topic') : '当前会话'}
-            description={selectedSession ? `用户 ${shortId(stringValue(selectedSession, 'userId'))} · ${formatDate(stringValue(selectedSession, 'updatedAt'))}` : '从左侧选择会话后查看上下文并回复'}
-            action={selectedSession ? <span className={badgeClass(stringValue(selectedSession, 'status'))}>{statusLabel(stringValue(selectedSession, 'status'))}</span> : null}
-          >
-            <div className="message-list">
-              {messages.map(message => {
-                const senderRole = stringValue(message, 'senderRole');
-                return (
-                  <article className={`message ${['agent', 'admin', 'support'].includes(senderRole) ? 'agent' : ''}`} key={stringValue(message, 'id')}>
-                    <span>{roleLabel(senderRole)} · {formatDate(stringValue(message, 'createdAt'))}</span>
-                    <p>{stringValue(message, 'content')}</p>
-                  </article>
-                );
-              })}
-              {!messages.length ? <EmptyState text="选择会话后显示消息" /> : null}
-            </div>
-            <div className="quick-replies">
-              {quickReplies.map(reply => (
-                <button className="ghost-button small" key={reply} type="button" onClick={() => onFormChange({ message: reply })}>
-                  {reply}
-                </button>
-              ))}
-            </div>
-            <form className="send-form" onSubmit={onSendMessage}>
-              <textarea value={form.message} onChange={event => onFormChange({ message: event.target.value })} />
-              <button className="primary-button" type="submit" disabled={!selectedSessionId}>
-                <Icon name="send" />
-                发送
-              </button>
-            </form>
-          </Panel>
-        </div>
-
-        <div className="support-stack">
-          <div className="support-ticket-board">
-            <Panel title="工单处理" description="创建并关闭配送、售后和支付类工单">
-              <form className="support-ticket-form" onSubmit={onCreateTicket}>
-                <input value={form.ticketTitle} onChange={event => onFormChange({ ticketTitle: event.target.value })} placeholder="工单标题" />
-                <input value={form.userId} onChange={event => onFormChange({ userId: event.target.value })} placeholder="用户 ID" />
-                <input value={form.ticketOrderId} onChange={event => onFormChange({ ticketOrderId: event.target.value })} placeholder="订单 ID" />
-                <select value={form.ticketCategory} onChange={event => onFormChange({ ticketCategory: event.target.value })}>
-                  <option value="delivery">配送</option>
-                  <option value="after_sales">售后</option>
-                  <option value="payment">支付</option>
-                  <option value="product">商品</option>
-                  <option value="account">账号</option>
-                </select>
-                <select value={form.ticketPriority} onChange={event => onFormChange({ ticketPriority: event.target.value })}>
-                  <option value="urgent">紧急</option>
-                  <option value="high">高</option>
-                  <option value="normal">普通</option>
-                  <option value="low">低</option>
-                </select>
-                <button className="primary-button" type="submit">
-                  <Icon name="plus" />
-                  新建工单
-                </button>
-              </form>
-              <div className="list-stack">
-                {tickets.map(ticket => {
-                  const id = stringValue(ticket, 'id');
-                  const status = stringValue(ticket, 'status');
-                  return (
-                    <article className="list-row support-ticket-row" key={id}>
-                      <div>
-                        <strong>{stringValue(ticket, 'title')}</strong>
-                        <small>{supportCategoryLabel(stringValue(ticket, 'category'))} · {priorityLabel(stringValue(ticket, 'priority'))} · {formatDate(stringValue(ticket, 'updatedAt'))}</small>
-                      </div>
-                      <span className={badgeClass(status)}>{statusLabel(status)}</span>
-                      <button className="ghost-button" type="button" onClick={() => onResolveTicket(id)} disabled={status === 'resolved'}>
-                        <Icon name="check" />
-                        解决
-                      </button>
-                    </article>
-                  );
-                })}
-                {!tickets.length ? <EmptyState text="暂无匹配工单" /> : null}
-              </div>
-            </Panel>
+                </article>
+              );
+            })}
+            {!tickets.length ? <EmptyState text="暂无匹配工单" /> : null}
           </div>
+        </Panel>
+      </div>
+    </div>
+  );
+}
 
-          <div className="support-knowledge-panel">
-            <Panel title="知识库" description="沉淀客服常见问题和处理口径">
-              <form className="form-grid" onSubmit={onCreateKnowledge}>
-                <label>
-                  标题
-                  <input value={form.knowledgeTitle} onChange={event => onFormChange({ knowledgeTitle: event.target.value })} />
-                </label>
-                <label>
-                  分类
-                  <input value={form.knowledgeCategory} onChange={event => onFormChange({ knowledgeCategory: event.target.value })} />
-                </label>
-                <label className="wide">
-                  内容
-                  <textarea value={form.knowledgeContent} onChange={event => onFormChange({ knowledgeContent: event.target.value })} />
-                </label>
-                <button className="primary-button wide" type="submit">
-                  <Icon name="save" />
-                  发布知识
-                </button>
-              </form>
-              <div className="knowledge-list">
-                {knowledge.slice(0, 6).map(article => (
-                  <article key={stringValue(article, 'id')}>
-                    <strong>{stringValue(article, 'title')}</strong>
-                    <small>{stringValue(article, 'category')} · {statusLabel(stringValue(article, 'status'))}</small>
-                    <p>{stringValue(article, 'content').slice(0, 72)}</p>
-                  </article>
-                ))}
-                {!knowledge.length ? <EmptyState text="暂无知识库内容" /> : null}
-              </div>
-            </Panel>
+function SupportKnowledgeSection({
+  knowledge,
+  form,
+  onFormChange,
+  onCreateKnowledge,
+  onUpdateKnowledgeStatus,
+}: {
+  knowledge: JsonRecord[];
+  form: SupportForm;
+  onFormChange: (patch: Partial<SupportForm>) => void;
+  onCreateKnowledge: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onUpdateKnowledgeStatus: (id: string, status: string) => Promise<void>;
+}) {
+  return (
+    <div className="page-grid support-workbench">
+      <div className="support-knowledge-panel">
+        <Panel title="客服知识库" description="只保留知识库维护：FAQ、坏果包赔、退款、配送和团长自提话术">
+          <form className="form-grid" onSubmit={onCreateKnowledge}>
+            <label>
+              标题
+              <input required value={form.knowledgeTitle} onChange={event => onFormChange({ knowledgeTitle: event.target.value })} />
+            </label>
+            <label>
+              分类
+              <input required value={form.knowledgeCategory} onChange={event => onFormChange({ knowledgeCategory: event.target.value })} />
+            </label>
+            <label className="wide">
+              内容
+              <textarea required value={form.knowledgeContent} onChange={event => onFormChange({ knowledgeContent: event.target.value })} />
+            </label>
+            <button className="primary-button wide" type="submit">
+              <Icon name="save" />
+              发布知识
+            </button>
+          </form>
+          <div className="knowledge-list">
+            {knowledge.map(article => {
+              const id = stringValue(article, 'id');
+              const status = stringValue(article, 'status');
+              return (
+                <article key={id}>
+                  <strong>{stringValue(article, 'title')}</strong>
+                  <small>{stringValue(article, 'category')} · {statusLabel(status)} · {formatDate(stringValue(article, 'updatedAt'))}</small>
+                  <p>{stringValue(article, 'content')}</p>
+                  <div className="support-row-actions">
+                    <button className="ghost-button small" type="button" onClick={() => onUpdateKnowledgeStatus(id, status === 'published' ? 'draft' : 'published')}>
+                      <Icon name={status === 'published' ? 'x' : 'check'} />
+                      {status === 'published' ? '下线' : '发布'}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+            {!knowledge.length ? <EmptyState text="暂无知识库内容" /> : null}
           </div>
-        </div>
+        </Panel>
       </div>
     </div>
   );
@@ -7263,9 +7491,17 @@ function App() {
     () => currentModule.pages.find(page => page.key === activePageKey) || currentModule.pages[0],
     [activePageKey, currentModule],
   );
+  const rawAfterSalesQueue = useMemo(
+    () => (data.mallAfterSales.length ? data.mallAfterSales : buildAfterSalesQueue(data.mallOrders)),
+    [data.mallAfterSales, data.mallOrders],
+  );
   const afterSalesQueue = useMemo(
-    () => filterSupportRecords(buildAfterSalesQueue(data.mallOrders), supportFilters, ['orderNo', 'reason', 'description', 'recipientName', 'productName', 'userId']),
-    [data.mallOrders, supportFilters],
+    () => filterSupportRecords(rawAfterSalesQueue, supportFilters, ['orderNo', 'reason', 'description', 'recipientName', 'recipientPhone', 'productName', 'userId', 'userPhone']),
+    [rawAfterSalesQueue, supportFilters],
+  );
+  const supportStats = useMemo(
+    () => supportDashboardStats(data, rawAfterSalesQueue),
+    [data, rawAfterSalesQueue],
   );
   const filteredSupportSessions = useMemo(
     () => filterSupportRecords(data.supportSessions, supportFilters, ['topic', 'lastMessage', 'userId', 'channel']),
@@ -8360,6 +8596,21 @@ function App() {
     });
   };
 
+  const updateAfterSaleStatus = async (id: string, status: string, handlingMethod: string, resolution: string) => {
+    await runAction('售后申请处理', async () => {
+      const afterSale = await apiPut<JsonRecord>(`/api/admin/mall/after-sales/${id}`, {
+        status,
+        handlingMethod,
+        resolution,
+      });
+      setData(current => ({
+        ...current,
+        mallAfterSales: updateRecordList(current.mallAfterSales, id, afterSale),
+      }));
+      await reload();
+    });
+  };
+
   const createKnowledge = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     await runAction('知识库发布', async () => {
@@ -8370,6 +8621,16 @@ function App() {
         status: 'published',
       });
       await reload();
+    });
+  };
+
+  const updateKnowledgeStatus = async (id: string, status: string) => {
+    await runAction('知识库状态更新', async () => {
+      const article = await apiPut<JsonRecord>(`/api/support/knowledge/${id}`, { status });
+      setData(current => ({
+        ...current,
+        supportKnowledge: updateRecordList(current.supportKnowledge, id, article),
+      }));
     });
   };
 
@@ -8734,28 +8995,69 @@ function App() {
         />
       );
     }
-    if (activePageKey === 'mall.support' || activePageKey === 'mall.afterSales' || activePageKey === 'mall.knowledge' || activePageKey === 'vehicle.support') {
+    if (activePageKey === 'mall.supportData') {
+      return (
+        <SupportDataSection
+          afterSales={rawAfterSalesQueue}
+          knowledge={data.supportKnowledge}
+          sessions={data.supportSessions}
+          stats={supportStats}
+          tickets={data.supportTickets}
+        />
+      );
+    }
+    if (activePageKey === 'mall.support' || activePageKey === 'vehicle.support') {
       return (
         <SupportSection
-          afterSales={afterSalesQueue}
           filters={supportFilters}
           form={supportForm}
-          knowledge={data.supportKnowledge}
           messages={supportMessages}
           metrics={data.supportMetrics}
           selectedSessionId={selectedSessionId}
           sessions={filteredSupportSessions}
+          onClearFilters={() => setSupportFilters(initialSupportFilters)}
+          onCreateSession={createSupportSession}
+          onFiltersChange={patch => setSupportFilters(current => ({ ...current, ...patch }))}
+          onFormChange={patch => setSupportForm(current => ({ ...current, ...patch }))}
+          onSelectSession={selectSession}
+          onSendMessage={sendSupportMessage}
+        />
+      );
+    }
+    if (activePageKey === 'mall.afterSales') {
+      return (
+        <AfterSalesSection
+          afterSales={afterSalesQueue}
+          filters={supportFilters}
+          onClearFilters={() => setSupportFilters(initialSupportFilters)}
+          onFiltersChange={patch => setSupportFilters(current => ({ ...current, ...patch }))}
+          onUpdateAfterSale={updateAfterSaleStatus}
+          onViewAfterSaleOrder={openMallOrderDetail}
+        />
+      );
+    }
+    if (activePageKey === 'mall.supportTickets') {
+      return (
+        <SupportTicketsSection
+          filters={supportFilters}
+          form={supportForm}
           tickets={filteredSupportTickets}
           onClearFilters={() => setSupportFilters(initialSupportFilters)}
-          onCreateKnowledge={createKnowledge}
-          onCreateSession={createSupportSession}
           onCreateTicket={createSupportTicket}
           onFiltersChange={patch => setSupportFilters(current => ({ ...current, ...patch }))}
           onFormChange={patch => setSupportForm(current => ({ ...current, ...patch }))}
           onResolveTicket={resolveTicket}
-          onSelectSession={selectSession}
-          onSendMessage={sendSupportMessage}
-          onViewAfterSaleOrder={openMallOrderDetail}
+        />
+      );
+    }
+    if (activePageKey === 'mall.knowledge' || activePageKey === 'vehicle.knowledge') {
+      return (
+        <SupportKnowledgeSection
+          form={supportForm}
+          knowledge={data.supportKnowledge}
+          onCreateKnowledge={createKnowledge}
+          onFormChange={patch => setSupportForm(current => ({ ...current, ...patch }))}
+          onUpdateKnowledgeStatus={updateKnowledgeStatus}
         />
       );
     }
