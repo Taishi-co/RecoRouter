@@ -4318,25 +4318,43 @@ function ProductEditModal({
 }
 
 function MallCategoriesSection({
+  allProducts,
   categories,
   filters,
   form,
+  inventoryFilters,
+  inventoryProducts,
   onFormChange,
   onFiltersChange,
+  onCreateInventoryAlert,
   onSearch,
   onSave,
   onDelete,
+  onDeleteInventoryAlert,
+  onEditInventoryAlert,
+  onInventoryFiltersChange,
+  onInventorySearch,
   onReorderCategory,
+  showInventoryAlerts = false,
 }: {
+  allProducts: JsonRecord[];
   categories: JsonRecord[];
   filters: MallFilterState;
   form: CategoryForm;
+  inventoryFilters: MallFilterState;
+  inventoryProducts: JsonRecord[];
   onFormChange: (patch: Partial<CategoryForm>) => void;
   onFiltersChange: (patch: Partial<MallFilterState>) => void;
+  onCreateInventoryAlert: (id: string, stock: number, stockAlertThreshold: number) => Promise<void>;
   onSearch: () => Promise<void>;
   onSave: (form: CategoryForm) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onDeleteInventoryAlert: (id: string) => Promise<void>;
+  onEditInventoryAlert: (id: string, stock: number, stockAlertThreshold: number) => Promise<void>;
+  onInventoryFiltersChange: (patch: Partial<MallFilterState>) => void;
+  onInventorySearch: () => Promise<void>;
   onReorderCategory: (draggedId: string, targetId: string) => Promise<void>;
+  showInventoryAlerts?: boolean;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [draggingCategoryId, setDraggingCategoryId] = useState('');
@@ -4430,6 +4448,20 @@ function MallCategoriesSection({
         </div>
         {!categories.length ? <EmptyState text="暂无品类数据" /> : null}
       </Panel>
+
+      {showInventoryAlerts ? (
+        <MallInventorySection
+          allProducts={allProducts}
+          categories={categories}
+          filters={inventoryFilters}
+          products={inventoryProducts}
+          onCreateInventoryAlert={onCreateInventoryAlert}
+          onDeleteInventoryAlert={onDeleteInventoryAlert}
+          onEditInventoryAlert={onEditInventoryAlert}
+          onFiltersChange={onInventoryFiltersChange}
+          onSearch={onInventorySearch}
+        />
+      ) : null}
 
       {modalOpen ? (
         <div className="modal-backdrop">
@@ -9009,12 +9041,21 @@ function App() {
     if (activePageKey === 'mall.categories') {
       return (
         <MallCategoriesSection
+          allProducts={data.mallProducts}
           categories={data.mallCategories}
           filters={categoryFilters}
           form={categoryForm}
+          inventoryFilters={inventoryFilters}
+          inventoryProducts={data.mallInventoryAlerts}
+          showInventoryAlerts
+          onCreateInventoryAlert={createInventoryAlert}
           onDelete={deleteCategory}
+          onEditInventoryAlert={editInventoryAlert}
+          onDeleteInventoryAlert={deleteInventoryAlert}
           onFiltersChange={patch => setCategoryFilters(current => ({ ...current, ...patch }))}
           onFormChange={patch => setCategoryForm(current => ({ ...current, ...patch }))}
+          onInventoryFiltersChange={patch => setInventoryFilters(current => ({ ...current, ...patch }))}
+          onInventorySearch={reload}
           onReorderCategory={reorderCategory}
           onSave={saveCategory}
           onSearch={reload}

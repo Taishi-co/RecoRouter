@@ -53,6 +53,14 @@ requireIncludes(webAdmin, 'onEditInventoryAlert', 'Mall inventory page must supp
 requireIncludes(webAdmin, 'onDeleteInventoryAlert', 'Mall inventory page must support deleting warning rules')
 requireIncludes(webAdmin, '/api/admin/mall/inventory-alerts/${id}', 'Web admin must call real inventory warning detail endpoints')
 requireIncludes(webAdmin, "designPage('mall.inventory', '库存预警', '商品管理'", 'Stock warning must stay under mall product management')
+requireRegex(
+  webAdmin,
+  /activePageKey === 'mall\.categories'[\s\S]*inventoryProducts=\{data\.mallInventoryAlerts\}[\s\S]*onCreateInventoryAlert=\{createInventoryAlert\}[\s\S]*onEditInventoryAlert=\{editInventoryAlert\}[\s\S]*onDeleteInventoryAlert=\{deleteInventoryAlert\}/,
+  'Mall category management must embed inventory warning CRUD with real create/edit/delete handlers.',
+)
+requireIncludes(webAdmin, 'showInventoryAlerts', 'Mall categories section must render inventory warning management inside category management.')
+requireIncludes(webAdmin, "setModalMode('create')", 'Mall inventory warning creation must open a modal.')
+requireIncludes(webAdmin, "setModalMode('edit')", 'Mall inventory warning editing must open a modal.')
 
 if (webAdmin.includes("designPage('mall.images'")) {
   throw new Error('Mall product asset page must be removed from product management navigation')
