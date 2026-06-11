@@ -44,7 +44,7 @@ struct HandleRequestBody {
 
 #[derive(Debug, Deserialize)]
 struct PendingQuery {
-    owner_id: String,
+    owner_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -175,48 +175,94 @@ async fn pending_requests<S>(
 where
     S: Storage,
 {
-    let requests = sqlx::query_scalar::<_, Value>(
-        r#"
-        SELECT jsonb_build_object(
-            'id', cr.id,
-            'order_id', cr.order_id,
-            'requestor_id', cr.requestor_id,
-            'responder_id', cr.responder_id,
-            'reason', cr.reason,
-            'status', cr.status,
-            'response_reason', cr.response_reason,
-            'responded_at', cr.responded_at,
-            'created_at', cr.created_at,
-            'orders', COALESCE(
-                jsonb_build_object(
-                    'id', o.id,
-                    'demand_id', o.demand_id,
-                    'fare_price', o.fare_price,
-                    'merchant_confirmed', o.merchant_confirmed
+    let requests = if let Some(owner_id) = query.owner_id {
+        // 车主视角：只查看自己的待处理申请
+        sqlx::query_scalar::<_, Value>(
+            r#"
+            SELECT jsonb_build_object(
+                'id', cr.id,
+                'order_id', cr.order_id,
+                'requestor_id', cr.requestor_id,
+                'responder_id', cr.responder_id,
+                'reason', cr.reason,
+                'status', cr.status,
+                'response_reason', cr.response_reason,
+                'responded_at', cr.responded_at,
+                'created_at', cr.created_at,
+                'orders', COALESCE(
+                    jsonb_build_object(
+                        'id', o.id,
+                        'demand_id', o.demand_id,
+                        'fare_price', o.fare_price,
+                        'merchant_confirmed', o.merchant_confirmed
+                    ),
+                    '{}'::jsonb
                 ),
-                '{}'::jsonb
-            ),
-            'demands', COALESCE(
-                jsonb_build_object(
-                    'id', d.id,
-                    'cargo_name', d.cargo_name,
-                    'pickup_address', d.pickup_address,
-                    'delivery_address', d.delivery_address
-                ),
-                '{}'::jsonb
+                'demands', COALESCE(
+                    jsonb_build_object(
+                        'id', d.id,
+                        'cargo_name', d.cargo_name,
+                        'pickup_address', d.pickup_address,
+                        'delivery_address', d.delivery_address
+                    ),
+                    '{}'::jsonb
+                )
             )
+            FROM cancellation_requests cr
+            LEFT JOIN orders o ON o.id = cr.order_id
+            LEFT JOIN demands d ON d.id = o.demand_id
+            WHERE cr.responder_id = $1 AND cr.status = 'pending'
+            ORDER BY cr.created_at DESC
+            "#,
         )
-        FROM cancellation_requests cr
-        LEFT JOIN orders o ON o.id = cr.order_id
-        LEFT JOIN demands d ON d.id = o.demand_id
-        WHERE cr.responder_id = $1 AND cr.status = 'pending'
-        ORDER BY cr.created_at DESC
-        "#,
-    )
-    .bind(query.owner_id)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|err| ApiError::BadRequest(format!("查询失败: {err}")))?;
+        .bind(owner_id)
+        .fetch_all(&state.db)
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("查询失败: {err}")))?
+    } else {
+        // 管理员视角：查看所有待处理申请
+        sqlx::query_scalar::<_, Value>(
+            r#"
+            SELECT jsonb_build_object(
+                'id', cr.id,
+                'order_id', cr.order_id,
+                'requestor_id', cr.requestor_id,
+                'responder_id', cr.responder_id,
+                'reason', cr.reason,
+                'status', cr.status,
+                'response_reason', cr.response_reason,
+                'responded_at', cr.responded_at,
+                'created_at', cr.created_at,
+                'orders', COALESCE(
+                    jsonb_build_object(
+                        'id', o.id,
+                        'demand_id', o.demand_id,
+                        'fare_price', o.fare_price,
+                        'merchant_confirmed', o.merchant_confirmed
+                    ),
+                    '{}'::jsonb
+                ),
+                'demands', COALESCE(
+                    jsonb_build_object(
+                        'id', d.id,
+                        'cargo_name', d.cargo_name,
+                        'pickup_address', d.pickup_address,
+                        'delivery_address', d.delivery_address
+                    ),
+                    '{}'::jsonb
+                )
+            )
+            FROM cancellation_requests cr
+            LEFT JOIN orders o ON o.id = cr.order_id
+            LEFT JOIN demands d ON d.id = o.demand_id
+            WHERE cr.status = 'pending'
+            ORDER BY cr.created_at DESC
+            "#,
+        )
+        .fetch_all(&state.db)
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("查询失败: {err}")))?
+    };
 
     Ok(ok("查询成功", requests))
 }
