@@ -1,6 +1,7 @@
--- Vehicle trips: one trip = one vehicle's delivery run with multiple orders
--- Lives in the mall database (recocar_mall) because trips primarily manage mall order dispatch
--- vehicle_id is a logical reference (no FK) because vehicles lives in a separate database
+-- Vehicle trips: one trip = one vehicle's delivery run with multiple orders.
+-- Lives in the mall database during the phased split because trips primarily
+-- manage mall order dispatch. vehicle_id is a logical reference because
+-- vehicles live behind the vehicle service boundary.
 CREATE TABLE IF NOT EXISTS vehicle_trips (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
   vehicle_id text NOT NULL,
@@ -25,7 +26,6 @@ CREATE TABLE IF NOT EXISTS vehicle_trips (
 CREATE INDEX IF NOT EXISTS vehicle_trips_vehicle_idx ON vehicle_trips(vehicle_id, status);
 CREATE INDEX IF NOT EXISTS vehicle_trips_status_idx ON vehicle_trips(status, planned_departure_time);
 
--- Trip stops: ordered delivery/pickup points within a trip
 CREATE TABLE IF NOT EXISTS trip_stops (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
   trip_id text NOT NULL REFERENCES vehicle_trips(id) ON DELETE CASCADE,
@@ -50,6 +50,5 @@ CREATE TABLE IF NOT EXISTS trip_stops (
 CREATE INDEX IF NOT EXISTS trip_stops_trip_idx ON trip_stops(trip_id, stop_sequence);
 CREATE INDEX IF NOT EXISTS trip_stops_order_idx ON trip_stops(mall_order_id);
 
--- Add trip_id to mall_orders so we know which trip an order belongs to
 ALTER TABLE mall_orders ADD COLUMN IF NOT EXISTS trip_id text REFERENCES vehicle_trips(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS mall_orders_trip_id_idx ON mall_orders(trip_id);
