@@ -1465,7 +1465,7 @@ td span {
 
 .order-search-form {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) auto;
+  grid-template-columns: repeat(5, minmax(150px, 1fr)) auto;
   align-items: end;
   gap: 10px;
   margin-bottom: 14px;
@@ -1568,6 +1568,14 @@ td span {
 
 .order-detail-items table {
   min-width: 640px;
+}
+
+.order-detail-results {
+  margin-top: 14px;
+}
+
+.order-detail-results table {
+  min-width: 860px;
 }
 
 .order-detail-columns {

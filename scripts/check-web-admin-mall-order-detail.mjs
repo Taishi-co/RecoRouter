@@ -38,9 +38,17 @@ assert(
   /activePageKey === 'mall\.orderDetail'[\s\S]*<MallOrderDetailSearchSection/.test(adminMain),
   'The mall.orderDetail page must render the order detail search section.',
 );
+for (const label of ['订单号', '用户手机号', '商家ID', '开始日期', '结束日期']) {
+  assert(
+    adminMain.includes(label),
+    `The order detail page must expose ${label} search control.`,
+  );
+}
 assert(
-  /搜索订单号/.test(adminMain) && /placeholder="输入订单号/.test(adminMain),
-  'The order detail page must allow operators to search by order number.',
+  /orders=\{mallOrderSearchResults\}/.test(adminMain)
+    && /onViewDetail=\{openMallOrderDetail\}/.test(adminMain)
+    && /查看详情/.test(adminMain),
+  'The order detail page must render search results with a detail modal action.',
 );
 assert(
   /\/api\/admin\/mall\/orders\/\$\{encodeURIComponent/.test(adminMain),
@@ -50,8 +58,14 @@ assert(
   /WHERE o\.id = \$1[\s\S]*lower\(o\.order_no\) = lower\(\$1\)/.test(mallBackend),
   'Backend order detail lookup must support both order id and order_no.',
 );
+for (const backendNeedle of ['order_no ILIKE', 'recipient_phone ILIKE', 'u.phone ILIKE', 'merchant_id', 'created_at >=', 'created_at <']) {
+  assert(
+    mallBackend.includes(backendNeedle),
+    `Backend order search must support ${backendNeedle}.`,
+  );
+}
 assert(
-  /\.order-detail-modal/.test(adminStyles) && /\.order-detail-grid/.test(adminStyles),
+  /\.order-detail-modal/.test(adminStyles) && /\.order-detail-grid/.test(adminStyles) && /\.order-detail-results/.test(adminStyles),
   'Order detail modal/search view styles must be defined.',
 );
 assert(

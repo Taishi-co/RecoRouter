@@ -275,6 +275,25 @@ struct UserQuery {
     status: Option<String>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OrderQuery {
+    #[serde(alias = "order_no")]
+    order_no: Option<String>,
+    #[serde(alias = "user_phone", alias = "phone")]
+    user_phone: Option<String>,
+    #[serde(alias = "merchant_id")]
+    merchant_id: Option<String>,
+    status: Option<String>,
+    #[serde(alias = "start_date", alias = "date_from", alias = "started_at")]
+    start_date: Option<String>,
+    #[serde(alias = "end_date", alias = "date_to", alias = "ended_at")]
+    end_date: Option<String>,
+    page: Option<i64>,
+    #[serde(alias = "page_size", alias = "limit")]
+    page_size: Option<i64>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AddressQuery {
@@ -2134,19 +2153,23 @@ where
     S: Storage,
 {
     let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
-    let mut orders = fetch_orders(&state.db, Some(&user_id), query.status.as_deref()).await?;
+    let order_query = OrderQuery {
+        status: query.status,
+        ..OrderQuery::default()
+    };
+    let mut orders = fetch_orders(&state.db, Some(&user_id), &order_query, false).await?;
     resolve_mall_image_urls_in_list(&state.storage, &mut orders).await?;
     Ok(ok("查询成功", orders))
 }
 
 async fn admin_list_orders<S>(
     State(state): State<AppState<S>>,
-    Query(query): Query<UserQuery>,
+    Query(query): Query<OrderQuery>,
 ) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
 where
     S: Storage,
 {
-    let mut orders = fetch_orders(&state.db, None, query.status.as_deref()).await?;
+    let mut orders = fetch_orders(&state.db, None, &query, true).await?;
     resolve_mall_image_urls_in_list(&state.storage, &mut orders).await?;
     Ok(ok("查询成功", orders))
 }
@@ -6094,20 +6117,60 @@ async fn upsert_notification_preferences(
 async fn fetch_orders(
     pool: &PgPool,
     user_id: Option<&str>,
-    status: Option<&str>,
+    query: &OrderQuery,
+    include_admin_fields: bool,
 ) -> ApiResult<Vec<Value>> {
-    let mut builder = QueryBuilder::<Postgres>::new(
-        "SELECT order_summary_json(o) FROM mall_orders o WHERE 1 = 1",
+    let mut builder = QueryBuilder::<Postgres>::new("SELECT order_summary_json(o)");
+    if include_admin_fields {
+        builder.push(" || jsonb_build_object('merchantId', o.merchant_id, 'userPhone', u.phone)");
+    }
+    builder.push(
+        r#"
+        FROM mall_orders o
+        LEFT JOIN users u ON u.id = o.user_id
+        WHERE 1 = 1
+        "#,
     );
     if let Some(user_id) = user_id {
         builder.push(" AND o.user_id = ");
         builder.push_bind(user_id);
     }
-    if let Some(status) = status.map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(status) = non_empty(query.status.clone()) {
         builder.push(" AND o.status = ");
         builder.push_bind(status);
     }
-    builder.push(" ORDER BY o.created_at DESC LIMIT 100");
+    if let Some(order_no) = non_empty(query.order_no.clone()) {
+        builder.push(" AND o.order_no ILIKE ");
+        builder.push_bind(format!("%{order_no}%"));
+    }
+    if let Some(user_phone) = non_empty(query.user_phone.clone()) {
+        let pattern = format!("%{user_phone}%");
+        builder.push(" AND (o.recipient_phone ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR u.phone ILIKE ");
+        builder.push_bind(pattern);
+        builder.push(")");
+    }
+    if let Some(merchant_id) = non_empty(query.merchant_id.clone()) {
+        builder.push(" AND o.merchant_id = ");
+        builder.push_bind(merchant_id);
+    }
+    if let Some(start_date) = non_empty(query.start_date.clone()) {
+        builder.push(" AND o.created_at >= ");
+        builder.push_bind(start_date);
+        builder.push("::date");
+    }
+    if let Some(end_date) = non_empty(query.end_date.clone()) {
+        builder.push(" AND o.created_at < (");
+        builder.push_bind(end_date);
+        builder.push("::date + interval '1 day')");
+    }
+    let page = query.page.unwrap_or(1).max(1);
+    let page_size = query.page_size.unwrap_or(50).clamp(1, 100);
+    builder.push(" ORDER BY o.created_at DESC LIMIT ");
+    builder.push_bind(page_size);
+    builder.push(" OFFSET ");
+    builder.push_bind((page - 1) * page_size);
     Ok(builder
         .build_query_scalar::<Value>()
         .fetch_all(pool)
@@ -6117,8 +6180,9 @@ async fn fetch_orders(
 async fn fetch_order_detail(pool: &PgPool, order_identifier: &str) -> ApiResult<Value> {
     sqlx::query_scalar::<_, Value>(
         r#"
-        SELECT order_detail_json(o)
+        SELECT order_detail_json(o) || jsonb_build_object('merchantId', o.merchant_id, 'userPhone', u.phone)
         FROM mall_orders o
+        LEFT JOIN users u ON u.id = o.user_id
         WHERE o.id = $1
            OR lower(o.order_no) = lower($1)
         "#,

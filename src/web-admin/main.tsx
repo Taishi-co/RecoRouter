@@ -217,6 +217,14 @@ interface MallOpsFilterState {
   community: string;
 }
 
+interface MallOrderDetailSearchFilters {
+  orderNo: string;
+  userPhone: string;
+  merchantId: string;
+  startDate: string;
+  endDate: string;
+}
+
 interface WithdrawalForm {
   amountYuan: string;
   note: string;
@@ -735,6 +743,14 @@ const initialMallOpsFilters: MallOpsFilterState = {
   status: '',
   date: '',
   community: '',
+};
+
+const initialMallOrderDetailSearchFilters: MallOrderDetailSearchFilters = {
+  orderNo: '',
+  userPhone: '',
+  merchantId: '',
+  startDate: '',
+  endDate: '',
 };
 
 const initialWithdrawalForm: WithdrawalForm = {
@@ -4172,6 +4188,11 @@ function MallOrderDetailView({ order }: { order: JsonRecord }) {
           <small>{groupLeader ? `${groupLeader} ${groupLeaderPhone}` : '-'}</small>
         </div>
         <div>
+          <span>商家ID</span>
+          <strong>{stringValue(order, 'merchantId', '-')}</strong>
+          <small>用户手机号 {stringValue(order, 'userPhone', stringValue(order, 'recipientPhone', '-'))}</small>
+        </div>
+        <div>
           <span>履约</span>
           <strong>{statusLabel(stringValue(order, 'fulfillmentStatus'))}</strong>
           <small>舱位 {stringValue(order, 'cabinCode', '-')} · 核销码 {fulfillmentCodeText || '-'}</small>
@@ -4312,28 +4333,30 @@ function MallOrderDetailModal({
 }
 
 function MallOrderDetailSearchSection({
-  keyword,
-  order,
+  filters,
+  orders,
   loading,
   error,
-  onKeywordChange,
+  onFiltersChange,
   onSearch,
   onClear,
+  onViewDetail,
 }: {
-  keyword: string;
-  order: JsonRecord | null;
+  filters: MallOrderDetailSearchFilters;
+  orders: JsonRecord[];
   loading: boolean;
   error: string;
-  onKeywordChange: (value: string) => void;
+  onFiltersChange: (patch: Partial<MallOrderDetailSearchFilters>) => void;
   onSearch: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onClear: () => void;
+  onViewDetail: (id: string) => Promise<void>;
 }) {
   return (
     <Panel
       title="订单详情"
-      description="按订单号查看订单明细、支付、履约、自提和售后记录"
+      description="按订单号、用户手机号、商家ID和日期范围定位订单，再打开弹窗查看明细"
       action={
-        order ? (
+        orders.length || Object.values(filters).some(value => value.trim()) ? (
           <button className="ghost-button small" type="button" onClick={onClear}>
             <Icon name="x" />
             清空
@@ -4345,20 +4368,98 @@ function MallOrderDetailSearchSection({
         <label>
           订单号
           <input
-            placeholder="输入订单号，例如 MALL202606070001"
-            value={keyword}
-            onChange={event => onKeywordChange(event.target.value)}
+            placeholder="输入订单号"
+            value={filters.orderNo}
+            onChange={event => onFiltersChange({ orderNo: event.target.value })}
           />
         </label>
-        <button className="primary-button" type="submit" disabled={loading || !keyword.trim()}>
+        <label>
+          用户手机号
+          <input
+            inputMode="tel"
+            placeholder="输入用户手机号"
+            value={filters.userPhone}
+            onChange={event => onFiltersChange({ userPhone: event.target.value })}
+          />
+        </label>
+        <label>
+          商家ID
+          <input
+            placeholder="输入商家ID"
+            value={filters.merchantId}
+            onChange={event => onFiltersChange({ merchantId: event.target.value })}
+          />
+        </label>
+        <label>
+          开始日期
+          <input
+            type="date"
+            value={filters.startDate}
+            onChange={event => onFiltersChange({ startDate: event.target.value })}
+          />
+        </label>
+        <label>
+          结束日期
+          <input
+            type="date"
+            value={filters.endDate}
+            onChange={event => onFiltersChange({ endDate: event.target.value })}
+          />
+        </label>
+        <button className="primary-button" type="submit" disabled={loading}>
           <Icon name="orders" />
-          搜索订单号
+          搜索订单
         </button>
       </form>
       {loading ? <div className="loading-panel">正在加载订单详情...</div> : null}
       {error ? <div className="detail-error">{error}</div> : null}
-      {!loading && !error && order ? <MallOrderDetailView order={order} /> : null}
-      {!loading && !error && !order ? <EmptyState text="暂无订单详情" /> : null}
+      {!loading && !error && orders.length ? (
+        <div className="table-wrap order-detail-results">
+          <table>
+            <thead>
+              <tr>
+                <th>订单</th>
+                <th>用户</th>
+                <th>商家ID</th>
+                <th>金额</th>
+                <th>状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {orders.map(order => {
+                const id = stringValue(order, 'id');
+                const status = stringValue(order, 'status');
+                return (
+                  <tr key={id}>
+                    <td>
+                      <strong>{stringValue(order, 'orderNo', shortId(id))}</strong>
+                      <small>{formatDate(stringValue(order, 'createdAt'))}</small>
+                    </td>
+                    <td>
+                      <span>{stringValue(order, 'recipientName', stringValue(order, 'userId'))}</span>
+                      <small>{stringValue(order, 'recipientPhone', stringValue(order, 'userPhone', '-'))}</small>
+                    </td>
+                    <td>{stringValue(order, 'merchantId', '-')}</td>
+                    <td>
+                      <strong>{yuan(numberValue(order, 'payableCents'))}</strong>
+                      <small>{statusLabel(stringValue(order, 'paymentStatus'))}</small>
+                    </td>
+                    <td><span className={badgeClass(status)}>{statusLabel(status)}</span></td>
+                    <td>
+                      <button className="ghost-button" type="button" onClick={() => onViewDetail(id)}>
+                        <Icon name="orders" />
+                        查看详情
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      {!loading && !error && !orders.length ? <EmptyState text="暂无订单详情搜索结果" /> : null}
     </Panel>
   );
 }
@@ -6128,8 +6229,8 @@ function App() {
   const [mallOrderDetail, setMallOrderDetail] = useState<JsonRecord | null>(null);
   const [mallOrderDetailLoading, setMallOrderDetailLoading] = useState(false);
   const [mallOrderDetailError, setMallOrderDetailError] = useState('');
-  const [mallOrderSearchKeyword, setMallOrderSearchKeyword] = useState('');
-  const [mallOrderSearchResult, setMallOrderSearchResult] = useState<JsonRecord | null>(null);
+  const [mallOrderSearchFilters, setMallOrderSearchFilters] = useState<MallOrderDetailSearchFilters>(initialMallOrderDetailSearchFilters);
+  const [mallOrderSearchResults, setMallOrderSearchResults] = useState<JsonRecord[]>([]);
   const [mallOrderSearchLoading, setMallOrderSearchLoading] = useState(false);
   const [mallOrderSearchError, setMallOrderSearchError] = useState('');
 
@@ -6164,8 +6265,8 @@ function App() {
     setMallOrderDetail(null);
     setMallOrderDetailLoading(false);
     setMallOrderDetailError('');
-    setMallOrderSearchKeyword('');
-    setMallOrderSearchResult(null);
+    setMallOrderSearchFilters(initialMallOrderDetailSearchFilters);
+    setMallOrderSearchResults([]);
     setMallOrderSearchLoading(false);
     setMallOrderSearchError('');
     setCouponForm(initialCouponForm);
@@ -6588,12 +6689,24 @@ function App() {
 
   const searchMallOrderDetail = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setMallOrderSearchResult(null);
+    setMallOrderSearchResults([]);
     setMallOrderSearchError('');
     setMallOrderSearchLoading(true);
 
     try {
-      setMallOrderSearchResult(await fetchMallOrderDetail(mallOrderSearchKeyword));
+      const hasCondition = Object.values(mallOrderSearchFilters).some(value => value.trim());
+      if (!hasCondition) {
+        throw new Error('请至少输入一个查询条件或日期范围');
+      }
+      const results = await apiGet<JsonRecord[]>('/api/admin/mall/orders', {
+        orderNo: mallOrderSearchFilters.orderNo,
+        userPhone: mallOrderSearchFilters.userPhone,
+        merchantId: mallOrderSearchFilters.merchantId,
+        startDate: mallOrderSearchFilters.startDate,
+        endDate: mallOrderSearchFilters.endDate,
+        limit: 100,
+      });
+      setMallOrderSearchResults(results);
     } catch (error) {
       setMallOrderSearchError(error instanceof Error ? error.message : '订单详情加载失败');
     } finally {
@@ -6602,8 +6715,8 @@ function App() {
   };
 
   const clearMallOrderSearch = () => {
-    setMallOrderSearchKeyword('');
-    setMallOrderSearchResult(null);
+    setMallOrderSearchFilters(initialMallOrderDetailSearchFilters);
+    setMallOrderSearchResults([]);
     setMallOrderSearchError('');
   };
 
@@ -7144,12 +7257,13 @@ function App() {
       return (
         <MallOrderDetailSearchSection
           error={mallOrderSearchError}
-          keyword={mallOrderSearchKeyword}
+          filters={mallOrderSearchFilters}
           loading={mallOrderSearchLoading}
-          order={mallOrderSearchResult}
+          orders={mallOrderSearchResults}
           onClear={clearMallOrderSearch}
-          onKeywordChange={setMallOrderSearchKeyword}
+          onFiltersChange={patch => setMallOrderSearchFilters(current => ({ ...current, ...patch }))}
           onSearch={searchMallOrderDetail}
+          onViewDetail={openMallOrderDetail}
         />
       );
     }
