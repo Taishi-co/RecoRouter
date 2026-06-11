@@ -398,7 +398,9 @@ type IconName =
   | 'plus'
   | 'refund'
   | 'lock'
-  | 'unlock';
+  | 'unlock'
+  | 'menu'
+  | 'logout';
 
 interface ApiEnvelope<T> {
   code?: number | string;
@@ -1064,6 +1066,22 @@ function apiUpload<T>(pathname: string, file: File) {
   });
 }
 
+function normalizeLoadedValue<T>(key: string, fallback: T, value: T, errors: LoadErrors): T {
+  if (Array.isArray(fallback)) {
+    if (Array.isArray(value)) return value;
+    errors[key] = '数据格式异常';
+    return fallback;
+  }
+
+  if (fallback && typeof fallback === 'object') {
+    if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+    errors[key] = '数据格式异常';
+    return fallback;
+  }
+
+  return value ?? fallback;
+}
+
 async function loadWithFallback<T>(
   key: string,
   fallback: T,
@@ -1071,7 +1089,7 @@ async function loadWithFallback<T>(
   loader: () => Promise<T>,
 ) {
   try {
-    return await loader();
+    return normalizeLoadedValue(key, fallback, await loader(), errors);
   } catch (error) {
     errors[key] = error instanceof Error ? error.message : '加载失败';
     return fallback;
@@ -2492,6 +2510,20 @@ function Icon({ name }: { name: IconName }) {
       <>
         <rect x="5" y="11" width="14" height="9" rx="2" />
         <path d="M8 11V7a4 4 0 0 1 7-2" />
+      </>
+    ),
+    menu: (
+      <>
+        <path d="M4 7h16" />
+        <path d="M4 12h16" />
+        <path d="M4 17h16" />
+      </>
+    ),
+    logout: (
+      <>
+        <path d="M10 6H6v12h4" />
+        <path d="M14 8l4 4-4 4" />
+        <path d="M8 12h10" />
       </>
     ),
   };
@@ -7734,6 +7766,7 @@ function App() {
   const [loading, setLoading] = useState(() => Boolean(getStoredAdminSession()));
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState('正在加载管理数据');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   const [productForm, setProductForm] = useState<ProductForm>(initialProductForm);
@@ -9407,27 +9440,55 @@ function App() {
   }
 
   const currentAdmin = session.user;
-  const currentAdminName = currentAdmin.name || currentAdmin.phone || shortId(currentAdmin.id);
+  const currentAdminRole = roleLabel(currentAdmin.role);
+  const currentAdminName = currentAdmin.name || currentAdminRole;
+  const currentAdminContact = currentAdmin.phone || shortId(currentAdmin.id);
 
   return (
-    <div className={`admin-shell design-admin module-${currentModule.theme}`}>
+    <div className={`admin-shell design-admin module-${currentModule.theme}${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       <aside className="sidebar design-sidebar">
-        <div className="brand">
-          <div className="brand-mark">{currentModule.brand.slice(0, 1)}</div>
-          <div>
-            <strong>{currentModule.brand}</strong>
-            <span>{currentModule.subtitle}</span>
+        <div className="sidebar-top">
+          <div className="sidebar-head">
+            <div className="brand" title={`${currentModule.brand} ${currentModule.subtitle}`}>
+              <div className="brand-mark">{currentModule.brand.slice(0, 1)}</div>
+              <div className="brand-copy">
+                <strong>{currentModule.brand}</strong>
+                <span>{currentModule.subtitle}</span>
+              </div>
+            </div>
+            <button
+              aria-label={sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
+              className="sidebar-toggle"
+              title={sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
+              type="button"
+              onClick={() => setSidebarCollapsed(current => !current)}
+            >
+              <Icon name="menu" />
+            </button>
+          </div>
+
+          <div className="sidebar-admin-card">
+            <div className="sidebar-admin-avatar">{currentAdminName.slice(0, 1)}</div>
+            <div className="sidebar-admin-info">
+              <span>当前管理员</span>
+              <strong title={currentAdminName}>{currentAdminName}</strong>
+              {currentAdmin.name ? <small>{currentAdminRole}</small> : null}
+              <small>{currentAdminContact}</small>
+            </div>
           </div>
         </div>
 
         <div className="module-switcher">
           {adminModules.map(module => (
             <button
+              aria-label={`${module.moduleLabel}，${module.pages.length} 页`}
               className={module.key === activeModuleKey ? 'module-button active' : 'module-button'}
               key={module.key}
+              title={`${module.moduleLabel}，${module.pages.length} 页`}
               type="button"
               onClick={() => selectModule(module.key)}
             >
+              <b className="module-button-mark">{module.moduleLabel.slice(0, 1)}</b>
               <span>{module.moduleLabel}</span>
               <small>{module.pages.length} 页</small>
             </button>
@@ -9442,6 +9503,7 @@ function App() {
                 <button
                   className={page.key === activePageKey ? 'nav-item active' : 'nav-item'}
                   key={page.key}
+                  title={page.label}
                   type="button"
                   onClick={() => selectPage(page.key)}
                 >
@@ -9452,6 +9514,20 @@ function App() {
             </div>
           ))}
         </nav>
+
+        <div className="sidebar-bottom">
+          <button
+            aria-label="退出登录"
+            className="sidebar-logout"
+            title="退出登录"
+            type="button"
+            onClick={handleLogout}
+            disabled={Boolean(busy)}
+          >
+            <Icon name="logout" />
+            <span>退出登录</span>
+          </button>
+        </div>
       </aside>
 
       <main className="workspace design-workspace">
@@ -9462,20 +9538,7 @@ function App() {
             <p>{currentPage.description}</p>
           </div>
           <div className="topbar-actions">
-            <div className="admin-account">
-              <span>当前管理员</span>
-              <strong>{currentAdminName}</strong>
-              <small>{currentAdmin.phone || roleLabel(currentAdmin.role)}</small>
-            </div>
             <span className={Object.keys(errors).length ? 'status-dot warning' : 'status-dot'}>{notice}</span>
-            <button className="ghost-button" type="button" onClick={reload} disabled={loading || Boolean(busy)}>
-              <Icon name="refresh" />
-              刷新
-            </button>
-            <button className="ghost-button danger" type="button" onClick={handleLogout} disabled={Boolean(busy)}>
-              <Icon name="x" />
-              退出
-            </button>
           </div>
         </header>
 
