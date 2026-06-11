@@ -18,6 +18,8 @@ export interface MallProduct {
   subtitle?: string | null
   description?: string | null
   imageUrl?: string | null
+  specification?: string | null
+  saleMethod?: string | null
   supplyPriceCents?: number | null
   priceCents: number
   originalPriceCents?: number | null

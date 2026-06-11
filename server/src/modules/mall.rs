@@ -590,6 +590,9 @@ struct ProductMutationRequest {
     description: Option<String>,
     #[serde(alias = "image_url")]
     image_url: Option<String>,
+    specification: Option<String>,
+    #[serde(alias = "sale_method")]
+    sale_method: Option<String>,
     #[serde(alias = "supply_price_cents")]
     supply_price_cents: Option<i64>,
     #[serde(alias = "price_cents")]
@@ -1096,6 +1099,9 @@ where
 {
     let mut products = fetch_products(&state.db, query, true).await?;
     enrich_products_pricing(&state.db, &mut products).await?;
+    for product in &mut products {
+        strip_public_product_specs(product);
+    }
     resolve_mall_image_urls_in_list(&state.storage, &mut products).await?;
     Ok(ok("查询成功", products))
 }
@@ -1256,6 +1262,7 @@ where
 {
     let mut product = fetch_product_json(&state.db, &id).await?;
     enrich_product_pricing(&state.db, &mut product).await?;
+    strip_public_product_specs(&mut product);
     resolve_mall_image_urls(&state.storage, &mut product).await?;
     Ok(ok("查询成功", product))
 }
@@ -1281,6 +1288,13 @@ where
 {
     let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
     let mut cart = cart_payload(&state.db, &user_id).await?;
+    if let Some(items) = cart.get_mut("items").and_then(Value::as_array_mut) {
+        for item in items {
+            if let Some(product) = item.get_mut("product") {
+                strip_public_product_specs(product);
+            }
+        }
+    }
     resolve_mall_image_urls(&state.storage, &mut cart).await?;
     Ok(ok("查询成功", cart))
 }
@@ -2288,14 +2302,23 @@ where
     let name = require_non_empty(body.name, "商品名称不能为空")?;
     let sku = require_non_empty(body.sku, "SKU不能为空")?;
     let category_code = require_non_empty(body.category_code, "类目不能为空")?;
+    let specification = require_non_empty(body.specification, "规格不能为空")?;
+    let sale_method = require_non_empty(body.sale_method, "售卖方式不能为空")?;
+    let supply_price_cents = body.supply_price_cents.unwrap_or(0);
+    if supply_price_cents <= 0 {
+        return Err(ApiError::BadRequest("进货价必须大于0".to_string()));
+    }
     let price_cents = body.price_cents.unwrap_or(0);
     if price_cents <= 0 {
         return Err(ApiError::BadRequest("售价必须大于0".to_string()));
     }
+    let stock = body.stock.unwrap_or(0);
+    if stock < 0 {
+        return Err(ApiError::BadRequest("库存不能小于0".to_string()));
+    }
     ensure_category(&state.db, &category_code).await?;
     let tags = serde_json::to_value(body.tags.unwrap_or_default())
         .map_err(|err| ApiError::BadRequest(err.to_string()))?;
-    validate_optional_non_negative_i64(body.supply_price_cents, "供货价不能小于0")?;
     validate_optional_non_negative_i32(body.stock_alert_threshold, "库存预警阈值不能小于0")?;
     validate_optional_non_negative_f64(body.length_cm, "长不能小于0")?;
     validate_optional_non_negative_f64(body.width_cm, "宽不能小于0")?;
@@ -2306,16 +2329,16 @@ where
     let product_id = sqlx::query_scalar::<_, String>(
         r#"
         INSERT INTO mall_products (
-          category_id, category_code, sku, name, subtitle, description, image_url,
+          category_id, category_code, sku, name, subtitle, description, image_url, specification, sale_method,
           supply_price_cents, price_cents, original_price_cents, stock, status, tags, delivery_minutes,
           cold_chain_required, length_cm, width_cm, height_cm, volume_liters,
           weight_kg, stock_alert_threshold
         )
         VALUES (
           (SELECT id FROM mall_categories WHERE code = $1),
-          $1, $2, $3, $4, $5, $6, COALESCE($7, 0), $8, $9, COALESCE($10, 0),
-          COALESCE($11, 'on_sale'), $12, COALESCE($13, 18), COALESCE($14, false),
-          $15, $16, $17, $18, $19, COALESCE($20, 15)
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+          COALESCE($13, 'on_sale'), $14, COALESCE($15, 18), COALESCE($16, false),
+          $17, $18, $19, $20, $21, COALESCE($22, 15)
         )
         RETURNING id
         "#,
@@ -2326,10 +2349,12 @@ where
     .bind(body.subtitle)
     .bind(body.description)
     .bind(body.image_url)
-    .bind(body.supply_price_cents)
+    .bind(specification)
+    .bind(sale_method)
+    .bind(supply_price_cents)
     .bind(price_cents)
     .bind(body.original_price_cents)
-    .bind(body.stock)
+    .bind(stock)
     .bind(body.status)
     .bind(tags)
     .bind(body.delivery_minutes)
@@ -2359,6 +2384,8 @@ where
     if let Some(category_code) = body.category_code.as_deref() {
         ensure_category(&state.db, category_code).await?;
     }
+    let specification = optional_non_empty(body.specification, "规格不能为空")?;
+    let sale_method = optional_non_empty(body.sale_method, "售卖方式不能为空")?;
     validate_optional_non_negative_i64(body.supply_price_cents, "供货价不能小于0")?;
     validate_optional_non_negative_i32(body.stock_alert_threshold, "库存预警阈值不能小于0")?;
     validate_optional_non_negative_f64(body.length_cm, "长不能小于0")?;
@@ -2382,20 +2409,22 @@ where
             subtitle = COALESCE($5, subtitle),
             description = COALESCE($6, description),
             image_url = COALESCE($7, image_url),
-            supply_price_cents = COALESCE($8, supply_price_cents),
-            price_cents = COALESCE($9, price_cents),
-            original_price_cents = COALESCE($10, original_price_cents),
-            stock = COALESCE($11, stock),
-            status = COALESCE($12, status),
-            tags = COALESCE($13, tags),
-            delivery_minutes = COALESCE($14, delivery_minutes),
-            cold_chain_required = COALESCE($15, cold_chain_required),
-            length_cm = COALESCE($16, length_cm),
-            width_cm = COALESCE($17, width_cm),
-            height_cm = COALESCE($18, height_cm),
-            volume_liters = COALESCE($19, volume_liters),
-            weight_kg = COALESCE($20, weight_kg),
-            stock_alert_threshold = COALESCE($21, stock_alert_threshold),
+            specification = COALESCE($8, specification),
+            sale_method = COALESCE($9, sale_method),
+            supply_price_cents = COALESCE($10, supply_price_cents),
+            price_cents = COALESCE($11, price_cents),
+            original_price_cents = COALESCE($12, original_price_cents),
+            stock = COALESCE($13, stock),
+            status = COALESCE($14, status),
+            tags = COALESCE($15, tags),
+            delivery_minutes = COALESCE($16, delivery_minutes),
+            cold_chain_required = COALESCE($17, cold_chain_required),
+            length_cm = COALESCE($18, length_cm),
+            width_cm = COALESCE($19, width_cm),
+            height_cm = COALESCE($20, height_cm),
+            volume_liters = COALESCE($21, volume_liters),
+            weight_kg = COALESCE($22, weight_kg),
+            stock_alert_threshold = COALESCE($23, stock_alert_threshold),
             updated_at = now()
         WHERE id = $1
         RETURNING id
@@ -2408,6 +2437,8 @@ where
     .bind(body.subtitle)
     .bind(body.description)
     .bind(body.image_url)
+    .bind(specification)
+    .bind(sale_method)
     .bind(body.supply_price_cents)
     .bind(body.price_cents)
     .bind(body.original_price_cents)
@@ -4479,6 +4510,10 @@ async fn fetch_products(
         builder.push(" OR p.subtitle ILIKE ");
         builder.push_bind(pattern.clone());
         builder.push(" OR p.description ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR p.specification ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR p.sale_method ILIKE ");
         builder.push_bind(pattern);
         builder.push(")");
     }
@@ -5057,6 +5092,23 @@ async fn enrich_products_pricing(pool: &PgPool, products: &mut [Value]) -> ApiRe
         enrich_product_pricing(pool, product).await?;
     }
     Ok(())
+}
+
+fn strip_public_product_specs(product: &mut Value) {
+    if let Some(object) = product.as_object_mut() {
+        for key in [
+            "supplyPriceCents",
+            "stockAlertThreshold",
+            "coldChainRequired",
+            "lengthCm",
+            "widthCm",
+            "heightCm",
+            "volumeLiters",
+            "weightKg",
+        ] {
+            object.remove(key);
+        }
+    }
 }
 
 async fn enrich_product_pricing(pool: &PgPool, product: &mut Value) -> ApiResult<()> {

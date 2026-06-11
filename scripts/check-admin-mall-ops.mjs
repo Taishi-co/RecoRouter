@@ -1,17 +1,12 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 
 const webAdmin = readFileSync('src/web-admin/main.tsx', 'utf8')
 const mallModule = readFileSync('server/src/modules/mall.rs', 'utf8')
-const migrations = [
-  'server/migrations/0009_mall_operations_support.sql',
-  'server/migrations/0016_mall_product_specs.sql',
-].map((path) => {
-  try {
-    return readFileSync(path, 'utf8')
-  } catch {
-    return ''
-  }
-}).join('\n')
+const migrations = readdirSync('server/migrations')
+  .filter((name) => name.endsWith('.sql'))
+  .sort()
+  .map((name) => readFileSync(`server/migrations/${name}`, 'utf8'))
+  .join('\n')
 
 function requireIncludes(source, needle, message) {
   if (!source.includes(needle)) {
@@ -46,6 +41,13 @@ requireIncludes(webAdmin, 'inventoryFilters', 'Web admin must support stock warn
 requireIncludes(webAdmin, 'ProductCreateModal', 'Mall product creation must be handled by a modal')
 requireIncludes(webAdmin, 'setCreateModalOpen(true)', 'Mall product listing/upsert flow must open a create modal')
 requireIncludes(webAdmin, '新增上架商品', 'Mall product create modal must provide an explicit create action')
+requireIncludes(webAdmin, 'supplyPriceYuan', 'Mall product listing form must collect purchase cost')
+requireIncludes(webAdmin, 'specification', 'Mall product listing form must collect sale specification')
+requireIncludes(webAdmin, 'saleMethod', 'Mall product listing form must collect sale method')
+requireIncludes(webAdmin, 'ProductSpecSubtable', 'Mall product loading dimensions must move into an internal spec subtable')
+requireIncludes(webAdmin, '装载规格（可选，不对外展示）', 'Mall loading specs must be marked optional and internal-only')
+requireIncludes(webAdmin, 'onReorderCategory', 'Mall categories must support persisted drag reorder')
+requireIncludes(webAdmin, 'draggable', 'Mall categories table rows must be draggable')
 requireIncludes(webAdmin, 'onCreateInventoryAlert', 'Mall inventory page must support creating warning rules')
 requireIncludes(webAdmin, 'onEditInventoryAlert', 'Mall inventory page must support editing warning rules')
 requireIncludes(webAdmin, 'onDeleteInventoryAlert', 'Mall inventory page must support deleting warning rules')
@@ -69,11 +71,36 @@ if (productListSection.includes('onSubmit={onSubmit}')) {
   throw new Error('Mall product list must not own the create-product submit flow')
 }
 
+const productFormSection = webAdmin.slice(
+  webAdmin.indexOf('function ProductFormFields'),
+  webAdmin.indexOf('function ProductImage'),
+)
+
+for (const label of [
+  '商品名称',
+  '类目',
+  '售价',
+  '进货价',
+  '库存',
+  '规格',
+  '状态',
+  '商品说明',
+  '售卖方式',
+]) {
+  requireIncludes(productFormSection, `${label}<span className="required-mark">*</span>`, `Mall product form must mark ${label} as required`)
+}
+
+if (productFormSection.includes('>原价')) {
+  throw new Error('Mall product form must label purchase cost as 进货价 instead of 原价')
+}
+
 if (/图片路径[\s\S]*?<select[\s\S]*mall-products\/fresh-milk\.jpeg/.test(webAdmin)) {
   throw new Error('Mall product forms must not present fixed product image choices')
 }
 
 for (const column of [
+  'specification',
+  'sale_method',
   'length_cm',
   'width_cm',
   'height_cm',
@@ -107,6 +134,8 @@ for (const handler of [
 }
 
 for (const field of [
+  'specification',
+  'sale_method',
   'length_cm',
   'width_cm',
   'height_cm',
@@ -116,3 +145,5 @@ for (const field of [
 ]) {
   requireIncludes(mallModule, field, `Mall admin backend must persist ${field}`)
 }
+
+requireIncludes(mallModule, 'strip_public_product_specs', 'Public mall product APIs must strip internal loading specs')

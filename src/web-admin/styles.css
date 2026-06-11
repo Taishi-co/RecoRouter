@@ -1314,8 +1314,92 @@ td span {
   font-weight: 700;
 }
 
+.field-label {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.required-mark {
+  color: #d84a3a;
+  font-weight: 900;
+}
+
 .form-grid .wide {
   grid-column: 1 / -1;
+}
+
+.product-spec-subtable,
+.mall-admin-spec-subtable {
+  display: grid;
+  gap: 10px;
+  grid-column: 1 / -1;
+  padding: 12px;
+  background: #fbfaf6;
+  border: 1px solid #dfead9;
+  border-radius: 8px;
+}
+
+.spec-subtable-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  color: #253224;
+}
+
+.spec-subtable-head span {
+  color: #6a7667;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.spec-subtable-scroll {
+  overflow-x: auto;
+}
+
+.spec-subtable {
+  min-width: 760px;
+}
+
+.spec-subtable th,
+.spec-subtable td {
+  padding: 8px;
+}
+
+.spec-subtable input {
+  width: 100%;
+  min-width: 72px;
+}
+
+.compact-toggle {
+  min-width: 74px;
+}
+
+.sortable-row {
+  transition: background 0.16s ease, opacity 0.16s ease;
+}
+
+.sortable-row.dragging {
+  opacity: 0.55;
+  background: #f0f7eb;
+}
+
+.drag-handle {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: #496944;
+  background: #f0f7eb;
+  border: 1px solid #cfe4c9;
+  border-radius: 7px;
+  cursor: grab;
+  font-weight: 900;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
 }
 
 .product-modal {

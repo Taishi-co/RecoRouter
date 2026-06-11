@@ -1,5 +1,5 @@
 import { StrictMode, useEffect, useMemo, useState } from 'react';
-import type { FormEvent, ReactNode } from 'react';
+import type { DragEvent, FormEvent, ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
@@ -118,8 +118,10 @@ interface ProductForm {
   subtitle: string;
   description: string;
   imageUrl: string;
+  specification: string;
+  saleMethod: string;
   priceYuan: string;
-  originalPriceYuan: string;
+  supplyPriceYuan: string;
   stock: string;
   stockAlertThreshold: string;
   lengthCm: string;
@@ -600,8 +602,10 @@ const initialProductForm: ProductForm = {
   subtitle: '',
   description: '',
   imageUrl: '',
+  specification: '单份',
+  saleMethod: '按份',
   priceYuan: '19.90',
-  originalPriceYuan: '',
+  supplyPriceYuan: '12.80',
   stock: '80',
   stockAlertThreshold: '15',
   lengthCm: '',
@@ -1038,6 +1042,34 @@ function optionalNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function validateProductForm(form: ProductForm) {
+  for (const [label, value] of [
+    ['名称', form.name],
+    ['类目', form.categoryCode],
+    ['售价', form.priceYuan],
+    ['进货价', form.supplyPriceYuan],
+    ['库存', form.stock],
+    ['规格', form.specification],
+    ['售卖方式', form.saleMethod],
+    ['状态', form.status],
+    ['商品说明', form.description],
+  ]) {
+    if (!String(value).trim()) {
+      throw new Error(`${label}不能为空`);
+    }
+  }
+  if (moneyFromYuan(form.priceYuan) <= 0) {
+    throw new Error('售价必须大于0');
+  }
+  if (moneyFromYuan(form.supplyPriceYuan) <= 0) {
+    throw new Error('进货价必须大于0');
+  }
+  const stock = Number(form.stock);
+  if (!Number.isFinite(stock) || stock < 0) {
+    throw new Error('库存不能小于0');
+  }
+}
+
 function shortId(value: string) {
   if (!value) return '-';
   return value.length > 10 ? `${value.slice(0, 6)}...${value.slice(-4)}` : value;
@@ -1077,9 +1109,11 @@ function productToForm(product: JsonRecord, fallbackCategoryCode = 'fruit'): Pro
     subtitle: stringValue(product, 'subtitle'),
     description: stringValue(product, 'description'),
     imageUrl: stringValue(product, 'imageKey', stringValue(product, 'imageUrl')),
+    specification: stringValue(product, 'specification', stringValue(product, 'subtitle')),
+    saleMethod: stringValue(product, 'saleMethod', stringValue(product, 'specification', stringValue(product, 'subtitle'))),
     priceYuan: (numberValue(product, 'priceCents') / 100).toFixed(2),
-    originalPriceYuan: numberValue(product, 'originalPriceCents')
-      ? (numberValue(product, 'originalPriceCents') / 100).toFixed(2)
+    supplyPriceYuan: numberValue(product, 'supplyPriceCents')
+      ? (numberValue(product, 'supplyPriceCents') / 100).toFixed(2)
       : '',
     stock: String(numberValue(product, 'stock')),
     stockAlertThreshold: String(numberValue(product, 'stockAlertThreshold', 15)),
@@ -2934,7 +2968,7 @@ function MallProductDesignSection({
 }) {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const alertCount = products.filter(product => numberValue(product, 'stock') <= numberValue(product, 'stockAlertThreshold', 15)).length;
-  const completeCount = products.filter(product => stringValue(product, 'imageKey', stringValue(product, 'imageUrl')) && numberValue(product, 'weightKg') > 0).length;
+  const completeCount = products.filter(product => stringValue(product, 'imageKey', stringValue(product, 'imageUrl')) && stringValue(product, 'specification') && stringValue(product, 'saleMethod')).length;
 
   return (
     <div className="mall-admin-design-page">
@@ -2972,14 +3006,14 @@ function MallProductDesignSection({
       <div className="mall-admin-kpis">
         <StatCard label="商品总数" value={String(products.length)} detail="当前筛选商品池" />
         <StatCard label="库存预警" value={String(alertCount)} detail="低于商品级阈值" />
-        <StatCard label="规格完整" value={String(completeCount)} detail="含图片与重量字段" />
+        <StatCard label="报价字段完整" value={String(completeCount)} detail="含图片、规格和售卖方式" />
       </div>
 
       <section className="mall-admin-form-panel">
         <div className="design-panel-head">
           <div>
             <h2>商品上架</h2>
-            <p>点击新增上架商品后，在弹窗中维护基础信息、价格库存、主图和无人车装载规格</p>
+            <p>点击新增上架商品后，在弹窗中按运营报价表维护名称、类目、规格、售卖方式、进货价、售价和库存</p>
           </div>
           <span>{products.length} 个商品</span>
         </div>
@@ -2990,7 +3024,7 @@ function MallProductDesignSection({
           </div>
           <div>
             <strong>规格校验</strong>
-            <span>长宽高、体积、重量和冷链字段用于判断无人车是否可装载</span>
+            <span>销售规格和售卖方式对外展示，长宽高、体积、重量和冷链字段仅用于内部装载判断</span>
           </div>
           <div>
             <strong>库存预警</strong>
@@ -3037,16 +3071,16 @@ function ProductFormFields({
   return (
     <div className={wrapperClass}>
       <label className={fieldClass}>
-        商品名称
-        <input value={form.name} onChange={event => onChange({ name: event.target.value })} placeholder="例如 澳洲蓝莓" />
+        <span className="field-label">商品名称<span className="required-mark">*</span></span>
+        <input required value={form.name} onChange={event => onChange({ name: event.target.value })} placeholder="例如 恒大苏打水" />
       </label>
       <label className={fieldClass}>
         SKU
         <input value={form.sku} onChange={event => onChange({ sku: event.target.value })} placeholder="不填自动生成" />
       </label>
       <label className={fieldClass}>
-        类目
-        <select value={form.categoryCode} onChange={event => onChange({ categoryCode: event.target.value })}>
+        <span className="field-label">类目<span className="required-mark">*</span></span>
+        <select required value={form.categoryCode} onChange={event => onChange({ categoryCode: event.target.value })}>
           {categories.map(category => (
             <option key={stringValue(category, 'code')} value={stringValue(category, 'code')}>
               {stringValue(category, 'name', stringValue(category, 'code'))}
@@ -3061,48 +3095,28 @@ function ProductFormFields({
         <input value={form.imageUrl} onChange={event => onChange({ imageUrl: event.target.value })} placeholder="上传后自动填入 storage key" />
       </label>
       <label className={fieldClass}>
-        售价
-        <input value={form.priceYuan} type="number" min="0" step="0.01" onChange={event => onChange({ priceYuan: event.target.value })} />
+        <span className="field-label">售价<span className="required-mark">*</span></span>
+        <input required value={form.priceYuan} type="number" min="0.01" step="0.01" onChange={event => onChange({ priceYuan: event.target.value })} />
       </label>
       <label className={fieldClass}>
-        原价
-        <input value={form.originalPriceYuan} type="number" min="0" step="0.01" onChange={event => onChange({ originalPriceYuan: event.target.value })} />
+        <span className="field-label">进货价<span className="required-mark">*</span></span>
+        <input required value={form.supplyPriceYuan} type="number" min="0.01" step="0.01" onChange={event => onChange({ supplyPriceYuan: event.target.value })} />
       </label>
       <label className={fieldClass}>
-        库存
-        <input value={form.stock} type="number" min="0" onChange={event => onChange({ stock: event.target.value })} />
+        <span className="field-label">库存<span className="required-mark">*</span></span>
+        <input required value={form.stock} type="number" min="0" onChange={event => onChange({ stock: event.target.value })} />
       </label>
       <label className={fieldClass}>
-        预警阈值
-        <input value={form.stockAlertThreshold} type="number" min="0" onChange={event => onChange({ stockAlertThreshold: event.target.value })} />
+        <span className="field-label">规格<span className="required-mark">*</span></span>
+        <input required value={form.specification} onChange={event => onChange({ specification: event.target.value })} placeholder="单瓶 / 1件=24瓶 / 250ml*10盒" />
       </label>
       <label className={fieldClass}>
-        长 cm
-        <input value={form.lengthCm} type="number" min="0" step="0.1" onChange={event => onChange({ lengthCm: event.target.value })} />
+        <span className="field-label">售卖方式<span className="required-mark">*</span></span>
+        <input required value={form.saleMethod} onChange={event => onChange({ saleMethod: event.target.value })} placeholder="单瓶 / 整件 / 按斤" />
       </label>
       <label className={fieldClass}>
-        宽 cm
-        <input value={form.widthCm} type="number" min="0" step="0.1" onChange={event => onChange({ widthCm: event.target.value })} />
-      </label>
-      <label className={fieldClass}>
-        高 cm
-        <input value={form.heightCm} type="number" min="0" step="0.1" onChange={event => onChange({ heightCm: event.target.value })} />
-      </label>
-      <label className={fieldClass}>
-        体积 L
-        <input value={form.volumeLiters} type="number" min="0" step="0.01" onChange={event => onChange({ volumeLiters: event.target.value })} />
-      </label>
-      <label className={fieldClass}>
-        重量 kg
-        <input value={form.weightKg} type="number" min="0" step="0.001" onChange={event => onChange({ weightKg: event.target.value })} />
-      </label>
-      <label className={fieldClass}>
-        配送分钟
-        <input value={form.deliveryMinutes} type="number" min="1" onChange={event => onChange({ deliveryMinutes: event.target.value })} />
-      </label>
-      <label className={fieldClass}>
-        状态
-        <select value={form.status} onChange={event => onChange({ status: event.target.value })}>
+        <span className="field-label">状态<span className="required-mark">*</span></span>
+        <select required value={form.status} onChange={event => onChange({ status: event.target.value })}>
           <option value="on_sale">在售</option>
           <option value="off_sale">下架</option>
           <option value="draft">草稿</option>
@@ -3117,14 +3131,63 @@ function ProductFormFields({
         <input value={form.subtitle} onChange={event => onChange({ subtitle: event.target.value })} placeholder="规格、配送卖点" />
       </label>
       <label className={layout === 'tiles' ? 'mall-admin-tile' : 'wide'}>
-        商品说明
-        <textarea value={form.description} onChange={event => onChange({ description: event.target.value })} placeholder="包装、装载注意事项、保存方式等" />
+        <span className="field-label">商品说明<span className="required-mark">*</span></span>
+        <textarea required value={form.description} onChange={event => onChange({ description: event.target.value })} placeholder="商品卖点、包装、保存方式、售后说明等" />
       </label>
-      <label className={layout === 'tiles' ? 'mall-admin-tile toggle-line' : 'toggle-line'}>
-        <input checked={form.coldChainRequired} type="checkbox" onChange={event => onChange({ coldChainRequired: event.target.checked })} />
-        需要冷链
-      </label>
+      <ProductSpecSubtable form={form} layout={layout} onChange={onChange} />
     </div>
+  );
+}
+
+function ProductSpecSubtable({
+  form,
+  layout,
+  onChange,
+}: {
+  form: ProductForm;
+  layout: 'grid' | 'tiles';
+  onChange: (patch: Partial<ProductForm>) => void;
+}) {
+  return (
+    <section className={layout === 'tiles' ? 'mall-admin-spec-subtable mall-admin-tile wide' : 'product-spec-subtable wide'}>
+      <div className="spec-subtable-head">
+        <strong>装载规格（可选，不对外展示）</strong>
+        <span>仅用于无人车装载、库存预警和履约判断</span>
+      </div>
+      <div className="spec-subtable-scroll">
+        <table className="spec-subtable">
+          <thead>
+            <tr>
+              <th>长 cm</th>
+              <th>宽 cm</th>
+              <th>高 cm</th>
+              <th>体积 L</th>
+              <th>重量 kg</th>
+              <th>预警阈值</th>
+              <th>配送分钟</th>
+              <th>冷链</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><input value={form.lengthCm} type="number" min="0" step="0.1" onChange={event => onChange({ lengthCm: event.target.value })} /></td>
+              <td><input value={form.widthCm} type="number" min="0" step="0.1" onChange={event => onChange({ widthCm: event.target.value })} /></td>
+              <td><input value={form.heightCm} type="number" min="0" step="0.1" onChange={event => onChange({ heightCm: event.target.value })} /></td>
+              <td><input value={form.volumeLiters} type="number" min="0" step="0.01" onChange={event => onChange({ volumeLiters: event.target.value })} /></td>
+              <td><input value={form.weightKg} type="number" min="0" step="0.001" onChange={event => onChange({ weightKg: event.target.value })} /></td>
+              <td><input value={form.stockAlertThreshold} type="number" min="0" onChange={event => onChange({ stockAlertThreshold: event.target.value })} /></td>
+              <td><input value={form.deliveryMinutes} type="number" min="1" onChange={event => onChange({ deliveryMinutes: event.target.value })} /></td>
+              <td>
+                <label className="toggle-line compact-toggle">
+                  <input checked={form.coldChainRequired} type="checkbox" onChange={event => onChange({ coldChainRequired: event.target.checked })} />
+                  需要
+                </label>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -3135,7 +3198,7 @@ function ProductImage({ record }: { record: JsonRecord }) {
       {imageUrl ? <img alt="" src={imageUrl} /> : <span className="image-placeholder">无图</span>}
       <div>
         <strong>{stringValue(record, 'name', '未命名商品')}</strong>
-        <small>{stringValue(record, 'subtitle', stringValue(record, 'sku'))}</small>
+        <small>{stringValue(record, 'specification', stringValue(record, 'subtitle', stringValue(record, 'sku')))}</small>
       </div>
     </div>
   );
@@ -3567,12 +3630,12 @@ function MallProductsSection({
                     </td>
                     <td>
                       <strong>{yuan(numberValue(product, 'priceCents'))}</strong>
-                      <small>{numberValue(product, 'originalPriceCents') ? yuan(numberValue(product, 'originalPriceCents')) : '无原价'}</small>
+                      <small>进货价 {numberValue(product, 'supplyPriceCents') ? yuan(numberValue(product, 'supplyPriceCents')) : '-'}</small>
                     </td>
                     <td>{numberValue(product, 'stock')}</td>
                     <td>
-                      <span>{numberValue(product, 'lengthCm')}×{numberValue(product, 'widthCm')}×{numberValue(product, 'heightCm')} cm</span>
-                      <small>{numberValue(product, 'volumeLiters')}L · {numberValue(product, 'weightKg')}kg · 阈值 {numberValue(product, 'stockAlertThreshold', 15)}</small>
+                      <span>{stringValue(product, 'specification', stringValue(product, 'subtitle', '-'))}</span>
+                      <small>{stringValue(product, 'saleMethod', '-')} · 阈值 {numberValue(product, 'stockAlertThreshold', 15)}</small>
                     </td>
                     <td>
                       <span className={badgeClass(status)}>{statusLabel(status)}</span>
@@ -3633,7 +3696,7 @@ function ProductCreateModal({
         <div className="panel-head">
           <div>
             <h2>新增上架商品</h2>
-            <p>维护商品主图、价格库存、无人车装载规格和上架状态</p>
+            <p>按报价表维护商品名称、类目、售价、进货价、库存、规格、售卖方式和上架状态</p>
           </div>
           <button className="ghost-button" type="button" onClick={onClose}>
             <Icon name="x" />
@@ -3682,7 +3745,7 @@ function ProductEditModal({
         <div className="panel-head">
           <div>
             <h2>编辑商品</h2>
-            <p>维护商品图片、价格库存和无人车装载规格</p>
+            <p>维护报价表字段、商品说明和内部装载规格</p>
           </div>
           <button className="ghost-button" type="button" onClick={onClose}>
             <Icon name="x" />
@@ -3716,6 +3779,7 @@ function MallCategoriesSection({
   onSearch,
   onSave,
   onDelete,
+  onReorderCategory,
 }: {
   categories: JsonRecord[];
   filters: MallFilterState;
@@ -3725,8 +3789,10 @@ function MallCategoriesSection({
   onSearch: () => Promise<void>;
   onSave: (form: CategoryForm) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onReorderCategory: (draggedId: string, targetId: string) => Promise<void>;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
+  const [draggingCategoryId, setDraggingCategoryId] = useState('');
   const openCreate = () => {
     onFormChange(initialCategoryForm);
     setModalOpen(true);
@@ -3734,6 +3800,18 @@ function MallCategoriesSection({
   const openEdit = (category: JsonRecord) => {
     onFormChange(categoryToForm(category));
     setModalOpen(true);
+  };
+  const handleDragStart = (event: DragEvent<HTMLTableRowElement>, id: string) => {
+    setDraggingCategoryId(id);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', id);
+  };
+  const handleDrop = (event: DragEvent<HTMLTableRowElement>, targetId: string) => {
+    event.preventDefault();
+    const draggedId = event.dataTransfer.getData('text/plain') || draggingCategoryId;
+    setDraggingCategoryId('');
+    if (!draggedId || draggedId === targetId) return;
+    void onReorderCategory(draggedId, targetId);
   };
 
   return (
@@ -3754,11 +3832,12 @@ function MallCategoriesSection({
           新增品类
         </button>
       </div>
-      <Panel title="品类管理" description="维护社区团购商品品类、排序和上下架状态">
+      <Panel title="品类管理" description="维护社区团购商品品类、排序和上下架状态；拖拽行可调整前台展示顺序">
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
+                <th>拖拽排序</th>
                 <th>品类</th>
                 <th>编码</th>
                 <th>排序</th>
@@ -3771,7 +3850,16 @@ function MallCategoriesSection({
               {categories.map(category => {
                 const id = stringValue(category, 'id');
                 return (
-                  <tr key={id}>
+                  <tr
+                    className={draggingCategoryId === id ? 'sortable-row dragging' : 'sortable-row'}
+                    draggable
+                    key={id}
+                    onDragEnd={() => setDraggingCategoryId('')}
+                    onDragOver={event => event.preventDefault()}
+                    onDragStart={event => handleDragStart(event, id)}
+                    onDrop={event => handleDrop(event, id)}
+                  >
+                    <td><span className="drag-handle" aria-label="拖拽排序">↕</span></td>
                     <td><strong>{stringValue(category, 'name')}</strong></td>
                     <td>{stringValue(category, 'code')}</td>
                     <td>{numberValue(category, 'sortOrder')}</td>
@@ -6314,6 +6402,7 @@ function App() {
   const createProduct = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     await runAction('商品创建', async () => {
+      validateProductForm(productForm);
       const tags = productForm.tags
         .split(',')
         .map(tag => tag.trim())
@@ -6325,8 +6414,10 @@ function App() {
         subtitle: productForm.subtitle,
         description: productForm.description,
         imageUrl: productForm.imageUrl,
+        specification: productForm.specification,
+        saleMethod: productForm.saleMethod,
         priceCents: moneyFromYuan(productForm.priceYuan),
-        originalPriceCents: productForm.originalPriceYuan ? moneyFromYuan(productForm.originalPriceYuan) : undefined,
+        supplyPriceCents: moneyFromYuan(productForm.supplyPriceYuan),
         stock: Number(productForm.stock) || 0,
         stockAlertThreshold: Number(productForm.stockAlertThreshold) || 15,
         lengthCm: optionalNumber(productForm.lengthCm),
@@ -6353,6 +6444,7 @@ function App() {
 
   const updateProduct = async (id: string, form: ProductForm) => {
     await runAction('商品更新', async () => {
+      validateProductForm(form);
       const tags = form.tags
         .split(',')
         .map(tag => tag.trim())
@@ -6364,8 +6456,10 @@ function App() {
         subtitle: form.subtitle,
         description: form.description,
         imageUrl: form.imageUrl,
+        specification: form.specification,
+        saleMethod: form.saleMethod,
         priceCents: moneyFromYuan(form.priceYuan),
-        originalPriceCents: form.originalPriceYuan ? moneyFromYuan(form.originalPriceYuan) : undefined,
+        supplyPriceCents: moneyFromYuan(form.supplyPriceYuan),
         stock: Number(form.stock) || 0,
         stockAlertThreshold: Number(form.stockAlertThreshold) || 15,
         lengthCm: optionalNumber(form.lengthCm),
@@ -6425,6 +6519,29 @@ function App() {
   const deleteCategory = async (id: string) => {
     await runAction('品类删除', async () => {
       await apiDelete(`/api/admin/mall/categories/${id}`);
+      await reload();
+    });
+  };
+
+  const reorderCategory = async (draggedId: string, targetId: string) => {
+    await runAction('品类排序更新', async () => {
+      const ordered = [...data.mallCategories].sort((left, right) => numberValue(left, 'sortOrder') - numberValue(right, 'sortOrder'));
+      const fromIndex = ordered.findIndex(category => stringValue(category, 'id') === draggedId);
+      const toIndex = ordered.findIndex(category => stringValue(category, 'id') === targetId);
+      if (fromIndex < 0 || toIndex < 0) return;
+      const [dragged] = ordered.splice(fromIndex, 1);
+      ordered.splice(toIndex, 0, dragged);
+      const nextCategories = ordered.map((category, index) => ({
+        ...category,
+        sortOrder: (index + 1) * 10,
+      }));
+      await Promise.all(nextCategories.map(category => apiPut(`/api/admin/mall/categories/${stringValue(category, 'id')}`, {
+        sortOrder: numberValue(category, 'sortOrder'),
+      })));
+      setData(current => ({
+        ...current,
+        mallCategories: nextCategories,
+      }));
       await reload();
     });
   };
@@ -6975,6 +7092,7 @@ function App() {
           onDelete={deleteCategory}
           onFiltersChange={patch => setCategoryFilters(current => ({ ...current, ...patch }))}
           onFormChange={patch => setCategoryForm(current => ({ ...current, ...patch }))}
+          onReorderCategory={reorderCategory}
           onSave={saveCategory}
           onSearch={reload}
         />

@@ -62,6 +62,7 @@ interface ProductForm {
   categoryCode: string
   imageUrl: string
   spec: string
+  saleMethod: string
   supplyPriceYuan: string
   priceYuan: string
   originalPriceYuan: string
@@ -95,6 +96,7 @@ const emptyProductForm: ProductForm = {
   categoryCode: 'vegetable',
   imageUrl: '',
   spec: '500g/份',
+  saleMethod: '按份',
   supplyPriceYuan: '8.80',
   priceYuan: '12.90',
   originalPriceYuan: '15.90',
@@ -207,8 +209,8 @@ export default function AdminMallWorkbench() {
   }
 
   const createProduct = async () => {
-    if (!productForm.name.trim() || !productForm.sku.trim()) {
-      Taro.showToast({ title: '请填写商品名称和 SKU', icon: 'none' })
+    if (!productForm.name.trim() || !productForm.sku.trim() || !productForm.spec.trim() || !productForm.saleMethod.trim()) {
+      Taro.showToast({ title: '请填写商品名称、SKU、规格和售卖方式', icon: 'none' })
       return
     }
 
@@ -219,6 +221,8 @@ export default function AdminMallWorkbench() {
         categoryCode: productForm.categoryCode.trim() || 'general',
         imageUrl: productForm.imageUrl.trim(),
         subtitle: productForm.spec.trim(),
+        specification: productForm.spec.trim(),
+        saleMethod: productForm.saleMethod.trim(),
         description: `规格 ${productForm.lengthCm}x${productForm.widthCm}x${productForm.heightCm}cm，重量 ${productForm.weightKg}kg`,
         priceCents: parseCents(productForm.priceYuan),
         originalPriceCents: parseCents(productForm.originalPriceYuan),
@@ -428,8 +432,9 @@ export default function AdminMallWorkbench() {
               <Field label="SKU" value={productForm.sku} placeholder="SY-TOMATO-001" onChange={(value) => updateProductForm(setProductForm, 'sku', value)} />
               <Field label="分类" value={productForm.categoryCode} placeholder="vegetable" onChange={(value) => updateProductForm(setProductForm, 'categoryCode', value)} />
               <Field label="规格" value={productForm.spec} placeholder="500g/份" onChange={(value) => updateProductForm(setProductForm, 'spec', value)} />
+              <Field label="售卖方式" value={productForm.saleMethod} placeholder="单瓶/整件/按斤" onChange={(value) => updateProductForm(setProductForm, 'saleMethod', value)} />
               <Field label="商品图片" value={productForm.imageUrl} placeholder="上传后图片地址" onChange={(value) => updateProductForm(setProductForm, 'imageUrl', value)} full />
-              <Field label="供货价" type="digit" value={productForm.supplyPriceYuan} onChange={(value) => updateProductForm(setProductForm, 'supplyPriceYuan', value)} />
+              <Field label="进货价" type="digit" value={productForm.supplyPriceYuan} onChange={(value) => updateProductForm(setProductForm, 'supplyPriceYuan', value)} />
               <Field label="建议零售价" type="digit" value={productForm.priceYuan} onChange={(value) => updateProductForm(setProductForm, 'priceYuan', value)} />
               <Field label="划线价" type="digit" value={productForm.originalPriceYuan} onChange={(value) => updateProductForm(setProductForm, 'originalPriceYuan', value)} />
               <Field label="库存" type="number" value={productForm.stock} onChange={(value) => updateProductForm(setProductForm, 'stock', value)} />
@@ -981,6 +986,9 @@ function dateKey(value?: string | null) {
 }
 
 function specText(product: MallProduct) {
+  if (product.specification || product.saleMethod) {
+    return [product.specification, product.saleMethod].filter(Boolean).join(' · ')
+  }
   const parts = [
     product.lengthCm ? `${product.lengthCm}cm` : '',
     product.widthCm ? `${product.widthCm}cm` : '',
