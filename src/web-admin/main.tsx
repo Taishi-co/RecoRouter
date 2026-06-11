@@ -2993,10 +2993,6 @@ function MallProductDesignSection({
           </select>
         </label>
         <label>
-          商品搜索
-          <input value={form.sku || form.name || '新商品'} readOnly />
-        </label>
-        <label>
           图片
           <input value={form.imageUrl ? '已上传' : '待上传'} readOnly />
         </label>

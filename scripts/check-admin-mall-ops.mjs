@@ -63,8 +63,21 @@ const productListSection = webAdmin.slice(
   webAdmin.indexOf('function ProductCreateModal'),
 )
 
+const productListingSection = webAdmin.slice(
+  webAdmin.indexOf('function MallProductDesignSection'),
+  webAdmin.indexOf('function ProductFormFields'),
+)
+
+if (productListingSection.includes('商品搜索')) {
+  throw new Error('Mall product listing/create page must not include product search controls')
+}
+
 if (productListSection.includes('<Panel title="新增商品"')) {
   throw new Error('Mall product list must not include an inline create-product panel')
+}
+
+if (productListSection.includes('新增商品') || productListSection.includes('新增上架商品')) {
+  throw new Error('Mall product list page must not expose product creation actions')
 }
 
 if (productListSection.includes('onSubmit={onSubmit}')) {
