@@ -97,6 +97,7 @@ interface DashboardData {
   campaigns: JsonRecord[];
   mallCoupons: JsonRecord[];
   mallHomeBanners: JsonRecord[];
+  mallHomeSections: JsonRecord[];
   mallPermissions: JsonRecord[];
   mallSettings: JsonRecord;
   supportMetrics: JsonRecord;
@@ -223,6 +224,23 @@ interface HomeBannerForm {
   startsAt: string;
   endsAt: string;
   tag: string;
+}
+
+interface HomeSectionForm {
+  id: string;
+  sectionType: string;
+  title: string;
+  subtitle: string;
+  content: string;
+  imageUrl: string;
+  linkType: string;
+  linkTarget: string;
+  productIds: string;
+  rules: string;
+  sortOrder: string;
+  status: string;
+  startsAt: string;
+  endsAt: string;
 }
 
 interface SettingsForm {
@@ -582,7 +600,11 @@ const adminModules: AdminModuleSpec[] = [
       designPage('mall.community', '邻里圈', '营销中心', '自提点动态、拼团和用户互动', 'megaphone'),
       designPage('mall.campaigns', '营销活动', '营销中心', '活动搜索、创建、编辑、启停和删除', 'megaphone', 'operations'),
       designPage('mall.coupons', '券中心', '营销中心', '券创建、编辑、发放量、核销状态和启停', 'megaphone'),
-      designPage('mall.banners', '首页配置', '营销中心', '首页卡片、Banner 和推荐商品', 'dashboard'),
+      designPage('mall.banners', '轮播广告位', '首页配置', '首页 3 张轮播、图片、跳转和排序', 'dashboard'),
+      designPage('mall.homeNotices', '公告栏配置', '首页配置', '今日到货、配送时效、售后通知和团长招募', 'megaphone'),
+      designPage('mall.homeFlashSale', '秒杀专区', '首页配置', '每日两场秒杀、倒计时、库存和商品池', 'shop', 'mallProducts'),
+      designPage('mall.homeNewArrivals', '新上专区', '首页配置', '每日上新 10-15 款和今日刚到标签', 'plus', 'mallProducts'),
+      designPage('mall.homeHotProducts', '爆款推荐', '首页配置', '平台销量 TOP10 和排序规则', 'shop', 'mallProducts'),
       designPage('mall.support', '客服售后', '客服售后', '会话、工单、知识库和响应指标', 'support', 'support'),
       designPage('mall.afterSales', '售后申请', '客服售后', '售后单审核、证据图片和退款流转', 'refund', 'mallOrders'),
       designPage('mall.knowledge', '客服知识库', '客服售后', '商城 FAQ、坏果包赔和履约话术', 'support', 'support'),
@@ -626,6 +648,7 @@ const initialData: DashboardData = {
   campaigns: [],
   mallCoupons: [],
   mallHomeBanners: [],
+  mallHomeSections: [],
   mallPermissions: [],
   mallSettings: {},
   supportMetrics: {},
@@ -766,6 +789,83 @@ const initialHomeBannerForm: HomeBannerForm = {
   startsAt: '',
   endsAt: '',
   tag: '安心溯源',
+};
+
+const initialHomeSectionForm: HomeSectionForm = {
+  id: '',
+  sectionType: 'announcement',
+  title: '今日到货提醒',
+  subtitle: '',
+  content: '草莓、鲜奶、鸡蛋 16:00 后可提',
+  imageUrl: '',
+  linkType: 'none',
+  linkTarget: '',
+  productIds: '',
+  rules: '{"displayLimit":6}',
+  sortOrder: '10',
+  status: 'active',
+  startsAt: '',
+  endsAt: '',
+};
+
+const homeSectionPageConfigs: Record<string, { sectionType: string; title: string; description: string; defaults: Partial<HomeSectionForm> }> = {
+  'mall.homeNotices': {
+    sectionType: 'announcement',
+    title: '公告栏配置',
+    description: '维护首页顶部单行滚动公告，可用于今日到货、配送时效、售后通知和团长招募。',
+    defaults: {
+      sectionType: 'announcement',
+      title: '今日到货提醒',
+      content: '草莓、鲜奶、鸡蛋 16:00 后可提',
+      rules: '{"audience":"all"}',
+      sortOrder: '10',
+    },
+  },
+  'mall.homeFlashSale': {
+    sectionType: 'flash_sale',
+    title: '秒杀专区',
+    description: '配置首页最醒目的秒杀专区，每日早 8 点 / 晚 6 点两场，支持指定商品或按标签/库存自动选品。',
+    defaults: {
+      sectionType: 'flash_sale',
+      title: '秒杀专区',
+      subtitle: '早 8 点 / 晚 6 点，每日两场',
+      content: '剩余库存',
+      linkType: 'search',
+      linkTarget: '秒杀',
+      rules: '{"sessions":[8,18],"displayLimit":2,"autoPick":"tag_or_low_stock","tagKeywords":["秒杀","特价","爆款"]}',
+      sortOrder: '10',
+    },
+  },
+  'mall.homeNewArrivals': {
+    sectionType: 'new_arrival',
+    title: '新上专区',
+    description: '配置每日上新 10-15 款专区，可指定商品池，未指定时按今日/新品/新上/现货标签自动挑选。',
+    defaults: {
+      sectionType: 'new_arrival',
+      title: '新上专区',
+      subtitle: '每日上新 10-15 款',
+      content: '今日刚到',
+      linkType: 'search',
+      linkTarget: '新品',
+      rules: '{"displayLimit":6,"autoPick":"tag","tagKeywords":["今日","新品","新上","现货"],"badge":"今日刚到"}',
+      sortOrder: '20',
+    },
+  },
+  'mall.homeHotProducts': {
+    sectionType: 'best_seller',
+    title: '爆款推荐',
+    description: '配置平台销量 TOP10 推荐位，可手动指定商品，未指定时按 soldCount 自动排序。',
+    defaults: {
+      sectionType: 'best_seller',
+      title: '爆款推荐',
+      subtitle: '平台销量 TOP10 自动更新',
+      content: 'TOP10',
+      linkType: 'search',
+      linkTarget: '爆款',
+      rules: '{"displayLimit":10,"autoPick":"sold_count","badgePrefix":"TOP"}',
+      sortOrder: '30',
+    },
+  },
 };
 
 const initialSettingsForm: SettingsForm = {
@@ -973,6 +1073,7 @@ async function fetchDashboardData(
     campaigns,
     mallCoupons,
     mallHomeBanners,
+    mallHomeSections,
     mallPermissions,
     mallSettings,
     supportMetrics,
@@ -1046,6 +1147,7 @@ async function fetchDashboardData(
       keyword: homeBannerFilters.keyword,
       status: homeBannerFilters.status,
     })),
+    loadWithFallback('首页专区', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/home-sections')),
     loadWithFallback('运营权限', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/permissions', {
       keyword: permissionFilters.keyword,
       status: permissionFilters.status,
@@ -1090,6 +1192,7 @@ async function fetchDashboardData(
       campaigns,
       mallCoupons,
       mallHomeBanners,
+      mallHomeSections,
       mallPermissions,
       mallSettings,
       supportMetrics,
@@ -1349,6 +1452,16 @@ function linkTypeLabel(value: string) {
   return labels[value] || value || '-';
 }
 
+function homeSectionTypeLabel(value: string) {
+  const labels: Record<string, string> = {
+    announcement: '公告栏',
+    flash_sale: '秒杀专区',
+    new_arrival: '新上专区',
+    best_seller: '爆款推荐',
+  };
+  return labels[value] || value || '-';
+}
+
 function supportCategoryLabel(value: string) {
   const labels: Record<string, string> = {
     delivery: '配送',
@@ -1391,6 +1504,25 @@ function homeBannerToForm(banner: JsonRecord): HomeBannerForm {
     startsAt: datetimeLocalValue(stringValue(banner, 'startsAt')),
     endsAt: datetimeLocalValue(stringValue(banner, 'endsAt')),
     tag: stringValue(metadata, 'tag'),
+  };
+}
+
+function homeSectionToForm(section: JsonRecord): HomeSectionForm {
+  return {
+    id: stringValue(section, 'id'),
+    sectionType: stringValue(section, 'sectionType', 'announcement'),
+    title: stringValue(section, 'title'),
+    subtitle: stringValue(section, 'subtitle'),
+    content: stringValue(section, 'content'),
+    imageUrl: stringValue(section, 'imageUrl'),
+    linkType: stringValue(section, 'linkType', 'none'),
+    linkTarget: stringValue(section, 'linkTarget'),
+    productIds: arrayValue(section, 'productIds').map(item => String(item)).join(','),
+    rules: JSON.stringify(recordValue(section, 'rules'), null, 2),
+    sortOrder: String(numberValue(section, 'sortOrder')),
+    status: stringValue(section, 'status', 'draft'),
+    startsAt: datetimeLocalValue(stringValue(section, 'startsAt')),
+    endsAt: datetimeLocalValue(stringValue(section, 'endsAt')),
   };
 }
 
@@ -6178,6 +6310,173 @@ function MallHomeBannersSection({
   );
 }
 
+function MallHomeSectionsSection({
+  description,
+  form,
+  products,
+  sectionType,
+  sections,
+  title,
+  onChange,
+  onDelete,
+  onEdit,
+  onReset,
+  onStatus,
+  onSubmit,
+  onUploadImage,
+}: {
+  description: string;
+  form: HomeSectionForm;
+  products: JsonRecord[];
+  sectionType: string;
+  sections: JsonRecord[];
+  title: string;
+  onChange: (patch: Partial<HomeSectionForm>) => void;
+  onDelete: (id: string) => Promise<void>;
+  onEdit: (section: JsonRecord) => void;
+  onReset: () => void;
+  onStatus: (id: string, status: string) => Promise<void>;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onUploadImage: (file: File) => Promise<string>;
+}) {
+  const visibleSections = sections
+    .filter(section => stringValue(section, 'sectionType') === sectionType)
+    .sort((a, b) => numberValue(a, 'sortOrder') - numberValue(b, 'sortOrder'));
+  const isAnnouncement = sectionType === 'announcement';
+
+  return (
+    <div className="split-grid">
+      <Panel title={form.id ? `编辑${title}` : `新增${title}`} description={description}>
+        <form className="form-grid" onSubmit={onSubmit}>
+          <label>
+            标题
+            <input value={form.title} onChange={event => onChange({ title: event.target.value })} />
+          </label>
+          <label>
+            状态
+            <select value={form.status} onChange={event => onChange({ status: event.target.value })}>
+              <option value="active">启用</option>
+              <option value="draft">草稿</option>
+              <option value="inactive">停用</option>
+            </select>
+          </label>
+          <label className="wide">
+            副标题
+            <input value={form.subtitle} placeholder={isAnnouncement ? '可不填' : '例：早 8 点 / 晚 6 点，每日两场'} onChange={event => onChange({ subtitle: event.target.value })} />
+          </label>
+          <label className="wide">
+            {isAnnouncement ? '公告内容' : '角标/行动文案'}
+            <textarea value={form.content} placeholder={isAnnouncement ? '例：草莓、鲜奶、鸡蛋 16:00 后可提' : '例：今日刚到 / TOP10'} onChange={event => onChange({ content: event.target.value })} />
+          </label>
+          <label>
+            跳转类型
+            <select value={form.linkType} onChange={event => onChange({ linkType: event.target.value })}>
+              <option value="none">不跳转</option>
+              <option value="category">品类</option>
+              <option value="product">商品</option>
+              <option value="search">搜索</option>
+              <option value="url">链接</option>
+            </select>
+          </label>
+          <label>
+            跳转目标
+            <input value={form.linkTarget} onChange={event => onChange({ linkTarget: event.target.value })} />
+          </label>
+          {!isAnnouncement ? (
+            <label className="wide">
+              商品 ID / SKU
+              <input value={form.productIds} placeholder="按展示顺序填写，英文逗号分隔；为空则按规则自动选品" onChange={event => onChange({ productIds: event.target.value })} />
+            </label>
+          ) : null}
+          <label className="wide">
+            图片
+            <input value={form.imageUrl} placeholder="可输入 COS key 或上传图片" onChange={event => onChange({ imageUrl: event.target.value })} />
+            <input
+              accept="image/*"
+              type="file"
+              onChange={event => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                void onUploadImage(file).then(imageUrl => onChange({ imageUrl }));
+                event.target.value = '';
+              }}
+            />
+          </label>
+          <label>
+            排序
+            <input value={form.sortOrder} type="number" onChange={event => onChange({ sortOrder: event.target.value })} />
+          </label>
+          <label>
+            开始时间
+            <input value={form.startsAt} type="datetime-local" onChange={event => onChange({ startsAt: event.target.value })} />
+          </label>
+          <label>
+            结束时间
+            <input value={form.endsAt} type="datetime-local" onChange={event => onChange({ endsAt: event.target.value })} />
+          </label>
+          {!isAnnouncement ? (
+            <label className="wide">
+              规则 JSON
+              <textarea value={form.rules} onChange={event => onChange({ rules: event.target.value })} />
+            </label>
+          ) : null}
+          <button className="primary-button" type="submit">
+            <Icon name="save" />
+            {form.id ? '保存配置' : '创建配置'}
+          </button>
+          <button className="ghost-button" type="button" onClick={onReset}>
+            <Icon name="x" />
+            重置
+          </button>
+        </form>
+      </Panel>
+
+      <Panel title={`${title}列表`} description="启用后供 C 端商城首页实时读取；拖动排序后续可扩展，当前按排序值升序展示">
+        <div className="list-stack">
+          {visibleSections.map(section => {
+            const id = stringValue(section, 'id');
+            const status = stringValue(section, 'status');
+            const productIds = arrayValue(section, 'productIds').map(item => String(item));
+            const productNames = productIds
+              .map(productId => products.find(product => stringValue(product, 'id') === productId || stringValue(product, 'sku') === productId))
+              .filter((product): product is JsonRecord => Boolean(product))
+              .map(product => stringValue(product, 'name'))
+              .join(' / ');
+            return (
+              <article className="list-row banner-row" key={id}>
+                <div>
+                  <strong>{numberValue(section, 'sortOrder')} · {stringValue(section, 'title')}</strong>
+                  <small>{stringValue(section, 'content', stringValue(section, 'subtitle', '-'))}</small>
+                  <small>
+                    {homeSectionTypeLabel(stringValue(section, 'sectionType'))}
+                    {productNames ? ` · ${productNames}` : ''}
+                  </small>
+                </div>
+                <span className={badgeClass(status)}>{statusLabel(status)}</span>
+                <div className="actions">
+                  <button className="ghost-button" type="button" onClick={() => onEdit(section)}>
+                    <Icon name="save" />
+                    编辑
+                  </button>
+                  <button className="ghost-button" type="button" onClick={() => void onStatus(id, status === 'active' ? 'inactive' : 'active')}>
+                    <Icon name={status === 'active' ? 'x' : 'check'} />
+                    {status === 'active' ? '停用' : '启用'}
+                  </button>
+                  <button className="ghost-button danger" type="button" onClick={() => void onDelete(id)}>
+                    <Icon name="x" />
+                    删除
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+          {!visibleSections.length ? <EmptyState text={`暂无${title}配置`} /> : null}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
 function MallCampaignsSection({
   campaigns,
   filters,
@@ -6928,6 +7227,7 @@ function App() {
   const [campaignForm, setCampaignForm] = useState<CampaignForm>(initialCampaignForm);
   const [couponForm, setCouponForm] = useState<CouponForm>(initialCouponForm);
   const [homeBannerForm, setHomeBannerForm] = useState<HomeBannerForm>(initialHomeBannerForm);
+  const [homeSectionForm, setHomeSectionForm] = useState<HomeSectionForm>(initialHomeSectionForm);
   const [settingsForm, setSettingsForm] = useState<SettingsForm>(initialSettingsForm);
   const [permissionForm, setPermissionForm] = useState<MallPermissionForm>(initialPermissionForm);
   const [supportForm, setSupportForm] = useState<SupportForm>(initialSupportForm);
@@ -6993,6 +7293,7 @@ function App() {
     setCampaignForm(initialCampaignForm);
     setCouponForm(initialCouponForm);
     setHomeBannerForm(initialHomeBannerForm);
+    setHomeSectionForm(initialHomeSectionForm);
     setPermissionForm(initialPermissionForm);
     setCampaignFilters(initialProductFilters);
     setCouponFilters(initialProductFilters);
@@ -7840,6 +8141,75 @@ function App() {
     });
   };
 
+  const resetHomeSectionForm = (sectionType = homeSectionForm.sectionType) => {
+    const defaults = Object.values(homeSectionPageConfigs).find(config => config.sectionType === sectionType)?.defaults || {};
+    setHomeSectionForm({
+      ...initialHomeSectionForm,
+      ...defaults,
+      id: '',
+      sectionType,
+    });
+  };
+
+  const saveHomeSection = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const isEditing = Boolean(homeSectionForm.id);
+    await runAction(isEditing ? '首页专区配置更新' : '首页专区配置创建', async () => {
+      const productIds = homeSectionForm.productIds
+        .split(',')
+        .map(item => item.trim())
+        .filter(Boolean);
+      const payload = {
+        sectionType: homeSectionForm.sectionType,
+        title: homeSectionForm.title,
+        subtitle: homeSectionForm.subtitle,
+        content: homeSectionForm.content,
+        imageUrl: homeSectionForm.imageUrl,
+        linkType: homeSectionForm.linkType,
+        linkTarget: homeSectionForm.linkTarget,
+        productIds,
+        rules: JSON.parse(homeSectionForm.rules || '{}') as JsonRecord,
+        sortOrder: Number(homeSectionForm.sortOrder) || 0,
+        status: homeSectionForm.status,
+        startsAt: homeSectionForm.startsAt || undefined,
+        endsAt: homeSectionForm.endsAt || undefined,
+      };
+      const section = isEditing
+        ? await apiPut<JsonRecord>(`/api/admin/mall/home-sections/${homeSectionForm.id}`, payload)
+        : await apiPost<JsonRecord>('/api/admin/mall/home-sections', payload);
+
+      setData(current => ({
+        ...current,
+        mallHomeSections: upsertRecordList(current.mallHomeSections, section),
+      }));
+      resetHomeSectionForm(homeSectionForm.sectionType);
+      await reload();
+    });
+  };
+
+  const editHomeSection = (section: JsonRecord) => {
+    setHomeSectionForm(homeSectionToForm(section));
+  };
+
+  const updateHomeSectionStatus = async (id: string, status: string) => {
+    await runAction('首页专区状态更新', async () => {
+      await apiPut(`/api/admin/mall/home-sections/${id}`, { status });
+      setData(current => ({ ...current, mallHomeSections: updateRecordList(current.mallHomeSections, id, { status }) }));
+    });
+  };
+
+  const deleteHomeSection = async (id: string) => {
+    await runAction('首页专区配置删除', async () => {
+      await apiDelete(`/api/admin/mall/home-sections/${id}`);
+      setData(current => ({
+        ...current,
+        mallHomeSections: current.mallHomeSections.filter(section => stringValue(section, 'id') !== id),
+      }));
+      setHomeSectionForm(current => (current.id === id ? initialHomeSectionForm : current));
+      await reload();
+    });
+  };
+
   const saveSettings = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     await runAction('运营配置保存', async () => {
@@ -8007,6 +8377,14 @@ function App() {
     const nextModule = adminModules.find(module => module.key === moduleKey) || adminModules[0];
     setActiveModuleKey(nextModule.key);
     setActivePageKey(nextModule.pages[0].key);
+  };
+
+  const selectPage = (pageKey: string) => {
+    setActivePageKey(pageKey);
+    const homeSectionConfig = homeSectionPageConfigs[pageKey];
+    if (homeSectionConfig) {
+      resetHomeSectionForm(homeSectionConfig.sectionType);
+    }
   };
 
   const renderActivePage = () => {
@@ -8292,6 +8670,26 @@ function App() {
         />
       );
     }
+    if (homeSectionPageConfigs[activePageKey]) {
+      const config = homeSectionPageConfigs[activePageKey];
+      return (
+        <MallHomeSectionsSection
+          description={config.description}
+          form={homeSectionForm.sectionType === config.sectionType ? homeSectionForm : { ...initialHomeSectionForm, ...config.defaults, sectionType: config.sectionType }}
+          products={data.mallProducts}
+          sectionType={config.sectionType}
+          sections={data.mallHomeSections}
+          title={config.title}
+          onChange={patch => setHomeSectionForm(current => ({ ...current, ...patch, sectionType: config.sectionType }))}
+          onDelete={deleteHomeSection}
+          onEdit={editHomeSection}
+          onReset={() => resetHomeSectionForm(config.sectionType)}
+          onStatus={updateHomeSectionStatus}
+          onSubmit={saveHomeSection}
+          onUploadImage={uploadProductImage}
+        />
+      );
+    }
     if (activePageKey === 'mall.campaigns') {
       return (
         <MallCampaignsSection
@@ -8405,7 +8803,7 @@ function App() {
                   className={page.key === activePageKey ? 'nav-item active' : 'nav-item'}
                   key={page.key}
                   type="button"
-                  onClick={() => setActivePageKey(page.key)}
+                  onClick={() => selectPage(page.key)}
                 >
                   <Icon name={page.icon} />
                   <span>{page.label}</span>

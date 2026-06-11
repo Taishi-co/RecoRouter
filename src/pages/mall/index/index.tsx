@@ -5,9 +5,11 @@ import { Bell, Clock3, Flame, MapPin, Sparkles } from 'lucide-react-taro'
 import {
   addMallCartItem,
   listMallHomeBanners,
+  listMallHomeSections,
   listMallProducts,
   resolveMallImageUrl,
   type MallHomeBanner,
+  type MallHomeSection,
   type MallProduct,
 } from '@/services/mall'
 import {
@@ -64,7 +66,7 @@ const defaultBanners: MallHomeBanner[] = [
   },
 ]
 
-const announcements = [
+const defaultAnnouncements = [
   '今日到货提醒：草莓、鲜奶、鸡蛋 16:00 后可提',
   '配送时效调整：晚 6 点场预计 20:30 前到点',
   '售后通知：坏果、破损支持订单内一键申请',
@@ -74,6 +76,7 @@ const announcements = [
 export default function MallHome() {
   const [products, setProducts] = useState<MallProduct[]>([])
   const [homeBanners, setHomeBanners] = useState<MallHomeBanner[]>([])
+  const [homeSections, setHomeSections] = useState<MallHomeSection[]>([])
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
 
@@ -87,10 +90,23 @@ export default function MallHome() {
   }, [homeBanners])
   const primaryBanner = banners[0]
   const primaryBannerImageUrl = resolveMallImageUrl(primaryBanner?.imageUrl)
-  const flashSaleProducts = useMemo(() => pickFlashSaleProducts(products), [products])
-  const newArrivalProducts = useMemo(() => pickNewArrivalProducts(products), [products])
-  const bestSellerProducts = useMemo(() => pickBestSellerProducts(products), [products])
-  const countdown = useMemo(() => buildFlashCountdown(), [])
+  const announcements = useMemo(() => buildAnnouncements(homeSections), [homeSections])
+  const flashSaleSection = useMemo(() => firstHomeSection(homeSections, 'flash_sale'), [homeSections])
+  const newArrivalSection = useMemo(() => firstHomeSection(homeSections, 'new_arrival'), [homeSections])
+  const bestSellerSection = useMemo(() => firstHomeSection(homeSections, 'best_seller'), [homeSections])
+  const flashSaleProducts = useMemo(
+    () => resolveSectionProducts(products, flashSaleSection, pickFlashSaleProducts),
+    [products, flashSaleSection],
+  )
+  const newArrivalProducts = useMemo(
+    () => resolveSectionProducts(products, newArrivalSection, pickNewArrivalProducts),
+    [products, newArrivalSection],
+  )
+  const bestSellerProducts = useMemo(
+    () => resolveSectionProducts(products, bestSellerSection, pickBestSellerProducts),
+    [products, bestSellerSection],
+  )
+  const countdown = useMemo(() => buildFlashCountdown(numberArrayValue(flashSaleSection?.rules, 'sessions', [8, 18])), [flashSaleSection])
 
   const currentUser = () => Taro.getStorageSync('userInfo') as StoredUser | undefined
 
@@ -98,12 +114,14 @@ export default function MallHome() {
     setLoading(true)
     setLoadError('')
     try {
-      const [productData, bannerData] = await Promise.all([
+      const [productData, bannerData, sectionData] = await Promise.all([
         listMallProducts({}),
         listMallHomeBanners().catch(() => []),
+        listMallHomeSections().catch(() => []),
       ])
       setProducts(productData)
       setHomeBanners(bannerData)
+      setHomeSections(sectionData)
     } catch (error) {
       setProducts([])
       setLoadError(error instanceof Error ? error.message : '商品加载失败')
@@ -154,7 +172,7 @@ export default function MallHome() {
 
   return (
     <MallPage active="home">
-      <MallHomeFixedHeader banners={banners} primaryImageUrl={primaryBannerImageUrl} onBannerTap={openBanner} />
+      <MallHomeFixedHeader banners={banners} announcements={announcements} primaryImageUrl={primaryBannerImageUrl} onBannerTap={openBanner} />
 
       <View className="mall-v7-pickup-strip">
         <View>
@@ -172,9 +190,9 @@ export default function MallHome() {
           <View>
             <View className="mall-v7-title-with-icon">
               <Flame size={19} color="#FF8A1F" />
-              <Text className="mall-v7-section-title">秒杀专区</Text>
+              <Text className="mall-v7-section-title">{flashSaleSection?.title || '秒杀专区'}</Text>
             </View>
-            <Text className="mall-v7-section-subtitle">早 8 点 / 晚 6 点，每日两场</Text>
+            <Text className="mall-v7-section-subtitle">{flashSaleSection?.subtitle || '早 8 点 / 晚 6 点，每日两场'}</Text>
           </View>
           <View className="mall-v7-countdown">
             <Clock3 size={14} color="#FFFFFF" />
@@ -194,7 +212,7 @@ export default function MallHome() {
         </View>
       </View>
 
-      <MallSectionTitle title="新上专区" action="今日刚到" />
+      <MallSectionTitle title={newArrivalSection?.title || '新上专区'} action={newArrivalSection?.content || rulesStringValue(newArrivalSection?.rules, 'badge', '今日刚到')} />
       <View className="mall-v7-product-list">
         {newArrivalProducts.map((product) => (
           <MallDealProductCard
@@ -221,8 +239,8 @@ export default function MallHome() {
       </View>
 
       <MallSectionTitle
-        title="爆款推荐"
-        action="TOP10"
+        title={bestSellerSection?.title || '爆款推荐'}
+        action={bestSellerSection?.content || rulesStringValue(bestSellerSection?.rules, 'badgePrefix', 'TOP10')}
         onAction={() => Taro.navigateTo({ url: '/pages/mall/category/index?sort=bestSeller' })}
       />
       <View className="mall-v7-product-grid">
@@ -259,10 +277,12 @@ export default function MallHome() {
 
 function MallHomeFixedHeader({
   banners,
+  announcements,
   primaryImageUrl,
   onBannerTap,
 }: {
   banners: MallHomeBanner[]
+  announcements: string[]
   primaryImageUrl: string
   onBannerTap: (banner: MallHomeBanner) => void
 }) {
@@ -321,10 +341,58 @@ function pickBestSellerProducts(products: MallProduct[]) {
     .slice(0, 10)
 }
 
-function buildFlashCountdown() {
+function firstHomeSection(sections: MallHomeSection[], sectionType: string) {
+  return sections
+    .filter((section) => section.sectionType === sectionType && section.status !== 'draft')
+    .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))[0]
+}
+
+function buildAnnouncements(homeSections: MallHomeSection[]) {
+  const configured = homeSections
+    .filter((section) => section.sectionType === 'announcement' && section.status !== 'draft')
+    .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+    .map((section) => [section.title, section.content || section.subtitle].filter(Boolean).join('：'))
+    .filter(Boolean)
+  return configured.length ? configured : defaultAnnouncements
+}
+
+function resolveSectionProducts(
+  products: MallProduct[],
+  section: MallHomeSection | undefined,
+  fallbackPicker: (products: MallProduct[]) => MallProduct[],
+) {
+  const limit = numberRuleValue(section?.rules, 'displayLimit', fallbackPicker(products).length)
+  const configuredIds = Array.isArray(section?.productIds)
+    ? section.productIds.map((id) => String(id)).filter(Boolean)
+    : []
+  const configured = configuredIds
+    .map((id) => products.find((product) => product.id === id || product.sku === id))
+    .filter((product): product is MallProduct => Boolean(product))
+  const fallback = fallbackPicker(products).filter((product) => !configured.some((item) => item.id === product.id))
+  return [...configured, ...fallback].slice(0, limit)
+}
+
+function numberRuleValue(rules: Record<string, unknown> | undefined, key: string, fallback: number) {
+  const value = rules?.[key]
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
+}
+
+function rulesStringValue(rules: Record<string, unknown> | undefined, key: string, fallback: string) {
+  const value = rules?.[key]
+  return typeof value === 'string' && value.trim() ? value : fallback
+}
+
+function numberArrayValue(rules: Record<string, unknown> | undefined, key: string, fallback: number[]) {
+  const value = rules?.[key]
+  if (!Array.isArray(value)) return fallback
+  const parsed = value.map((item) => Number(item)).filter((item) => Number.isFinite(item) && item >= 0 && item < 24)
+  return parsed.length ? parsed : fallback
+}
+
+function buildFlashCountdown(sessions: number[] = [8, 18]) {
   const now = new Date()
-  const sessions = [8, 18]
-  const nextHour = sessions.find((hour) => now.getHours() < hour) || 32
+  const sortedSessions = [...sessions].sort((a, b) => a - b)
+  const nextHour = sortedSessions.find((hour) => now.getHours() < hour) ?? sortedSessions[0] + 24
   const target = new Date(now)
   if (nextHour >= 24) {
     target.setDate(target.getDate() + 1)

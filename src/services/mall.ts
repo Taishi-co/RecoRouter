@@ -63,6 +63,23 @@ export interface MallHomeBanner {
   endsAt?: string | null
 }
 
+export interface MallHomeSection {
+  id: string
+  sectionType: 'announcement' | 'flash_sale' | 'new_arrival' | 'best_seller' | string
+  title: string
+  subtitle?: string | null
+  content?: string | null
+  imageUrl?: string | null
+  linkType: string
+  linkTarget?: string | null
+  productIds?: string[]
+  rules?: Record<string, unknown>
+  sortOrder: number
+  status: string
+  startsAt?: string | null
+  endsAt?: string | null
+}
+
 export function resolveMallImageUrl(imageUrl?: string | null) {
   if (!imageUrl) return ''
   if (/^(https?:|data:|blob:)/.test(imageUrl)) return imageUrl
@@ -655,6 +672,10 @@ export async function listMallProducts(params: {
 
 export async function listMallHomeBanners(): Promise<MallHomeBanner[]> {
   return apiGet('/api/mall/home-banners')
+}
+
+export async function listMallHomeSections(): Promise<MallHomeSection[]> {
+  return apiGet('/api/mall/home-sections')
 }
 
 export async function getMallProduct(id: string): Promise<MallProduct> {

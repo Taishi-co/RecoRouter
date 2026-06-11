@@ -25,6 +25,7 @@ where
     Router::new()
         .route("/api/mall/categories", get(list_categories::<S>))
         .route("/api/mall/home-banners", get(list_home_banners::<S>))
+        .route("/api/mall/home-sections", get(list_home_sections::<S>))
         .route("/api/mall/products", get(list_products::<S>))
         .route("/api/mall/products/:id", get(get_product::<S>))
         .route("/api/mall/cart", get(get_cart::<S>))
@@ -228,6 +229,16 @@ where
         .route(
             "/api/admin/mall/home-banners/:id",
             get(admin_get_home_banner::<S>).put(admin_update_home_banner::<S>),
+        )
+        .route(
+            "/api/admin/mall/home-sections",
+            get(admin_list_home_sections::<S>).post(admin_create_home_section::<S>),
+        )
+        .route(
+            "/api/admin/mall/home-sections/:id",
+            get(admin_get_home_section::<S>)
+                .put(admin_update_home_section::<S>)
+                .delete(admin_delete_home_section::<S>),
         )
         .route(
             "/api/admin/mall/settings",
@@ -798,6 +809,41 @@ struct HomeBannerMutationRequest {
     #[serde(alias = "ends_at")]
     ends_at: Option<String>,
     metadata: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HomeSectionQuery {
+    keyword: Option<String>,
+    status: Option<String>,
+    #[serde(alias = "section_type")]
+    section_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HomeSectionMutationRequest {
+    #[serde(alias = "section_type")]
+    section_type: Option<String>,
+    title: Option<String>,
+    subtitle: Option<String>,
+    content: Option<String>,
+    #[serde(alias = "image_url")]
+    image_url: Option<String>,
+    #[serde(alias = "link_type")]
+    link_type: Option<String>,
+    #[serde(alias = "link_target")]
+    link_target: Option<String>,
+    #[serde(alias = "product_ids")]
+    product_ids: Option<Value>,
+    rules: Option<Value>,
+    #[serde(alias = "sort_order")]
+    sort_order: Option<i32>,
+    status: Option<String>,
+    #[serde(alias = "starts_at")]
+    starts_at: Option<String>,
+    #[serde(alias = "ends_at")]
+    ends_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3607,6 +3653,236 @@ where
     .ok_or_else(|| ApiError::NotFound("首页配置不存在".to_string()))?;
 
     Ok(ok("首页配置更新成功", banner))
+}
+
+async fn list_home_sections<S>(
+    State(state): State<AppState<S>>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let sections = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT home_section_json(s)
+        FROM mall_home_sections s
+        WHERE s.status = 'active'
+          AND (s.starts_at IS NULL OR s.starts_at <= now())
+          AND (s.ends_at IS NULL OR s.ends_at >= now())
+        ORDER BY s.section_type ASC, s.sort_order ASC, s.created_at DESC
+        "#,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(ok("查询成功", sections))
+}
+
+async fn admin_list_home_sections<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<HomeSectionQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let mut builder = QueryBuilder::<Postgres>::new(
+        "SELECT home_section_json(s) FROM mall_home_sections s WHERE 1 = 1",
+    );
+
+    if let Some(keyword) = query
+        .keyword
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        let pattern = format!("%{}%", keyword);
+        builder.push(" AND (lower(s.title) LIKE lower(");
+        builder.push_bind(pattern.clone());
+        builder.push(") OR lower(COALESCE(s.subtitle, '')) LIKE lower(");
+        builder.push_bind(pattern.clone());
+        builder.push(") OR lower(COALESCE(s.content, '')) LIKE lower(");
+        builder.push_bind(pattern);
+        builder.push("))");
+    }
+
+    if let Some(status) = query
+        .status
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        builder.push(" AND s.status = ");
+        builder.push_bind(status);
+    } else {
+        builder.push(" AND s.status <> 'deleted'");
+    }
+
+    if let Some(section_type) = query
+        .section_type
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        builder.push(" AND s.section_type = ");
+        builder.push_bind(section_type);
+    }
+
+    builder.push(" ORDER BY s.section_type ASC, s.sort_order ASC, s.created_at DESC LIMIT 200");
+    let sections = builder
+        .build_query_scalar::<Value>()
+        .fetch_all(&state.db)
+        .await?;
+
+    Ok(ok("查询成功", sections))
+}
+
+async fn admin_get_home_section<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let section = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT home_section_json(s)
+        FROM mall_home_sections s
+        WHERE s.id = $1
+        "#,
+    )
+    .bind(&id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("首页专区配置不存在".to_string()))?;
+
+    Ok(ok("查询成功", section))
+}
+
+async fn admin_create_home_section<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<HomeSectionMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let section_type = require_non_empty(body.section_type, "配置类型不能为空")?;
+    validate_home_section_type(&section_type)?;
+    let title = require_non_empty(body.title, "标题不能为空")?;
+    let link_type = non_empty(body.link_type).unwrap_or_else(|| "none".to_string());
+    validate_home_banner_link_type(&link_type)?;
+    validate_home_banner_status(body.status.as_deref().unwrap_or("draft"))?;
+
+    let section = sqlx::query_scalar::<_, Value>(
+        r#"
+        INSERT INTO mall_home_sections (
+          section_type, title, subtitle, content, image_url, link_type, link_target,
+          product_ids, rules, sort_order, status, starts_at, ends_at
+        )
+        VALUES (
+          $1, $2, $3, $4, $5, $6, $7,
+          COALESCE($8, '[]'::jsonb), COALESCE($9, '{}'::jsonb), COALESCE($10, 0), COALESCE($11, 'draft'),
+          $12::timestamptz, $13::timestamptz
+        )
+        RETURNING home_section_json(mall_home_sections)
+        "#,
+    )
+    .bind(section_type)
+    .bind(title)
+    .bind(non_empty(body.subtitle))
+    .bind(non_empty(body.content))
+    .bind(non_empty(body.image_url))
+    .bind(link_type)
+    .bind(non_empty(body.link_target))
+    .bind(body.product_ids)
+    .bind(body.rules)
+    .bind(body.sort_order)
+    .bind(body.status)
+    .bind(non_empty(body.starts_at))
+    .bind(non_empty(body.ends_at))
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(ok("首页专区配置创建成功", section))
+}
+
+async fn admin_update_home_section<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<HomeSectionMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    if let Some(section_type) = body.section_type.as_deref() {
+        validate_home_section_type(section_type)?;
+    }
+    if let Some(link_type) = body.link_type.as_deref() {
+        validate_home_banner_link_type(link_type)?;
+    }
+    if let Some(status) = body.status.as_deref() {
+        validate_home_banner_status(status)?;
+    }
+
+    let title = optional_non_empty(body.title, "标题不能为空")?;
+    let section = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_home_sections
+        SET section_type = COALESCE($2, section_type),
+            title = COALESCE($3, title),
+            subtitle = COALESCE($4, subtitle),
+            content = COALESCE($5, content),
+            image_url = COALESCE($6, image_url),
+            link_type = COALESCE($7, link_type),
+            link_target = COALESCE($8, link_target),
+            product_ids = COALESCE($9, product_ids),
+            rules = COALESCE($10, rules),
+            sort_order = COALESCE($11, sort_order),
+            status = COALESCE($12, status),
+            starts_at = COALESCE($13::timestamptz, starts_at),
+            ends_at = COALESCE($14::timestamptz, ends_at),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING home_section_json(mall_home_sections)
+        "#,
+    )
+    .bind(&id)
+    .bind(body.section_type)
+    .bind(title)
+    .bind(non_empty(body.subtitle))
+    .bind(non_empty(body.content))
+    .bind(non_empty(body.image_url))
+    .bind(body.link_type)
+    .bind(non_empty(body.link_target))
+    .bind(body.product_ids)
+    .bind(body.rules)
+    .bind(body.sort_order)
+    .bind(body.status)
+    .bind(non_empty(body.starts_at))
+    .bind(non_empty(body.ends_at))
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("首页专区配置不存在".to_string()))?;
+
+    Ok(ok("首页专区配置更新成功", section))
+}
+
+async fn admin_delete_home_section<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let section = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_home_sections
+        SET status = 'deleted', updated_at = now()
+        WHERE id = $1
+        RETURNING home_section_json(mall_home_sections)
+        "#,
+    )
+    .bind(&id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("首页专区配置不存在".to_string()))?;
+
+    Ok(ok("首页专区配置删除成功", section))
 }
 
 async fn get_operation_settings<S>(
@@ -7483,6 +7759,17 @@ fn validate_home_banner_status(status: &str) -> ApiResult<()> {
         Ok(())
     } else {
         Err(ApiError::BadRequest("首页配置状态不正确".to_string()))
+    }
+}
+
+fn validate_home_section_type(section_type: &str) -> ApiResult<()> {
+    if matches!(
+        section_type,
+        "announcement" | "flash_sale" | "new_arrival" | "best_seller"
+    ) {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest("首页专区类型不正确".to_string()))
     }
 }
 
