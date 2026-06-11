@@ -142,6 +142,13 @@ where
         .merge(demands::router::<S>())
         .merge(demand_templates::router::<S>())
         .merge(demand_schedules::router::<S>())
+        .merge(trips::router::<S>())
+        .merge(
+            trips::admin_router::<S>().route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                auth::admin_guard::<S>,
+            )),
+        )
 }
 
 fn mall_routes<S>(router: Router<AppState<S>>, state: &AppState<S>) -> Router<AppState<S>>
