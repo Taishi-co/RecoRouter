@@ -12,7 +12,7 @@ import {
   type MallDiscountBreakdown,
 } from '@/services/mall'
 import { startOrderPayment } from '@/services/payment'
-import { MallLocationStrip, MallPage, MallProductThumb, mallYuan } from '../mall-ui'
+import { MallLocationStrip, MallPage, MallProductThumb, mallWeightText, mallYuan } from '../mall-ui'
 import { redirectToMallAuth } from '../auth-route'
 
 interface StoredUser {
@@ -119,7 +119,14 @@ export default function MallConfirmPage() {
             </View>
             <View>
               <Text className="mall-v7-product-name">{item.product?.name || item.productName}</Text>
-              <Text className="mall-v7-product-subtitle">{item.product?.subtitle || item.sku || '后端结算明细'}</Text>
+              <Text className="mall-v7-product-subtitle">
+                {item.variantName || item.product?.specification || item.product?.subtitle || item.sku || '结算明细'}
+              </Text>
+              {item.pricingMode === 'weighed' ? (
+                <Text className="mall-v7-product-subtitle">
+                  预估 {mallWeightText(item.estimatedWeightGrams, item.weightUnitGrams || 500, item.weightUnitLabel || '斤')}，客服称重后确认最终金额
+                </Text>
+              ) : null}
               <Text className="mall-v7-confirm-price">
                 {mallYuan(item.discountedUnitPriceCents ?? item.unitPriceCents)} x {item.quantity}
               </Text>

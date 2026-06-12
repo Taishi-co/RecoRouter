@@ -15,6 +15,8 @@ use crate::{
 };
 
 const MAX_MALL_PRODUCT_IMAGE_BYTES: usize = 5 * 1024 * 1024;
+const MAX_PRODUCT_IMAGES: usize = 20;
+const MAX_PRODUCT_VARIANTS: usize = 50;
 const ALLOWED_MALL_PRODUCT_IMAGE_TYPES: &[&str] =
     &["image/jpeg", "image/png", "image/webp", "image/gif"];
 
@@ -191,6 +193,10 @@ where
         .route(
             "/api/admin/mall/orders/:id/status",
             put(admin_update_order_status::<S>),
+        )
+        .route(
+            "/api/admin/mall/orders/:id/weight-adjustment",
+            put(admin_update_order_weight_adjustment::<S>),
         )
         .route(
             "/api/admin/mall/orders/:id/refund",
@@ -540,6 +546,8 @@ struct UpsertCartItemRequest {
     user_id: String,
     #[serde(alias = "product_id")]
     product_id: String,
+    #[serde(alias = "variant_id")]
+    variant_id: Option<String>,
     quantity: i32,
     selected: Option<bool>,
 }
@@ -606,6 +614,8 @@ struct CreateMallCheckoutRequest {
     source: Option<String>,
     #[serde(alias = "product_id")]
     product_id: Option<String>,
+    #[serde(alias = "variant_id")]
+    variant_id: Option<String>,
     quantity: Option<i32>,
     #[serde(alias = "address_id")]
     address_id: Option<String>,
@@ -710,6 +720,8 @@ struct ProductMutationRequest {
     description: Option<String>,
     #[serde(alias = "image_url")]
     image_url: Option<String>,
+    images: Option<Vec<String>>,
+    variants: Option<Vec<ProductVariantMutation>>,
     specification: Option<String>,
     #[serde(alias = "sale_method")]
     sale_method: Option<String>,
@@ -744,6 +756,84 @@ struct ProductMutationRequest {
     delivery_minutes: Option<i32>,
     #[serde(alias = "cold_chain_required")]
     cold_chain_required: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProductVariantMutation {
+    id: Option<String>,
+    name: Option<String>,
+    sku: Option<String>,
+    specification: Option<String>,
+    #[serde(alias = "sale_method")]
+    sale_method: Option<String>,
+    #[serde(alias = "price_cents")]
+    price_cents: Option<i64>,
+    #[serde(alias = "original_price_cents")]
+    original_price_cents: Option<i64>,
+    #[serde(alias = "supply_price_cents")]
+    supply_price_cents: Option<i64>,
+    stock: Option<i32>,
+    #[serde(
+        alias = "minimumOrderQuantity",
+        alias = "minimum_order_quantity",
+        alias = "min_order_quantity"
+    )]
+    minimum_order_quantity: Option<i32>,
+    status: Option<String>,
+    #[serde(alias = "sort_order")]
+    sort_order: Option<i32>,
+    pricing_mode: Option<String>,
+    weight_unit: Option<String>,
+    weight_unit_label: Option<String>,
+    weight_unit_grams: Option<i32>,
+    weight_tolerance_bps: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProductVariant {
+    id: String,
+    name: String,
+    sku: String,
+    specification: String,
+    #[serde(alias = "sale_method")]
+    sale_method: String,
+    #[serde(alias = "price_cents")]
+    price_cents: i64,
+    #[serde(alias = "original_price_cents")]
+    original_price_cents: Option<i64>,
+    #[serde(alias = "supply_price_cents")]
+    supply_price_cents: Option<i64>,
+    stock: i32,
+    #[serde(alias = "minimum_order_quantity")]
+    minimum_order_quantity: i32,
+    status: String,
+    #[serde(alias = "sort_order")]
+    sort_order: i32,
+    #[serde(default = "default_product_variant_pricing_mode")]
+    pricing_mode: String,
+    #[serde(default = "default_product_variant_weight_unit")]
+    weight_unit: String,
+    #[serde(default = "default_product_variant_weight_unit_label")]
+    weight_unit_label: String,
+    #[serde(default = "default_product_variant_weight_unit_grams")]
+    weight_unit_grams: i32,
+    #[serde(default = "default_product_variant_weight_tolerance_bps")]
+    weight_tolerance_bps: i32,
+}
+
+#[derive(Debug, Clone)]
+struct ProductVariantDefaults {
+    sku: String,
+    specification: String,
+    sale_method: String,
+    price_cents: i64,
+    original_price_cents: Option<i64>,
+    supply_price_cents: Option<i64>,
+    stock: i32,
+    minimum_order_quantity: i32,
+    status: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -937,6 +1027,20 @@ struct UpdateOrderStatusRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct WeightAdjustmentRequest {
+    #[serde(alias = "item_id")]
+    item_id: String,
+    #[serde(alias = "actual_weight_grams")]
+    actual_weight_grams: Option<i32>,
+    #[serde(alias = "actual_weight_jin")]
+    actual_weight_jin: Option<f64>,
+    #[serde(alias = "adjusted_by")]
+    adjusted_by: Option<String>,
+    note: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RefundRequest {
     #[serde(alias = "amount_cents")]
     amount_cents: Option<i64>,
@@ -1025,6 +1129,8 @@ struct KnowledgeMutationRequest {
 #[derive(Debug, FromRow)]
 struct CartProductRow {
     product_id: String,
+    variant_id: String,
+    variant_name: String,
     sku: String,
     name: String,
     category_code: Option<String>,
@@ -1032,6 +1138,11 @@ struct CartProductRow {
     price_cents: i64,
     stock: i32,
     quantity: i32,
+    pricing_mode: String,
+    weight_unit: String,
+    weight_unit_label: String,
+    weight_unit_grams: i32,
+    weight_tolerance_bps: i32,
 }
 
 #[derive(Debug, FromRow)]
@@ -1040,9 +1151,31 @@ struct CheckoutRow {
     user_id: String,
     source: String,
     product_id: Option<String>,
+    variant_id: Option<String>,
     quantity: i32,
     address_id: Option<String>,
     pickup_point_id: Option<String>,
+}
+
+#[derive(Debug, FromRow)]
+struct WeightAdjustmentItemRow {
+    id: String,
+    product_name: String,
+    unit_price_cents: i64,
+    line_total_cents: i64,
+    estimated_line_total_cents: Option<i64>,
+    pricing_mode: String,
+    weight_unit_grams: Option<i32>,
+    weight_unit_label: Option<String>,
+}
+
+#[derive(Debug, FromRow)]
+struct WeightAdjustmentOrderRow {
+    subtotal_cents: i64,
+    delivery_fee_cents: i64,
+    coupon_cents: i64,
+    payable_cents: i64,
+    estimated_payable_cents: Option<i64>,
 }
 
 #[derive(Debug, FromRow)]
@@ -1492,20 +1625,29 @@ where
     S: Storage,
 {
     validate_quantity(body.quantity)?;
-    ensure_product_can_sell(&state.db, &body.product_id, body.quantity).await?;
+    let variant = ensure_product_variant_can_sell(
+        &state.db,
+        &body.product_id,
+        body.variant_id.as_deref(),
+        body.quantity,
+    )
+    .await?;
 
     let item = sqlx::query_scalar::<_, Value>(
         r#"
-        INSERT INTO mall_cart_items (user_id, product_id, quantity, selected)
-        VALUES ($1, $2, $3, COALESCE($4, true))
-        ON CONFLICT (user_id, product_id)
+        INSERT INTO mall_cart_items (user_id, product_id, variant_id, variant_name, quantity, selected)
+        VALUES ($1, $2, $3, $4, $5, COALESCE($6, true))
+        ON CONFLICT (user_id, product_id, variant_id)
         DO UPDATE SET quantity = mall_cart_items.quantity + EXCLUDED.quantity,
+                      variant_name = EXCLUDED.variant_name,
                       selected = EXCLUDED.selected,
                       updated_at = now()
         RETURNING jsonb_build_object(
           'id', mall_cart_items.id,
           'userId', mall_cart_items.user_id,
           'productId', mall_cart_items.product_id,
+          'variantId', mall_cart_items.variant_id,
+          'variantName', mall_cart_items.variant_name,
           'quantity', mall_cart_items.quantity,
           'selected', mall_cart_items.selected
         )
@@ -1513,6 +1655,8 @@ where
     )
     .bind(body.user_id)
     .bind(body.product_id)
+    .bind(variant.id)
+    .bind(variant.name)
     .bind(body.quantity)
     .bind(body.selected)
     .fetch_one(&state.db)
@@ -1531,13 +1675,14 @@ where
 {
     if let Some(quantity) = body.quantity {
         validate_quantity(quantity)?;
-        let product_id: String =
-            sqlx::query_scalar("SELECT product_id FROM mall_cart_items WHERE id = $1")
+        let (product_id, variant_id): (String, String) =
+            sqlx::query_as("SELECT product_id, variant_id FROM mall_cart_items WHERE id = $1")
                 .bind(&id)
                 .fetch_optional(&state.db)
                 .await?
                 .ok_or_else(|| ApiError::NotFound("购物车项不存在".to_string()))?;
-        ensure_product_can_sell(&state.db, &product_id, quantity).await?;
+        ensure_product_variant_can_sell(&state.db, &product_id, Some(&variant_id), quantity)
+            .await?;
     }
 
     let item = sqlx::query_scalar::<_, Value>(
@@ -1551,6 +1696,8 @@ where
           'id', id,
           'userId', user_id,
           'productId', product_id,
+          'variantId', variant_id,
+          'variantName', variant_name,
           'quantity', quantity,
           'selected', selected
         )
@@ -1599,21 +1746,28 @@ where
         let product_id = product_id
             .as_deref()
             .ok_or_else(|| ApiError::BadRequest("直购商品不能为空".to_string()))?;
-        ensure_product_can_sell(&state.db, product_id, quantity).await?;
+        ensure_product_variant_can_sell(
+            &state.db,
+            product_id,
+            body.variant_id.as_deref(),
+            quantity,
+        )
+        .await?;
     }
 
     let checkout_id = sqlx::query_scalar::<_, String>(
         r#"
         INSERT INTO mall_checkouts (
-          user_id, source, product_id, quantity, address_id, pickup_point_id, expires_at
+          user_id, source, product_id, variant_id, quantity, address_id, pickup_point_id, expires_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, now() + interval '30 minutes')
+        VALUES ($1, $2, $3, $4, $5, $6, $7, now() + interval '30 minutes')
         RETURNING id
         "#,
     )
     .bind(&body.user_id)
     .bind(source)
     .bind(product_id)
+    .bind(non_empty(body.variant_id))
     .bind(quantity)
     .bind(non_empty(body.address_id))
     .bind(non_empty(body.pickup_point_id))
@@ -2492,6 +2646,12 @@ where
     if payable_cents <= 0 {
         return Err(ApiError::BadRequest("订单金额必须大于0".to_string()));
     }
+    let has_weighted_items = cart_items.iter().any(|item| item.pricing_mode == "weighed");
+    let weight_adjustment_status = if has_weighted_items {
+        "pending"
+    } else {
+        "none"
+    };
 
     let mut tx = state.db.begin().await?;
     let order_no = new_mall_order_no();
@@ -2523,9 +2683,10 @@ where
           order_no, user_id, address_id, pickup_point_id, recipient_name, recipient_phone, address_text,
           latitude, longitude, delivery_method, pickup_method, expected_delivery_window,
           subtotal_cents, delivery_fee_cents, coupon_cents, payable_cents,
-          cabin_code, remark, waypoints, origin_latitude, origin_longitude, origin_address
+          cabin_code, remark, waypoints, origin_latitude, origin_longitude, origin_address,
+          estimated_payable_cents, weight_adjustment_status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::numeric, $9::numeric, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20::numeric, $21::numeric, $22)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::numeric, $9::numeric, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20::numeric, $21::numeric, $22, $23, $24)
         RETURNING id
         "#,
     )
@@ -2551,22 +2712,34 @@ where
     .bind(body.origin_latitude.clone())
     .bind(body.origin_longitude.clone())
     .bind(body.origin_address.clone())
+    .bind(payable_cents)
+    .bind(weight_adjustment_status)
     .fetch_one(&mut *tx)
     .await?;
 
     for item in &cart_items {
         let line_total = item.price_cents * i64::from(item.quantity);
+        let estimated_weight_grams = estimated_weight_grams_for_item(item);
+        let item_weight_adjustment_status = if item.pricing_mode == "weighed" {
+            "pending"
+        } else {
+            "none"
+        };
         sqlx::query(
             r#"
             INSERT INTO mall_order_items (
-              order_id, product_id, sku, product_name, category_code, image_url,
-              unit_price_cents, quantity, line_total_cents
+              order_id, product_id, variant_id, variant_name, sku, product_name, category_code, image_url,
+              unit_price_cents, quantity, line_total_cents, estimated_line_total_cents,
+              pricing_mode, estimated_weight_grams, weight_unit, weight_unit_label, weight_unit_grams,
+              weight_tolerance_bps, weight_adjustment_status
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
             "#,
         )
         .bind(&order_id)
         .bind(&item.product_id)
+        .bind(&item.variant_id)
+        .bind(&item.variant_name)
         .bind(&item.sku)
         .bind(&item.name)
         .bind(&item.category_code)
@@ -2574,6 +2747,14 @@ where
         .bind(item.price_cents)
         .bind(item.quantity)
         .bind(line_total)
+        .bind(line_total)
+        .bind(&item.pricing_mode)
+        .bind(estimated_weight_grams)
+        .bind(&item.weight_unit)
+        .bind(&item.weight_unit_label)
+        .bind(item.weight_unit_grams)
+        .bind(item.weight_tolerance_bps)
+        .bind(item_weight_adjustment_status)
         .execute(&mut *tx)
         .await?;
 
@@ -2582,12 +2763,26 @@ where
             UPDATE mall_products
             SET stock = GREATEST(stock - $2, 0),
                 sold_count = sold_count + $2,
+                variants = (
+                  SELECT COALESCE(jsonb_agg(
+                    CASE WHEN variant.value->>'id' = $3 THEN
+                      jsonb_set(
+                        variant.value,
+                        '{stock}',
+                        to_jsonb(GREATEST(((variant.value->>'stock')::integer - $2), 0))
+                      )
+                    ELSE variant.value END
+                    ORDER BY variant.ordinality
+                  ), variants)
+                  FROM jsonb_array_elements(variants) WITH ORDINALITY AS variant(value, ordinality)
+                ),
                 updated_at = now()
             WHERE id = $1
             "#,
         )
         .bind(&item.product_id)
         .bind(item.quantity)
+        .bind(&item.variant_id)
         .execute(&mut *tx)
         .await?;
     }
@@ -2839,6 +3034,7 @@ where
     }
     let minimum_order_quantity = body.minimum_order_quantity.unwrap_or(1);
     validate_positive_i32(minimum_order_quantity, "最小起订量必须大于0")?;
+    let product_status = body.status.clone().unwrap_or_else(|| "on_sale".to_string());
     ensure_category(&state.db, &category_code).await?;
     let tags = serde_json::to_value(body.tags.unwrap_or_default())
         .map_err(|err| ApiError::BadRequest(err.to_string()))?;
@@ -2848,20 +3044,40 @@ where
     validate_optional_non_negative_f64(body.height_cm, "高不能小于0")?;
     validate_optional_non_negative_f64(body.volume_liters, "体积不能小于0")?;
     validate_optional_non_negative_f64(body.weight_kg, "重量不能小于0")?;
+    let product_images =
+        normalize_product_images(body.image_url.as_deref(), body.images.as_deref())?;
+    let primary_image_url = primary_product_image_url(body.image_url.as_deref(), &product_images);
+    let product_images_json = json!(product_images);
+    let variant_defaults = ProductVariantDefaults {
+        sku: sku.clone(),
+        specification: specification.clone(),
+        sale_method: sale_method.clone(),
+        price_cents,
+        original_price_cents: body.original_price_cents,
+        supply_price_cents: Some(supply_price_cents),
+        stock,
+        minimum_order_quantity,
+        status: product_status.clone(),
+    };
+    let variants = normalize_product_variants(body.variants.as_deref(), &variant_defaults)?;
+    let display_variant = display_product_variant(&variants);
+    let variant_stock = total_product_variant_stock(&variants);
+    let variants_json =
+        serde_json::to_value(&variants).map_err(|err| ApiError::BadRequest(err.to_string()))?;
 
     let product_id = sqlx::query_scalar::<_, String>(
         r#"
         INSERT INTO mall_products (
-          category_id, category_code, sku, name, subtitle, description, image_url, specification, sale_method,
+          category_id, category_code, sku, name, subtitle, description, image_url, images, variants, specification, sale_method,
           supply_price_cents, price_cents, original_price_cents, stock, status, tags, delivery_minutes,
           cold_chain_required, length_cm, width_cm, height_cm, volume_liters,
           weight_kg, stock_alert_threshold, minimum_order_quantity
         )
         VALUES (
           (SELECT id FROM mall_categories WHERE code = $1),
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-          COALESCE($13, 'on_sale'), $14, COALESCE($15, 18), COALESCE($16, false),
-          $17, $18, $19, $20, $21, COALESCE($22, 15), $23
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+          $15, $16, COALESCE($17, 18), COALESCE($18, false),
+          $19, $20, $21, $22, $23, COALESCE($24, 15), $25
         )
         RETURNING id
         "#,
@@ -2871,14 +3087,16 @@ where
     .bind(name)
     .bind(body.subtitle)
     .bind(body.description)
-    .bind(body.image_url)
-    .bind(specification)
-    .bind(sale_method)
-    .bind(supply_price_cents)
-    .bind(price_cents)
-    .bind(body.original_price_cents)
-    .bind(stock)
-    .bind(body.status)
+    .bind(primary_image_url)
+    .bind(product_images_json)
+    .bind(variants_json)
+    .bind(&display_variant.specification)
+    .bind(&display_variant.sale_method)
+    .bind(display_variant.supply_price_cents)
+    .bind(display_variant.price_cents)
+    .bind(display_variant.original_price_cents)
+    .bind(variant_stock)
+    .bind(product_status)
     .bind(tags)
     .bind(body.delivery_minutes)
     .bind(body.cold_chain_required)
@@ -2888,7 +3106,7 @@ where
     .bind(body.volume_liters)
     .bind(body.weight_kg)
     .bind(body.stock_alert_threshold)
-    .bind(minimum_order_quantity)
+    .bind(display_variant.minimum_order_quantity)
     .fetch_one(&state.db)
     .await?;
 
@@ -2908,8 +3126,8 @@ where
     if let Some(category_code) = body.category_code.as_deref() {
         ensure_category(&state.db, category_code).await?;
     }
-    let specification = optional_non_empty(body.specification, "规格不能为空")?;
-    let sale_method = optional_non_empty(body.sale_method, "售卖方式不能为空")?;
+    let mut specification = optional_non_empty(body.specification, "规格不能为空")?;
+    let mut sale_method = optional_non_empty(body.sale_method, "售卖方式不能为空")?;
     validate_optional_non_negative_i64(body.supply_price_cents, "供货价不能小于0")?;
     validate_optional_non_negative_i32(body.stock_alert_threshold, "库存预警阈值不能小于0")?;
     validate_optional_non_negative_f64(body.length_cm, "长不能小于0")?;
@@ -2920,6 +3138,62 @@ where
     if let Some(minimum_order_quantity) = body.minimum_order_quantity {
         validate_positive_i32(minimum_order_quantity, "最小起订量必须大于0")?;
     }
+    let image_url_provided = normalize_product_image_value(body.image_url.as_deref()).is_some();
+    let replace_image_url = body.images.is_some();
+    let product_images = if body.images.is_some() || image_url_provided {
+        Some(normalize_product_images(
+            body.image_url.as_deref(),
+            body.images.as_deref(),
+        )?)
+    } else {
+        None
+    };
+    let primary_image_url = product_images
+        .as_ref()
+        .and_then(|images| primary_product_image_url(body.image_url.as_deref(), images));
+    let product_images_json = product_images.as_ref().map(|images| json!(images));
+    let mut supply_price_cents = body.supply_price_cents;
+    let mut price_cents = body.price_cents;
+    let mut original_price_cents = body.original_price_cents;
+    let mut stock = body.stock;
+    let mut minimum_order_quantity = body.minimum_order_quantity;
+    let variants_json = if let Some(variants) = body.variants.as_deref() {
+        let variant_defaults = ProductVariantDefaults {
+            sku: body
+                .sku
+                .clone()
+                .unwrap_or_else(|| format!("{}-DEFAULT", id)),
+            specification: specification
+                .clone()
+                .or_else(|| body.subtitle.clone())
+                .unwrap_or_else(|| "默认规格".to_string()),
+            sale_method: sale_method
+                .clone()
+                .or_else(|| specification.clone())
+                .unwrap_or_else(|| "按份".to_string()),
+            price_cents: body.price_cents.unwrap_or(0),
+            original_price_cents: body.original_price_cents,
+            supply_price_cents: body.supply_price_cents,
+            stock: body.stock.unwrap_or(0),
+            minimum_order_quantity: body.minimum_order_quantity.unwrap_or(1),
+            status: body.status.clone().unwrap_or_else(|| "on_sale".to_string()),
+        };
+        let normalized_variants = normalize_product_variants(Some(variants), &variant_defaults)?;
+        let display_variant = display_product_variant(&normalized_variants);
+        specification = Some(display_variant.specification.clone());
+        sale_method = Some(display_variant.sale_method.clone());
+        supply_price_cents = display_variant.supply_price_cents;
+        price_cents = Some(display_variant.price_cents);
+        original_price_cents = display_variant.original_price_cents;
+        stock = Some(total_product_variant_stock(&normalized_variants));
+        minimum_order_quantity = Some(display_variant.minimum_order_quantity);
+        Some(
+            serde_json::to_value(&normalized_variants)
+                .map_err(|err| ApiError::BadRequest(err.to_string()))?,
+        )
+    } else {
+        None
+    };
     let tags = match body.tags {
         Some(tags) => {
             Some(serde_json::to_value(tags).map_err(|err| ApiError::BadRequest(err.to_string()))?)
@@ -2935,24 +3209,26 @@ where
             name = COALESCE($4, name),
             subtitle = COALESCE($5, subtitle),
             description = COALESCE($6, description),
-            image_url = COALESCE($7, image_url),
-            specification = COALESCE($8, specification),
-            sale_method = COALESCE($9, sale_method),
-            supply_price_cents = COALESCE($10, supply_price_cents),
-            price_cents = COALESCE($11, price_cents),
-            original_price_cents = COALESCE($12, original_price_cents),
-            stock = COALESCE($13, stock),
-            status = COALESCE($14, status),
-            tags = COALESCE($15, tags),
-            delivery_minutes = COALESCE($16, delivery_minutes),
-            cold_chain_required = COALESCE($17, cold_chain_required),
-            length_cm = COALESCE($18, length_cm),
-            width_cm = COALESCE($19, width_cm),
-            height_cm = COALESCE($20, height_cm),
-            volume_liters = COALESCE($21, volume_liters),
-            weight_kg = COALESCE($22, weight_kg),
-            stock_alert_threshold = COALESCE($23, stock_alert_threshold),
-            minimum_order_quantity = COALESCE($24, minimum_order_quantity),
+            image_url = CASE WHEN $26 THEN $7 ELSE COALESCE($7, image_url) END,
+            images = COALESCE($8, images),
+            variants = COALESCE($27, variants),
+            specification = COALESCE($9, specification),
+            sale_method = COALESCE($10, sale_method),
+            supply_price_cents = COALESCE($11, supply_price_cents),
+            price_cents = COALESCE($12, price_cents),
+            original_price_cents = COALESCE($13, original_price_cents),
+            stock = COALESCE($14, stock),
+            status = COALESCE($15, status),
+            tags = COALESCE($16, tags),
+            delivery_minutes = COALESCE($17, delivery_minutes),
+            cold_chain_required = COALESCE($18, cold_chain_required),
+            length_cm = COALESCE($19, length_cm),
+            width_cm = COALESCE($20, width_cm),
+            height_cm = COALESCE($21, height_cm),
+            volume_liters = COALESCE($22, volume_liters),
+            weight_kg = COALESCE($23, weight_kg),
+            stock_alert_threshold = COALESCE($24, stock_alert_threshold),
+            minimum_order_quantity = COALESCE($25, minimum_order_quantity),
             updated_at = now()
         WHERE id = $1
         RETURNING id
@@ -2964,13 +3240,14 @@ where
     .bind(body.name)
     .bind(body.subtitle)
     .bind(body.description)
-    .bind(body.image_url)
+    .bind(primary_image_url)
+    .bind(product_images_json)
     .bind(specification)
     .bind(sale_method)
-    .bind(body.supply_price_cents)
-    .bind(body.price_cents)
-    .bind(body.original_price_cents)
-    .bind(body.stock)
+    .bind(supply_price_cents)
+    .bind(price_cents)
+    .bind(original_price_cents)
+    .bind(stock)
     .bind(body.status)
     .bind(tags)
     .bind(body.delivery_minutes)
@@ -2981,7 +3258,9 @@ where
     .bind(body.volume_liters)
     .bind(body.weight_kg)
     .bind(body.stock_alert_threshold)
-    .bind(body.minimum_order_quantity)
+    .bind(minimum_order_quantity)
+    .bind(replace_image_url)
+    .bind(variants_json)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| ApiError::NotFound("商品不存在".to_string()))?;
@@ -3075,6 +3354,20 @@ where
     .await?;
 
     Ok(ok("状态更新成功", order))
+}
+
+async fn admin_update_order_weight_adjustment<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<WeightAdjustmentRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    apply_weight_adjustment(&state.db, &id, body).await?;
+    let mut order = fetch_order_detail(&state.db, &id).await?;
+    resolve_mall_image_urls(&state.storage, &mut order).await?;
+    Ok(ok("称重改价成功", order))
 }
 
 async fn admin_refund_order<S>(
@@ -5494,13 +5787,28 @@ fn collect_image_url_paths(
         Value::Object(object) => {
             for (key, child) in object {
                 current_path.push(JsonPathSegment::Key(key.clone()));
-                if key == "imageUrl"
-                    && child
+                if key == "imageUrl" {
+                    if child
                         .as_str()
                         .map(str::trim)
                         .is_some_and(should_resolve_mall_image_url)
-                {
-                    paths.push(current_path.clone());
+                    {
+                        paths.push(current_path.clone());
+                    }
+                } else if key == "images" {
+                    if let Value::Array(images) = child {
+                        for (index, image) in images.iter().enumerate() {
+                            if image
+                                .as_str()
+                                .map(str::trim)
+                                .is_some_and(should_resolve_mall_image_url)
+                            {
+                                let mut image_path = current_path.clone();
+                                image_path.push(JsonPathSegment::Index(index));
+                                paths.push(image_path);
+                            }
+                        }
+                    }
                 }
                 collect_image_url_paths(child, current_path, paths);
                 current_path.pop();
@@ -5644,6 +5952,14 @@ fn normalize_product_sort(value: &str) -> ApiResult<String> {
         "" | "default" | "comprehensive" | "综合" => Ok("default".to_string()),
         "priceAsc" | "price_asc" => Ok("price_asc".to_string()),
         "priceDesc" | "price_desc" => Ok("price_desc".to_string()),
+        "updatedDesc" | "updated_desc" | "recent" | "recentlyEdited" | "recently_edited" => {
+            Ok("updated_desc".to_string())
+        }
+        "updatedAsc" | "updated_asc" => Ok("updated_asc".to_string()),
+        "nameAsc" | "name_asc" => Ok("name_asc".to_string()),
+        "nameDesc" | "name_desc" => Ok("name_desc".to_string()),
+        "categoryAsc" | "category_asc" => Ok("category_asc".to_string()),
+        "categoryDesc" | "category_desc" => Ok("category_desc".to_string()),
         "newest" | "dateDesc" | "date_desc" | "createdDesc" | "created_desc" => {
             Ok("newest".to_string())
         }
@@ -5734,6 +6050,24 @@ fn push_product_order(builder: &mut QueryBuilder<Postgres>, sort_key: &str) {
         }
         "price_desc" => {
             builder.push(" ORDER BY p.price_cents DESC, p.sort_order ASC, p.created_at DESC");
+        }
+        "updated_desc" => {
+            builder.push(" ORDER BY p.updated_at DESC, p.created_at DESC");
+        }
+        "updated_asc" => {
+            builder.push(" ORDER BY p.updated_at ASC, p.created_at ASC");
+        }
+        "name_asc" => {
+            builder.push(" ORDER BY p.name ASC, p.sort_order ASC, p.updated_at DESC");
+        }
+        "name_desc" => {
+            builder.push(" ORDER BY p.name DESC, p.sort_order ASC, p.updated_at DESC");
+        }
+        "category_asc" => {
+            builder.push(" ORDER BY c.name ASC NULLS LAST, p.category_code ASC, p.sort_order ASC, p.updated_at DESC");
+        }
+        "category_desc" => {
+            builder.push(" ORDER BY c.name DESC NULLS LAST, p.category_code DESC, p.sort_order ASC, p.updated_at DESC");
         }
         "newest" => {
             builder.push(" ORDER BY p.created_at DESC, p.sort_order ASC");
@@ -6462,6 +6796,13 @@ fn strip_public_product_specs(product: &mut Value) {
         ] {
             object.remove(key);
         }
+        if let Some(variants) = object.get_mut("variants").and_then(Value::as_array_mut) {
+            for variant in variants {
+                if let Some(variant_object) = variant.as_object_mut() {
+                    variant_object.remove("supplyPriceCents");
+                }
+            }
+        }
     }
 }
 
@@ -6487,6 +6828,146 @@ mod product_listing_query_tests {
                 "{activity_type} filter should match against jsonb tag text"
             );
         }
+    }
+
+    #[test]
+    fn product_image_gallery_is_limited_to_twenty_images() {
+        let images = (0..=MAX_PRODUCT_IMAGES)
+            .map(|index| format!("mall-products/{index}.jpeg"))
+            .collect::<Vec<_>>();
+
+        let error = normalize_product_images(None, Some(&images))
+            .expect_err("more than 20 product images should fail");
+
+        assert!(error.to_string().contains("最多上传 20 张图片"));
+    }
+
+    #[test]
+    fn product_image_gallery_keeps_primary_image_first() {
+        let images = vec![
+            "mall-products/detail-1.jpeg".to_string(),
+            "mall-products/main.jpeg".to_string(),
+            "  ".to_string(),
+        ];
+
+        let normalized = normalize_product_images(Some("mall-products/main.jpeg"), Some(&images))
+            .expect("valid image gallery should normalize");
+
+        assert_eq!(
+            normalized,
+            vec![
+                "mall-products/main.jpeg".to_string(),
+                "mall-products/detail-1.jpeg".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn product_variants_default_to_legacy_product_fields() {
+        let defaults = ProductVariantDefaults {
+            sku: "SKU-1".to_string(),
+            specification: "330ml/瓶".to_string(),
+            sale_method: "1瓶".to_string(),
+            price_cents: 300,
+            original_price_cents: Some(350),
+            supply_price_cents: Some(180),
+            stock: 120,
+            minimum_order_quantity: 1,
+            status: "on_sale".to_string(),
+        };
+
+        let variants = normalize_product_variants(None, &defaults)
+            .expect("legacy single-spec product should produce a default variant");
+
+        assert_eq!(variants[0].id, "default");
+        assert_eq!(variants[0].name, "1瓶");
+        assert_eq!(variants[0].price_cents, 300);
+        assert_eq!(variants[0].stock, 120);
+        assert_eq!(variants[0].pricing_mode, "fixed");
+    }
+
+    #[test]
+    fn product_variants_are_limited() {
+        let defaults = ProductVariantDefaults {
+            sku: "SKU-1".to_string(),
+            specification: "默认规格".to_string(),
+            sale_method: "按份".to_string(),
+            price_cents: 100,
+            original_price_cents: None,
+            supply_price_cents: None,
+            stock: 1,
+            minimum_order_quantity: 1,
+            status: "on_sale".to_string(),
+        };
+        let variants = (0..=MAX_PRODUCT_VARIANTS)
+            .map(|index| ProductVariantMutation {
+                id: Some(format!("v-{index}")),
+                name: Some(format!("规格{index}")),
+                sku: None,
+                specification: None,
+                sale_method: None,
+                price_cents: None,
+                original_price_cents: None,
+                supply_price_cents: None,
+                stock: None,
+                minimum_order_quantity: None,
+                status: None,
+                sort_order: None,
+                pricing_mode: None,
+                weight_unit: None,
+                weight_unit_label: None,
+                weight_unit_grams: None,
+                weight_tolerance_bps: None,
+            })
+            .collect::<Vec<_>>();
+
+        let error = normalize_product_variants(Some(&variants), &defaults)
+            .expect_err("more than the variant limit should fail");
+
+        assert!(error.to_string().contains("最多配置 50 个规格"));
+    }
+
+    #[test]
+    fn weighted_product_variant_keeps_weight_pricing_fields() {
+        let defaults = ProductVariantDefaults {
+            sku: "WATERMELON".to_string(),
+            specification: "约30斤".to_string(),
+            sale_method: "按斤".to_string(),
+            price_cents: 1000,
+            original_price_cents: None,
+            supply_price_cents: None,
+            stock: 200,
+            minimum_order_quantity: 30,
+            status: "on_sale".to_string(),
+        };
+        let variants = vec![ProductVariantMutation {
+            id: Some("by-jin".to_string()),
+            name: Some("按斤称重".to_string()),
+            sku: None,
+            specification: None,
+            sale_method: Some("按斤".to_string()),
+            price_cents: Some(1000),
+            original_price_cents: None,
+            supply_price_cents: None,
+            stock: Some(200),
+            minimum_order_quantity: Some(30),
+            status: Some("on_sale".to_string()),
+            sort_order: Some(1),
+            pricing_mode: Some("weighed".to_string()),
+            weight_unit: Some("jin".to_string()),
+            weight_unit_label: Some("斤".to_string()),
+            weight_unit_grams: Some(500),
+            weight_tolerance_bps: Some(800),
+        }];
+
+        let normalized = normalize_product_variants(Some(&variants), &defaults)
+            .expect("weighted variant should normalize");
+
+        assert_eq!(normalized[0].pricing_mode, "weighed");
+        assert_eq!(normalized[0].weight_unit_label, "斤");
+        assert_eq!(normalized[0].weight_unit_grams, 500);
+        assert_eq!(normalized[0].weight_tolerance_bps, 800);
+        assert_eq!(weighed_line_total_cents(1000, 15_050, 500), 30_100);
     }
 }
 
@@ -6538,14 +7019,43 @@ async fn cart_payload(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
           'id', ci.id,
           'userId', ci.user_id,
           'productId', ci.product_id,
+          'variantId', ci.variant_id,
+          'variantName', COALESCE(ci.variant_name, variant.value->>'name'),
           'quantity', ci.quantity,
           'selected', ci.selected,
-          'product', product_json(p, c.name),
-          'lineTotalCents', p.price_cents * ci.quantity
+          'product', product_json(p, c.name) || jsonb_build_object(
+            'selectedVariantId', ci.variant_id,
+            'priceCents', COALESCE((variant.value->>'priceCents')::bigint, p.price_cents),
+            'originalPriceCents', COALESCE((variant.value->>'originalPriceCents')::bigint, p.original_price_cents),
+            'stock', COALESCE((variant.value->>'stock')::integer, p.stock),
+            'specification', COALESCE(variant.value->>'specification', p.specification),
+            'saleMethod', COALESCE(variant.value->>'saleMethod', p.sale_method),
+            'pricingMode', COALESCE(variant.value->>'pricingMode', 'fixed'),
+            'weightUnit', COALESCE(variant.value->>'weightUnit', 'jin'),
+            'weightUnitLabel', COALESCE(variant.value->>'weightUnitLabel', '斤'),
+            'weightUnitGrams', COALESCE((variant.value->>'weightUnitGrams')::integer, 500),
+            'weightToleranceBps', COALESCE((variant.value->>'weightToleranceBps')::integer, 500)
+          ),
+          'lineTotalCents', COALESCE((variant.value->>'priceCents')::bigint, p.price_cents) * ci.quantity,
+          'pricingMode', COALESCE(variant.value->>'pricingMode', 'fixed'),
+          'estimatedWeightGrams', CASE
+            WHEN COALESCE(variant.value->>'pricingMode', 'fixed') = 'weighed'
+            THEN ci.quantity * COALESCE((variant.value->>'weightUnitGrams')::integer, 500)
+            ELSE NULL
+          END,
+          'weightUnitLabel', COALESCE(variant.value->>'weightUnitLabel', '斤'),
+          'weightUnitGrams', COALESCE((variant.value->>'weightUnitGrams')::integer, 500),
+          'weightToleranceBps', COALESCE((variant.value->>'weightToleranceBps')::integer, 500)
         )
         FROM mall_cart_items ci
         JOIN mall_products p ON p.id = ci.product_id
         LEFT JOIN mall_categories c ON c.code = p.category_code
+        LEFT JOIN LATERAL (
+          SELECT item.value
+          FROM jsonb_array_elements(COALESCE(p.variants, '[]'::jsonb)) AS item(value)
+          WHERE item.value->>'id' = ci.variant_id
+          LIMIT 1
+        ) variant ON true
         WHERE ci.user_id = $1
         ORDER BY ci.created_at DESC
         "#,
@@ -6621,6 +7131,7 @@ async fn checkout_payload(pool: &PgPool, checkout_id: &str) -> ApiResult<Value> 
         "userId": checkout.user_id,
         "source": checkout.source,
         "productId": checkout.product_id,
+        "variantId": checkout.variant_id,
         "quantity": checkout.quantity,
         "addressId": checkout.address_id,
         "pickupPointId": checkout.pickup_point_id,
@@ -6648,7 +7159,7 @@ async fn checkout_payload(pool: &PgPool, checkout_id: &str) -> ApiResult<Value> 
 async fn fetch_checkout(pool: &PgPool, checkout_id: &str) -> ApiResult<CheckoutRow> {
     sqlx::query_as::<_, CheckoutRow>(
         r#"
-        SELECT id, user_id, source, product_id, quantity, address_id, pickup_point_id
+        SELECT id, user_id, source, product_id, variant_id, quantity, address_id, pickup_point_id
         FROM mall_checkouts
         WHERE id = $1
           AND expires_at > now()
@@ -6669,7 +7180,13 @@ async fn checkout_products(
             .product_id
             .as_deref()
             .ok_or_else(|| ApiError::BadRequest("直购商品不能为空".to_string()))?;
-        return fetch_buy_now_product(pool, product_id, checkout.quantity).await;
+        return fetch_buy_now_product(
+            pool,
+            product_id,
+            checkout.variant_id.as_deref(),
+            checkout.quantity,
+        )
+        .await;
     }
     fetch_selected_cart_products(pool, &checkout.user_id).await
 }
@@ -6758,19 +7275,28 @@ fn apply_cart_item_pricing(items: &mut [Value], summary: &MallPriceSummary) {
 async fn fetch_buy_now_product(
     pool: &PgPool,
     product_id: &str,
+    variant_id: Option<&str>,
     quantity: i32,
 ) -> ApiResult<Vec<CartProductRow>> {
+    let variant = ensure_product_variant_can_sell(pool, product_id, variant_id, quantity).await?;
     let product = sqlx::query_as::<_, CartProductRow>(
         r#"
         SELECT
           p.id AS product_id,
-          p.sku,
+          $3::text AS variant_id,
+          $4::text AS variant_name,
+          $5::text AS sku,
           p.name,
           p.category_code,
           p.image_url,
-          p.price_cents,
-          p.stock,
-          $2::integer AS quantity
+          $6::bigint AS price_cents,
+          $7::integer AS stock,
+          $2::integer AS quantity,
+          $8::text AS pricing_mode,
+          $9::text AS weight_unit,
+          $10::text AS weight_unit_label,
+          $11::integer AS weight_unit_grams,
+          $12::integer AS weight_tolerance_bps
         FROM mall_products p
         WHERE p.id = $1
           AND p.status = 'on_sale'
@@ -6778,6 +7304,16 @@ async fn fetch_buy_now_product(
     )
     .bind(product_id)
     .bind(quantity)
+    .bind(&variant.id)
+    .bind(&variant.name)
+    .bind(&variant.sku)
+    .bind(variant.price_cents)
+    .bind(variant.stock)
+    .bind(&variant.pricing_mode)
+    .bind(&variant.weight_unit)
+    .bind(&variant.weight_unit_label)
+    .bind(variant.weight_unit_grams)
+    .bind(variant.weight_tolerance_bps)
     .fetch_optional(pool)
     .await?
     .ok_or_else(|| ApiError::NotFound("商品不存在或已下架".to_string()))?;
@@ -6789,6 +7325,7 @@ fn checkout_item_values(items: &[CartProductRow], summary: &MallPriceSummary) ->
         .iter()
         .map(|item| {
             let line_total_cents = item.price_cents * i64::from(item.quantity);
+            let estimated_weight_grams = estimated_weight_grams_for_item(item);
             let line_discount_cents =
                 proportional_discount_cents(line_total_cents, summary.subtotal_cents, summary.total_discount_cents);
             let line_payable_cents = (line_total_cents - line_discount_cents).max(0);
@@ -6798,8 +7335,30 @@ fn checkout_item_values(items: &[CartProductRow], summary: &MallPriceSummary) ->
                 item.price_cents
             };
             let points_deductible_cents = (item.price_cents / 20).clamp(0, 500);
+            let product = json!({
+                "id": item.product_id,
+                "selectedVariantId": item.variant_id,
+                "sku": item.sku,
+                "name": item.name,
+                "categoryCode": item.category_code,
+                "imageUrl": item.image_url,
+                "priceCents": item.price_cents,
+                "discountedPriceCents": discounted_unit_price_cents,
+                "savedCents": (item.price_cents - discounted_unit_price_cents).max(0),
+                "couponStackable": summary.coupon_discount_cents > 0 || summary.next_discount_gap_cents.is_some(),
+                "pointsDeductibleCents": points_deductible_cents,
+                "stock": item.stock,
+                "pricingMode": item.pricing_mode,
+                "weightUnit": item.weight_unit,
+                "weightUnitLabel": item.weight_unit_label,
+                "weightUnitGrams": item.weight_unit_grams,
+                "weightToleranceBps": item.weight_tolerance_bps,
+                "status": "on_sale",
+            });
             json!({
                 "productId": item.product_id,
+                "variantId": item.variant_id,
+                "variantName": item.variant_name,
                 "sku": item.sku,
                 "productName": item.name,
                 "categoryCode": item.category_code,
@@ -6809,25 +7368,20 @@ fn checkout_item_values(items: &[CartProductRow], summary: &MallPriceSummary) ->
                 "discountedUnitPriceCents": discounted_unit_price_cents,
                 "quantity": item.quantity,
                 "lineTotalCents": line_total_cents,
+                "estimatedLineTotalCents": line_total_cents,
                 "lineDiscountCents": line_discount_cents,
                 "linePayableCents": line_payable_cents,
+                "pricingMode": item.pricing_mode,
+                "estimatedWeightGrams": estimated_weight_grams,
+                "weightUnit": item.weight_unit,
+                "weightUnitLabel": item.weight_unit_label,
+                "weightUnitGrams": item.weight_unit_grams,
+                "weightToleranceBps": item.weight_tolerance_bps,
+                "weightAdjustmentStatus": if item.pricing_mode == "weighed" { "pending" } else { "none" },
                 "savedCents": line_discount_cents,
                 "couponStackable": summary.coupon_discount_cents > 0 || summary.next_discount_gap_cents.is_some(),
                 "pointsDeductibleCents": points_deductible_cents,
-                "product": {
-                    "id": item.product_id,
-                    "sku": item.sku,
-                    "name": item.name,
-                    "categoryCode": item.category_code,
-                    "imageUrl": item.image_url,
-                    "priceCents": item.price_cents,
-                    "discountedPriceCents": discounted_unit_price_cents,
-                    "savedCents": (item.price_cents - discounted_unit_price_cents).max(0),
-                    "couponStackable": summary.coupon_discount_cents > 0 || summary.next_discount_gap_cents.is_some(),
-                    "pointsDeductibleCents": points_deductible_cents,
-                    "stock": item.stock,
-                    "status": "on_sale",
-                }
+                "product": product
             })
         })
         .collect()
@@ -6848,18 +7402,33 @@ async fn fetch_selected_cart_products(
         r#"
         SELECT
           p.id AS product_id,
-          p.sku,
+          ci.variant_id,
+          COALESCE(ci.variant_name, variant.value->>'name', p.sale_method, p.specification, '默认规格') AS variant_name,
+          COALESCE(variant.value->>'sku', p.sku) AS sku,
           p.name,
           p.category_code,
           p.image_url,
-          p.price_cents,
-          p.stock,
-          ci.quantity
+          COALESCE((variant.value->>'priceCents')::bigint, p.price_cents) AS price_cents,
+          COALESCE((variant.value->>'stock')::integer, p.stock) AS stock,
+          ci.quantity,
+          COALESCE(variant.value->>'pricingMode', 'fixed') AS pricing_mode,
+          COALESCE(variant.value->>'weightUnit', 'jin') AS weight_unit,
+          COALESCE(variant.value->>'weightUnitLabel', '斤') AS weight_unit_label,
+          COALESCE((variant.value->>'weightUnitGrams')::integer, 500) AS weight_unit_grams,
+          COALESCE((variant.value->>'weightToleranceBps')::integer, 500) AS weight_tolerance_bps
         FROM mall_cart_items ci
         JOIN mall_products p ON p.id = ci.product_id
+        LEFT JOIN LATERAL (
+          SELECT item.value
+          FROM jsonb_array_elements(COALESCE(p.variants, '[]'::jsonb)) AS item(value)
+          WHERE item.value->>'id' = ci.variant_id
+          LIMIT 1
+        ) variant ON true
         WHERE ci.user_id = $1
           AND ci.selected = true
           AND p.status = 'on_sale'
+          AND variant.value IS NOT NULL
+          AND COALESCE(variant.value->>'status', 'on_sale') = 'on_sale'
         ORDER BY ci.created_at ASC
         "#,
     )
@@ -7256,6 +7825,47 @@ fn proportional_discount_cents(
     (line_total_cents * total_discount_cents / subtotal_cents).clamp(0, line_total_cents)
 }
 
+fn estimated_weight_grams_for_item(item: &CartProductRow) -> Option<i32> {
+    if item.pricing_mode != "weighed" {
+        return None;
+    }
+    Some(item.quantity.saturating_mul(item.weight_unit_grams.max(1)))
+}
+
+fn actual_weight_grams_from_request(body: &WeightAdjustmentRequest) -> ApiResult<i32> {
+    if let Some(grams) = body.actual_weight_grams {
+        validate_positive_i32(grams, "实际称重必须大于0")?;
+        return Ok(grams);
+    }
+    if let Some(jin) = body.actual_weight_jin {
+        if !jin.is_finite() || jin <= 0.0 {
+            return Err(ApiError::BadRequest("实际称重必须大于0".to_string()));
+        }
+        return Ok((jin * 500.0).round() as i32);
+    }
+    Err(ApiError::BadRequest("请输入实际称重".to_string()))
+}
+
+fn weighed_line_total_cents(
+    unit_price_cents: i64,
+    actual_weight_grams: i32,
+    unit_grams: i32,
+) -> i64 {
+    let unit_grams = i64::from(unit_grams.max(1));
+    let numerator = unit_price_cents.saturating_mul(i64::from(actual_weight_grams.max(0)));
+    (numerator + unit_grams / 2) / unit_grams
+}
+
+fn weight_text(weight_grams: i32, unit_grams: i32, unit_label: &str) -> String {
+    let unit_grams = f64::from(unit_grams.max(1));
+    let value = f64::from(weight_grams.max(0)) / unit_grams;
+    if (value.fract()).abs() < f64::EPSILON {
+        format!("{value:.0}{unit_label}")
+    } else {
+        format!("{value:.2}{unit_label}")
+    }
+}
+
 fn yuan_amount(cents: i64) -> String {
     if cents % 100 == 0 {
         (cents / 100).to_string()
@@ -7549,6 +8159,151 @@ async fn fetch_order_detail(pool: &PgPool, order_identifier: &str) -> ApiResult<
     .ok_or_else(|| ApiError::NotFound("订单不存在".to_string()))
 }
 
+async fn apply_weight_adjustment(
+    pool: &PgPool,
+    order_id: &str,
+    body: WeightAdjustmentRequest,
+) -> ApiResult<()> {
+    let mut tx = pool.begin().await?;
+    let order = sqlx::query_as::<_, WeightAdjustmentOrderRow>(
+        r#"
+        SELECT subtotal_cents, delivery_fee_cents, coupon_cents, payable_cents, estimated_payable_cents
+        FROM mall_orders
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+    )
+    .bind(order_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("订单不存在".to_string()))?;
+
+    let item = sqlx::query_as::<_, WeightAdjustmentItemRow>(
+        r#"
+        SELECT id, product_name, unit_price_cents, line_total_cents, estimated_line_total_cents,
+               pricing_mode, weight_unit_grams, weight_unit_label
+        FROM mall_order_items
+        WHERE order_id = $1
+          AND id = $2
+        FOR UPDATE
+        "#,
+    )
+    .bind(order_id)
+    .bind(body.item_id.trim())
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("订单商品不存在".to_string()))?;
+
+    if item.pricing_mode != "weighed" {
+        return Err(ApiError::BadRequest(
+            "该订单商品不是称重计价商品".to_string(),
+        ));
+    }
+
+    let weight_unit_grams = item.weight_unit_grams.unwrap_or(500).max(1);
+    let actual_weight_grams = actual_weight_grams_from_request(&body)?;
+    let line_total_cents = weighed_line_total_cents(
+        item.unit_price_cents,
+        actual_weight_grams,
+        weight_unit_grams,
+    );
+    let subtotal_cents = (order.subtotal_cents + line_total_cents - item.line_total_cents).max(0);
+    let payable_cents = (subtotal_cents + order.delivery_fee_cents - order.coupon_cents).max(0);
+    let estimated_payable_cents = order.estimated_payable_cents.unwrap_or(order.payable_cents);
+    let weight_adjustment_cents = payable_cents - estimated_payable_cents;
+    let adjusted_by = non_empty(body.adjusted_by).unwrap_or_else(|| "admin".to_string());
+    let note = non_empty(body.note);
+
+    sqlx::query(
+        r#"
+        UPDATE mall_order_items
+        SET actual_weight_grams = $3,
+            line_total_cents = $4,
+            estimated_line_total_cents = COALESCE(estimated_line_total_cents, $5),
+            weight_adjustment_status = 'confirmed',
+            weight_adjusted_by = $6,
+            weight_adjusted_at = now(),
+            weight_adjustment_note = $7
+        WHERE order_id = $1
+          AND id = $2
+        "#,
+    )
+    .bind(order_id)
+    .bind(&item.id)
+    .bind(actual_weight_grams)
+    .bind(line_total_cents)
+    .bind(
+        item.estimated_line_total_cents
+            .unwrap_or(item.line_total_cents),
+    )
+    .bind(&adjusted_by)
+    .bind(&note)
+    .execute(&mut *tx)
+    .await?;
+
+    let has_pending_weight_adjustment: bool = sqlx::query_scalar(
+        r#"
+        SELECT EXISTS (
+          SELECT 1
+          FROM mall_order_items
+          WHERE order_id = $1
+            AND pricing_mode = 'weighed'
+            AND (actual_weight_grams IS NULL OR weight_adjustment_status <> 'confirmed')
+        )
+        "#,
+    )
+    .bind(order_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let order_weight_status = if has_pending_weight_adjustment {
+        "pending"
+    } else {
+        "confirmed"
+    };
+
+    sqlx::query(
+        r#"
+        UPDATE mall_orders
+        SET subtotal_cents = $2,
+            payable_cents = $3,
+            estimated_payable_cents = COALESCE(estimated_payable_cents, $4),
+            weight_adjustment_cents = $5,
+            weight_adjustment_status = $6,
+            updated_at = now()
+        WHERE id = $1
+        "#,
+    )
+    .bind(order_id)
+    .bind(subtotal_cents)
+    .bind(payable_cents)
+    .bind(estimated_payable_cents)
+    .bind(weight_adjustment_cents)
+    .bind(order_weight_status)
+    .execute(&mut *tx)
+    .await?;
+
+    let unit_label = item.weight_unit_label.unwrap_or_else(|| "斤".to_string());
+    let actual_weight_text = weight_text(actual_weight_grams, weight_unit_grams, &unit_label);
+    let description = format!(
+        "{}实际称重{}，订单金额调整为{}元，差额{}元",
+        item.product_name,
+        actual_weight_text,
+        yuan_amount(payable_cents),
+        yuan_amount(weight_adjustment_cents)
+    );
+    insert_order_event_tx(
+        &mut tx,
+        order_id,
+        "weight_adjusted",
+        "称重改价完成",
+        &description,
+        "done",
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 async fn fetch_delivery_sheets_for_date(pool: &PgPool, sheet_date: &str) -> ApiResult<Vec<Value>> {
     Ok(sqlx::query_scalar::<_, Value>(
         r#"
@@ -7658,17 +8413,55 @@ async fn upsert_community_interaction(
     .await?)
 }
 
-async fn ensure_product_can_sell(pool: &PgPool, product_id: &str, quantity: i32) -> ApiResult<()> {
-    let stock: Option<i32> =
-        sqlx::query_scalar("SELECT stock FROM mall_products WHERE id = $1 AND status = 'on_sale'")
-            .bind(product_id)
-            .fetch_optional(pool)
-            .await?;
-    let stock = stock.ok_or_else(|| ApiError::NotFound("商品不存在或已下架".to_string()))?;
-    if stock < quantity {
-        return Err(ApiError::BadRequest("商品库存不足".to_string()));
+async fn ensure_product_variant_can_sell(
+    pool: &PgPool,
+    product_id: &str,
+    variant_id: Option<&str>,
+    quantity: i32,
+) -> ApiResult<ProductVariant> {
+    let variant = fetch_product_variant_snapshot(pool, product_id, variant_id).await?;
+    if variant.status != "on_sale" {
+        return Err(ApiError::NotFound("商品规格不存在或已下架".to_string()));
     }
-    Ok(())
+    if quantity < variant.minimum_order_quantity {
+        return Err(ApiError::BadRequest(format!(
+            "{} 起订量为 {}",
+            variant.name, variant.minimum_order_quantity
+        )));
+    }
+    if variant.stock < quantity {
+        return Err(ApiError::BadRequest(format!("{} 库存不足", variant.name)));
+    }
+    Ok(variant)
+}
+
+async fn fetch_product_variant_snapshot(
+    pool: &PgPool,
+    product_id: &str,
+    variant_id: Option<&str>,
+) -> ApiResult<ProductVariant> {
+    let product = fetch_product_json(pool, product_id).await?;
+    if product.get("status").and_then(Value::as_str) != Some("on_sale") {
+        return Err(ApiError::NotFound("商品不存在或已下架".to_string()));
+    }
+    let variants_value = product
+        .get("variants")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let variants: Vec<ProductVariant> = serde_json::from_value(variants_value)
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+    let fallback_variant_id = product
+        .get("defaultVariantId")
+        .and_then(Value::as_str)
+        .or_else(|| variants.first().map(|variant| variant.id.as_str()));
+    let variant_id = variant_id
+        .and_then(|value| normalize_product_image_value(Some(value)))
+        .or_else(|| fallback_variant_id.map(str::to_string))
+        .ok_or_else(|| ApiError::BadRequest("商品规格不存在".to_string()))?;
+    variants
+        .into_iter()
+        .find(|variant| variant.id == variant_id)
+        .ok_or_else(|| ApiError::BadRequest("商品规格不存在".to_string()))
 }
 
 async fn ensure_product_exists(pool: &PgPool, product_id: &str) -> ApiResult<()> {
@@ -8130,6 +8923,286 @@ fn validate_required(value: &str, message: &str) -> ApiResult<()> {
 
 fn require_non_empty(value: Option<String>, message: &str) -> ApiResult<String> {
     non_empty(value).ok_or_else(|| ApiError::BadRequest(message.to_string()))
+}
+
+fn normalize_product_image_value(value: Option<&str>) -> Option<String> {
+    value.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+fn normalize_product_images(
+    image_url: Option<&str>,
+    images: Option<&[String]>,
+) -> ApiResult<Vec<String>> {
+    let mut normalized = Vec::new();
+    let primary_image = normalize_product_image_value(image_url);
+
+    if let Some(primary_image) = primary_image.as_ref() {
+        normalized.push(primary_image.clone());
+    }
+
+    if let Some(images) = images {
+        for image in images {
+            let Some(image) = normalize_product_image_value(Some(image)) else {
+                continue;
+            };
+            if normalized.iter().any(|current| current == &image) {
+                continue;
+            }
+            normalized.push(image);
+        }
+    }
+
+    if normalized.len() > MAX_PRODUCT_IMAGES {
+        return Err(ApiError::BadRequest(format!(
+            "单个商品最多上传 {} 张图片",
+            MAX_PRODUCT_IMAGES
+        )));
+    }
+
+    Ok(normalized)
+}
+
+fn primary_product_image_url(image_url: Option<&str>, images: &[String]) -> Option<String> {
+    normalize_product_image_value(image_url).or_else(|| images.first().cloned())
+}
+
+fn normalize_product_variants(
+    variants: Option<&[ProductVariantMutation]>,
+    defaults: &ProductVariantDefaults,
+) -> ApiResult<Vec<ProductVariant>> {
+    let source_variants = variants.unwrap_or(&[]);
+    if source_variants.len() > MAX_PRODUCT_VARIANTS {
+        return Err(ApiError::BadRequest(format!(
+            "单个商品最多配置 {} 个规格",
+            MAX_PRODUCT_VARIANTS
+        )));
+    }
+
+    let mut normalized = Vec::new();
+    if source_variants.is_empty() {
+        normalized.push(ProductVariant {
+            id: "default".to_string(),
+            name: defaults.sale_method.clone(),
+            sku: defaults.sku.clone(),
+            specification: defaults.specification.clone(),
+            sale_method: defaults.sale_method.clone(),
+            price_cents: defaults.price_cents,
+            original_price_cents: defaults.original_price_cents,
+            supply_price_cents: defaults.supply_price_cents,
+            stock: defaults.stock,
+            minimum_order_quantity: defaults.minimum_order_quantity,
+            status: defaults.status.clone(),
+            sort_order: 1,
+            pricing_mode: default_product_variant_pricing_mode(),
+            weight_unit: default_product_variant_weight_unit(),
+            weight_unit_label: default_product_variant_weight_unit_label(),
+            weight_unit_grams: default_product_variant_weight_unit_grams(),
+            weight_tolerance_bps: default_product_variant_weight_tolerance_bps(),
+        });
+    } else {
+        for (index, variant) in source_variants.iter().enumerate() {
+            let name = normalize_product_image_value(variant.name.as_deref())
+                .or_else(|| normalize_product_image_value(variant.sale_method.as_deref()))
+                .or_else(|| normalize_product_image_value(variant.specification.as_deref()))
+                .unwrap_or_else(|| format!("规格{}", index + 1));
+            let id = normalize_product_variant_id(variant.id.as_deref(), &name, index);
+            if normalized
+                .iter()
+                .any(|current: &ProductVariant| current.id == id)
+            {
+                return Err(ApiError::BadRequest("规格ID不能重复".to_string()));
+            }
+            let price_cents = variant.price_cents.unwrap_or(defaults.price_cents);
+            if price_cents <= 0 {
+                return Err(ApiError::BadRequest("规格售价必须大于0".to_string()));
+            }
+            let stock = variant.stock.unwrap_or(defaults.stock);
+            if stock < 0 {
+                return Err(ApiError::BadRequest("规格库存不能小于0".to_string()));
+            }
+            let minimum_order_quantity = variant
+                .minimum_order_quantity
+                .unwrap_or(defaults.minimum_order_quantity);
+            validate_positive_i32(minimum_order_quantity, "规格最小起订量必须大于0")?;
+            let status =
+                normalize_product_variant_status(variant.status.as_deref(), &defaults.status)?;
+            let pricing_mode =
+                normalize_product_variant_pricing_mode(variant.pricing_mode.as_deref())?;
+            let weight_unit = normalize_product_variant_weight_unit(variant.weight_unit.as_deref());
+            let weight_unit_label = normalize_product_variant_weight_unit_label(
+                variant.weight_unit_label.as_deref(),
+                &weight_unit,
+            );
+            let weight_unit_grams = normalize_product_variant_weight_unit_grams(
+                variant.weight_unit_grams,
+                &weight_unit,
+            )?;
+            let weight_tolerance_bps =
+                normalize_product_variant_weight_tolerance_bps(variant.weight_tolerance_bps)?;
+            normalized.push(ProductVariant {
+                id,
+                name,
+                sku: normalize_product_image_value(variant.sku.as_deref())
+                    .unwrap_or_else(|| defaults.sku.clone()),
+                specification: normalize_product_image_value(variant.specification.as_deref())
+                    .unwrap_or_else(|| defaults.specification.clone()),
+                sale_method: normalize_product_image_value(variant.sale_method.as_deref())
+                    .unwrap_or_else(|| defaults.sale_method.clone()),
+                price_cents,
+                original_price_cents: variant
+                    .original_price_cents
+                    .or(defaults.original_price_cents),
+                supply_price_cents: variant.supply_price_cents.or(defaults.supply_price_cents),
+                stock,
+                minimum_order_quantity,
+                status,
+                sort_order: variant.sort_order.unwrap_or((index + 1) as i32),
+                pricing_mode,
+                weight_unit,
+                weight_unit_label,
+                weight_unit_grams,
+                weight_tolerance_bps,
+            });
+        }
+    }
+
+    if normalized.is_empty() {
+        return Err(ApiError::BadRequest("至少需要一个商品规格".to_string()));
+    }
+
+    Ok(normalized)
+}
+
+fn default_product_variant_pricing_mode() -> String {
+    "fixed".to_string()
+}
+
+fn default_product_variant_weight_unit() -> String {
+    "jin".to_string()
+}
+
+fn default_product_variant_weight_unit_label() -> String {
+    "斤".to_string()
+}
+
+fn default_product_variant_weight_unit_grams() -> i32 {
+    500
+}
+
+fn default_product_variant_weight_tolerance_bps() -> i32 {
+    500
+}
+
+fn normalize_product_variant_pricing_mode(value: Option<&str>) -> ApiResult<String> {
+    let mode = value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("fixed")
+        .to_string();
+    if matches!(mode.as_str(), "fixed" | "weighed") {
+        Ok(mode)
+    } else {
+        Err(ApiError::BadRequest("规格计价方式不正确".to_string()))
+    }
+}
+
+fn normalize_product_variant_weight_unit(value: Option<&str>) -> String {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("jin")
+        .to_string()
+}
+
+fn normalize_product_variant_weight_unit_label(value: Option<&str>, unit: &str) -> String {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| match unit {
+            "kg" => "公斤".to_string(),
+            "g" => "克".to_string(),
+            _ => "斤".to_string(),
+        })
+}
+
+fn normalize_product_variant_weight_unit_grams(value: Option<i32>, unit: &str) -> ApiResult<i32> {
+    let grams = value.unwrap_or_else(|| match unit {
+        "kg" => 1000,
+        "g" => 1,
+        _ => 500,
+    });
+    validate_positive_i32(grams, "称重单位克重必须大于0")?;
+    Ok(grams)
+}
+
+fn normalize_product_variant_weight_tolerance_bps(value: Option<i32>) -> ApiResult<i32> {
+    let bps = value.unwrap_or_else(default_product_variant_weight_tolerance_bps);
+    if (0..=5000).contains(&bps) {
+        Ok(bps)
+    } else {
+        Err(ApiError::BadRequest(
+            "称重浮动范围需在0%-50%之间".to_string(),
+        ))
+    }
+}
+
+fn normalize_product_variant_id(value: Option<&str>, name: &str, index: usize) -> String {
+    normalize_product_image_value(value).unwrap_or_else(|| {
+        let slug = name
+            .chars()
+            .map(|character| {
+                if character.is_ascii_alphanumeric() {
+                    character.to_ascii_lowercase()
+                } else {
+                    '-'
+                }
+            })
+            .collect::<String>()
+            .trim_matches('-')
+            .to_string();
+        if slug.is_empty() {
+            format!("variant-{}", index + 1)
+        } else {
+            slug
+        }
+    })
+}
+
+fn normalize_product_variant_status(value: Option<&str>, fallback: &str) -> ApiResult<String> {
+    let status = value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(fallback)
+        .to_string();
+    if matches!(status.as_str(), "on_sale" | "off_sale" | "draft") {
+        Ok(status)
+    } else {
+        Err(ApiError::BadRequest("规格状态不正确".to_string()))
+    }
+}
+
+fn display_product_variant(variants: &[ProductVariant]) -> &ProductVariant {
+    variants
+        .iter()
+        .find(|variant| variant.status == "on_sale" && variant.stock > 0)
+        .or_else(|| variants.iter().find(|variant| variant.status == "on_sale"))
+        .unwrap_or(&variants[0])
+}
+
+fn total_product_variant_stock(variants: &[ProductVariant]) -> i32 {
+    variants
+        .iter()
+        .filter(|variant| variant.status == "on_sale")
+        .map(|variant| variant.stock.max(0))
+        .sum()
 }
 
 fn non_empty(value: Option<String>) -> Option<String> {

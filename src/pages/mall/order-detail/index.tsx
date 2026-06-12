@@ -3,7 +3,7 @@ import { Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { ChevronLeft, Headphones, MapPin, ReceiptText, ShoppingBasket, UserRound } from 'lucide-react-taro'
 import { getMallOrder, listMallOrders, type MallOrder } from '@/services/mall'
-import { MallPage, MallPrimaryButton, mallYuan } from '../mall-ui'
+import { MallPage, MallPrimaryButton, mallWeightText, mallYuan } from '../mall-ui'
 
 interface StoredUser {
   id?: string
@@ -76,8 +76,15 @@ export default function MallOrderDetailPage() {
       <DetailRow
         icon={<ReceiptText size={21} color="#63BF54" />}
         title="商品清单"
-        subtitle={order.items.map((item) => `${item.quantity}份${item.productName}`).join('、') || '暂无商品明细'}
+        subtitle={order.items.map(orderItemText).join('、') || '暂无商品明细'}
       />
+      {order.weightAdjustmentStatus && order.weightAdjustmentStatus !== 'none' ? (
+        <DetailRow
+          icon={<ReceiptText size={21} color="#63BF54" />}
+          title="称重改价"
+          subtitle={`${order.weightAdjustmentStatus === 'confirmed' ? '已确认' : '待称重'} · 差额 ${mallYuan(order.weightAdjustmentCents || 0)} · 预估 ${mallYuan(order.estimatedPayableCents || order.payableCents)} / 当前 ${mallYuan(order.payableCents)}`}
+        />
+      ) : null}
       <DetailRow
         icon={<MapPin size={21} color="#63BF54" />}
         title="自提点信息"
@@ -127,6 +134,18 @@ function StatBox({ value, label }: { value: string; label: string }) {
       <Text className="mall-stat-label">{label}</Text>
     </View>
   )
+}
+
+function orderItemText(item: MallOrder['items'][number]) {
+  const variant = item.variantName ? `（${item.variantName}）` : ''
+  if (item.pricingMode !== 'weighed') {
+    return `${item.quantity}份${item.productName}${variant}`
+  }
+  const unitGrams = item.weightUnitGrams || 500
+  const label = item.weightUnitLabel || '斤'
+  const estimated = mallWeightText(item.estimatedWeightGrams, unitGrams, label)
+  const actual = mallWeightText(item.actualWeightGrams, unitGrams, label)
+  return `${item.productName}${variant} 预估${estimated || '-'}${actual ? ` / 实际${actual}` : ' / 待称重'}`
 }
 
 function groupLeaderText(order: MallOrder) {

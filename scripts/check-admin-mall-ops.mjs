@@ -2,6 +2,9 @@ import { readFileSync, readdirSync } from 'node:fs'
 
 const webAdmin = readFileSync('src/web-admin/main.tsx', 'utf8')
 const mallModule = readFileSync('server/src/modules/mall.rs', 'utf8')
+const mallService = readFileSync('src/services/mall.ts', 'utf8')
+const mallProductDetail = readFileSync('src/pages/mall/product/index.tsx', 'utf8')
+const mallUi = readFileSync('src/pages/mall/mall-ui.tsx', 'utf8')
 const migrations = readdirSync('server/migrations')
   .filter((name) => name.endsWith('.sql'))
   .sort()
@@ -46,6 +49,13 @@ requireIncludes(webAdmin, 'specification', 'Mall product listing form must colle
 requireIncludes(webAdmin, 'saleMethod', 'Mall product listing form must collect sale method')
 requireIncludes(webAdmin, 'ProductSpecSubtable', 'Mall product loading dimensions must move into an internal spec subtable')
 requireIncludes(webAdmin, '装载规格（可选，不对外展示）', 'Mall loading specs must be marked optional and internal-only')
+requireIncludes(webAdmin, 'productImageLimit = 20', 'Mall product image gallery must cap a product at 20 images')
+requireIncludes(webAdmin, 'ProductImageGalleryInput', 'Mall product form must support multiple uploaded product images')
+requireIncludes(webAdmin, 'multiple', 'Mall product image upload input must allow selecting multiple images')
+requireIncludes(webAdmin, 'ProductVariantSubtable', 'Mall product form must support multiple sale variants')
+requireIncludes(webAdmin, 'productVariantLimit', 'Mall product variants must have an explicit frontend limit')
+requireIncludes(webAdmin, 'addProductVariant', 'Mall product form must let operators add variants')
+requireIncludes(webAdmin, 'removeProductVariant', 'Mall product form must let operators remove variants')
 requireIncludes(webAdmin, 'onSaveCategoryOrder', 'Mall categories must support deferred persisted drag reorder')
 requireIncludes(webAdmin, 'draggable', 'Mall categories table rows must be draggable')
 requireIncludes(webAdmin, 'onCreateInventoryAlert', 'Mall inventory page must support creating warning rules')
@@ -91,6 +101,32 @@ const productListSection = webAdmin.slice(
   webAdmin.indexOf('function MallProductsSection'),
   webAdmin.indexOf('function ProductCreateModal'),
 )
+
+for (const required of [
+  'productSortOptions',
+  'productPageSizeOptions',
+  '最近编辑',
+  '商品名',
+  '类目',
+  '价格从低到高',
+  '库存从低到高',
+  'page: productFilters.page',
+  'pageSize: productFilters.pageSize',
+  'sort: productFilters.sort',
+  'product-pagination',
+]) {
+  requireIncludes(webAdmin, required, `Mall product list must support server-side sorting and pagination: ${required}`)
+}
+
+for (const sortKey of [
+  'updated_desc',
+  'name_asc',
+  'category_asc',
+  'price_asc',
+  'stock_asc',
+]) {
+  requireIncludes(mallModule, sortKey, `Mall product backend must support sort key ${sortKey}`)
+}
 
 const productListingSection = webAdmin.slice(
   webAdmin.indexOf('function MallProductDesignSection'),
@@ -165,9 +201,51 @@ for (const column of [
   'volume_liters',
   'weight_kg',
   'stock_alert_threshold',
+  'images jsonb',
+  'variants jsonb',
+  'variant_id text',
+  'variant_name text',
 ]) {
   requireIncludes(migrations, column, `Mall product schema must include ${column}`)
 }
+
+for (const required of [
+  'MAX_PRODUCT_IMAGES',
+  'MAX_PRODUCT_VARIANTS',
+  'ProductVariantMutation',
+  'normalize_product_variants',
+  'fetch_product_variant_snapshot',
+  'variant_id',
+  'variantName',
+  'normalize_product_images',
+  'images: Option<Vec<String>>',
+  'variants: Option<Vec<ProductVariantMutation>>',
+]) {
+  requireIncludes(mallModule, required, `Mall product backend must support product image gallery: ${required}`)
+}
+
+for (const required of [
+  "'imageKeys'",
+  "'images'",
+]) {
+  requireIncludes(migrations, required, `Mall product schema JSON must expose product image gallery field: ${required}`)
+}
+
+requireIncludes(mallService, 'images?: string[]', 'Mall app service type must expose product image galleries')
+requireIncludes(mallService, 'MallProductVariant', 'Mall app service type must expose product variants')
+requireIncludes(mallUi, 'primaryMallProductImageUrl', 'Mall app thumbnails must prefer the first product gallery image')
+requireIncludes(mallProductDetail, 'MallProductImageCarousel', 'Mall product detail page must render a product image carousel')
+requireIncludes(mallProductDetail, 'productImageUrls', 'Mall product detail page must resolve all product gallery image URLs')
+requireIncludes(mallProductDetail, 'VariantSelector', 'Mall product detail page must let users select a product variant')
+requireIncludes(mallProductDetail, 'selectedVariant', 'Mall product detail page must bind price/cart/buy-now to selected variant')
+requireIncludes(webAdmin, 'pricingMode', 'Mall product variants must support weighted pricing configuration')
+requireIncludes(webAdmin, 'WeightAdjustmentModal', 'Mall order detail must support weighing-based price adjustment')
+requireIncludes(mallProductDetail, 'weighedVariantRangeText', 'Mall product detail must explain weighted fresh-goods price ranges')
+requireIncludes(mallService, 'pricingMode?:', 'Mall app service type must expose weighted pricing mode')
+requireIncludes(mallModule, 'admin_update_order_weight_adjustment', 'Mall backend must expose admin order weighing adjustment')
+requireIncludes(mallModule, 'apply_weight_adjustment', 'Mall backend must adjust weighted order item totals')
+requireIncludes(migrations, 'actual_weight_grams', 'Mall order item schema must store actual weighed weight')
+requireIncludes(migrations, 'weight_adjustment_cents', 'Mall order schema must store weighing price adjustment amount')
 
 for (const route of [
   '/api/admin/mall/categories',

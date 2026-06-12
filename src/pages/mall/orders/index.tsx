@@ -132,7 +132,7 @@ export default function MallOrdersPage() {
             <View>
               <Text className="mall-v7-product-name">{order.items[0]?.productName || order.orderNo}</Text>
               <Text className="mall-v7-product-subtitle">
-                {order.items.length || 1} 件商品 · {order.pickupPointName || order.addressText}
+                {order.items.length || 1} 件商品{order.items[0]?.variantName ? ` · ${order.items[0]?.variantName}` : ''} · {order.pickupPointName || order.addressText}
               </Text>
             </View>
             <Text className="mall-summary-value">{mallYuan(order.payableCents)}</Text>

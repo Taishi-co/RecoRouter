@@ -17,7 +17,10 @@ export interface MallProduct {
   name: string
   subtitle?: string | null
   description?: string | null
+  imageKey?: string | null
   imageUrl?: string | null
+  imageKeys?: string[] | null
+  images?: string[]
   specification?: string | null
   saleMethod?: string | null
   supplyPriceCents?: number | null
@@ -44,6 +47,28 @@ export interface MallProduct {
   discountLabel?: string | null
   createdAt?: string | null
   updatedAt?: string | null
+  variants?: MallProductVariant[]
+  defaultVariantId?: string | null
+}
+
+export interface MallProductVariant {
+  id: string
+  name: string
+  sku?: string | null
+  specification?: string | null
+  saleMethod?: string | null
+  priceCents: number
+  originalPriceCents?: number | null
+  supplyPriceCents?: number | null
+  stock: number
+  minimumOrderQuantity?: number | null
+  status: string
+  sortOrder?: number | null
+  pricingMode?: 'fixed' | 'weighed' | string
+  weightUnit?: string | null
+  weightUnitLabel?: string | null
+  weightUnitGrams?: number | null
+  weightToleranceBps?: number | null
 }
 
 export interface MallDiscountBreakdown {
@@ -99,6 +124,8 @@ export interface MallCartItem {
   id: string
   userId: string
   productId: string
+  variantId?: string | null
+  variantName?: string | null
   quantity: number
   selected: boolean
   product?: MallProduct
@@ -108,6 +135,12 @@ export interface MallCartItem {
   lineDiscountCents?: number
   linePayableCents?: number
   savedCents?: number
+  pricingMode?: string | null
+  estimatedWeightGrams?: number | null
+  actualWeightGrams?: number | null
+  weightUnitLabel?: string | null
+  weightUnitGrams?: number | null
+  weightToleranceBps?: number | null
   couponStackable?: boolean
   pointsDeductibleCents?: number
 }
@@ -299,6 +332,9 @@ export interface MallOrder {
   deliveryFeeCents: number
   couponCents: number
   payableCents: number
+  estimatedPayableCents?: number | null
+  weightAdjustmentStatus?: string | null
+  weightAdjustmentCents?: number | null
   paymentStatus: string
   status: string
   refundStatus?: string | null
@@ -311,10 +347,24 @@ export interface MallOrder {
   items: Array<{
     id: string
     productId: string
+    variantId?: string | null
+    variantName?: string | null
     productName: string
+    sku?: string | null
     unitPriceCents: number
     quantity: number
     lineTotalCents: number
+    estimatedLineTotalCents?: number | null
+    pricingMode?: string | null
+    estimatedWeightGrams?: number | null
+    actualWeightGrams?: number | null
+    weightUnit?: string | null
+    weightUnitLabel?: string | null
+    weightUnitGrams?: number | null
+    weightToleranceBps?: number | null
+    weightAdjustmentStatus?: string | null
+    weightAdjustmentNote?: string | null
+    weightAdjustedAt?: string | null
   }>
   events?: MallOrderEvent[]
   afterSales?: MallAfterSale[]
@@ -326,12 +376,15 @@ export interface MallCheckout {
   userId: string
   source: 'cart' | 'buy_now' | string
   productId?: string | null
+  variantId?: string | null
   quantity?: number
   addressId?: string | null
   pickupPointId?: string | null
   items: Array<{
     id?: string
     productId: string
+    variantId?: string | null
+    variantName?: string | null
     sku?: string
     productName: string
     categoryCode?: string | null
@@ -343,6 +396,15 @@ export interface MallCheckout {
     lineTotalCents: number
     lineDiscountCents?: number
     linePayableCents?: number
+    estimatedLineTotalCents?: number | null
+    pricingMode?: string | null
+    estimatedWeightGrams?: number | null
+    actualWeightGrams?: number | null
+    weightUnit?: string | null
+    weightUnitLabel?: string | null
+    weightUnitGrams?: number | null
+    weightToleranceBps?: number | null
+    weightAdjustmentStatus?: string | null
     savedCents?: number
     couponStackable?: boolean
     pointsDeductibleCents?: number
@@ -352,6 +414,9 @@ export interface MallCheckout {
   deliveryFeeCents: number
   couponCents: number
   payableCents: number
+  estimatedPayableCents?: number | null
+  weightAdjustmentStatus?: string | null
+  weightAdjustmentCents?: number | null
   fullReductionCents?: number
   couponDiscountCents?: number
   memberDiscountCents?: number
@@ -692,8 +757,8 @@ export async function getMallCart(userId: string): Promise<MallCart> {
   return apiGet('/api/mall/cart', { userId })
 }
 
-export async function addMallCartItem(userId: string, productId: string, quantity: number) {
-  return apiPost<MallCartItem>('/api/mall/cart/items', { userId, productId, quantity })
+export async function addMallCartItem(userId: string, productId: string, quantity: number, variantId?: string) {
+  return apiPost<MallCartItem>('/api/mall/cart/items', { userId, productId, quantity, variantId })
 }
 
 export async function updateMallCartItem(id: string, data: { quantity?: number; selected?: boolean }) {
@@ -730,6 +795,7 @@ export async function createMallCheckout(data: {
   userId: string
   source: 'cart' | 'buy_now'
   productId?: string
+  variantId?: string
   quantity?: number
   addressId?: string
   pickupPointId?: string

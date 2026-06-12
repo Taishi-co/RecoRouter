@@ -109,8 +109,8 @@ assert(/categoryCode=\$\{encodeURIComponent\(target\)\}/.test(mallHome), 'Mall h
 
 assert(/deliveryRules/.test(adminMain), 'Web admin must save delivery rules into mall settings.');
 assert(/paymentSplitRules/.test(adminMain), 'Web admin must save payment split rules into mall settings.');
-assert(/setNotice\(`\$\{label\}成功`\)/.test(adminMain), 'Write actions must show a success notice through runAction.');
-assert(/setNotice\(`\$\{label\}失败：/.test(adminMain), 'Write actions must show a failure notice through runAction.');
+assert(/showMessage\('success', `\$\{label\}成功`\)/.test(adminMain), 'Write actions must show a success message through runAction.');
+assert(/const message = `\$\{label\}失败：/.test(adminMain) && /showMessage\('error', message\)/.test(adminMain), 'Write actions must show a failure message through runAction.');
 [
   '商品创建',
   '商品更新',

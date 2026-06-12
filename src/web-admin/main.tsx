@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useMemo, useState } from 'react';
+import { StrictMode, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent, FormEvent, ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import sanyouLogo from '@/assets/brand/sanyou.png';
@@ -7,6 +7,21 @@ import './styles.css';
 declare const __PROJECT_DOMAIN__: string | undefined;
 
 type JsonRecord = Record<string, unknown>;
+type AdminMessageType = 'success' | 'error' | 'info' | 'warning';
+
+interface AdminMessageItem {
+  id: string;
+  type: AdminMessageType;
+  content: string;
+}
+
+type AdminMessageHandler = (type: AdminMessageType, content: string) => void;
+
+const AdminMessageContext = createContext<AdminMessageHandler | null>(null);
+
+function useAdminMessage(): AdminMessageHandler {
+  return useContext(AdminMessageContext) || (() => undefined);
+}
 
 type NavigationKey =
   | 'overview'
@@ -123,6 +138,7 @@ interface ProductForm {
   subtitle: string;
   description: string;
   imageUrl: string;
+  images: string[];
   specification: string;
   saleMethod: string;
   priceYuan: string;
@@ -139,7 +155,30 @@ interface ProductForm {
   status: string;
   deliveryMinutes: string;
   coldChainRequired: boolean;
+  variants: ProductVariantForm[];
 }
+
+interface ProductVariantForm {
+  id: string;
+  name: string;
+  sku: string;
+  specification: string;
+  saleMethod: string;
+  priceYuan: string;
+  originalPriceYuan: string;
+  supplyPriceYuan: string;
+  stock: string;
+  minimumOrderQuantity: string;
+  status: string;
+  sortOrder: string;
+  pricingMode: string;
+  weightUnitLabel: string;
+  weightUnitGrams: string;
+  weightTolerancePercent: string;
+}
+
+const productImageLimit = 20;
+const productVariantLimit = 50;
 
 interface CategoryForm {
   id: string;
@@ -154,6 +193,9 @@ interface MallFilterState {
   categoryCode: string;
   status: string;
   stockStatus: string;
+  sort: string;
+  page: string;
+  pageSize: string;
 }
 
 interface PickupPointForm {
@@ -661,6 +703,35 @@ const adminModules: AdminModuleSpec[] = [
   },
 ];
 
+function findAdminRoute(pageKey: string) {
+  for (const module of adminModules) {
+    const page = module.pages.find(item => item.key === pageKey);
+    if (page) return { moduleKey: module.key, pageKey: page.key };
+  }
+  return null;
+}
+
+function getInitialAdminRouteState() {
+  const fallback = { moduleKey: adminModules[0].key, pageKey: adminModules[0].pages[0].key };
+  if (typeof window === 'undefined') return fallback;
+
+  const rawHash = window.location.hash.replace(/^#\/?/, '');
+  const pageKey = decodeURIComponent(rawHash.split('?')[0] || '').trim();
+  return (pageKey ? findAdminRoute(pageKey) : null) || fallback;
+}
+
+function writeAdminRouteToLocation(pageKey: string, mode: 'push' | 'replace' = 'push') {
+  if (typeof window === 'undefined') return;
+  const nextHash = `#/${encodeURIComponent(pageKey)}`;
+  if (window.location.hash === nextHash) return;
+  const nextUrl = `${window.location.pathname}${window.location.search}${nextHash}`;
+  if (mode === 'replace') {
+    window.history.replaceState(null, '', nextUrl);
+    return;
+  }
+  window.history.pushState(null, '', nextUrl);
+}
+
 const initialData: DashboardData = {
   adminStats: {},
   users: [],
@@ -708,6 +779,7 @@ const initialProductForm: ProductForm = {
   subtitle: '',
   description: '',
   imageUrl: '',
+  images: [],
   specification: '单份',
   saleMethod: '按份',
   priceYuan: '19.90',
@@ -724,7 +796,29 @@ const initialProductForm: ProductForm = {
   status: 'on_sale',
   deliveryMinutes: '18',
   coldChainRequired: false,
+  variants: [createDefaultProductVariantForm()],
 };
+
+function createDefaultProductVariantForm(index = 0): ProductVariantForm {
+  return {
+    id: index === 0 ? 'default' : `variant-${Date.now()}-${index}`,
+    name: index === 0 ? '默认规格' : `规格${index + 1}`,
+    sku: '',
+    specification: '单份',
+    saleMethod: '按份',
+    priceYuan: '19.90',
+    originalPriceYuan: '',
+    supplyPriceYuan: '12.80',
+    stock: '80',
+    minimumOrderQuantity: '1',
+    status: 'on_sale',
+    sortOrder: String(index + 1),
+    pricingMode: 'fixed',
+    weightUnitLabel: '斤',
+    weightUnitGrams: '500',
+    weightTolerancePercent: '5',
+  };
+}
 
 const initialCategoryForm: CategoryForm = {
   id: '',
@@ -775,6 +869,9 @@ const initialProductFilters: MallFilterState = {
   categoryCode: '',
   status: '',
   stockStatus: '',
+  sort: 'updated_desc',
+  page: '1',
+  pageSize: '20',
 };
 
 const initialCategoryFilters: MallFilterState = {
@@ -782,6 +879,9 @@ const initialCategoryFilters: MallFilterState = {
   categoryCode: '',
   status: '',
   stockStatus: '',
+  sort: '',
+  page: '1',
+  pageSize: '100',
 };
 
 const initialInventoryFilters: MallFilterState = {
@@ -789,7 +889,27 @@ const initialInventoryFilters: MallFilterState = {
   categoryCode: '',
   status: '',
   stockStatus: 'alert',
+  sort: '',
+  page: '1',
+  pageSize: '100',
 };
+
+const productSortOptions = [
+  { value: 'updated_desc', label: '最近编辑' },
+  { value: 'updated_asc', label: '最早编辑' },
+  { value: 'price_asc', label: '价格从低到高' },
+  { value: 'price_desc', label: '价格从高到低' },
+  { value: 'stock_asc', label: '库存从低到高' },
+  { value: 'stock_desc', label: '库存从高到低' },
+  { value: 'category_asc', label: '类目 A-Z' },
+  { value: 'category_desc', label: '类目 Z-A' },
+  { value: 'name_asc', label: '商品名 A-Z' },
+  { value: 'name_desc', label: '商品名 Z-A' },
+  { value: 'newest', label: '最新上架' },
+  { value: 'oldest', label: '最早上架' },
+];
+
+const productPageSizeOptions = ['10', '20', '50', '100'];
 
 const initialCampaignForm: CampaignForm = {
   id: '',
@@ -1161,11 +1281,13 @@ async function fetchDashboardData(
       status: categoryFilters.status,
     })),
     loadWithFallback('商城商品', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/products', {
-      limit: 100,
       keyword: productFilters.keyword,
       categoryCode: productFilters.categoryCode,
       status: productFilters.status,
       stockStatus: productFilters.stockStatus,
+      sort: productFilters.sort,
+      page: productFilters.page,
+      pageSize: productFilters.pageSize,
     })),
     loadWithFallback('库存预警', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/inventory-alerts', {
       keyword: inventoryFilters.keyword,
@@ -1320,6 +1442,10 @@ function optionalNumber(value: string) {
 }
 
 function validateProductForm(form: ProductForm) {
+  const images = productFormImages(form);
+  if (images.length > productImageLimit) {
+    throw new Error(`单个商品最多上传 ${productImageLimit} 张图片`);
+  }
   for (const [label, value] of [
     ['名称', form.name],
     ['类目', form.categoryCode],
@@ -1342,6 +1468,38 @@ function validateProductForm(form: ProductForm) {
   if (moneyFromYuan(form.supplyPriceYuan) <= 0) {
     throw new Error('进货价必须大于0');
   }
+  if (!form.variants.length) {
+    throw new Error('至少需要一个商品规格');
+  }
+  if (form.variants.length > productVariantLimit) {
+    throw new Error(`单个商品最多配置 ${productVariantLimit} 个规格`);
+  }
+  form.variants.forEach((variant, index) => {
+    if (!variant.name.trim()) {
+      throw new Error(`第 ${index + 1} 个规格名称不能为空`);
+    }
+    if (moneyFromYuan(variant.priceYuan) <= 0) {
+      throw new Error(`第 ${index + 1} 个规格售价必须大于0`);
+    }
+    const variantStock = Number(variant.stock);
+    if (!Number.isFinite(variantStock) || variantStock < 0) {
+      throw new Error(`第 ${index + 1} 个规格库存不能小于0`);
+    }
+    const variantMinimumOrderQuantity = Number(variant.minimumOrderQuantity);
+    if (!Number.isFinite(variantMinimumOrderQuantity) || variantMinimumOrderQuantity <= 0) {
+      throw new Error(`第 ${index + 1} 个规格起订量必须大于0`);
+    }
+    if (variant.pricingMode === 'weighed') {
+      const unitGrams = Number(variant.weightUnitGrams);
+      const tolerance = Number(variant.weightTolerancePercent);
+      if (!Number.isFinite(unitGrams) || unitGrams <= 0) {
+        throw new Error(`第 ${index + 1} 个规格称重单位必须大于0克`);
+      }
+      if (!Number.isFinite(tolerance) || tolerance < 0 || tolerance > 50) {
+        throw new Error(`第 ${index + 1} 个规格称重浮动范围需在0%-50%之间`);
+      }
+    }
+  });
   const stock = Number(form.stock);
   if (!Number.isFinite(stock) || stock < 0) {
     throw new Error('库存不能小于0');
@@ -1376,6 +1534,102 @@ function resolveImage(url: string) {
   return `${API_BASE}/api/uploads/${url}`;
 }
 
+function compactProductImages(values: string[]) {
+  const seen = new Set<string>();
+  return values
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .filter(value => {
+      if (seen.has(value)) return false;
+      seen.add(value);
+      return true;
+    })
+    .slice(0, productImageLimit);
+}
+
+function productImagesFromRecord(record: JsonRecord) {
+  const imageKeys = arrayValue(record, 'imageKeys').map(item => String(item));
+  const images = imageKeys.length ? imageKeys : arrayValue(record, 'images').map(item => String(item));
+  const legacyImage = stringValue(record, 'imageKey', stringValue(record, 'imageUrl'));
+  return compactProductImages(legacyImage ? [legacyImage, ...images] : images);
+}
+
+function productFormImages(form: ProductForm) {
+  return compactProductImages(form.imageUrl ? [form.imageUrl, ...form.images] : form.images);
+}
+
+function productVariantsFromRecord(record: JsonRecord): ProductVariantForm[] {
+  const variants = arrayValue(record, 'variants')
+    .filter((item): item is JsonRecord => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+    .map((variant, index) => ({
+      id: stringValue(variant, 'id', index === 0 ? 'default' : `variant-${index + 1}`),
+      name: stringValue(variant, 'name', stringValue(variant, 'saleMethod', `规格${index + 1}`)),
+      sku: stringValue(variant, 'sku'),
+      specification: stringValue(variant, 'specification', stringValue(record, 'specification', stringValue(record, 'subtitle'))),
+      saleMethod: stringValue(variant, 'saleMethod', stringValue(record, 'saleMethod', stringValue(record, 'specification', '按份'))),
+      priceYuan: (numberValue(variant, 'priceCents', numberValue(record, 'priceCents')) / 100).toFixed(2),
+      originalPriceYuan: numberValue(variant, 'originalPriceCents')
+        ? (numberValue(variant, 'originalPriceCents') / 100).toFixed(2)
+        : '',
+      supplyPriceYuan: numberValue(variant, 'supplyPriceCents')
+        ? (numberValue(variant, 'supplyPriceCents') / 100).toFixed(2)
+        : '',
+      stock: String(numberValue(variant, 'stock', numberValue(record, 'stock'))),
+      minimumOrderQuantity: String(numberValue(variant, 'minimumOrderQuantity', numberValue(record, 'minimumOrderQuantity', 1))),
+      status: stringValue(variant, 'status', stringValue(record, 'status', 'on_sale')),
+      sortOrder: String(numberValue(variant, 'sortOrder', index + 1)),
+      pricingMode: stringValue(variant, 'pricingMode', 'fixed'),
+      weightUnitLabel: stringValue(variant, 'weightUnitLabel', '斤'),
+      weightUnitGrams: String(numberValue(variant, 'weightUnitGrams', 500)),
+      weightTolerancePercent: (numberValue(variant, 'weightToleranceBps', 500) / 100).toString(),
+    }));
+  if (variants.length) return variants.slice(0, productVariantLimit);
+  return [{
+    id: 'default',
+    name: stringValue(record, 'saleMethod', stringValue(record, 'specification', '默认规格')),
+    sku: stringValue(record, 'sku'),
+    specification: stringValue(record, 'specification', stringValue(record, 'subtitle', '单份')),
+    saleMethod: stringValue(record, 'saleMethod', stringValue(record, 'specification', '按份')),
+    priceYuan: (numberValue(record, 'priceCents') / 100).toFixed(2),
+    originalPriceYuan: numberValue(record, 'originalPriceCents')
+      ? (numberValue(record, 'originalPriceCents') / 100).toFixed(2)
+      : '',
+    supplyPriceYuan: numberValue(record, 'supplyPriceCents')
+      ? (numberValue(record, 'supplyPriceCents') / 100).toFixed(2)
+      : '',
+    stock: String(numberValue(record, 'stock')),
+    minimumOrderQuantity: String(numberValue(record, 'minimumOrderQuantity', 1)),
+    status: stringValue(record, 'status', 'on_sale'),
+    sortOrder: '1',
+    pricingMode: 'fixed',
+    weightUnitLabel: '斤',
+    weightUnitGrams: '500',
+    weightTolerancePercent: '5',
+  }];
+}
+
+function productVariantPayload(form: ProductForm) {
+  return form.variants.slice(0, productVariantLimit).map((variant, index) => ({
+    id: variant.id.trim() || (index === 0 ? 'default' : `variant-${index + 1}`),
+    name: variant.name.trim() || variant.saleMethod.trim() || `规格${index + 1}`,
+    sku: variant.sku.trim() || `${form.sku || 'SKU'}-${index + 1}`,
+    specification: variant.specification.trim() || form.specification,
+    saleMethod: variant.saleMethod.trim() || form.saleMethod,
+    priceCents: moneyFromYuan(variant.priceYuan || form.priceYuan),
+    originalPriceCents: variant.originalPriceYuan.trim() ? moneyFromYuan(variant.originalPriceYuan) : undefined,
+    supplyPriceCents: variant.supplyPriceYuan.trim() ? moneyFromYuan(variant.supplyPriceYuan) : undefined,
+    stock: Number(variant.stock) || 0,
+    minimumOrderQuantity: Number(variant.minimumOrderQuantity) || 1,
+    status: variant.status || 'on_sale',
+    sortOrder: Number(variant.sortOrder) || index + 1,
+    pricingMode: variant.pricingMode === 'weighed' ? 'weighed' : 'fixed',
+    weightUnit: variant.weightUnitLabel.trim() === '公斤' ? 'kg' : variant.weightUnitLabel.trim() === '克' ? 'g' : 'jin',
+    weightUnitLabel: variant.weightUnitLabel.trim() || '斤',
+    weightUnitGrams: Number(variant.weightUnitGrams) || 500,
+    weightToleranceBps: Math.round((Number(variant.weightTolerancePercent) || 0) * 100),
+  }));
+}
+
 function tagsText(record: JsonRecord) {
   const tags = arrayValue(record, 'tags')
     .map(item => String(item))
@@ -1384,20 +1638,24 @@ function tagsText(record: JsonRecord) {
 }
 
 function productToForm(product: JsonRecord, fallbackCategoryCode = 'fruit'): ProductForm {
+  const images = productImagesFromRecord(product);
+  const variants = productVariantsFromRecord(product);
+  const primaryVariant = variants[0] || createDefaultProductVariantForm();
   return {
     name: stringValue(product, 'name'),
     sku: stringValue(product, 'sku'),
     categoryCode: stringValue(product, 'categoryCode', fallbackCategoryCode),
     subtitle: stringValue(product, 'subtitle'),
     description: stringValue(product, 'description'),
-    imageUrl: stringValue(product, 'imageKey', stringValue(product, 'imageUrl')),
-    specification: stringValue(product, 'specification', stringValue(product, 'subtitle')),
-    saleMethod: stringValue(product, 'saleMethod', stringValue(product, 'specification', stringValue(product, 'subtitle'))),
-    priceYuan: (numberValue(product, 'priceCents') / 100).toFixed(2),
+    imageUrl: images[0] || '',
+    images,
+    specification: primaryVariant.specification || stringValue(product, 'specification', stringValue(product, 'subtitle')),
+    saleMethod: primaryVariant.saleMethod || stringValue(product, 'saleMethod', stringValue(product, 'specification', stringValue(product, 'subtitle'))),
+    priceYuan: primaryVariant.priceYuan || (numberValue(product, 'priceCents') / 100).toFixed(2),
     supplyPriceYuan: numberValue(product, 'supplyPriceCents')
       ? (numberValue(product, 'supplyPriceCents') / 100).toFixed(2)
-      : '',
-    stock: String(numberValue(product, 'stock')),
+      : primaryVariant.supplyPriceYuan,
+    stock: primaryVariant.stock || String(numberValue(product, 'stock')),
     stockAlertThreshold: String(numberValue(product, 'stockAlertThreshold', 15)),
     minimumOrderQuantity: String(numberValue(product, 'minimumOrderQuantity', 1)),
     lengthCm: stringValue(product, 'lengthCm'),
@@ -1409,6 +1667,7 @@ function productToForm(product: JsonRecord, fallbackCategoryCode = 'fruit'): Pro
     status: stringValue(product, 'status', 'on_sale'),
     deliveryMinutes: String(numberValue(product, 'deliveryMinutes', 18)),
     coldChainRequired: boolValue(product, 'coldChainRequired'),
+    variants,
   };
 }
 
@@ -1656,6 +1915,8 @@ function statusLabel(value: string) {
     inactive: '停用',
     deleted: '已删除',
     pending: '待审核',
+    none: '无需处理',
+    confirmed: '已确认',
     approved: '已通过',
     rejected: '已拒绝',
     on_sale: '在售',
@@ -2375,6 +2636,11 @@ function upsertRecordList(list: JsonRecord[], record: JsonRecord) {
     : [record, ...list];
 }
 
+function positiveFilterNumber(value: string, fallback: number) {
+  const next = Number(value);
+  return Number.isFinite(next) && next > 0 ? Math.floor(next) : fallback;
+}
+
 function metricValue(record: JsonRecord, keys: string[]) {
   for (const key of keys) {
     const value = record[key];
@@ -2391,6 +2657,23 @@ function itemLineTotal(item: JsonRecord) {
   const explicitTotal = numberValue(item, 'lineTotalCents', numberValue(item, 'totalPriceCents'));
   if (explicitTotal) return explicitTotal;
   return numberValue(item, 'unitPriceCents') * numberValue(item, 'quantity', 1);
+}
+
+function itemWeightText(item: JsonRecord, key = 'estimatedWeightGrams') {
+  const grams = numberValue(item, key);
+  if (!grams) return '-';
+  const unitGrams = numberValue(item, 'weightUnitGrams', 500) || 500;
+  const label = stringValue(item, 'weightUnitLabel', '斤');
+  const value = grams / unitGrams;
+  return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(2)}${label}`;
+}
+
+function orderHasWeightedItems(order: JsonRecord | null) {
+  return arrayValue(order || {}, 'items').some((item) => (
+    item && typeof item === 'object' && !Array.isArray(item)
+      ? stringValue(item as JsonRecord, 'pricingMode') === 'weighed'
+      : false
+  ));
 }
 
 function Icon({ name }: { name: IconName }) {
@@ -3500,7 +3783,7 @@ function MallProductDesignSection({
 }) {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const alertCount = products.filter(product => numberValue(product, 'stock') <= numberValue(product, 'stockAlertThreshold', 15)).length;
-  const completeCount = products.filter(product => stringValue(product, 'imageKey', stringValue(product, 'imageUrl')) && stringValue(product, 'specification') && stringValue(product, 'saleMethod')).length;
+  const completeCount = products.filter(product => productImagesFromRecord(product).length && stringValue(product, 'specification') && stringValue(product, 'saleMethod')).length;
 
   return (
     <div className="mall-admin-design-page">
@@ -3543,11 +3826,6 @@ function ProductFormFields({
 }) {
   const fieldClass = layout === 'tiles' ? 'mall-admin-tile' : undefined;
   const wrapperClass = layout === 'tiles' ? 'mall-admin-tile-grid' : 'form-grid';
-  const upload = async (file: File | undefined) => {
-    if (!file) return;
-    const imageUrl = await onUploadImage(file);
-    onChange({ imageUrl });
-  };
 
   return (
     <div className={wrapperClass}>
@@ -3570,11 +3848,12 @@ function ProductFormFields({
           {!categories.length ? <option value="fruit">水果鲜选</option> : null}
         </select>
       </label>
-      <label className={fieldClass}>
-        商品主图
-        <input accept="image/*" type="file" onChange={event => void upload(event.currentTarget.files?.[0])} />
-        <input value={form.imageUrl} onChange={event => onChange({ imageUrl: event.target.value })} placeholder="上传后自动填入图片地址" />
-      </label>
+      <ProductImageGalleryInput
+        className={fieldClass}
+        form={form}
+        onChange={onChange}
+        onUploadImage={onUploadImage}
+      />
       <label className={fieldClass}>
         <span className="field-label">售价<span className="required-mark">*</span></span>
         <input required value={form.priceYuan} type="number" min="0.01" step="0.01" onChange={event => onChange({ priceYuan: event.target.value })} />
@@ -3619,8 +3898,194 @@ function ProductFormFields({
         <span className="field-label">商品说明<span className="required-mark">*</span></span>
         <textarea required value={form.description} onChange={event => onChange({ description: event.target.value })} placeholder="商品卖点、包装、保存方式、售后说明等" />
       </label>
+      <ProductVariantSubtable form={form} layout={layout} onChange={onChange} />
       <ProductSpecSubtable form={form} layout={layout} onChange={onChange} />
     </div>
+  );
+}
+
+function ProductImageGalleryInput({
+  className,
+  form,
+  onChange,
+  onUploadImage,
+}: {
+  className?: string;
+  form: ProductForm;
+  onChange: (patch: Partial<ProductForm>) => void;
+  onUploadImage: (file: File) => Promise<string>;
+}) {
+  const images = productFormImages(form);
+  const showMessage = useAdminMessage();
+  const updateImages = (nextImages: string[]) => {
+    const normalized = compactProductImages(nextImages);
+    onChange({ images: normalized, imageUrl: normalized[0] || '' });
+  };
+  const upload = async (files: FileList | null | undefined) => {
+    if (!files?.length) return;
+    const fileList = Array.from(files);
+    if (images.length + fileList.length > productImageLimit) {
+      showMessage('warning', `单个商品最多上传 ${productImageLimit} 张图片`);
+      return;
+    }
+    const uploadedImages: string[] = [];
+    for (const file of fileList) {
+      uploadedImages.push(await onUploadImage(file));
+    }
+    updateImages([...images, ...uploadedImages]);
+  };
+  const updatePrimaryUrl = (value: string) => {
+    const currentImages = images.filter(image => image !== form.imageUrl);
+    updateImages(value ? [value, ...currentImages] : currentImages);
+  };
+
+  return (
+    <section className={className ? `${className} product-image-gallery-input` : 'product-image-gallery-input'}>
+      <div className="field-label-row">
+        <span>商品图片</span>
+        <small>{images.length}/{productImageLimit}</small>
+      </div>
+      <input accept="image/*" multiple type="file" onChange={event => void upload(event.currentTarget.files)} />
+      <input value={form.imageUrl} onChange={event => updatePrimaryUrl(event.target.value)} placeholder="主图地址" />
+      {images.length ? (
+        <div className="product-image-gallery-list">
+          {images.map((image, index) => (
+            <div className={index === 0 ? 'product-image-gallery-item active' : 'product-image-gallery-item'} key={image}>
+              <img alt="" src={resolveImage(image)} />
+              <span>{index === 0 ? '主图' : `图 ${index + 1}`}</span>
+              <div>
+                {index > 0 ? (
+                  <button type="button" onClick={() => updateImages([image, ...images.filter(item => item !== image)])}>设为主图</button>
+                ) : null}
+                <button type="button" onClick={() => updateImages(images.filter(item => item !== image))}>移除</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ProductVariantSubtable({
+  form,
+  layout,
+  onChange,
+}: {
+  form: ProductForm;
+  layout: 'grid' | 'tiles';
+  onChange: (patch: Partial<ProductForm>) => void;
+}) {
+  const showMessage = useAdminMessage();
+  const updateProductVariant = (index: number, patch: Partial<ProductVariantForm>) => {
+    onChange({
+      variants: form.variants.map((variant, currentIndex) => (
+        currentIndex === index ? { ...variant, ...patch } : variant
+      )),
+    });
+  };
+  const addProductVariant = () => {
+    if (form.variants.length >= productVariantLimit) {
+      showMessage('warning', `单个商品最多配置 ${productVariantLimit} 个规格`);
+      return;
+    }
+    const nextIndex = form.variants.length;
+    onChange({ variants: [...form.variants, createDefaultProductVariantForm(nextIndex)] });
+  };
+  const removeProductVariant = (index: number) => {
+    if (form.variants.length <= 1) {
+      showMessage('warning', '至少保留一个规格');
+      return;
+    }
+    onChange({ variants: form.variants.filter((_, currentIndex) => currentIndex !== index) });
+  };
+
+  return (
+    <section className={layout === 'tiles' ? 'mall-admin-spec-subtable mall-admin-tile wide' : 'product-variant-subtable wide'}>
+      <div className="spec-subtable-head">
+        <strong>售卖规格</strong>
+        <span>{form.variants.length}/{productVariantLimit}</span>
+        <button className="ghost-button compact-action" type="button" onClick={addProductVariant}>新增规格</button>
+      </div>
+      <div className="spec-subtable-scroll">
+        <table className="spec-subtable product-variant-table">
+          <thead>
+            <tr>
+              <th>规格名</th>
+              <th>SKU</th>
+              <th>销售规格</th>
+              <th>售卖方式</th>
+              <th>售价</th>
+              <th>划线价</th>
+              <th>进货价</th>
+              <th>库存</th>
+              <th>起订</th>
+              <th>计价方式</th>
+              <th>重量单位</th>
+              <th>浮动范围</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {form.variants.map((variant, index) => (
+              <tr key={`${variant.id}-${index}`}>
+                <td><input value={variant.name} onChange={event => updateProductVariant(index, { name: event.target.value })} /></td>
+                <td><input value={variant.sku} onChange={event => updateProductVariant(index, { sku: event.target.value })} /></td>
+                <td><input value={variant.specification} onChange={event => updateProductVariant(index, { specification: event.target.value })} /></td>
+                <td><input value={variant.saleMethod} onChange={event => updateProductVariant(index, { saleMethod: event.target.value })} /></td>
+                <td><input min="0.01" step="0.01" type="number" value={variant.priceYuan} onChange={event => updateProductVariant(index, { priceYuan: event.target.value })} /></td>
+                <td><input min="0" step="0.01" type="number" value={variant.originalPriceYuan} onChange={event => updateProductVariant(index, { originalPriceYuan: event.target.value })} /></td>
+                <td><input min="0" step="0.01" type="number" value={variant.supplyPriceYuan} onChange={event => updateProductVariant(index, { supplyPriceYuan: event.target.value })} /></td>
+                <td><input min="0" type="number" value={variant.stock} onChange={event => updateProductVariant(index, { stock: event.target.value })} /></td>
+                <td><input min="1" type="number" value={variant.minimumOrderQuantity} onChange={event => updateProductVariant(index, { minimumOrderQuantity: event.target.value })} /></td>
+                <td>
+                  <select value={variant.pricingMode} onChange={event => updateProductVariant(index, { pricingMode: event.target.value })}>
+                    <option value="fixed">固定计价</option>
+                    <option value="weighed">称重计价</option>
+                  </select>
+                </td>
+                <td>
+                  <select
+                    value={variant.weightUnitLabel}
+                    onChange={event => updateProductVariant(index, {
+                      weightUnitLabel: event.target.value,
+                      weightUnitGrams: event.target.value === '公斤' ? '1000' : event.target.value === '克' ? '1' : '500',
+                    })}
+                    disabled={variant.pricingMode !== 'weighed'}
+                  >
+                    <option value="斤">斤</option>
+                    <option value="公斤">公斤</option>
+                    <option value="克">克</option>
+                  </select>
+                </td>
+                <td>
+                  <input
+                    min="0"
+                    max="50"
+                    step="0.1"
+                    type="number"
+                    value={variant.weightTolerancePercent}
+                    onChange={event => updateProductVariant(index, { weightTolerancePercent: event.target.value })}
+                    disabled={variant.pricingMode !== 'weighed'}
+                  />
+                </td>
+                <td>
+                  <select value={variant.status} onChange={event => updateProductVariant(index, { status: event.target.value })}>
+                    <option value="on_sale">在售</option>
+                    <option value="off_sale">下架</option>
+                    <option value="draft">草稿</option>
+                  </select>
+                </td>
+                <td>
+                  <button className="ghost-button compact-action" type="button" onClick={() => removeProductVariant(index)}>删除</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -3677,7 +4142,7 @@ function ProductSpecSubtable({
 }
 
 function ProductImage({ record }: { record: JsonRecord }) {
-  const imageUrl = resolveImage(stringValue(record, 'imageUrl'));
+  const imageUrl = resolveImage(productImagesFromRecord(record)[0] || stringValue(record, 'imageUrl'));
   return (
     <div className="product-cell">
       {imageUrl ? <img alt="" src={imageUrl} /> : <span className="image-placeholder">无图</span>}
@@ -4097,6 +4562,7 @@ function MallProductsSection({
   products,
   filters,
   onFiltersChange,
+  onApplyFilters,
   onSearch,
   onStatus,
   onUpdate,
@@ -4106,18 +4572,23 @@ function MallProductsSection({
   products: JsonRecord[];
   filters: MallFilterState;
   onFiltersChange: (patch: Partial<MallFilterState>) => void;
+  onApplyFilters: (patch: Partial<MallFilterState>) => Promise<void>;
   onSearch: () => Promise<void>;
   onStatus: (id: string, status: string) => Promise<void>;
   onUpdate: (id: string, form: ProductForm) => Promise<void>;
   onUploadImage: (file: File) => Promise<string>;
 }) {
   const [editingProduct, setEditingProduct] = useState<JsonRecord | null>(null);
+  const currentPage = positiveFilterNumber(filters.page, 1);
+  const currentPageSize = positiveFilterNumber(filters.pageSize, 20);
+  const canGoPrevious = currentPage > 1;
+  const canGoNext = products.length >= currentPageSize;
 
   return (
     <div className="page-grid">
-      <div className="admin-filterbar">
-        <input value={filters.keyword} onChange={event => onFiltersChange({ keyword: event.target.value })} placeholder="搜索商品名称/SKU" />
-        <select value={filters.categoryCode} onChange={event => onFiltersChange({ categoryCode: event.target.value })}>
+      <div className="admin-filterbar product-filterbar">
+        <input value={filters.keyword} onChange={event => onFiltersChange({ keyword: event.target.value, page: '1' })} placeholder="搜索商品名称/SKU" />
+        <select value={filters.categoryCode} onChange={event => onFiltersChange({ categoryCode: event.target.value, page: '1' })}>
           <option value="">全部品类</option>
           {categories.map(category => (
             <option key={stringValue(category, 'code')} value={stringValue(category, 'code')}>
@@ -4125,17 +4596,27 @@ function MallProductsSection({
             </option>
           ))}
         </select>
-        <select value={filters.status} onChange={event => onFiltersChange({ status: event.target.value })}>
+        <select value={filters.status} onChange={event => onFiltersChange({ status: event.target.value, page: '1' })}>
           <option value="">全部状态</option>
           <option value="on_sale">在售</option>
           <option value="off_sale">下架</option>
           <option value="draft">草稿</option>
         </select>
-        <select value={filters.stockStatus} onChange={event => onFiltersChange({ stockStatus: event.target.value })}>
+        <select value={filters.stockStatus} onChange={event => onFiltersChange({ stockStatus: event.target.value, page: '1' })}>
           <option value="">全部库存</option>
           <option value="alert">库存预警</option>
           <option value="low">低库存</option>
           <option value="out">缺货</option>
+        </select>
+        <select value={filters.sort} onChange={event => void onApplyFilters({ sort: event.target.value, page: '1' })}>
+          {productSortOptions.map(option => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+        <select value={filters.pageSize} onChange={event => void onApplyFilters({ pageSize: event.target.value, page: '1' })}>
+          {productPageSizeOptions.map(pageSize => (
+            <option key={pageSize} value={pageSize}>每页 {pageSize} 条</option>
+          ))}
         </select>
         <button className="primary-button" type="button" onClick={() => void onSearch()}>
           <Icon name="refresh" />
@@ -4154,6 +4635,7 @@ function MallProductsSection({
                 <th>库存</th>
                 <th>规格</th>
                 <th>状态</th>
+                <th>最近编辑</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -4177,11 +4659,12 @@ function MallProductsSection({
                     <td>{numberValue(product, 'stock')}</td>
                     <td>
                       <span>{stringValue(product, 'specification', stringValue(product, 'subtitle', '-'))}</span>
-                      <small>{stringValue(product, 'saleMethod', '-')} · 起订 {numberValue(product, 'minimumOrderQuantity', 1)} · 阈值 {numberValue(product, 'stockAlertThreshold', 15)}</small>
+                      <small>{stringValue(product, 'saleMethod', '-')} · {arrayValue(product, 'variants').length || 1} 规格 · 起订 {numberValue(product, 'minimumOrderQuantity', 1)} · 阈值 {numberValue(product, 'stockAlertThreshold', 15)}</small>
                     </td>
                     <td>
                       <span className={badgeClass(status)}>{statusLabel(status)}</span>
                     </td>
+                    <td>{formatDate(stringValue(product, 'updatedAt', stringValue(product, 'createdAt')))}</td>
                     <td className="actions">
                       <button className="ghost-button" type="button" onClick={() => setEditingProduct(product)}>
                         <Icon name="save" />
@@ -4199,6 +4682,17 @@ function MallProductsSection({
           </table>
         </div>
         {!products.length ? <EmptyState text="暂无商品数据" /> : null}
+        <div className="product-pagination">
+          <span>第 {currentPage} 页 · 每页 {currentPageSize} 条 · 当前 {products.length} 条</span>
+          <div>
+            <button className="ghost-button" type="button" disabled={!canGoPrevious} onClick={() => void onApplyFilters({ page: String(currentPage - 1) })}>
+              上一页
+            </button>
+            <button className="ghost-button" type="button" disabled={!canGoNext} onClick={() => void onApplyFilters({ page: String(currentPage + 1) })}>
+              下一页
+            </button>
+          </div>
+        </div>
       </Panel>
 
       {editingProduct ? (
@@ -4733,7 +5227,13 @@ function MallInventorySection({
   );
 }
 
-function MallOrderDetailView({ order }: { order: JsonRecord }) {
+function MallOrderDetailView({
+  order,
+  onAdjustWeight,
+}: {
+  order: JsonRecord;
+  onAdjustWeight: (item: JsonRecord) => void;
+}) {
   const status = stringValue(order, 'status');
   const paymentStatus = stringValue(order, 'paymentStatus');
   const fulfillmentCode = recordValue(order, 'fulfillmentCode');
@@ -4794,7 +5294,11 @@ function MallOrderDetailView({ order }: { order: JsonRecord }) {
         <div>
           <span>实付金额</span>
           <strong>{yuan(numberValue(order, 'payableCents'))}</strong>
-          <small>{stringValue(order, 'remark', '-')}</small>
+          <small>
+            {orderHasWeightedItems(order)
+              ? `称重${statusLabel(stringValue(order, 'weightAdjustmentStatus'))} · 差额 ${yuan(numberValue(order, 'weightAdjustmentCents'))}`
+              : stringValue(order, 'remark', '-')}
+          </small>
         </div>
       </div>
 
@@ -4808,7 +5312,9 @@ function MallOrderDetailView({ order }: { order: JsonRecord }) {
                 <th>规格</th>
                 <th>单价</th>
                 <th>数量</th>
+                <th>称重</th>
                 <th>小计</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -4826,7 +5332,22 @@ function MallOrderDetailView({ order }: { order: JsonRecord }) {
                     </td>
                     <td>{yuan(numberValue(row, 'unitPriceCents'))}</td>
                     <td>{numberValue(row, 'quantity')}</td>
+                    <td>
+                      {stringValue(row, 'pricingMode') === 'weighed' ? (
+                        <span>
+                          预估 {itemWeightText(row)}
+                          <small>实际 {itemWeightText(row, 'actualWeightGrams')}</small>
+                        </span>
+                      ) : '-'}
+                    </td>
                     <td>{yuan(itemLineTotal(row))}</td>
+                    <td>
+                      {stringValue(row, 'pricingMode') === 'weighed' ? (
+                        <button className="ghost-button compact-action" type="button" onClick={() => onAdjustWeight(row)}>
+                          称重改价
+                        </button>
+                      ) : '-'}
+                    </td>
                   </tr>
                 );
               })}
@@ -4891,12 +5412,14 @@ function MallOrderDetailModal({
   loading,
   error,
   onClose,
+  onAdjustWeight,
 }: {
   open: boolean;
   order: JsonRecord | null;
   loading: boolean;
   error: string;
   onClose: () => void;
+  onAdjustWeight: (item: JsonRecord) => void;
 }) {
   if (!open) return null;
 
@@ -4915,7 +5438,72 @@ function MallOrderDetailModal({
         </div>
         {loading ? <div className="loading-panel">正在加载订单详情...</div> : null}
         {error ? <div className="detail-error">{error}</div> : null}
-        {!loading && !error && order ? <MallOrderDetailView order={order} /> : null}
+        {!loading && !error && order ? <MallOrderDetailView order={order} onAdjustWeight={onAdjustWeight} /> : null}
+      </section>
+    </div>
+  );
+}
+
+function WeightAdjustmentModal({
+  item,
+  saving,
+  onClose,
+  onSubmit,
+}: {
+  item: JsonRecord | null;
+  saving: boolean;
+  onClose: () => void;
+  onSubmit: (actualWeightJin: string, note: string) => Promise<void>;
+}) {
+  const [actualWeightJin, setActualWeightJin] = useState('');
+  const [note, setNote] = useState('');
+
+  useEffect(() => {
+    if (!item) return;
+    setActualWeightJin('');
+    setNote(stringValue(item, 'weightAdjustmentNote'));
+  }, [item]);
+
+  if (!item) return null;
+
+  return (
+    <div className="modal-backdrop">
+      <section className="modal-panel weight-adjustment-modal">
+        <div className="modal-title-row">
+          <div>
+            <h2>称重改价</h2>
+            <p>{stringValue(item, 'productName', '-')} · 预估 {itemWeightText(item)}</p>
+          </div>
+          <button className="ghost-button small" type="button" onClick={onClose}>
+            <Icon name="x" />
+            关闭
+          </button>
+        </div>
+        <div className="form-grid">
+          <label>
+            实际重量（斤）
+            <input
+              autoFocus
+              min="0.01"
+              step="0.01"
+              type="number"
+              value={actualWeightJin}
+              onChange={event => setActualWeightJin(event.target.value)}
+              placeholder="例如 30.1"
+            />
+          </label>
+          <label>
+            改价备注
+            <input value={note} onChange={event => setNote(event.target.value)} placeholder="称重员、批次或异常说明" />
+          </label>
+        </div>
+        <div className="modal-actions">
+          <button className="ghost-button" type="button" onClick={onClose}>取消</button>
+          <button className="primary-button" type="button" disabled={saving || !actualWeightJin.trim()} onClick={() => void onSubmit(actualWeightJin, note)}>
+            <Icon name="save" />
+            {saving ? '保存中' : '保存改价'}
+          </button>
+        </div>
       </section>
     </div>
   );
@@ -7863,15 +8451,39 @@ function LoginScreen({
   );
 }
 
+function AdminMessageHost({
+  messages,
+  onDismiss,
+}: {
+  messages: AdminMessageItem[];
+  onDismiss: (id: string) => void;
+}) {
+  if (!messages.length) return null;
+
+  return (
+    <div className="admin-message-stack" role="status" aria-live="polite">
+      {messages.map(message => (
+        <div className={`admin-message admin-message-${message.type}`} key={message.id}>
+          <span>{message.content}</span>
+          <button type="button" aria-label="关闭消息" onClick={() => onDismiss(message.id)}>×</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function App() {
+  const initialAdminRoute = getInitialAdminRouteState();
   const [session, setSession] = useState<AdminSession | null>(() => getStoredAdminSession());
-  const [activeModuleKey, setActiveModuleKey] = useState<AdminModuleKey>('platform');
-  const [activePageKey, setActivePageKey] = useState('platform.overview');
+  const [activeModuleKey, setActiveModuleKey] = useState<AdminModuleKey>(initialAdminRoute.moduleKey);
+  const [activePageKey, setActivePageKey] = useState(initialAdminRoute.pageKey);
   const [data, setData] = useState<DashboardData>(initialData);
   const [errors, setErrors] = useState<LoadErrors>({});
   const [loading, setLoading] = useState(() => Boolean(getStoredAdminSession()));
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState('正在加载管理数据');
+  const [messages, setMessages] = useState<AdminMessageItem[]>([]);
+  const messageTimers = useRef<Record<string, number>>({});
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [moduleSwitcherCollapsed, setModuleSwitcherCollapsed] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
@@ -7909,6 +8521,8 @@ function App() {
   const [mallOrderSearchResults, setMallOrderSearchResults] = useState<JsonRecord[]>([]);
   const [mallOrderSearchLoading, setMallOrderSearchLoading] = useState(false);
   const [mallOrderSearchError, setMallOrderSearchError] = useState('');
+  const [weightAdjustmentItem, setWeightAdjustmentItem] = useState<JsonRecord | null>(null);
+  const [weightAdjustmentSaving, setWeightAdjustmentSaving] = useState(false);
 
   const currentModule = useMemo(
     () => adminModules.find(module => module.key === activeModuleKey) || adminModules[0],
@@ -7939,6 +8553,42 @@ function App() {
     [data.supportTickets, supportFilters],
   );
 
+  const dismissMessage = useCallback((id: string) => {
+    const timer = messageTimers.current[id];
+    if (timer) {
+      window.clearTimeout(timer);
+      delete messageTimers.current[id];
+    }
+    setMessages(current => current.filter(message => message.id !== id));
+  }, []);
+
+  const showMessage = useCallback<AdminMessageHandler>((type, content) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setMessages(current => [...current.slice(-3), { id, type, content }]);
+    messageTimers.current[id] = window.setTimeout(() => dismissMessage(id), 3000);
+  }, [dismissMessage]);
+
+  useEffect(() => () => {
+    Object.values(messageTimers.current).forEach(timer => window.clearTimeout(timer));
+    messageTimers.current = {};
+  }, []);
+
+  useEffect(() => {
+    const syncAdminRouteFromLocation = () => {
+      const nextRoute = getInitialAdminRouteState();
+      setActiveModuleKey(nextRoute.moduleKey);
+      setActivePageKey(nextRoute.pageKey);
+    };
+
+    window.addEventListener('hashchange', syncAdminRouteFromLocation);
+    window.addEventListener('popstate', syncAdminRouteFromLocation);
+    writeAdminRouteToLocation(activePageKey, 'replace');
+    return () => {
+      window.removeEventListener('hashchange', syncAdminRouteFromLocation);
+      window.removeEventListener('popstate', syncAdminRouteFromLocation);
+    };
+  }, []);
+
   const resetDashboardState = () => {
     setData(initialData);
     setErrors({});
@@ -7953,6 +8603,9 @@ function App() {
     setMallOrderSearchResults([]);
     setMallOrderSearchLoading(false);
     setMallOrderSearchError('');
+    setProductFilters(initialProductFilters);
+    setCategoryFilters(initialCategoryFilters);
+    setInventoryFilters(initialInventoryFilters);
     setCampaignForm(initialCampaignForm);
     setCouponForm(initialCouponForm);
     setHomeBannerForm(initialHomeBannerForm);
@@ -7971,15 +8624,16 @@ function App() {
     setLoading(false);
   };
 
-  const reload = async () => {
+  const reload = async (overrides: { productFilters?: MallFilterState } = {}) => {
     if (!getStoredAdminSession()) {
       setLoading(false);
       return;
     }
 
+    const nextProductFilters = overrides.productFilters || productFilters;
     setLoading(true);
     const result = await fetchDashboardData(
-      productFilters,
+      nextProductFilters,
       categoryFilters,
       inventoryFilters,
       campaignFilters,
@@ -8001,12 +8655,19 @@ function App() {
     setNotice(Object.keys(result.errors).length ? '部分数据暂不可用，已显示可用内容' : '管理数据已更新');
   };
 
+  const applyProductFilters = async (patch: Partial<MallFilterState>) => {
+    const nextFilters = { ...productFilters, ...patch };
+    setProductFilters(nextFilters);
+    await reload({ productFilters: nextFilters });
+  };
+
   useEffect(() => {
     const handler = (message: string) => {
       resetDashboardState();
       setSession(null);
       setAuthError(message || '登录已过期，请重新登录');
       setNotice('登录已过期，请重新登录');
+      showMessage('warning', message || '登录已过期，请重新登录');
     };
 
     adminAuthFailureHandler = handler;
@@ -8016,7 +8677,7 @@ function App() {
         adminAuthFailureHandler = null;
       }
     };
-  }, []);
+  }, [showMessage]);
 
   useEffect(() => {
     if (!session) {
@@ -8052,8 +8713,11 @@ function App() {
     try {
       await action();
       setNotice(`${label}成功`);
+      showMessage('success', `${label}成功`);
     } catch (error) {
-      setNotice(`${label}失败：${error instanceof Error ? error.message : '未知错误'}`);
+      const message = `${label}失败：${error instanceof Error ? error.message : '未知错误'}`;
+      setNotice(message);
+      showMessage('error', message);
     } finally {
       setBusy('');
     }
@@ -8118,6 +8782,7 @@ function App() {
         const nextSession = persistAdminSession(user);
         setSession(nextSession);
         setNotice('登录成功，正在加载管理端数据');
+        showMessage('success', '登录成功，正在加载管理端数据');
         setLoading(true);
         return;
       }
@@ -8127,11 +8792,14 @@ function App() {
       setSession(null);
       setAuthError('当前账号不是管理员，无法登录管理端');
       setNotice('非管理员账号已退出');
+      showMessage('warning', '当前账号不是管理员，无法登录管理端');
     } catch (error) {
       clearStoredAdminSession();
       resetDashboardState();
       setSession(null);
-      setAuthError(error instanceof Error ? error.message : '登录失败，请稍后重试');
+      const message = error instanceof Error ? error.message : '登录失败，请稍后重试';
+      setAuthError(message);
+      showMessage('error', message);
     } finally {
       setAuthLoading(false);
     }
@@ -8150,6 +8818,7 @@ function App() {
       setSession(null);
       setAuthError('');
       setNotice('已退出登录');
+      showMessage('success', '已退出登录');
     }
   };
 
@@ -8210,13 +8879,17 @@ function App() {
         .split(',')
         .map(tag => tag.trim())
         .filter(Boolean);
+      const images = productFormImages(productForm);
+      const variants = productVariantPayload(productForm);
       await apiPost('/api/admin/mall/products', {
         name: productForm.name || '新增鲜选商品',
         sku: productForm.sku || `WEB-${Date.now()}`,
         categoryCode: productForm.categoryCode,
         subtitle: productForm.subtitle,
         description: productForm.description,
-        imageUrl: productForm.imageUrl,
+        imageUrl: images[0] || '',
+        images,
+        variants,
         specification: productForm.specification,
         saleMethod: productForm.saleMethod,
         priceCents: moneyFromYuan(productForm.priceYuan),
@@ -8253,13 +8926,17 @@ function App() {
         .split(',')
         .map(tag => tag.trim())
         .filter(Boolean);
+      const images = productFormImages(form);
+      const variants = productVariantPayload(form);
       const product = await apiPut<JsonRecord>(`/api/admin/mall/products/${id}`, {
         name: form.name,
         sku: form.sku,
         categoryCode: form.categoryCode,
         subtitle: form.subtitle,
         description: form.description,
-        imageUrl: form.imageUrl,
+        imageUrl: images[0] || '',
+        images,
+        variants,
         specification: form.specification,
         saleMethod: form.saleMethod,
         priceCents: moneyFromYuan(form.priceYuan),
@@ -8294,9 +8971,12 @@ function App() {
         throw new Error('上传结果缺少图片地址');
       }
       setNotice('商品图片上传成功');
+      showMessage('success', '商品图片上传成功');
       return imageUrl;
     } catch (error) {
-      setNotice(`商品图片上传失败：${error instanceof Error ? error.message : '未知错误'}`);
+      const message = `商品图片上传失败：${error instanceof Error ? error.message : '未知错误'}`;
+      setNotice(message);
+      showMessage('error', message);
       throw error;
     } finally {
       setBusy('');
@@ -8386,6 +9066,30 @@ function App() {
       setMallOrderDetailError(error instanceof Error ? error.message : '订单详情加载失败');
     } finally {
       setMallOrderDetailLoading(false);
+    }
+  };
+
+  const submitWeightAdjustment = async (actualWeightJin: string, note: string) => {
+    if (!mallOrderDetail || !weightAdjustmentItem) return;
+    const orderId = stringValue(mallOrderDetail, 'id');
+    const itemId = stringValue(weightAdjustmentItem, 'id');
+    if (!orderId || !itemId) return;
+    setWeightAdjustmentSaving(true);
+    try {
+      const nextOrder = await apiPut<JsonRecord>(`/api/admin/mall/orders/${encodeURIComponent(orderId)}/weight-adjustment`, {
+        itemId,
+        actualWeightJin: Number(actualWeightJin),
+        adjustedBy: currentAdmin.name || currentAdmin.phone || 'admin',
+        note,
+      });
+      setMallOrderDetail(nextOrder);
+      setWeightAdjustmentItem(null);
+      await reload();
+      showMessage('success', '称重改价保存成功');
+    } catch (error) {
+      showMessage('error', error instanceof Error ? error.message : '称重改价保存失败');
+    } finally {
+      setWeightAdjustmentSaving(false);
     }
   };
 
@@ -8971,8 +9675,8 @@ function App() {
   const selectSession = async (id: string) => {
     setSelectedSessionId(id);
     await runAction('会话消息加载', async () => {
-      const messages = await apiGet<JsonRecord[]>(`/api/support/sessions/${id}/messages`);
-      setSupportMessages(messages);
+      const sessionMessages = await apiGet<JsonRecord[]>(`/api/support/sessions/${id}/messages`);
+      setSupportMessages(sessionMessages);
     });
   };
 
@@ -9081,10 +9785,16 @@ function App() {
     const nextModule = adminModules.find(module => module.key === moduleKey) || adminModules[0];
     setActiveModuleKey(nextModule.key);
     setActivePageKey(nextModule.pages[0].key);
+    writeAdminRouteToLocation(nextModule.pages[0].key);
   };
 
   const selectPage = (pageKey: string) => {
+    const route = findAdminRoute(pageKey);
+    if (route) {
+      setActiveModuleKey(route.moduleKey);
+    }
     setActivePageKey(pageKey);
+    writeAdminRouteToLocation(pageKey);
     const homeSectionConfig = homeSectionPageConfigs[pageKey];
     if (homeSectionConfig) {
       resetHomeSectionForm(homeSectionConfig.sectionType);
@@ -9165,8 +9875,9 @@ function App() {
           categories={data.mallCategories}
           filters={productFilters}
           products={data.mallProducts}
+          onApplyFilters={applyProductFilters}
           onFiltersChange={patch => setProductFilters(current => ({ ...current, ...patch }))}
-          onSearch={reload}
+          onSearch={() => applyProductFilters({ page: '1' })}
           onStatus={updateProductStatus}
           onUpdate={updateProduct}
           onUploadImage={uploadProductImage}
@@ -9517,7 +10228,12 @@ function App() {
   };
 
   if (!session) {
-    return <LoginScreen error={authError} loading={authLoading} onSubmit={handleLogin} />;
+    return (
+      <AdminMessageContext.Provider value={showMessage}>
+        <AdminMessageHost messages={messages} onDismiss={dismissMessage} />
+        <LoginScreen error={authError} loading={authLoading} onSubmit={handleLogin} />
+      </AdminMessageContext.Provider>
+    );
   }
 
   const currentAdmin = session.user;
@@ -9527,7 +10243,9 @@ function App() {
   const moduleCollapsed = moduleSwitcherCollapsed;
 
   return (
-    <div className={`admin-shell design-admin module-${currentModule.theme}${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
+    <AdminMessageContext.Provider value={showMessage}>
+      <AdminMessageHost messages={messages} onDismiss={dismissMessage} />
+      <div className={`admin-shell design-admin module-${currentModule.theme}${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       <aside className="sidebar design-sidebar">
         <div className="sidebar-top">
           <div className="sidebar-head">
@@ -9615,6 +10333,7 @@ function App() {
                 >
                   <span>{group}</span>
                   <small>{pages.length} 项</small>
+                  <b className="page-menu-state">{groupCollapsed ? '展开' : '收起'}</b>
                 </button>
                 <div className={groupCollapsed ? 'page-menu-items page-menu-items-collapsed' : 'page-menu-items'}>
                   {pages.map(page => (
@@ -9677,7 +10396,15 @@ function App() {
         onClose={() => {
           setMallOrderDetailModalOpen(false);
           setMallOrderDetailError('');
+          setWeightAdjustmentItem(null);
         }}
+        onAdjustWeight={setWeightAdjustmentItem}
+      />
+      <WeightAdjustmentModal
+        item={weightAdjustmentItem}
+        saving={weightAdjustmentSaving}
+        onClose={() => setWeightAdjustmentItem(null)}
+        onSubmit={submitWeightAdjustment}
       />
       {logoutConfirmOpen ? (
         <div className="modal-backdrop">
@@ -9701,7 +10428,8 @@ function App() {
           </section>
         </div>
       ) : null}
-    </div>
+      </div>
+    </AdminMessageContext.Provider>
   );
 }
 

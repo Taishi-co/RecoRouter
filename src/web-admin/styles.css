@@ -188,6 +188,78 @@ nav {
   border-color: #f3d38b;
 }
 
+.admin-message-stack {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  z-index: 1200;
+  display: flex;
+  width: min(520px, calc(100vw - 32px));
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.admin-message {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px 10px 14px;
+  color: #1f2d1f;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+  background: #ffffff;
+  border: 1px solid #d6e4d3;
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgb(21 33 21 / 16%);
+  pointer-events: auto;
+}
+
+.admin-message-success {
+  color: #155c2f;
+  background: #f2fbef;
+  border-color: #b9ddb4;
+}
+
+.admin-message-error {
+  color: #8f1d1d;
+  background: #fff5f5;
+  border-color: #f4c7c7;
+}
+
+.admin-message-warning {
+  color: #83550d;
+  background: #fff8eb;
+  border-color: #f5d49a;
+}
+
+.admin-message-info {
+  color: #1d3f7a;
+  background: #f5f8ff;
+  border-color: #c9d8f1;
+}
+
+.admin-message button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  place-items: center;
+  padding: 0;
+  color: currentcolor;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+}
+
+.admin-message button:hover {
+  background: rgb(0 0 0 / 7%);
+}
+
 .ghost-button,
 .primary-button {
   display: inline-flex;
@@ -492,9 +564,10 @@ nav {
 }
 
 .page-menu-title {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   width: 100%;
   min-height: 28px;
   margin: 0 0 7px;
@@ -518,11 +591,17 @@ nav {
   font-size: 11px;
 }
 
+.page-menu-state {
+  color: #aab8d5;
+  font-size: 11px;
+}
+
 .module-green .page-menu-title {
   color: #9cc6a5;
 }
 
-.module-green .page-menu-title small {
+.module-green .page-menu-title small,
+.module-green .page-menu-state {
   color: #9cc6a5;
 }
 
@@ -1672,6 +1751,25 @@ td small {
   border-radius: 8px;
 }
 
+.product-filterbar {
+  grid-template-columns: minmax(220px, 1.3fr) repeat(5, minmax(130px, 0.7fr)) auto;
+}
+
+.product-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 2px 0;
+  color: #667085;
+  font-size: 13px;
+}
+
+.product-pagination > div {
+  display: flex;
+  gap: 8px;
+}
+
 .pickup-admin-filterbar {
   grid-template-columns: minmax(240px, 1.4fr) minmax(160px, 0.8fr) minmax(130px, 0.7fr) auto auto;
 }
@@ -1796,6 +1894,21 @@ td span {
   align-items: center;
 }
 
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #3d4758;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.field-label-row small {
+  color: #7b8494;
+  font-size: 12px;
+}
+
 .required-mark {
   color: #d84a3a;
   font-weight: 900;
@@ -1805,6 +1918,65 @@ td span {
   grid-column: 1 / -1;
 }
 
+.product-image-gallery-input {
+  display: grid;
+  gap: 8px;
+  color: #3d4758;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.product-image-gallery-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+  gap: 8px;
+}
+
+.product-image-gallery-item {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  background: #fbfaf6;
+  border: 1px solid #dfe5ed;
+  border-radius: 8px;
+}
+
+.product-image-gallery-item.active {
+  border-color: #63bf54;
+  box-shadow: 0 0 0 2px rgb(99 191 84 / 14%);
+}
+
+.product-image-gallery-item img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #edf2eb;
+}
+
+.product-image-gallery-item span {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.product-image-gallery-item div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.product-image-gallery-item button {
+  padding: 4px 7px;
+  color: #42623d;
+  background: #f3f8f0;
+  border: 1px solid #d9e8d3;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.product-variant-subtable,
 .product-spec-subtable,
 .mall-admin-spec-subtable {
   display: grid;
@@ -1836,6 +2008,16 @@ td span {
 
 .spec-subtable {
   min-width: 760px;
+}
+
+.product-variant-table {
+  min-width: 1500px;
+}
+
+.compact-action {
+  min-height: 30px;
+  padding: 5px 9px;
+  font-size: 12px;
 }
 
 .spec-subtable th,
@@ -1944,6 +2126,10 @@ td span {
 
 .order-detail-modal {
   width: min(1080px, calc(100vw - 48px));
+}
+
+.weight-adjustment-modal {
+  width: min(560px, calc(100vw - 48px));
 }
 
 .order-search-form {

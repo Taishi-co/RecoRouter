@@ -18,6 +18,7 @@ import {
   MallPage,
   MallPrimaryButton,
   MallProductThumb,
+  mallWeightText,
   mallYuan,
 } from '../mall-ui'
 import { redirectToMallAuth } from '../auth-route'
@@ -218,7 +219,14 @@ export default function MallCartPage() {
               </View>
               <View className="mall-v7-cart-copy">
                 <Text className="mall-v7-product-name">{item.product?.name || '商品'}</Text>
-                <Text className="mall-v7-product-subtitle">{item.product?.subtitle || '基地直采 · 今日锁鲜'}</Text>
+                <Text className="mall-v7-product-subtitle">
+                  {item.variantName || item.product?.specification || item.product?.subtitle || '基地直采 · 今日锁鲜'}
+                </Text>
+                {item.pricingMode === 'weighed' ? (
+                  <Text className="mall-v7-product-subtitle">
+                    预估 {mallWeightText(item.estimatedWeightGrams, item.weightUnitGrams || 500, item.weightUnitLabel || '斤')}，称重后确认金额
+                  </Text>
+                ) : null}
                 <View className="mall-v7-unit-row">
                   <Text>满减前 {mallYuan(item.originalUnitPriceCents ?? item.product?.priceCents ?? 0)}</Text>
                   <Text>满减后 {mallYuan(item.discountedUnitPriceCents ?? item.product?.priceCents ?? 0)}</Text>

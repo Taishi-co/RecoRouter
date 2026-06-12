@@ -139,6 +139,8 @@ const emptyProductForm: ProductForm = {
   weightKg: '0.5',
 }
 
+const mallProductImageLimit = 20
+
 const emptyPickupPointForm: PickupPointForm = {
   id: '',
   name: '',
@@ -298,12 +300,19 @@ export default function AdminMallWorkbench() {
       return
     }
 
+    const productImages = parseProductImages(productForm.imageUrl)
+    if (productImages.length > mallProductImageLimit) {
+      Taro.showToast({ title: `最多 ${mallProductImageLimit} 张商品图片`, icon: 'none' })
+      return
+    }
+
     try {
       await adminCreateMallProduct({
         name: productForm.name.trim(),
         sku: productForm.sku.trim(),
         categoryCode: productForm.categoryCode.trim() || 'general',
-        imageUrl: productForm.imageUrl.trim(),
+        imageUrl: productImages[0] || '',
+        images: productImages,
         subtitle: productForm.spec.trim(),
         specification: productForm.spec.trim(),
         saleMethod: productForm.saleMethod.trim(),
@@ -598,7 +607,7 @@ export default function AdminMallWorkbench() {
               <Field label="分类" value={productForm.categoryCode} placeholder="vegetable" onChange={(value) => updateProductForm(setProductForm, 'categoryCode', value)} />
               <Field label="规格" value={productForm.spec} placeholder="500g/份" onChange={(value) => updateProductForm(setProductForm, 'spec', value)} />
               <Field label="售卖方式" value={productForm.saleMethod} placeholder="单瓶/整件/按斤" onChange={(value) => updateProductForm(setProductForm, 'saleMethod', value)} />
-              <Field label="商品图片" value={productForm.imageUrl} placeholder="上传后图片地址" onChange={(value) => updateProductForm(setProductForm, 'imageUrl', value)} full />
+              <Field label="商品图片" value={productForm.imageUrl} placeholder="多个图片地址用逗号分隔，最多20张" onChange={(value) => updateProductForm(setProductForm, 'imageUrl', value)} full />
               <Field label="进货价" type="digit" value={productForm.supplyPriceYuan} onChange={(value) => updateProductForm(setProductForm, 'supplyPriceYuan', value)} />
               <Field label="建议零售价" type="digit" value={productForm.priceYuan} onChange={(value) => updateProductForm(setProductForm, 'priceYuan', value)} />
               <Field label="划线价" type="digit" value={productForm.originalPriceYuan} onChange={(value) => updateProductForm(setProductForm, 'originalPriceYuan', value)} />
@@ -1272,6 +1281,19 @@ function parseInteger(value: string, fallback: number) {
 function parseDecimal(value: string) {
   const number = Number(value)
   return Number.isFinite(number) ? number : undefined
+}
+
+function parseProductImages(value: string) {
+  const seen = new Set<string>()
+  return value
+    .split(/[\n,，]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item) => {
+      if (seen.has(item)) return false
+      seen.add(item)
+      return true
+    })
 }
 
 function todayKey() {

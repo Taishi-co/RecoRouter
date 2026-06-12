@@ -23,15 +23,28 @@ expect(mainSource.includes('aria-label="退出登录"'), 'icon-only collapsed lo
 expect(mainSource.includes('aria-label={`${module.moduleLabel}，${module.pages.length} 页`}'), 'collapsed module buttons must keep full accessible names.');
 expect(mainSource.includes('aria-expanded={!moduleCollapsed}'), 'module buttons must expose expanded state.');
 expect(mainSource.includes('aria-expanded={!groupCollapsed}'), 'page group buttons must expose expanded state.');
+expect(mainSource.includes('page-menu-state'), 'page group buttons must show a visible expand/collapse state.');
 expect(mainSource.includes('module-pages-collapsed'), 'collapsed modules must hide their page list.');
 expect(mainSource.includes('page-menu-items-collapsed'), 'collapsed page groups must hide their function list.');
+expect(mainSource.includes('getInitialAdminRouteState'), 'web admin must restore the active module/page from the current URL.');
+expect(mainSource.includes('writeAdminRouteToLocation'), 'web admin must sync module/page changes into the URL.');
+expect(mainSource.includes("window.addEventListener('hashchange'"), 'web admin must respond to hash navigation.');
 expect(mainSource.includes('normalizeLoadedValue'), 'dashboard loading must normalize malformed API payloads.');
 expect(mainSource.includes('Array.isArray(fallback)'), 'dashboard loading must guard list payloads before rendering.');
+expect(mainSource.includes('AdminMessageHost'), 'web admin must render a global top message host for operation feedback.');
+expect(mainSource.includes("showMessage('success'"), 'web admin write operations must show success messages.');
+expect(mainSource.includes("showMessage('error'"), 'web admin write operations must show failure messages.');
+expect(mainSource.includes('window.setTimeout(() => dismissMessage(id), 3000)'), 'web admin messages must auto-dismiss after 3 seconds.');
+expect(!mainSource.includes('window.alert'), 'web admin must use global messages instead of blocking alert dialogs.');
 expect(cssSource.includes('.design-admin.sidebar-collapsed'), 'collapsed sidebar layout must be styled.');
 expect(cssSource.includes('.sidebar-collapsed .design-sidebar'), 'collapsed sidebar must restyle the sidebar itself.');
 expect(cssSource.includes('.sidebar-bottom'), 'sidebar bottom area must be styled for account actions.');
 expect(cssSource.includes('.module-pages-collapsed'), 'sidebar module collapse must be styled.');
 expect(cssSource.includes('.page-menu-items-collapsed'), 'sidebar page group collapse must be styled.');
+expect(cssSource.includes('.page-menu-state'), 'page group expand/collapse state must be styled.');
+expect(cssSource.includes('.admin-message-stack'), 'global operation messages must be fixed at the top of the viewport.');
+expect(cssSource.includes('.admin-message-success'), 'global operation messages must include a success style.');
+expect(cssSource.includes('.admin-message-error'), 'global operation messages must include an error style.');
 
 const topbarMatch = mainSource.match(/<header className="topbar design-topbar">[\s\S]*?<\/header>/);
 expect(Boolean(topbarMatch), 'web admin shell must keep a topbar header.');

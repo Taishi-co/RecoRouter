@@ -42,6 +42,16 @@ export function mallYuan(cents?: number | null) {
   return formatted.replace(/(\.\d)0$/, '$1')
 }
 
+export function mallWeightText(
+  grams?: number | null,
+  unitGrams = 500,
+  unitLabel = '斤',
+) {
+  if (!grams || grams <= 0) return ''
+  const value = grams / Math.max(unitGrams || 500, 1)
+  return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(2)}${unitLabel || '斤'}`
+}
+
 export function MallStatusBar() {
   return null
 }
@@ -177,7 +187,7 @@ export function MallSearchBox({
 }
 
 export function MallProductThumb({ product, large }: { product?: MallProduct | null; large?: boolean }) {
-  const imageUrl = resolveMallImageUrl(product?.imageUrl)
+  const imageUrl = primaryMallProductImageUrl(product)
   if (imageUrl) {
     return <Image className={large ? 'mall-product-image mall-product-image-large' : 'mall-product-image'} mode="aspectFill" src={imageUrl} />
   }
@@ -186,6 +196,11 @@ export function MallProductThumb({ product, large }: { product?: MallProduct | n
       <Apple size={large ? 78 : 54} color="#63BF54" />
     </View>
   )
+}
+
+export function primaryMallProductImageUrl(product?: MallProduct | null) {
+  const firstImage = product?.images?.find((image) => Boolean(image?.trim()))
+  return resolveMallImageUrl(firstImage || product?.imageUrl)
 }
 
 export function MallDealProductCard({
