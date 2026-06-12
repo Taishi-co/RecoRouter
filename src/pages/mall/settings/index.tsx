@@ -57,14 +57,14 @@ export default function MallSettingsPage() {
     <MallPage active="mine">
       <Text className="mall-breadcrumb">我的 / 消息与设置</Text>
       <Text className="mall-page-title">消息与设置</Text>
-      <Text className="mall-page-subtitle">团购提醒、自提通知、售后消息和隐私安全。</Text>
+      <Text className="mall-page-subtitle">活动提醒、配送通知、售后消息和隐私安全。</Text>
 
       <View className="mall-card">
         <Text className="mall-list-title">消息通知</Text>
-        <SettingRow title="团购提醒" subtitle="截团、成团和补货提醒" enabled={preferences.promotions} onClick={() => toggle('promotions')} />
-        <SettingRow title="自提通知" subtitle="到站、自提码和超时提醒" enabled={preferences.orderUpdates} onClick={() => toggle('orderUpdates')} />
+        <SettingRow title="活动提醒" subtitle="秒杀、上新和补货提醒" enabled={preferences.promotions} onClick={() => toggle('promotions')} />
+        <SettingRow title="配送通知" subtitle="发货、送达和异常提醒" enabled={preferences.orderUpdates} onClick={() => toggle('orderUpdates')} />
         <SettingRow title="售后消息" subtitle="客服回复、退款进度和处理结论" enabled={preferences.serviceMessages} onClick={() => toggle('serviceMessages')} />
-        <SettingRow title="邻里圈动态" subtitle="自提点公告、晒单和拼团邀请" enabled={preferences.communityPosts} onClick={() => toggle('communityPosts')} />
+        <SettingRow title="社区动态" subtitle="到货公告、晒单和活动消息" enabled={preferences.communityPosts} onClick={() => toggle('communityPosts')} />
       </View>
 
       <View className="mall-link-card">
@@ -73,7 +73,7 @@ export default function MallSettingsPage() {
         </View>
         <View className="mall-link-copy">
           <Text className="mall-link-title">隐私与账号安全</Text>
-          <Text className="mall-link-subtitle">手机号、地址、自提点信息仅用于商城履约。</Text>
+          <Text className="mall-link-subtitle">手机号和地址信息仅用于商城履约。</Text>
         </View>
         <Text className="mall-summary-value">›</Text>
       </View>
@@ -81,7 +81,7 @@ export default function MallSettingsPage() {
       <View className="mall-security-card">
         <Bell size={20} color="#63BF54" />
         <Text className="mall-link-title">叁友甄选承诺</Text>
-        <Text className="mall-link-subtitle">坏果包赔、缺货先联系、冷链到站后再通知自提。</Text>
+        <Text className="mall-link-subtitle">坏果包赔、缺货先联系、冷链商品按时配送。</Text>
       </View>
     </MallPage>
   )

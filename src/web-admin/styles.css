@@ -1977,6 +1977,7 @@ td span {
 }
 
 .product-variant-subtable,
+.product-qualification-subtable,
 .product-spec-subtable,
 .mall-admin-spec-subtable {
   display: grid;
@@ -2012,6 +2013,103 @@ td span {
 
 .product-variant-table {
   min-width: 1500px;
+}
+
+.qualification-report-table {
+  min-width: 1280px;
+}
+
+.buyer-check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.buyer-check-grid label {
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid #dfead9;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #2f3a2d;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.buyer-check-grid small {
+  color: #6a7667;
+  font-weight: 700;
+}
+
+.fixed-price-badge-preview,
+.fixed-price-badge-editor strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: fit-content;
+  min-height: 28px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.fixed-price-badge-preview img,
+.fixed-price-badge-editor img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.fixed-price-badge-preview i,
+.fixed-price-badge-editor i {
+  font-style: normal;
+  font-weight: 900;
+}
+
+.fixed-price-modal {
+  max-width: 1040px;
+}
+
+.fixed-price-badge-editor {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #5d695f;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.fixed-price-product-tools {
+  margin: 18px 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fixed-price-product-tools input {
+  max-width: 360px;
+}
+
+.fixed-price-product-tools span {
+  color: #506251;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.fixed-price-product-table {
+  max-height: 380px;
+  overflow: auto;
+}
+
+.fixed-price-product-table input[type='number'] {
+  width: 120px;
 }
 
 .compact-action {

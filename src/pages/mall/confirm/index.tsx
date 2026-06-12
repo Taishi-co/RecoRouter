@@ -67,10 +67,8 @@ export default function MallConfirmPage() {
         userId,
         checkoutId: checkout.id,
         addressId: address?.id,
-        pickupPointId: checkout.pickupPointId || address?.pickupPointId || undefined,
         expectedDeliveryWindow: '明日 17:00-20:00',
-        deliveryMethod: '社区自提',
-        pickupMethod: '团长验码',
+        deliveryMethod: '送货到家',
       })
       const payment = await startOrderPayment({ orderId: order.id, businessType: 'mall_order' })
       if (payment.paymentStatus !== 'paid' && payment.status !== 'paid') {
@@ -101,8 +99,8 @@ export default function MallConfirmPage() {
 
       <MallLocationStrip
         active
-        title={address?.addressLabel || address?.address_name || '默认使用上次自提点'}
-        subtitle={address?.addressText || address?.address || '下单前需要选择真实收货地址 / 自提点'}
+        title={address?.addressLabel || address?.address_name || '请选择送货地址'}
+        subtitle={address?.addressText || address?.address || '下单前需要填写真实收货地址'}
         onClick={() => Taro.navigateTo({ url: '/pages/mall/address/index' })}
       />
 
@@ -150,7 +148,7 @@ export default function MallConfirmPage() {
         {pointsRedeemedCents > 0 && !discountBreakdown.some((item) => item.type === 'points') ? (
           <Summary label="积分抵扣" value={`-${mallYuan(pointsRedeemedCents)}`} warm />
         ) : null}
-        <Summary label="自提服务费" value={mallYuan(checkout?.deliveryFeeCents || 0)} />
+        <Summary label="配送费" value={mallYuan(checkout?.deliveryFeeCents || 0)} />
       </View>
 
       <View className="mall-total-bar mall-v7-fixed-checkout">

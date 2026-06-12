@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { ClipboardList, Headphones, MapPin, Phone, QrCode } from 'lucide-react-taro'
+import { ClipboardList, Headphones, Truck } from 'lucide-react-taro'
 import { listMallOrders, type MallOrder } from '@/services/mall'
 import { MallPage, MallPrimaryButton, mallYuan } from '../mall-ui'
 import { redirectToMallAuth } from '../auth-route'
@@ -85,7 +85,7 @@ export default function MallOrdersPage() {
         </View>
         <View>
           <Text className="mall-order-banner-title">待收货 {tabCounts.pending_receipt} 单</Text>
-          <Text className="mall-order-banner-copy">到点后凭取货码找团长核销</Text>
+          <Text className="mall-order-banner-copy">配送员接单后会按收货地址送达</Text>
         </View>
       </View>
 
@@ -105,7 +105,7 @@ export default function MallOrdersPage() {
       {visibleOrders.length === 0 ? (
         <View className="mall-empty">
           <Text className="mall-empty-title">{loading ? '加载中...' : '暂无订单'}</Text>
-          <Text className="mall-empty-copy">完成下单后会在这里查看自提码、团长信息和售后进度。</Text>
+          <Text className="mall-empty-copy">完成下单后会在这里查看配送进度、售后和积分到账。</Text>
           <View style={{ marginTop: 14 }}>
             <MallPrimaryButton onClick={() => Taro.navigateTo({ url: '/pages/mall/index/index' })}>
               <Text>返回首页</Text>
@@ -132,7 +132,7 @@ export default function MallOrdersPage() {
             <View>
               <Text className="mall-v7-product-name">{order.items[0]?.productName || order.orderNo}</Text>
               <Text className="mall-v7-product-subtitle">
-                {order.items.length || 1} 件商品{order.items[0]?.variantName ? ` · ${order.items[0]?.variantName}` : ''} · {order.pickupPointName || order.addressText}
+                {order.items.length || 1} 件商品{order.items[0]?.variantName ? ` · ${order.items[0]?.variantName}` : ''} · {order.addressText || '收货地址待确认'}
               </Text>
             </View>
             <Text className="mall-summary-value">{mallYuan(order.payableCents)}</Text>
@@ -141,16 +141,16 @@ export default function MallOrdersPage() {
           {activeStatus === 'pending_receipt' ? (
             <View className="mall-v7-pickup-code">
               <View>
-                <QrCode size={18} color="#2F7E43" />
-                <Text>取货码 {order.fulfillmentCode?.code || order.cabinCode || '待生成'}</Text>
+                <Truck size={18} color="#2F7E43" />
+                <Text>配送状态 {deliveryStatusText(order)}</Text>
               </View>
               <View>
-                <MapPin size={18} color="#2F7E43" />
-                <Text>{order.pickupPointName || order.addressText}</Text>
+                <ClipboardList size={18} color="#2F7E43" />
+                <Text>预计送达 {order.expectedDeliveryWindow || '时间待确认'}</Text>
               </View>
               <View>
-                <Phone size={18} color="#2F7E43" />
-                <Text>{order.groupLeaderName || '团长'} {order.groupLeaderPhone || '电话待同步'}</Text>
+                <Headphones size={18} color="#2F7E43" />
+                <Text>{order.addressText || '收货地址待确认'}</Text>
               </View>
             </View>
           ) : null}
@@ -165,7 +165,7 @@ export default function MallOrdersPage() {
             <View className="mall-v7-order-actions">
               <Text onClick={() => Taro.navigateTo({ url: `/pages/mall/support/index?orderId=${order.id}` })}>
                 <Headphones size={15} color="#2F7E43" />
-                联系团长
+                联系配送客服
               </Text>
             </View>
           )}
@@ -198,4 +198,10 @@ function statusText(order: MallOrder) {
   if (orderMatchesTab(order, 'pending_receipt')) return '待收货'
   if (isCompleted(order)) return '已完成'
   return '待配送'
+}
+
+function deliveryStatusText(order: MallOrder) {
+  if (order.status.includes('delivering') || order.status.includes('dispatched')) return '配送中'
+  if (order.status.includes('ready_for_pickup') || order.status.includes('pending_pickup')) return '待配送'
+  return statusText(order)
 }

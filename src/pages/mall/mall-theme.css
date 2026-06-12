@@ -319,6 +319,12 @@ body.reco-mall-h5 .taro_page {
   margin-bottom: 14PX;
 }
 
+.mall-address-form {
+  display: grid;
+  gap: 10PX;
+  margin-top: 12PX;
+}
+
 .mall-form-label {
   display: block;
   margin-bottom: 7PX;
@@ -930,6 +936,91 @@ body.reco-mall-h5 .taro_page {
   line-height: 1.25;
   font-weight: 800;
   box-sizing: border-box;
+}
+
+.mall-quality-entry {
+  margin-top: 12PX;
+  padding: 9PX 10PX;
+  border-radius: 8PX;
+  background: #f1f8ed;
+  border: 1PX solid #d5ead1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10PX;
+  color: #24743a;
+  font-size: 13PX;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.mall-quality-entry text:last-child,
+.mall-quality-entry span:last-child {
+  color: #ff8a1f;
+}
+
+.mall-product-quality-panel {
+  margin-top: 14PX;
+  padding: 12PX;
+  border-radius: 10PX;
+  border: 1PX solid #d5ead1;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 10PX;
+  box-sizing: border-box;
+}
+
+.mall-product-quality-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10PX;
+  color: #1f2d1f;
+  font-size: 15PX;
+  font-weight: 900;
+}
+
+.mall-product-quality-head text:last-child,
+.mall-product-quality-head span:last-child {
+  color: #657160;
+  font-size: 12PX;
+}
+
+.mall-product-quality-item {
+  padding: 10PX;
+  border-radius: 8PX;
+  background: #f8fbf5;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10PX;
+  align-items: center;
+}
+
+.mall-product-quality-title {
+  display: block;
+  color: #253224;
+  font-size: 13PX;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.mall-product-quality-copy {
+  display: block;
+  margin-top: 5PX;
+  color: #657160;
+  font-size: 11PX;
+  line-height: 1.4;
+  font-weight: 700;
+}
+
+.mall-product-quality-link {
+  padding: 7PX 9PX;
+  border-radius: 7PX;
+  background: #2f7e43;
+  color: #ffffff;
+  font-size: 12PX;
+  font-weight: 900;
 }
 
 .mall-product-detail-panel {
@@ -2168,6 +2259,38 @@ body.reco-mall-h5 .taro_page {
   text-overflow: ellipsis;
 }
 
+.mall-v7-product-fixed-price-badge {
+  position: absolute;
+  left: 6PX;
+  top: 6PX;
+  max-width: calc(100% - 12PX);
+  min-height: 22PX;
+  padding: 4PX 7PX;
+  border-radius: 6PX;
+  display: flex;
+  align-items: center;
+  gap: 4PX;
+  box-shadow: 0 5PX 12PX rgba(28, 53, 28, 0.16);
+  font-size: 10PX;
+  font-weight: 900;
+  line-height: 1;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.mall-v7-product-fixed-price-badge text,
+.mall-v7-product-fixed-price-badge span {
+  display: inline-block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mall-v7-product-fixed-price-icon {
+  width: 14PX;
+  height: 14PX;
+  flex: 0 0 14PX;
+}
+
 .mall-v7-product-body {
   min-width: 0;
 }
@@ -2302,6 +2425,70 @@ body.reco-mall-h5 .taro_page {
   color: #ffffff;
   border-color: #2f7e43;
   background: #2f7e43;
+}
+
+.mall-v7-category-layout {
+  width: 100%;
+  max-width: 100%;
+  margin-top: 10PX;
+  display: grid;
+  grid-template-columns: 78PX minmax(0, 1fr);
+  gap: 8PX;
+  align-items: start;
+  box-sizing: border-box;
+}
+
+.mall-v7-category-sidebar {
+  position: sticky;
+  top: 10PX;
+  max-height: calc(100vh - 182PX);
+  padding: 2PX 0 8PX;
+  border-radius: 8PX;
+  background: #f1f6ee;
+  display: flex;
+  flex-direction: column;
+  gap: 2PX;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+.mall-v7-category-sidebar::-webkit-scrollbar {
+  display: none;
+}
+
+.mall-v7-category-sidebar .mall-v7-category-tab {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 42PX;
+  padding: 8PX 7PX;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #556551;
+  justify-content: center;
+  text-align: center;
+  flex: 0 0 auto;
+  line-height: 1.2;
+}
+
+.mall-v7-category-sidebar .mall-v7-category-tab text,
+.mall-v7-category-sidebar .mall-v7-category-tab span {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.mall-v7-category-sidebar .mall-v7-category-tab-active {
+  position: relative;
+  background: #ffffff;
+  color: #1f6d36;
+  box-shadow: inset 3PX 0 0 #2f7e43;
+}
+
+.mall-v7-category-products {
+  min-width: 0;
 }
 
 .mall-v7-filter-panel {

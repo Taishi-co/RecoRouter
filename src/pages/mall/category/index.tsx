@@ -231,27 +231,6 @@ export default function MallCategoryPage() {
         actionText="搜索"
       />
 
-      <View className="mall-v7-category-tabs">
-        {categoryOptions.map((category) => (
-          <View
-            key={category.code || 'all'}
-            className={activeCode === category.code ? 'mall-v7-category-tab mall-v7-category-tab-active' : 'mall-v7-category-tab'}
-            onClick={() => {
-              setLoading(true)
-              setLoadError('')
-              setKeyword('')
-              if (category.code === activeCode) {
-                loadProducts({ nextPage: 1, append: false, nextKeyword: '', nextActiveCode: category.code })
-              } else {
-                setActiveCode(category.code)
-              }
-            }}
-          >
-            <Text>{category.label}</Text>
-          </View>
-        ))}
-      </View>
-
       <View className="mall-v7-filter-panel">
         <View className="mall-v7-activity-tabs">
           {activityFilters.map((activity) => (
@@ -277,30 +256,55 @@ export default function MallCategoryPage() {
         </Picker>
       </View>
 
-      <View className="mall-v7-product-list">
-        {products.map((product) => (
-          <MallDealProductCard
-            key={product.id}
-            product={product}
-            layout="list"
-            onAdd={handleAddCart}
-            onOpen={() => Taro.navigateTo({ url: `/pages/mall/product/index?id=${product.id}` })}
-          />
-        ))}
+      <View className="mall-v7-category-layout">
+        <View className="mall-v7-category-sidebar">
+          {categoryOptions.map((category) => (
+            <View
+              key={category.code || 'all'}
+              className={activeCode === category.code ? 'mall-v7-category-tab mall-v7-category-tab-active' : 'mall-v7-category-tab'}
+              onClick={() => {
+                setLoading(true)
+                setLoadError('')
+                setKeyword('')
+                if (category.code === activeCode) {
+                  loadProducts({ nextPage: 1, append: false, nextKeyword: '', nextActiveCode: category.code })
+                } else {
+                  setActiveCode(category.code)
+                }
+              }}
+            >
+              <Text>{category.label}</Text>
+            </View>
+          ))}
+        </View>
+
+        <View className="mall-v7-category-products">
+          <View className="mall-v7-product-list">
+            {products.map((product) => (
+              <MallDealProductCard
+                key={product.id}
+                product={product}
+                layout="list"
+                onAdd={handleAddCart}
+                onOpen={() => Taro.navigateTo({ url: `/pages/mall/product/index?id=${product.id}` })}
+              />
+            ))}
+          </View>
+
+          {!loading && products.length === 0 ? (
+            <View className="mall-empty">
+              <Text className="mall-empty-title">{loadError ? '加载失败' : '没有找到商品'}</Text>
+              <Text className="mall-empty-copy">{loadError || '换个分类或关键词试试。'}</Text>
+            </View>
+          ) : null}
+
+          {products.length > 0 ? (
+            <View className="mall-load-more">
+              <Text>{loadingMore ? '加载更多商品...' : hasMore ? '上滑加载更多' : '已经到底了'}</Text>
+            </View>
+          ) : null}
+        </View>
       </View>
-
-      {!loading && products.length === 0 ? (
-        <View className="mall-empty">
-          <Text className="mall-empty-title">{loadError ? '加载失败' : '没有找到商品'}</Text>
-          <Text className="mall-empty-copy">{loadError || '换个分类或关键词试试。'}</Text>
-        </View>
-      ) : null}
-
-      {products.length > 0 ? (
-        <View className="mall-load-more">
-          <Text>{loadingMore ? '加载更多商品...' : hasMore ? '上滑加载更多' : '已经到底了'}</Text>
-        </View>
-      ) : null}
 
       {loading ? (
         <View className="mall-loading-overlay">

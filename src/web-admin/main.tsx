@@ -101,6 +101,7 @@ interface DashboardData {
   mallOverview: JsonRecord;
   mallCategories: JsonRecord[];
   mallProducts: JsonRecord[];
+  mallProcurementBuyers: JsonRecord[];
   mallInventoryAlerts: JsonRecord[];
   mallOrders: JsonRecord[];
   mallAfterSales: JsonRecord[];
@@ -113,6 +114,7 @@ interface DashboardData {
   mallWithdrawalRequests: JsonRecord[];
   mallSalesStats: JsonRecord;
   campaigns: JsonRecord[];
+  fixedPriceCampaigns: JsonRecord[];
   mallCoupons: JsonRecord[];
   mallHomeBanners: JsonRecord[];
   mallHomeSections: JsonRecord[];
@@ -156,6 +158,9 @@ interface ProductForm {
   deliveryMinutes: string;
   coldChainRequired: boolean;
   variants: ProductVariantForm[];
+  procurementBuyerIds: string[];
+  qualificationReports: ProductQualificationReportForm[];
+  hideSupplier: boolean;
 }
 
 interface ProductVariantForm {
@@ -175,6 +180,27 @@ interface ProductVariantForm {
   weightUnitLabel: string;
   weightUnitGrams: string;
   weightTolerancePercent: string;
+}
+
+interface ProductQualificationReportForm {
+  id: string;
+  buyerId: string;
+  reportName: string;
+  reportType: string;
+  reportUrl: string;
+  issuer: string;
+  issuedAt: string;
+  expiresAt: string;
+}
+
+interface ProcurementBuyerForm {
+  id: string;
+  name: string;
+  contactName: string;
+  contactPhone: string;
+  licenseUrl: string;
+  status: string;
+  remark: string;
 }
 
 const productImageLimit = 20;
@@ -241,6 +267,23 @@ interface CampaignForm {
   budgetYuan: string;
   status: string;
   rules: string;
+}
+
+interface FixedPriceCampaignItemForm {
+  productId: string;
+  fixedPriceYuan: string;
+}
+
+interface FixedPriceCampaignForm {
+  id: string;
+  name: string;
+  status: string;
+  badgeText: string;
+  badgeIcon: string;
+  badgeIconUrl: string;
+  badgeBackgroundColor: string;
+  badgeTextColor: string;
+  items: FixedPriceCampaignItemForm[];
 }
 
 interface CouponForm {
@@ -660,6 +703,7 @@ const adminModules: AdminModuleSpec[] = [
     pages: [
       designPage('mall.products', '商品上架', '商品管理', '', 'shop', 'mallProducts'),
       designPage('mall.productList', '商品列表', '商品管理', '在售、售罄和下架商品管理', 'shop', 'mallProducts'),
+      designPage('mall.procurementBuyers', '采购商管理', '商品管理', '采购商、营业执照和供货资质', 'users', 'mallProducts'),
       designPage('mall.categories', '品类管理', '品类管理', '社区团购类目、排序和状态', 'dashboard'),
       designPage('mall.inventory', '库存预警', '商品管理', '库存管理、低库存、缺货替换和补货提醒', 'support'),
       designPage('mall.todayOrders', '今日订单', '订单管理', '按小区汇总今日订单并生成分拣单', 'orders', 'mallOrders'),
@@ -676,6 +720,7 @@ const adminModules: AdminModuleSpec[] = [
       designPage('mall.pickupConnect', '自提点对接', '配送管理', '团长联系方式、自提点地址和小区覆盖', 'users', 'operations'),
       designPage('mall.community', '邻里圈', '营销中心', '自提点动态、拼团和用户互动', 'megaphone'),
       designPage('mall.campaigns', '营销活动', '营销中心', '活动搜索、创建、编辑、启停和删除', 'megaphone', 'operations'),
+      designPage('mall.fixedPriceCampaigns', '一口价', '营销中心', '商品一口价活动和商品图角标配置', 'megaphone', 'operations'),
       designPage('mall.coupons', '券中心', '营销中心', '券创建、编辑、发放量、核销状态和启停', 'megaphone'),
       designPage('mall.banners', '轮播广告位', '首页配置', '首页 3 张轮播、图片、跳转和排序', 'dashboard'),
       designPage('mall.homeNotices', '公告栏配置', '首页配置', '今日到货、配送时效、售后通知和团长招募', 'megaphone'),
@@ -742,6 +787,7 @@ const initialData: DashboardData = {
   mallOverview: {},
   mallCategories: [],
   mallProducts: [],
+  mallProcurementBuyers: [],
   mallInventoryAlerts: [],
   mallOrders: [],
   mallAfterSales: [],
@@ -754,6 +800,7 @@ const initialData: DashboardData = {
   mallWithdrawalRequests: [],
   mallSalesStats: {},
   campaigns: [],
+  fixedPriceCampaigns: [],
   mallCoupons: [],
   mallHomeBanners: [],
   mallHomeSections: [],
@@ -797,6 +844,9 @@ const initialProductForm: ProductForm = {
   deliveryMinutes: '18',
   coldChainRequired: false,
   variants: [createDefaultProductVariantForm()],
+  procurementBuyerIds: [],
+  qualificationReports: [],
+  hideSupplier: false,
 };
 
 function createDefaultProductVariantForm(index = 0): ProductVariantForm {
@@ -826,6 +876,16 @@ const initialCategoryForm: CategoryForm = {
   name: '',
   sortOrder: '0',
   status: 'active',
+};
+
+const initialProcurementBuyerForm: ProcurementBuyerForm = {
+  id: '',
+  name: '',
+  contactName: '',
+  contactPhone: '',
+  licenseUrl: '',
+  status: 'active',
+  remark: '',
 };
 
 const initialPickupPointForm: PickupPointForm = {
@@ -918,6 +978,18 @@ const initialCampaignForm: CampaignForm = {
   budgetYuan: '3000',
   status: 'active',
   rules: '{"thresholdCents":9900,"discountCents":1000}',
+};
+
+const initialFixedPriceCampaignForm: FixedPriceCampaignForm = {
+  id: '',
+  name: '本周一口价',
+  status: 'active',
+  badgeText: '一口价',
+  badgeIcon: '¥',
+  badgeIconUrl: '',
+  badgeBackgroundColor: '#FF9238',
+  badgeTextColor: '#FFFFFF',
+  items: [],
 };
 
 const initialCouponForm: CouponForm = {
@@ -1240,6 +1312,7 @@ async function fetchDashboardData(
     mallOverview,
     mallCategories,
     mallProducts,
+    mallProcurementBuyers,
     mallInventoryAlerts,
     mallOrders,
     mallAfterSales,
@@ -1252,6 +1325,7 @@ async function fetchDashboardData(
     mallWithdrawalRequests,
     mallSalesStats,
     campaigns,
+    fixedPriceCampaigns,
     mallCoupons,
     mallHomeBanners,
     mallHomeSections,
@@ -1289,6 +1363,7 @@ async function fetchDashboardData(
       page: productFilters.page,
       pageSize: productFilters.pageSize,
     })),
+    loadWithFallback('采购商', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/procurement-buyers')),
     loadWithFallback('库存预警', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/inventory-alerts', {
       keyword: inventoryFilters.keyword,
       categoryCode: inventoryFilters.categoryCode,
@@ -1320,6 +1395,10 @@ async function fetchDashboardData(
       status: campaignFilters.status,
       categoryCode: campaignFilters.categoryCode,
       campaignType: campaignFilters.categoryCode,
+    })),
+    loadWithFallback('一口价活动', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/campaigns', {
+      campaignType: 'fixed_price',
+      limit: 200,
     })),
     loadWithFallback('优惠券', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/coupons', {
       keyword: couponFilters.keyword,
@@ -1361,6 +1440,7 @@ async function fetchDashboardData(
       mallOverview,
       mallCategories,
       mallProducts,
+      mallProcurementBuyers,
       mallInventoryAlerts,
       mallOrders,
       mallAfterSales,
@@ -1373,6 +1453,7 @@ async function fetchDashboardData(
       mallWithdrawalRequests,
       mallSalesStats,
       campaigns,
+      fixedPriceCampaigns,
       mallCoupons,
       mallHomeBanners,
       mallHomeSections,
@@ -1508,6 +1589,24 @@ function validateProductForm(form: ProductForm) {
   if (!Number.isFinite(minimumOrderQuantity) || minimumOrderQuantity <= 0) {
     throw new Error('最小起订量必须大于0');
   }
+  form.qualificationReports.forEach((report, index) => {
+    const hasAnyValue = [
+      report.buyerId,
+      report.reportName,
+      report.reportType,
+      report.reportUrl,
+      report.issuer,
+      report.issuedAt,
+      report.expiresAt,
+    ].some(value => String(value || '').trim());
+    if (!hasAnyValue) return;
+    if (!report.reportName.trim()) {
+      throw new Error(`第 ${index + 1} 个资质报告名称不能为空`);
+    }
+    if (!report.reportUrl.trim()) {
+      throw new Error(`第 ${index + 1} 个资质报告文件不能为空`);
+    }
+  });
 }
 
 function shortId(value: string) {
@@ -1556,6 +1655,57 @@ function productImagesFromRecord(record: JsonRecord) {
 
 function productFormImages(form: ProductForm) {
   return compactProductImages(form.imageUrl ? [form.imageUrl, ...form.images] : form.images);
+}
+
+function productProcurementBuyerIdsFromRecord(record: JsonRecord) {
+  return arrayValue(record, 'procurementBuyers')
+    .filter((item): item is JsonRecord => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+    .map(buyer => stringValue(buyer, 'id'))
+    .filter(Boolean);
+}
+
+function productQualificationReportsFromRecord(record: JsonRecord): ProductQualificationReportForm[] {
+  return arrayValue(record, 'qualificationReports')
+    .filter((item): item is JsonRecord => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+    .map((report, index) => ({
+      id: stringValue(report, 'id', `report-${index + 1}`),
+      buyerId: stringValue(report, 'buyerId'),
+      reportName: stringValue(report, 'reportName', stringValue(report, 'name', `资质报告${index + 1}`)),
+      reportType: stringValue(report, 'reportType', stringValue(report, 'type')),
+      reportUrl: stringValue(report, 'reportUrl', stringValue(report, 'url')),
+      issuer: stringValue(report, 'issuer'),
+      issuedAt: stringValue(report, 'issuedAt'),
+      expiresAt: stringValue(report, 'expiresAt'),
+    }));
+}
+
+function productQualificationReportsPayload(form: ProductForm) {
+  return form.qualificationReports
+    .map(report => ({
+      id: report.id,
+      buyerId: report.buyerId || undefined,
+      reportName: report.reportName.trim(),
+      reportType: report.reportType.trim() || undefined,
+      reportUrl: report.reportUrl.trim(),
+      issuer: report.issuer.trim() || undefined,
+      issuedAt: report.issuedAt || undefined,
+      expiresAt: report.expiresAt || undefined,
+      hideSupplier: form.hideSupplier,
+      status: 'active',
+    }))
+    .filter(report => report.reportName || report.reportUrl);
+}
+
+function procurementBuyerToForm(record: JsonRecord): ProcurementBuyerForm {
+  return {
+    id: stringValue(record, 'id'),
+    name: stringValue(record, 'name'),
+    contactName: stringValue(record, 'contactName'),
+    contactPhone: stringValue(record, 'contactPhone'),
+    licenseUrl: stringValue(record, 'licenseUrl'),
+    status: stringValue(record, 'status', 'active'),
+    remark: stringValue(record, 'remark'),
+  };
 }
 
 function productVariantsFromRecord(record: JsonRecord): ProductVariantForm[] {
@@ -1668,6 +1818,10 @@ function productToForm(product: JsonRecord, fallbackCategoryCode = 'fruit'): Pro
     deliveryMinutes: String(numberValue(product, 'deliveryMinutes', 18)),
     coldChainRequired: boolValue(product, 'coldChainRequired'),
     variants,
+    procurementBuyerIds: productProcurementBuyerIdsFromRecord(product),
+    qualificationReports: productQualificationReportsFromRecord(product),
+    hideSupplier: arrayValue(product, 'procurementBuyers')
+      .some(item => Boolean(item) && typeof item === 'object' && boolValue(item as JsonRecord, 'hideSupplier')),
   };
 }
 
@@ -1763,6 +1917,7 @@ function campaignTypeLabel(value: string) {
     subsidy: '配送补贴',
     delivery_subsidy: '配送补贴',
     free_delivery: '免配送费',
+    fixed_price: '一口价',
   };
   return labels[value] || value || '-';
 }
@@ -1862,6 +2017,58 @@ function campaignToForm(campaign: JsonRecord): CampaignForm {
     budgetYuan: String((numberValue(campaign, 'budgetCents') / 100).toFixed(2)),
     status: stringValue(campaign, 'status', 'draft'),
     rules: JSON.stringify(rules, null, 2),
+  };
+}
+
+function fixedPriceCampaignToForm(campaign: JsonRecord): FixedPriceCampaignForm {
+  const rules = recordValue(campaign, 'rules');
+  const badge = recordValue(rules, 'badge');
+  const items = arrayValue(rules, 'items')
+    .map(item => {
+      const record = item && typeof item === 'object' && !Array.isArray(item) ? item as JsonRecord : {};
+      const productId = stringValue(record, 'productId', stringValue(record, 'id'));
+      if (!productId) return null;
+      return {
+        productId,
+        fixedPriceYuan: (numberValue(record, 'fixedPriceCents', numberValue(record, 'priceCents')) / 100).toFixed(2),
+      };
+    })
+    .filter((item): item is FixedPriceCampaignItemForm => Boolean(item));
+
+  return {
+    id: stringValue(campaign, 'id'),
+    name: stringValue(campaign, 'name', '本周一口价'),
+    status: stringValue(campaign, 'status', 'active'),
+    badgeText: stringValue(badge, 'text', stringValue(rules, 'badgeText', '一口价')),
+    badgeIcon: stringValue(badge, 'icon', stringValue(rules, 'badgeIcon', '¥')),
+    badgeIconUrl: stringValue(badge, 'iconUrl', stringValue(rules, 'badgeIconUrl')),
+    badgeBackgroundColor: stringValue(badge, 'backgroundColor', stringValue(rules, 'badgeBackgroundColor', '#FF9238')),
+    badgeTextColor: stringValue(badge, 'textColor', stringValue(rules, 'badgeTextColor', '#FFFFFF')),
+    items,
+  };
+}
+
+function fixedPriceCampaignRules(form: FixedPriceCampaignForm, products: JsonRecord[]) {
+  const productById = new Map(products.map(product => [stringValue(product, 'id'), product]));
+  return {
+    badge: {
+      text: form.badgeText.trim() || '一口价',
+      icon: form.badgeIcon.trim(),
+      iconUrl: form.badgeIconUrl.trim(),
+      backgroundColor: form.badgeBackgroundColor || '#FF9238',
+      textColor: form.badgeTextColor || '#FFFFFF',
+    },
+    items: form.items
+      .map(item => {
+        const product = productById.get(item.productId);
+        return {
+          productId: item.productId,
+          sku: product ? stringValue(product, 'sku') : '',
+          productName: product ? stringValue(product, 'name') : '',
+          fixedPriceCents: moneyFromYuan(item.fixedPriceYuan),
+        };
+      })
+      .filter(item => item.productId && item.fixedPriceCents > 0),
   };
 }
 
@@ -3768,18 +3975,22 @@ function DesignPlaceholderPage({
 
 function MallProductDesignSection({
   categories,
+  procurementBuyers,
   products,
   form,
   onChange,
   onSubmit,
   onUploadImage,
+  onUploadQualificationFile,
 }: {
   categories: JsonRecord[];
+  procurementBuyers: JsonRecord[];
   products: JsonRecord[];
   form: ProductForm;
   onChange: (patch: Partial<ProductForm>) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onUploadImage: (file: File) => Promise<string>;
+  onUploadQualificationFile: (file: File) => Promise<string>;
 }) {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const alertCount = products.filter(product => numberValue(product, 'stock') <= numberValue(product, 'stockAlertThreshold', 15)).length;
@@ -3800,11 +4011,13 @@ function MallProductDesignSection({
       {createModalOpen ? (
         <ProductCreateModal
           categories={categories}
+          procurementBuyers={procurementBuyers}
           form={form}
           onChange={onChange}
           onClose={() => setCreateModalOpen(false)}
           onSubmit={onSubmit}
           onUploadImage={onUploadImage}
+          onUploadQualificationFile={onUploadQualificationFile}
         />
       ) : null}
     </div>
@@ -3813,16 +4026,20 @@ function MallProductDesignSection({
 
 function ProductFormFields({
   categories,
+  procurementBuyers,
   form,
   layout = 'grid',
   onChange,
   onUploadImage,
+  onUploadQualificationFile,
 }: {
   categories: JsonRecord[];
+  procurementBuyers: JsonRecord[];
   form: ProductForm;
   layout?: 'grid' | 'tiles';
   onChange: (patch: Partial<ProductForm>) => void;
   onUploadImage: (file: File) => Promise<string>;
+  onUploadQualificationFile: (file: File) => Promise<string>;
 }) {
   const fieldClass = layout === 'tiles' ? 'mall-admin-tile' : undefined;
   const wrapperClass = layout === 'tiles' ? 'mall-admin-tile-grid' : 'form-grid';
@@ -3899,6 +4116,13 @@ function ProductFormFields({
         <textarea required value={form.description} onChange={event => onChange({ description: event.target.value })} placeholder="商品卖点、包装、保存方式、售后说明等" />
       </label>
       <ProductVariantSubtable form={form} layout={layout} onChange={onChange} />
+      <ProductQualificationSubtable
+        form={form}
+        layout={layout}
+        procurementBuyers={procurementBuyers}
+        onChange={onChange}
+        onUploadQualificationFile={onUploadQualificationFile}
+      />
       <ProductSpecSubtable form={form} layout={layout} onChange={onChange} />
     </div>
   );
@@ -4089,6 +4313,145 @@ function ProductVariantSubtable({
   );
 }
 
+function ProductQualificationSubtable({
+  form,
+  layout,
+  procurementBuyers,
+  onChange,
+  onUploadQualificationFile,
+}: {
+  form: ProductForm;
+  layout: 'grid' | 'tiles';
+  procurementBuyers: JsonRecord[];
+  onChange: (patch: Partial<ProductForm>) => void;
+  onUploadQualificationFile: (file: File) => Promise<string>;
+}) {
+  const showMessage = useAdminMessage();
+  const selectedBuyerIds = new Set(form.procurementBuyerIds);
+  const updateReport = (index: number, patch: Partial<ProductQualificationReportForm>) => {
+    onChange({
+      qualificationReports: form.qualificationReports.map((report, currentIndex) => (
+        currentIndex === index ? { ...report, ...patch } : report
+      )),
+    });
+  };
+  const addReport = () => {
+    onChange({
+      qualificationReports: [
+        ...form.qualificationReports,
+        {
+          id: `report-${Date.now()}`,
+          buyerId: form.procurementBuyerIds[0] || '',
+          reportName: '',
+          reportType: '',
+          reportUrl: '',
+          issuer: '',
+          issuedAt: '',
+          expiresAt: '',
+        },
+      ],
+    });
+  };
+  const removeReport = (index: number) => {
+    onChange({ qualificationReports: form.qualificationReports.filter((_, currentIndex) => currentIndex !== index) });
+  };
+  const toggleBuyer = (buyerId: string, checked: boolean) => {
+    const nextBuyerIds = checked
+      ? [...form.procurementBuyerIds, buyerId]
+      : form.procurementBuyerIds.filter(id => id !== buyerId);
+    onChange({ procurementBuyerIds: Array.from(new Set(nextBuyerIds)) });
+  };
+  const uploadReport = async (index: number, files: FileList | null | undefined) => {
+    const file = files?.[0];
+    if (!file) return;
+    try {
+      const fileUrl = await onUploadQualificationFile(file);
+      updateReport(index, { reportUrl: fileUrl });
+    } catch {
+      showMessage('error', '资质文件上传失败');
+    }
+  };
+
+  return (
+    <section className={layout === 'tiles' ? 'mall-admin-spec-subtable mall-admin-tile wide' : 'product-qualification-subtable wide'}>
+      <div className="spec-subtable-head">
+        <strong>采购商与资质</strong>
+        <span>{form.qualificationReports.length ? `${form.qualificationReports.length} 份报告` : '无资质报告'}</span>
+        <button className="ghost-button compact-action" type="button" onClick={addReport}>新增资质报告</button>
+      </div>
+      <label className="toggle-line compact-toggle">
+        <input checked={form.hideSupplier} type="checkbox" onChange={event => onChange({ hideSupplier: event.target.checked })} />
+        App 端隐藏供货商名称
+      </label>
+      <div className="buyer-check-grid">
+        {procurementBuyers.map(buyer => {
+          const buyerId = stringValue(buyer, 'id');
+          return (
+            <label key={buyerId}>
+              <input
+                checked={selectedBuyerIds.has(buyerId)}
+                type="checkbox"
+                onChange={event => toggleBuyer(buyerId, event.target.checked)}
+              />
+              <span>{stringValue(buyer, 'name', '未命名采购商')}</span>
+            </label>
+          );
+        })}
+        {!procurementBuyers.length ? <small>请先在采购商管理新增采购商</small> : null}
+      </div>
+      <div className="spec-subtable-scroll">
+        <table className="spec-subtable qualification-report-table">
+          <thead>
+            <tr>
+              <th>报告名称</th>
+              <th>类型</th>
+              <th>采购商</th>
+              <th>文件</th>
+              <th>出具机构</th>
+              <th>出具日期</th>
+              <th>有效期至</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {form.qualificationReports.map((report, index) => (
+              <tr key={`${report.id}-${index}`}>
+                <td><input value={report.reportName} onChange={event => updateReport(index, { reportName: event.target.value })} placeholder="检验报告 / 疫检报告" /></td>
+                <td><input value={report.reportType} onChange={event => updateReport(index, { reportType: event.target.value })} placeholder="检验 / 检疫 / 产地" /></td>
+                <td>
+                  <select value={report.buyerId} onChange={event => updateReport(index, { buyerId: event.target.value })}>
+                    <option value="">不指定</option>
+                    {procurementBuyers.map(buyer => (
+                      <option key={stringValue(buyer, 'id')} value={stringValue(buyer, 'id')}>
+                        {stringValue(buyer, 'name')}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td>
+                  <input accept="image/*,application/pdf" type="file" onChange={event => void uploadReport(index, event.currentTarget.files)} />
+                  <input value={report.reportUrl} onChange={event => updateReport(index, { reportUrl: event.target.value })} placeholder="资质文件地址" />
+                </td>
+                <td><input value={report.issuer} onChange={event => updateReport(index, { issuer: event.target.value })} /></td>
+                <td><input type="date" value={report.issuedAt} onChange={event => updateReport(index, { issuedAt: event.target.value })} /></td>
+                <td><input type="date" value={report.expiresAt} onChange={event => updateReport(index, { expiresAt: event.target.value })} /></td>
+                <td>
+                  <button className="ghost-button compact-action" type="button" onClick={() => removeReport(index)}>删除</button>
+                </td>
+              </tr>
+            ))}
+            {!form.qualificationReports.length ? (
+              <tr>
+                <td colSpan={8}>暂无资质报告</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function ProductSpecSubtable({
   form,
   layout,
@@ -4150,6 +4513,158 @@ function ProductImage({ record }: { record: JsonRecord }) {
         <strong>{stringValue(record, 'name', '未命名商品')}</strong>
         <small>{stringValue(record, 'specification', stringValue(record, 'subtitle', stringValue(record, 'sku')))}</small>
       </div>
+    </div>
+  );
+}
+
+function ProcurementBuyersSection({
+  buyers,
+  form,
+  onFormChange,
+  onSave,
+  onDelete,
+  onUploadLicense,
+}: {
+  buyers: JsonRecord[];
+  form: ProcurementBuyerForm;
+  onFormChange: (patch: Partial<ProcurementBuyerForm>) => void;
+  onSave: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+  onUploadLicense: (file: File) => Promise<string>;
+}) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const openCreate = () => {
+    onFormChange(initialProcurementBuyerForm);
+    setModalOpen(true);
+  };
+  const openEdit = (buyer: JsonRecord) => {
+    onFormChange(procurementBuyerToForm(buyer));
+    setModalOpen(true);
+  };
+  const uploadLicense = async (files: FileList | null | undefined) => {
+    const file = files?.[0];
+    if (!file) return;
+    const fileUrl = await onUploadLicense(file);
+    onFormChange({ licenseUrl: fileUrl });
+  };
+
+  return (
+    <div className="page-grid">
+      <div className="mall-admin-toolbar">
+        <button className="mall-admin-submit" type="button" onClick={openCreate}>新增采购商</button>
+      </div>
+
+      <Panel title="采购商管理" description="采购商营业执照和供货资质归档">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>采购商</th>
+                <th>联系人</th>
+                <th>营业执照</th>
+                <th>状态</th>
+                <th>最近编辑</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {buyers.map(buyer => {
+                const id = stringValue(buyer, 'id');
+                const licenseUrl = stringValue(buyer, 'licenseUrl');
+                const status = stringValue(buyer, 'status');
+                return (
+                  <tr key={id}>
+                    <td>
+                      <strong>{stringValue(buyer, 'name', '未命名采购商')}</strong>
+                      <small>{stringValue(buyer, 'remark') || shortId(id)}</small>
+                    </td>
+                    <td>
+                      <span>{stringValue(buyer, 'contactName', '-')}</span>
+                      <small>{stringValue(buyer, 'contactPhone', '-')}</small>
+                    </td>
+                    <td>
+                      {licenseUrl ? <a href={resolveImage(licenseUrl)} rel="noreferrer" target="_blank">查看营业执照</a> : '-'}
+                    </td>
+                    <td><span className={badgeClass(status)}>{statusLabel(status)}</span></td>
+                    <td>{formatDate(stringValue(buyer, 'updatedAt', stringValue(buyer, 'createdAt')))}</td>
+                    <td className="actions">
+                      <button className="ghost-button" type="button" onClick={() => openEdit(buyer)}>
+                        <Icon name="save" />
+                        编辑
+                      </button>
+                      <button className="ghost-button" type="button" onClick={() => void onDelete(id)}>
+                        <Icon name="x" />
+                        删除
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {!buyers.length ? <EmptyState text="暂无采购商" /> : null}
+      </Panel>
+
+      {modalOpen ? (
+        <div className="modal-backdrop">
+          <section className="modal-panel">
+            <div className="panel-head">
+              <div>
+                <h2>{form.id ? '编辑采购商' : '新增采购商'}</h2>
+              </div>
+              <button className="ghost-button" type="button" onClick={() => setModalOpen(false)}>
+                <Icon name="x" />
+                关闭
+              </button>
+            </div>
+            <form
+              onSubmit={async event => {
+                await onSave(event);
+                setModalOpen(false);
+              }}
+            >
+              <div className="form-grid">
+                <label>
+                  <span className="field-label">采购商名称<span className="required-mark">*</span></span>
+                  <input required value={form.name} onChange={event => onFormChange({ name: event.target.value })} />
+                </label>
+                <label>
+                  联系人
+                  <input value={form.contactName} onChange={event => onFormChange({ contactName: event.target.value })} />
+                </label>
+                <label>
+                  联系电话
+                  <input value={form.contactPhone} onChange={event => onFormChange({ contactPhone: event.target.value })} />
+                </label>
+                <label>
+                  状态
+                  <select value={form.status} onChange={event => onFormChange({ status: event.target.value })}>
+                    <option value="active">启用</option>
+                    <option value="inactive">停用</option>
+                  </select>
+                </label>
+                <label className="wide">
+                  营业执照
+                  <input accept="image/*,application/pdf" type="file" onChange={event => void uploadLicense(event.currentTarget.files)} />
+                  <input value={form.licenseUrl} onChange={event => onFormChange({ licenseUrl: event.target.value })} placeholder="营业执照文件地址" />
+                </label>
+                <label className="wide">
+                  备注
+                  <textarea value={form.remark} onChange={event => onFormChange({ remark: event.target.value })} />
+                </label>
+              </div>
+              <div className="modal-actions">
+                <button className="ghost-button" type="button" onClick={() => setModalOpen(false)}>取消</button>
+                <button className="primary-button" type="submit">
+                  <Icon name="save" />
+                  保存采购商
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -4559,6 +5074,7 @@ function TransportOrdersSection({
 
 function MallProductsSection({
   categories,
+  procurementBuyers,
   products,
   filters,
   onFiltersChange,
@@ -4567,8 +5083,10 @@ function MallProductsSection({
   onStatus,
   onUpdate,
   onUploadImage,
+  onUploadQualificationFile,
 }: {
   categories: JsonRecord[];
+  procurementBuyers: JsonRecord[];
   products: JsonRecord[];
   filters: MallFilterState;
   onFiltersChange: (patch: Partial<MallFilterState>) => void;
@@ -4577,6 +5095,7 @@ function MallProductsSection({
   onStatus: (id: string, status: string) => Promise<void>;
   onUpdate: (id: string, form: ProductForm) => Promise<void>;
   onUploadImage: (file: File) => Promise<string>;
+  onUploadQualificationFile: (file: File) => Promise<string>;
 }) {
   const [editingProduct, setEditingProduct] = useState<JsonRecord | null>(null);
   const currentPage = positiveFilterNumber(filters.page, 1);
@@ -4650,7 +5169,7 @@ function MallProductsSection({
                     </td>
                     <td>
                       <span>{stringValue(product, 'categoryName', stringValue(product, 'categoryCode'))}</span>
-                      <small>{tagsText(product)}</small>
+                      <small>{boolValue(product, 'qualityGuaranteed') ? `品质保证 · ${tagsText(product)}` : tagsText(product)}</small>
                     </td>
                     <td>
                       <strong>{yuan(numberValue(product, 'priceCents'))}</strong>
@@ -4698,6 +5217,7 @@ function MallProductsSection({
       {editingProduct ? (
         <ProductEditModal
           categories={categories}
+          procurementBuyers={procurementBuyers}
           product={editingProduct}
           onClose={() => setEditingProduct(null)}
           onSave={async (id, nextForm) => {
@@ -4705,6 +5225,7 @@ function MallProductsSection({
             setEditingProduct(null);
           }}
           onUploadImage={onUploadImage}
+          onUploadQualificationFile={onUploadQualificationFile}
         />
       ) : null}
     </div>
@@ -4713,18 +5234,22 @@ function MallProductsSection({
 
 function ProductCreateModal({
   categories,
+  procurementBuyers,
   form,
   onChange,
   onClose,
   onSubmit,
   onUploadImage,
+  onUploadQualificationFile,
 }: {
   categories: JsonRecord[];
+  procurementBuyers: JsonRecord[];
   form: ProductForm;
   onChange: (patch: Partial<ProductForm>) => void;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onUploadImage: (file: File) => Promise<string>;
+  onUploadQualificationFile: (file: File) => Promise<string>;
 }) {
   return (
     <div className="modal-backdrop">
@@ -4741,9 +5266,11 @@ function ProductCreateModal({
         <form onSubmit={onSubmit}>
           <ProductFormFields
             categories={categories}
+            procurementBuyers={procurementBuyers}
             form={form}
             onChange={onChange}
             onUploadImage={onUploadImage}
+            onUploadQualificationFile={onUploadQualificationFile}
           />
           <div className="modal-actions">
             <button className="ghost-button" type="button" onClick={onClose}>取消</button>
@@ -4760,16 +5287,20 @@ function ProductCreateModal({
 
 function ProductEditModal({
   categories,
+  procurementBuyers,
   product,
   onClose,
   onSave,
   onUploadImage,
+  onUploadQualificationFile,
 }: {
   categories: JsonRecord[];
+  procurementBuyers: JsonRecord[];
   product: JsonRecord;
   onClose: () => void;
   onSave: (id: string, form: ProductForm) => Promise<void>;
   onUploadImage: (file: File) => Promise<string>;
+  onUploadQualificationFile: (file: File) => Promise<string>;
 }) {
   const [draft, setDraft] = useState<ProductForm>(() => productToForm(product, stringValue(categories[0], 'code', 'fruit')));
   const id = stringValue(product, 'id');
@@ -4788,9 +5319,11 @@ function ProductEditModal({
         </div>
         <ProductFormFields
           categories={categories}
+          procurementBuyers={procurementBuyers}
           form={draft}
           onChange={patch => setDraft(current => ({ ...current, ...patch }))}
           onUploadImage={onUploadImage}
+          onUploadQualificationFile={onUploadQualificationFile}
         />
         <div className="modal-actions">
           <button className="ghost-button" type="button" onClick={onClose}>取消</button>
@@ -7458,6 +7991,264 @@ function MallCampaignsSection({
   );
 }
 
+function MallFixedPriceCampaignsSection({
+  campaigns,
+  products,
+  form,
+  onChange,
+  onCampaignStatus,
+  onDelete,
+  onEdit,
+  onReset,
+  onSubmit,
+  onUploadIcon,
+}: {
+  campaigns: JsonRecord[];
+  products: JsonRecord[];
+  form: FixedPriceCampaignForm;
+  onChange: (patch: Partial<FixedPriceCampaignForm>) => void;
+  onCampaignStatus: (id: string, status: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+  onEdit: (campaign: JsonRecord) => void;
+  onReset: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onUploadIcon: (file: File) => Promise<string>;
+}) {
+  const showMessage = useAdminMessage();
+  const [modalOpen, setModalOpen] = useState(false);
+  const [productKeyword, setProductKeyword] = useState('');
+  const selectedItems = new Map(form.items.map(item => [item.productId, item]));
+  const visibleProducts = products
+    .filter(product => {
+      const keyword = productKeyword.trim().toLowerCase();
+      if (!keyword) return true;
+      return [
+        stringValue(product, 'name'),
+        stringValue(product, 'sku'),
+        stringValue(product, 'categoryName'),
+        stringValue(product, 'categoryCode'),
+      ].some(value => value.toLowerCase().includes(keyword));
+    })
+    .slice(0, 120);
+
+  const openCreate = () => {
+    onReset();
+    setProductKeyword('');
+    setModalOpen(true);
+  };
+  const openEdit = (campaign: JsonRecord) => {
+    onEdit(campaign);
+    setProductKeyword('');
+    setModalOpen(true);
+  };
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    await onSubmit(event);
+    setModalOpen(false);
+  };
+  const toggleProduct = (product: JsonRecord, checked: boolean) => {
+    const productId = stringValue(product, 'id');
+    if (!productId) return;
+    const nextItems = checked
+      ? [
+          ...form.items,
+          {
+            productId,
+            fixedPriceYuan: (numberValue(product, 'discountedPriceCents', numberValue(product, 'priceCents')) / 100).toFixed(2),
+          },
+        ]
+      : form.items.filter(item => item.productId !== productId);
+    onChange({ items: Array.from(new Map(nextItems.map(item => [item.productId, item])).values()) });
+  };
+  const updateItemPrice = (productId: string, fixedPriceYuan: string) => {
+    onChange({
+      items: form.items.map(item => item.productId === productId ? { ...item, fixedPriceYuan } : item),
+    });
+  };
+  const uploadIcon = async (files: FileList | null | undefined) => {
+    const file = files?.[0];
+    if (!file) return;
+    try {
+      const imageUrl = await onUploadIcon(file);
+      onChange({ badgeIconUrl: imageUrl });
+    } catch {
+      showMessage('error', '角标 icon 上传失败');
+    }
+  };
+
+  return (
+    <div className="page-grid">
+      <div className="mall-admin-toolbar">
+        <button className="mall-admin-submit" type="button" onClick={openCreate}>创建一口价</button>
+      </div>
+
+      <Panel title="一口价" description="配置商品一口价活动和商品图左上角角标">
+        <div className="list-stack">
+          {campaigns.map(campaign => {
+            const id = stringValue(campaign, 'id');
+            const status = stringValue(campaign, 'status');
+            const rules = recordValue(campaign, 'rules');
+            const badge = recordValue(rules, 'badge');
+            const items = arrayValue(rules, 'items');
+            const badgeText = stringValue(badge, 'text', stringValue(rules, 'badgeText', '一口价'));
+            const badgeIcon = stringValue(badge, 'icon', stringValue(rules, 'badgeIcon'));
+            const badgeIconUrl = stringValue(badge, 'iconUrl', stringValue(rules, 'badgeIconUrl'));
+            const badgeBackgroundColor = stringValue(badge, 'backgroundColor', stringValue(rules, 'badgeBackgroundColor', '#FF9238'));
+            const badgeTextColor = stringValue(badge, 'textColor', stringValue(rules, 'badgeTextColor', '#FFFFFF'));
+            return (
+              <article className="list-row" key={id}>
+                <div>
+                  <strong>{stringValue(campaign, 'name', '一口价活动')}</strong>
+                  <small>{items.length} 个商品 · {campaignTypeLabel(stringValue(campaign, 'campaignType'))}</small>
+                </div>
+                <span
+                  className="fixed-price-badge-preview"
+                  style={{ background: badgeBackgroundColor, color: badgeTextColor }}
+                >
+                  {badgeIconUrl ? <img alt="" src={resolveImage(badgeIconUrl)} /> : badgeIcon ? <i>{badgeIcon}</i> : null}
+                  {badgeText}
+                </span>
+                <span className={badgeClass(status)}>{statusLabel(status)}</span>
+                <div className="actions">
+                  <button className="ghost-button" type="button" onClick={() => openEdit(campaign)}>
+                    <Icon name="save" />
+                    编辑
+                  </button>
+                  <button className="ghost-button" type="button" onClick={() => void onCampaignStatus(id, status === 'active' ? 'inactive' : 'active')}>
+                    <Icon name={status === 'active' ? 'x' : 'check'} />
+                    {status === 'active' ? '停用' : '启用'}
+                  </button>
+                  <button className="ghost-button danger" type="button" onClick={() => void onDelete(id)}>
+                    <Icon name="x" />
+                    删除
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+          {!campaigns.length ? <EmptyState text="暂无一口价活动" /> : null}
+        </div>
+      </Panel>
+
+      {modalOpen ? (
+        <div className="modal-backdrop">
+          <form className="modal-panel fixed-price-modal" onSubmit={submit}>
+            <div className="modal-title-row">
+              <div>
+                <h2>{form.id ? '编辑一口价' : '创建一口价'}</h2>
+              </div>
+              <button className="ghost-button" type="button" onClick={() => setModalOpen(false)}>
+                <Icon name="x" />
+                关闭
+              </button>
+            </div>
+
+            <div className="form-grid">
+              <label>
+                活动名称
+                <input required value={form.name} onChange={event => onChange({ name: event.target.value })} />
+              </label>
+              <label>
+                状态
+                <select value={form.status} onChange={event => onChange({ status: event.target.value })}>
+                  <option value="active">启用</option>
+                  <option value="draft">草稿</option>
+                  <option value="inactive">停用</option>
+                </select>
+              </label>
+              <label>
+                展示文字
+                <input required value={form.badgeText} onChange={event => onChange({ badgeText: event.target.value })} />
+              </label>
+              <label>
+                icon 文本
+                <input value={form.badgeIcon} onChange={event => onChange({ badgeIcon: event.target.value })} placeholder="¥ / 限 / 惠" />
+              </label>
+              <label>
+                背景色
+                <input type="color" value={form.badgeBackgroundColor} onChange={event => onChange({ badgeBackgroundColor: event.target.value })} />
+              </label>
+              <label>
+                文字颜色
+                <input type="color" value={form.badgeTextColor} onChange={event => onChange({ badgeTextColor: event.target.value })} />
+              </label>
+              <label className="wide">
+                icon 图片
+                <input accept="image/*" type="file" onChange={event => void uploadIcon(event.currentTarget.files)} />
+                <input value={form.badgeIconUrl} onChange={event => onChange({ badgeIconUrl: event.target.value })} placeholder="icon 图片地址，可不填" />
+              </label>
+              <div className="wide fixed-price-badge-editor">
+                <span>角标预览</span>
+                <strong style={{ background: form.badgeBackgroundColor, color: form.badgeTextColor }}>
+                  {form.badgeIconUrl ? <img alt="" src={resolveImage(form.badgeIconUrl)} /> : form.badgeIcon ? <i>{form.badgeIcon}</i> : null}
+                  {form.badgeText || '一口价'}
+                </strong>
+              </div>
+            </div>
+
+            <div className="fixed-price-product-tools">
+              <input value={productKeyword} onChange={event => setProductKeyword(event.target.value)} placeholder="搜索商品名、SKU、类目" />
+              <span>已选 {form.items.length} 个商品</span>
+            </div>
+            <div className="table-wrap fixed-price-product-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>选择</th>
+                    <th>商品</th>
+                    <th>当前售价</th>
+                    <th>一口价</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleProducts.map(product => {
+                    const productId = stringValue(product, 'id');
+                    const selectedItem = selectedItems.get(productId);
+                    return (
+                      <tr key={productId}>
+                        <td>
+                          <input checked={Boolean(selectedItem)} type="checkbox" onChange={event => toggleProduct(product, event.target.checked)} />
+                        </td>
+                        <td>
+                          <strong>{stringValue(product, 'name', '未命名商品')}</strong>
+                          <small>{stringValue(product, 'sku') || shortId(productId)} · {stringValue(product, 'categoryName', stringValue(product, 'categoryCode'))}</small>
+                        </td>
+                        <td>{yuan(numberValue(product, 'priceCents'))}</td>
+                        <td>
+                          <input
+                            disabled={!selectedItem}
+                            min="0.01"
+                            step="0.01"
+                            type="number"
+                            value={selectedItem?.fixedPriceYuan || ''}
+                            onChange={event => updateItemPrice(productId, event.target.value)}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {!visibleProducts.length ? (
+                    <tr>
+                      <td colSpan={4}>暂无商品</td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="modal-actions">
+              <button className="ghost-button" type="button" onClick={() => setModalOpen(false)}>取消</button>
+              <button className="primary-button" type="submit">
+                <Icon name="save" />
+                保存一口价
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function MallPermissionsSection({
   permissions,
   filters,
@@ -8492,6 +9283,7 @@ function App() {
   const [authError, setAuthError] = useState('');
   const [productForm, setProductForm] = useState<ProductForm>(initialProductForm);
   const [campaignForm, setCampaignForm] = useState<CampaignForm>(initialCampaignForm);
+  const [fixedPriceCampaignForm, setFixedPriceCampaignForm] = useState<FixedPriceCampaignForm>(initialFixedPriceCampaignForm);
   const [couponForm, setCouponForm] = useState<CouponForm>(initialCouponForm);
   const [homeBannerForm, setHomeBannerForm] = useState<HomeBannerForm>(initialHomeBannerForm);
   const [homeSectionForm, setHomeSectionForm] = useState<HomeSectionForm>(initialHomeSectionForm);
@@ -8499,6 +9291,7 @@ function App() {
   const [permissionForm, setPermissionForm] = useState<MallPermissionForm>(initialPermissionForm);
   const [supportForm, setSupportForm] = useState<SupportForm>(initialSupportForm);
   const [categoryForm, setCategoryForm] = useState<CategoryForm>(initialCategoryForm);
+  const [procurementBuyerForm, setProcurementBuyerForm] = useState<ProcurementBuyerForm>(initialProcurementBuyerForm);
   const [productFilters, setProductFilters] = useState<MallFilterState>(initialProductFilters);
   const [categoryFilters, setCategoryFilters] = useState<MallFilterState>(initialCategoryFilters);
   const [inventoryFilters, setInventoryFilters] = useState<MallFilterState>(initialInventoryFilters);
@@ -8607,6 +9400,7 @@ function App() {
     setCategoryFilters(initialCategoryFilters);
     setInventoryFilters(initialInventoryFilters);
     setCampaignForm(initialCampaignForm);
+    setFixedPriceCampaignForm(initialFixedPriceCampaignForm);
     setCouponForm(initialCouponForm);
     setHomeBannerForm(initialHomeBannerForm);
     setHomeSectionForm(initialHomeSectionForm);
@@ -8881,6 +9675,7 @@ function App() {
         .filter(Boolean);
       const images = productFormImages(productForm);
       const variants = productVariantPayload(productForm);
+      const qualificationReports = productQualificationReportsPayload(productForm);
       await apiPost('/api/admin/mall/products', {
         name: productForm.name || '新增鲜选商品',
         sku: productForm.sku || `WEB-${Date.now()}`,
@@ -8906,6 +9701,9 @@ function App() {
         tags,
         deliveryMinutes: Number(productForm.deliveryMinutes) || 18,
         coldChainRequired: productForm.coldChainRequired,
+        procurementBuyerIds: productForm.procurementBuyerIds,
+        qualificationReports,
+        hideSupplier: productForm.hideSupplier,
       });
       setProductForm({ ...initialProductForm, sku: `WEB-${Date.now()}` });
       await reload();
@@ -8928,6 +9726,7 @@ function App() {
         .filter(Boolean);
       const images = productFormImages(form);
       const variants = productVariantPayload(form);
+      const qualificationReports = productQualificationReportsPayload(form);
       const product = await apiPut<JsonRecord>(`/api/admin/mall/products/${id}`, {
         name: form.name,
         sku: form.sku,
@@ -8953,6 +9752,9 @@ function App() {
         tags,
         deliveryMinutes: Number(form.deliveryMinutes) || 18,
         coldChainRequired: form.coldChainRequired,
+        procurementBuyerIds: form.procurementBuyerIds,
+        qualificationReports,
+        hideSupplier: form.hideSupplier,
       });
       setData(current => ({
         ...current,
@@ -8981,6 +9783,65 @@ function App() {
     } finally {
       setBusy('');
     }
+  };
+
+  const uploadQualificationFile = async (file: File) => {
+    setBusy('资质文件上传');
+    try {
+      const result = await apiUpload<JsonRecord>('/api/admin/mall/uploads/qualification-file', file);
+      const fileUrl = stringValue(result, 'fileUrl', stringValue(result, 'fileKey'));
+      if (!fileUrl) {
+        throw new Error('上传结果缺少文件地址');
+      }
+      setNotice('资质文件上传成功');
+      showMessage('success', '资质文件上传成功');
+      return fileUrl;
+    } catch (error) {
+      const message = `资质文件上传失败：${error instanceof Error ? error.message : '未知错误'}`;
+      setNotice(message);
+      showMessage('error', message);
+      throw error;
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const saveProcurementBuyer = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await runAction(procurementBuyerForm.id ? '采购商更新' : '采购商创建', async () => {
+      if (!procurementBuyerForm.name.trim()) {
+        throw new Error('采购商名称不能为空');
+      }
+      const payload = {
+        name: procurementBuyerForm.name,
+        contactName: procurementBuyerForm.contactName,
+        contactPhone: procurementBuyerForm.contactPhone,
+        licenseUrl: procurementBuyerForm.licenseUrl,
+        status: procurementBuyerForm.status,
+        remark: procurementBuyerForm.remark,
+      };
+      const buyer = procurementBuyerForm.id
+        ? await apiPut<JsonRecord>(`/api/admin/mall/procurement-buyers/${procurementBuyerForm.id}`, payload)
+        : await apiPost<JsonRecord>('/api/admin/mall/procurement-buyers', payload);
+      setData(current => ({
+        ...current,
+        mallProcurementBuyers: upsertRecordList(current.mallProcurementBuyers, buyer),
+      }));
+      setProcurementBuyerForm(initialProcurementBuyerForm);
+      await reload();
+    });
+  };
+
+  const deleteProcurementBuyer = async (id: string) => {
+    await runAction('采购商删除', async () => {
+      await apiDelete(`/api/admin/mall/procurement-buyers/${id}`);
+      setData(current => ({
+        ...current,
+        mallProcurementBuyers: current.mallProcurementBuyers.filter(buyer => stringValue(buyer, 'id') !== id),
+      }));
+      setProcurementBuyerForm(current => (current.id === id ? initialProcurementBuyerForm : current));
+      await reload();
+    });
   };
 
   const saveCategory = async (form: CategoryForm) => {
@@ -9352,6 +10213,10 @@ function App() {
     setCampaignForm(initialCampaignForm);
   };
 
+  const resetFixedPriceCampaignForm = () => {
+    setFixedPriceCampaignForm(initialFixedPriceCampaignForm);
+  };
+
   const saveCampaign = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const isEditing = Boolean(campaignForm.id);
@@ -9380,10 +10245,57 @@ function App() {
     setCampaignForm(campaignToForm(campaign));
   };
 
+  const saveFixedPriceCampaign = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const isEditing = Boolean(fixedPriceCampaignForm.id);
+    await runAction(isEditing ? '一口价更新' : '一口价创建', async () => {
+      if (!fixedPriceCampaignForm.name.trim()) {
+        throw new Error('活动名称不能为空');
+      }
+      if (!fixedPriceCampaignForm.badgeText.trim()) {
+        throw new Error('展示文字不能为空');
+      }
+      if (!fixedPriceCampaignForm.items.length) {
+        throw new Error('请至少选择一个商品');
+      }
+      fixedPriceCampaignForm.items.forEach(item => {
+        if (moneyFromYuan(item.fixedPriceYuan) <= 0) {
+          throw new Error('一口价必须大于0');
+        }
+      });
+      const payload = {
+        name: fixedPriceCampaignForm.name,
+        campaignType: 'fixed_price',
+        budgetCents: 0,
+        rules: fixedPriceCampaignRules(fixedPriceCampaignForm, data.mallProducts),
+        status: fixedPriceCampaignForm.status,
+      };
+      const campaign = isEditing
+        ? await apiPut<JsonRecord>(`/api/admin/mall/campaigns/${fixedPriceCampaignForm.id}`, payload)
+        : await apiPost<JsonRecord>('/api/admin/mall/campaigns', payload);
+
+      setData(current => ({
+        ...current,
+        campaigns: upsertRecordList(current.campaigns, campaign),
+        fixedPriceCampaigns: upsertRecordList(current.fixedPriceCampaigns, campaign),
+      }));
+      setFixedPriceCampaignForm(initialFixedPriceCampaignForm);
+      await reload();
+    });
+  };
+
+  const editFixedPriceCampaign = (campaign: JsonRecord) => {
+    setFixedPriceCampaignForm(fixedPriceCampaignToForm(campaign));
+  };
+
   const updateCampaignStatus = async (id: string, status: string) => {
     await runAction('活动状态更新', async () => {
       await apiPut(`/api/admin/mall/campaigns/${id}`, { status });
-      setData(current => ({ ...current, campaigns: updateRecordList(current.campaigns, id, { status }) }));
+      setData(current => ({
+        ...current,
+        campaigns: updateRecordList(current.campaigns, id, { status }),
+        fixedPriceCampaigns: updateRecordList(current.fixedPriceCampaigns, id, { status }),
+      }));
     });
   };
 
@@ -9393,8 +10305,10 @@ function App() {
       setData(current => ({
         ...current,
         campaigns: current.campaigns.filter(campaign => stringValue(campaign, 'id') !== id),
+        fixedPriceCampaigns: current.fixedPriceCampaigns.filter(campaign => stringValue(campaign, 'id') !== id),
       }));
       setCampaignForm(current => (current.id === id ? initialCampaignForm : current));
+      setFixedPriceCampaignForm(current => (current.id === id ? initialFixedPriceCampaignForm : current));
       await reload();
     });
   };
@@ -9862,17 +10776,20 @@ function App() {
         return (
           <MallProductDesignSection
             categories={data.mallCategories}
+            procurementBuyers={data.mallProcurementBuyers}
             form={productForm}
             products={data.mallProducts}
             onChange={patch => setProductForm(current => ({ ...current, ...patch }))}
             onSubmit={createProduct}
             onUploadImage={uploadProductImage}
+            onUploadQualificationFile={uploadQualificationFile}
           />
         );
       }
       return (
         <MallProductsSection
           categories={data.mallCategories}
+          procurementBuyers={data.mallProcurementBuyers}
           filters={productFilters}
           products={data.mallProducts}
           onApplyFilters={applyProductFilters}
@@ -9881,6 +10798,19 @@ function App() {
           onStatus={updateProductStatus}
           onUpdate={updateProduct}
           onUploadImage={uploadProductImage}
+          onUploadQualificationFile={uploadQualificationFile}
+        />
+      );
+    }
+    if (activePageKey === 'mall.procurementBuyers') {
+      return (
+        <ProcurementBuyersSection
+          buyers={data.mallProcurementBuyers}
+          form={procurementBuyerForm}
+          onDelete={deleteProcurementBuyer}
+          onFormChange={patch => setProcurementBuyerForm(current => ({ ...current, ...patch }))}
+          onSave={saveProcurementBuyer}
+          onUploadLicense={uploadQualificationFile}
         />
       );
     }
@@ -10112,6 +11042,22 @@ function App() {
           onReset={resetCampaignForm}
           onSearch={reload}
           onSubmit={saveCampaign}
+        />
+      );
+    }
+    if (activePageKey === 'mall.fixedPriceCampaigns') {
+      return (
+        <MallFixedPriceCampaignsSection
+          campaigns={data.fixedPriceCampaigns}
+          form={fixedPriceCampaignForm}
+          products={data.mallProducts}
+          onCampaignStatus={updateCampaignStatus}
+          onChange={patch => setFixedPriceCampaignForm(current => ({ ...current, ...patch }))}
+          onDelete={deleteCampaign}
+          onEdit={editFixedPriceCampaign}
+          onReset={resetFixedPriceCampaignForm}
+          onSubmit={saveFixedPriceCampaign}
+          onUploadIcon={uploadProductImage}
         />
       );
     }

@@ -175,8 +175,8 @@ export default function MallCartPage() {
 
       <View style={{ marginTop: 12 }}>
         <MallLocationStrip
-          title={selectedAddress?.addressLabel || selectedAddress?.address_name || '明日 16:00 后 · 叁友自提点'}
-          subtitle={selectedAddress?.addressText || selectedAddress?.address || '默认使用上次收货地址 / 自提点'}
+          title={selectedAddress?.addressLabel || selectedAddress?.address_name || '请选择送货地址'}
+          subtitle={selectedAddress?.addressText || selectedAddress?.address || '下单前需要填写收货地址'}
           onClick={() => Taro.navigateTo({ url: '/pages/mall/address/index' })}
         />
       </View>

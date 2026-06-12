@@ -15,10 +15,18 @@ use crate::{
 };
 
 const MAX_MALL_PRODUCT_IMAGE_BYTES: usize = 5 * 1024 * 1024;
+const MAX_MALL_QUALIFICATION_FILE_BYTES: usize = 10 * 1024 * 1024;
 const MAX_PRODUCT_IMAGES: usize = 20;
 const MAX_PRODUCT_VARIANTS: usize = 50;
 const ALLOWED_MALL_PRODUCT_IMAGE_TYPES: &[&str] =
     &["image/jpeg", "image/png", "image/webp", "image/gif"];
+const ALLOWED_MALL_QUALIFICATION_FILE_TYPES: &[&str] = &[
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "application/pdf",
+];
 
 pub fn router<S>() -> Router<AppState<S>>
 where
@@ -177,6 +185,18 @@ where
             post(admin_upload_product_image::<S>),
         )
         .route(
+            "/api/admin/mall/uploads/qualification-file",
+            post(admin_upload_qualification_file::<S>),
+        )
+        .route(
+            "/api/admin/mall/procurement-buyers",
+            get(admin_list_procurement_buyers::<S>).post(admin_create_procurement_buyer::<S>),
+        )
+        .route(
+            "/api/admin/mall/procurement-buyers/:id",
+            put(admin_update_procurement_buyer::<S>).delete(admin_delete_procurement_buyer::<S>),
+        )
+        .route(
             "/api/admin/mall/products",
             get(admin_list_products::<S>).post(admin_create_product::<S>),
         )
@@ -311,6 +331,27 @@ struct InventoryAlertMutationRequest {
     stock: Option<i32>,
     #[serde(alias = "stock_alert_threshold")]
     stock_alert_threshold: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcurementBuyerQuery {
+    keyword: Option<String>,
+    status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcurementBuyerMutationRequest {
+    name: Option<String>,
+    #[serde(alias = "contact_name")]
+    contact_name: Option<String>,
+    #[serde(alias = "contact_phone", alias = "phone")]
+    contact_phone: Option<String>,
+    #[serde(alias = "license_url", alias = "business_license_url")]
+    license_url: Option<String>,
+    status: Option<String>,
+    remark: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -722,6 +763,12 @@ struct ProductMutationRequest {
     image_url: Option<String>,
     images: Option<Vec<String>>,
     variants: Option<Vec<ProductVariantMutation>>,
+    #[serde(alias = "procurement_buyer_ids", alias = "buyer_ids", alias = "supplier_ids")]
+    procurement_buyer_ids: Option<Vec<String>>,
+    #[serde(alias = "qualification_reports", alias = "quality_reports")]
+    qualification_reports: Option<Vec<ProductQualificationReportMutation>>,
+    #[serde(alias = "hide_supplier")]
+    hide_supplier: Option<bool>,
     specification: Option<String>,
     #[serde(alias = "sale_method")]
     sale_method: Option<String>,
@@ -756,6 +803,28 @@ struct ProductMutationRequest {
     delivery_minutes: Option<i32>,
     #[serde(alias = "cold_chain_required")]
     cold_chain_required: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProductQualificationReportMutation {
+    id: Option<String>,
+    #[serde(alias = "buyer_id", alias = "supplier_id")]
+    buyer_id: Option<String>,
+    #[serde(alias = "report_name", alias = "name")]
+    report_name: Option<String>,
+    #[serde(alias = "report_type", alias = "type")]
+    report_type: Option<String>,
+    #[serde(alias = "report_url", alias = "url")]
+    report_url: Option<String>,
+    issuer: Option<String>,
+    #[serde(alias = "issued_at")]
+    issued_at: Option<String>,
+    #[serde(alias = "expires_at")]
+    expires_at: Option<String>,
+    #[serde(alias = "hide_supplier")]
+    hide_supplier: Option<bool>,
+    status: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -833,6 +902,20 @@ struct ProductVariantDefaults {
     supply_price_cents: Option<i64>,
     stock: i32,
     minimum_order_quantity: i32,
+    status: String,
+}
+
+#[derive(Debug, Clone)]
+struct NormalizedQualificationReport {
+    id: String,
+    buyer_id: Option<String>,
+    report_name: String,
+    report_type: Option<String>,
+    report_url: String,
+    issuer: Option<String>,
+    issued_at: Option<String>,
+    expires_at: Option<String>,
+    hide_supplier: bool,
     status: String,
 }
 
@@ -1557,6 +1640,229 @@ where
     }
 
     Err(ApiError::BadRequest("请选择商品图片".to_string()))
+}
+
+async fn admin_upload_qualification_file<S>(
+    State(state): State<AppState<S>>,
+    mut multipart: Multipart,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let mut ignored_field_bytes = 0usize;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?
+    {
+        if field.name() != Some("file") {
+            read_ignored_multipart_field(field, &mut ignored_field_bytes).await?;
+            continue;
+        }
+
+        let content_type = field.content_type().map(str::to_string);
+        if !content_type
+            .as_deref()
+            .is_some_and(|value| ALLOWED_MALL_QUALIFICATION_FILE_TYPES.contains(&value))
+        {
+            return Err(ApiError::BadRequest(
+                "请上传 JPG、PNG、WebP、GIF 或 PDF 资质文件".to_string(),
+            ));
+        }
+        let extension = extension_for_qualification_file(content_type.as_deref())
+            .ok_or_else(|| ApiError::BadRequest("请上传有效的资质文件".to_string()))?;
+        let bytes = read_mall_product_image_bytes(field).await?;
+
+        if bytes.is_empty() {
+            return Err(ApiError::BadRequest("资质文件不能为空".to_string()));
+        }
+        if bytes.len() > MAX_MALL_QUALIFICATION_FILE_BYTES {
+            return Err(ApiError::BadRequest("资质文件不能超过10MB".to_string()));
+        }
+
+        let key = format!(
+            "mall-products/qualifications/{}-{}.{}",
+            chrono::Utc::now().timestamp_millis(),
+            &uuid::Uuid::new_v4().simple().to_string()[..8],
+            extension
+        );
+        let file_key = state
+            .storage
+            .put_key(bytes, &key, content_type.as_deref())
+            .await?;
+        let url = state.storage.public_url(&file_key).await?;
+
+        return Ok(ok(
+            "资质文件上传成功",
+            json!({
+                "fileKey": file_key,
+                "fileUrl": file_key,
+                "url": url
+            }),
+        ));
+    }
+
+    Err(ApiError::BadRequest("请选择资质文件".to_string()))
+}
+
+async fn admin_list_procurement_buyers<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<ProcurementBuyerQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT jsonb_build_object(
+          'id', id,
+          'name', name,
+          'contactName', contact_name,
+          'contactPhone', contact_phone,
+          'licenseUrl', license_url,
+          'status', status,
+          'remark', remark,
+          'createdAt', created_at,
+          'updatedAt', updated_at
+        )
+        FROM mall_procurement_buyers
+        WHERE 1 = 1
+        "#,
+    );
+    if let Some(status) = non_empty(query.status) {
+        builder.push(" AND status = ");
+        builder.push_bind(status);
+    } else {
+        builder.push(" AND status <> 'deleted'");
+    }
+    if let Some(keyword) = non_empty(query.keyword) {
+        let pattern = format!("%{keyword}%");
+        builder.push(" AND (name ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR contact_name ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR contact_phone ILIKE ");
+        builder.push_bind(pattern);
+        builder.push(")");
+    }
+    builder.push(" ORDER BY updated_at DESC, created_at DESC LIMIT 200");
+
+    let mut buyers = builder.build_query_scalar::<Value>().fetch_all(&state.db).await?;
+    resolve_mall_image_urls_in_list(&state.storage, &mut buyers).await?;
+    Ok(ok("查询成功", buyers))
+}
+
+async fn admin_create_procurement_buyer<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<ProcurementBuyerMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let name = require_non_empty(body.name, "采购商名称不能为空")?;
+    let status = body.status.unwrap_or_else(|| "active".to_string());
+    validate_procurement_buyer_status(&status)?;
+    let mut buyer = sqlx::query_scalar::<_, Value>(
+        r#"
+        INSERT INTO mall_procurement_buyers (
+          name, contact_name, contact_phone, license_url, status, remark
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING jsonb_build_object(
+          'id', id,
+          'name', name,
+          'contactName', contact_name,
+          'contactPhone', contact_phone,
+          'licenseUrl', license_url,
+          'status', status,
+          'remark', remark,
+          'createdAt', created_at,
+          'updatedAt', updated_at
+        )
+        "#,
+    )
+    .bind(name)
+    .bind(non_empty(body.contact_name))
+    .bind(non_empty(body.contact_phone))
+    .bind(non_empty(body.license_url))
+    .bind(status)
+    .bind(non_empty(body.remark))
+    .fetch_one(&state.db)
+    .await?;
+    resolve_mall_image_urls(&state.storage, &mut buyer).await?;
+    Ok(ok("采购商创建成功", buyer))
+}
+
+async fn admin_update_procurement_buyer<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<ProcurementBuyerMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    if let Some(status) = body.status.as_deref() {
+        validate_procurement_buyer_status(status)?;
+    }
+    let mut buyer = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_procurement_buyers
+        SET name = COALESCE($2, name),
+            contact_name = COALESCE($3, contact_name),
+            contact_phone = COALESCE($4, contact_phone),
+            license_url = COALESCE($5, license_url),
+            status = COALESCE($6, status),
+            remark = COALESCE($7, remark),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING jsonb_build_object(
+          'id', id,
+          'name', name,
+          'contactName', contact_name,
+          'contactPhone', contact_phone,
+          'licenseUrl', license_url,
+          'status', status,
+          'remark', remark,
+          'createdAt', created_at,
+          'updatedAt', updated_at
+        )
+        "#,
+    )
+    .bind(&id)
+    .bind(optional_non_empty(body.name, "采购商名称不能为空")?)
+    .bind(non_empty(body.contact_name))
+    .bind(non_empty(body.contact_phone))
+    .bind(non_empty(body.license_url))
+    .bind(body.status)
+    .bind(non_empty(body.remark))
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("采购商不存在".to_string()))?;
+    resolve_mall_image_urls(&state.storage, &mut buyer).await?;
+    Ok(ok("采购商更新成功", buyer))
+}
+
+async fn admin_delete_procurement_buyer<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let buyer = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_procurement_buyers
+        SET status = 'deleted', updated_at = now()
+        WHERE id = $1
+        RETURNING jsonb_build_object('id', id, 'status', status)
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("采购商不存在".to_string()))?;
+    Ok(ok("采购商已删除", buyer))
 }
 
 async fn admin_list_products<S>(
@@ -3015,6 +3321,9 @@ async fn admin_create_product<S>(
 where
     S: Storage,
 {
+    let procurement_buyer_ids = body.procurement_buyer_ids.clone();
+    let qualification_reports = body.qualification_reports.clone();
+    let hide_supplier = body.hide_supplier;
     let name = require_non_empty(body.name, "商品名称不能为空")?;
     let sku = require_non_empty(body.sku, "SKU不能为空")?;
     let category_code = require_non_empty(body.category_code, "类目不能为空")?;
@@ -3110,6 +3419,15 @@ where
     .fetch_one(&state.db)
     .await?;
 
+    sync_product_procurement(
+        &state.db,
+        &product_id,
+        procurement_buyer_ids.as_deref(),
+        qualification_reports.as_deref(),
+        hide_supplier,
+    )
+    .await?;
+
     let mut product = fetch_product_json(&state.db, &product_id).await?;
     resolve_mall_image_urls(&state.storage, &mut product).await?;
     Ok(ok("商品创建成功", product))
@@ -3123,6 +3441,9 @@ async fn admin_update_product<S>(
 where
     S: Storage,
 {
+    let procurement_buyer_ids = body.procurement_buyer_ids.clone();
+    let qualification_reports = body.qualification_reports.clone();
+    let hide_supplier = body.hide_supplier;
     if let Some(category_code) = body.category_code.as_deref() {
         ensure_category(&state.db, category_code).await?;
     }
@@ -3264,6 +3585,15 @@ where
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| ApiError::NotFound("商品不存在".to_string()))?;
+
+    sync_product_procurement(
+        &state.db,
+        &product_id,
+        procurement_buyer_ids.as_deref(),
+        qualification_reports.as_deref(),
+        hide_supplier,
+    )
+    .await?;
 
     let mut product = fetch_product_json(&state.db, &product_id).await?;
     resolve_mall_image_urls(&state.storage, &mut product).await?;
@@ -5787,7 +6117,10 @@ fn collect_image_url_paths(
         Value::Object(object) => {
             for (key, child) in object {
                 current_path.push(JsonPathSegment::Key(key.clone()));
-                if key == "imageUrl" {
+                if matches!(
+                    key.as_str(),
+                    "imageUrl" | "licenseUrl" | "reportUrl" | "fileUrl" | "iconUrl"
+                ) {
                     if child
                         .as_str()
                         .map(str::trim)
@@ -5934,12 +6267,208 @@ async fn fetch_products(
         .await?)
 }
 
+async fn sync_product_procurement(
+    pool: &PgPool,
+    product_id: &str,
+    buyer_ids: Option<&[String]>,
+    reports: Option<&[ProductQualificationReportMutation]>,
+    hide_supplier: Option<bool>,
+) -> ApiResult<()> {
+    if buyer_ids.is_none() && reports.is_none() && hide_supplier.is_none() {
+        return Ok(());
+    }
+
+    let default_hide_supplier = hide_supplier.unwrap_or(false);
+    if buyer_ids.is_none() && reports.is_none() {
+        sqlx::query(
+            r#"
+            UPDATE mall_product_buyers
+            SET hide_supplier = $2
+            WHERE product_id = $1
+            "#,
+        )
+        .bind(product_id)
+        .bind(default_hide_supplier)
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            r#"
+            UPDATE mall_product_qualification_reports
+            SET hide_supplier = $2,
+                updated_at = now()
+            WHERE product_id = $1
+            "#,
+        )
+        .bind(product_id)
+        .bind(default_hide_supplier)
+        .execute(pool)
+        .await?;
+        return Ok(());
+    }
+
+    let normalized_reports = normalize_qualification_reports(reports, default_hide_supplier)?;
+    let normalized_buyer_ids =
+        normalize_product_procurement_buyer_ids(buyer_ids, &normalized_reports);
+    ensure_procurement_buyers_exist(pool, &normalized_buyer_ids).await?;
+
+    sqlx::query("DELETE FROM mall_product_buyers WHERE product_id = $1")
+        .bind(product_id)
+        .execute(pool)
+        .await?;
+    for buyer_id in &normalized_buyer_ids {
+        sqlx::query(
+            r#"
+            INSERT INTO mall_product_buyers (product_id, buyer_id, hide_supplier)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (product_id, buyer_id)
+            DO UPDATE SET hide_supplier = EXCLUDED.hide_supplier
+            "#,
+        )
+        .bind(product_id)
+        .bind(buyer_id)
+        .bind(default_hide_supplier)
+        .execute(pool)
+        .await?;
+    }
+
+    sqlx::query("DELETE FROM mall_product_qualification_reports WHERE product_id = $1")
+        .bind(product_id)
+        .execute(pool)
+        .await?;
+    for report in normalized_reports {
+        sqlx::query(
+            r#"
+            INSERT INTO mall_product_qualification_reports (
+              id, product_id, buyer_id, report_name, report_type, report_url,
+              issuer, issued_at, expires_at, hide_supplier, status
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            "#,
+        )
+        .bind(report.id)
+        .bind(product_id)
+        .bind(report.buyer_id)
+        .bind(report.report_name)
+        .bind(report.report_type)
+        .bind(report.report_url)
+        .bind(report.issuer)
+        .bind(report.issued_at)
+        .bind(report.expires_at)
+        .bind(report.hide_supplier)
+        .bind(report.status)
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn ensure_procurement_buyers_exist(pool: &PgPool, buyer_ids: &[String]) -> ApiResult<()> {
+    for buyer_id in buyer_ids {
+        let exists = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+              SELECT 1
+              FROM mall_procurement_buyers
+              WHERE id = $1
+                AND status <> 'deleted'
+            )
+            "#,
+        )
+        .bind(buyer_id)
+        .fetch_one(pool)
+        .await?;
+        if !exists {
+            return Err(ApiError::BadRequest("采购商不存在或已删除".to_string()));
+        }
+    }
+    Ok(())
+}
+
+fn normalize_product_procurement_buyer_ids(
+    buyer_ids: Option<&[String]>,
+    reports: &[NormalizedQualificationReport],
+) -> Vec<String> {
+    let mut normalized = Vec::new();
+    if let Some(buyer_ids) = buyer_ids {
+        for buyer_id in buyer_ids {
+            push_unique_non_empty(&mut normalized, buyer_id);
+        }
+    }
+    for report in reports {
+        if let Some(buyer_id) = report.buyer_id.as_deref() {
+            push_unique_non_empty(&mut normalized, buyer_id);
+        }
+    }
+    normalized
+}
+
+fn normalize_qualification_reports(
+    reports: Option<&[ProductQualificationReportMutation]>,
+    default_hide_supplier: bool,
+) -> ApiResult<Vec<NormalizedQualificationReport>> {
+    let mut normalized = Vec::new();
+    let Some(reports) = reports else {
+        return Ok(normalized);
+    };
+    for report in reports {
+        let has_any_value = [
+            report.buyer_id.as_deref(),
+            report.report_name.as_deref(),
+            report.report_type.as_deref(),
+            report.report_url.as_deref(),
+            report.issuer.as_deref(),
+            report.issued_at.as_deref(),
+            report.expires_at.as_deref(),
+        ]
+        .iter()
+        .any(|value| value.is_some_and(|value| !value.trim().is_empty()));
+        if !has_any_value {
+            continue;
+        }
+
+        let report_name = normalize_product_image_value(report.report_name.as_deref())
+            .ok_or_else(|| ApiError::BadRequest("资质报告名称不能为空".to_string()))?;
+        let report_url = normalize_product_image_value(report.report_url.as_deref())
+            .ok_or_else(|| ApiError::BadRequest("资质报告文件不能为空".to_string()))?;
+        let status = report.status.clone().unwrap_or_else(|| "active".to_string());
+        validate_qualification_report_status(&status)?;
+
+        normalized.push(NormalizedQualificationReport {
+            id: normalize_product_image_value(report.id.as_deref())
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            buyer_id: normalize_product_image_value(report.buyer_id.as_deref()),
+            report_name,
+            report_type: normalize_product_image_value(report.report_type.as_deref()),
+            report_url,
+            issuer: normalize_product_image_value(report.issuer.as_deref()),
+            issued_at: normalize_product_image_value(report.issued_at.as_deref()),
+            expires_at: normalize_product_image_value(report.expires_at.as_deref()),
+            hide_supplier: report.hide_supplier.unwrap_or(default_hide_supplier),
+            status,
+        });
+    }
+    Ok(normalized)
+}
+
+fn push_unique_non_empty(values: &mut Vec<String>, value: &str) {
+    let Some(normalized) = normalize_product_image_value(Some(value)) else {
+        return;
+    };
+    if !values.iter().any(|current| current == &normalized) {
+        values.push(normalized);
+    }
+}
+
 fn normalize_product_activity_type(value: &str) -> ApiResult<String> {
     match value.trim() {
         "" | "all" | "全部" => Ok("all".to_string()),
         "flashSale" | "flash_sale" | "seckill" | "秒杀" => Ok("flash_sale".to_string()),
         "fullReduction" | "full_reduction" | "discount" | "满减" => {
             Ok("full_reduction".to_string())
+        }
+        "fixedPrice" | "fixed_price" | "onePrice" | "one_price" | "fixed" | "一口价" => {
+            Ok("fixed_price".to_string())
         }
         "newArrival" | "new_arrival" | "new" | "新品" | "上新" => Ok("new_arrival".to_string()),
         "bestSeller" | "best_seller" | "hot" | "爆款" => Ok("best_seller".to_string()),
@@ -6011,6 +6540,32 @@ fn push_product_activity_filter(builder: &mut QueryBuilder<Postgres>, activity_t
                 AND (campaign.ends_at IS NULL OR campaign.ends_at >= now())
                 AND campaign.rules ? 'thresholdCents'
                 AND campaign.rules ? 'discountCents'
+            )
+            "#,
+            );
+        }
+        "fixed_price" => {
+            builder.push(
+                r#"
+            AND EXISTS (
+              SELECT 1
+              FROM mall_campaigns campaign
+              JOIN LATERAL jsonb_array_elements(COALESCE(campaign.rules->'items', '[]'::jsonb)) AS item(value) ON true
+              WHERE campaign.campaign_type = 'fixed_price'
+                AND campaign.status = 'active'
+                AND (campaign.starts_at IS NULL OR campaign.starts_at <= now())
+                AND (campaign.ends_at IS NULL OR campaign.ends_at >= now())
+                AND (
+                  item.value->>'productId' = p.id::text
+                  OR item.value->>'id' = p.id::text
+                  OR item.value->>'sku' = p.sku
+                )
+                AND COALESCE(
+                  NULLIF(item.value->>'fixedPriceCents', '')::bigint,
+                  NULLIF(item.value->>'priceCents', '')::bigint,
+                  NULLIF(campaign.rules->>'fixedPriceCents', '')::bigint,
+                  0
+                ) > 0
             )
             "#,
             );
@@ -6972,6 +7527,15 @@ mod product_listing_query_tests {
 }
 
 async fn enrich_product_pricing(pool: &PgPool, product: &mut Value) -> ApiResult<()> {
+    let product_id = product
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let sku = product
+        .get("sku")
+        .and_then(Value::as_str)
+        .map(str::to_string);
     let price_cents = product
         .get("priceCents")
         .and_then(Value::as_i64)
@@ -6986,12 +7550,24 @@ async fn enrich_product_pricing(pool: &PgPool, product: &mut Value) -> ApiResult
     let coupon = calculate_mall_coupon_discount_cents(pool, price_cents).await?;
     let preview_discount_cents =
         (full_reduction.discount_cents + coupon.discount_cents).clamp(0, price_cents);
-    let discounted_price_cents = (price_cents - preview_discount_cents).max(0);
+    let fixed_price_campaign = if product_id.is_empty() {
+        None
+    } else {
+        find_fixed_price_campaign(pool, &product_id, sku.as_deref()).await?
+    };
+    let discounted_price_cents = fixed_price_campaign
+        .as_ref()
+        .and_then(fixed_price_campaign_price_cents)
+        .map(|fixed_price| fixed_price.clamp(0, price_cents))
+        .unwrap_or_else(|| (price_cents - preview_discount_cents).max(0));
     let saved_cents = (original_price_cents - discounted_price_cents).max(0);
     let points_deductible_cents = (discounted_price_cents / 20).clamp(0, 500);
     let coupon_stackable = coupon.discount_cents > 0 || coupon.next_gap_cents.is_some();
-    let discount_label = full_reduction
-        .description
+    let discount_label = fixed_price_campaign
+        .as_ref()
+        .and_then(|campaign| campaign.get("badgeText").and_then(Value::as_str))
+        .map(str::to_string)
+        .or(full_reduction.description)
         .or(coupon.description)
         .unwrap_or_else(|| "今日优惠".to_string());
 
@@ -7007,9 +7583,97 @@ async fn enrich_product_pricing(pool: &PgPool, product: &mut Value) -> ApiResult
             json!(points_deductible_cents),
         );
         object.insert("discountLabel".to_string(), json!(discount_label));
+        if let Some(campaign) = fixed_price_campaign {
+            object.insert("fixedPriceCampaign".to_string(), campaign);
+        } else {
+            object.remove("fixedPriceCampaign");
+        }
     }
 
     Ok(())
+}
+
+async fn find_fixed_price_campaign(
+    pool: &PgPool,
+    product_id: &str,
+    sku: Option<&str>,
+) -> ApiResult<Option<Value>> {
+    let campaign = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT jsonb_build_object(
+          'campaignId', campaign.id,
+          'campaignName', campaign.name,
+          'fixedPriceCents', COALESCE(
+            NULLIF(item.value->>'fixedPriceCents', '')::bigint,
+            NULLIF(item.value->>'priceCents', '')::bigint,
+            NULLIF(campaign.rules->>'fixedPriceCents', '')::bigint,
+            0
+          ),
+          'badgeText', COALESCE(
+            NULLIF(item.value->>'badgeText', ''),
+            NULLIF(campaign.rules #>> '{badge,text}', ''),
+            NULLIF(campaign.rules->>'badgeText', ''),
+            '一口价'
+          ),
+          'badgeIcon', COALESCE(
+            NULLIF(item.value->>'badgeIcon', ''),
+            NULLIF(campaign.rules #>> '{badge,icon}', ''),
+            NULLIF(campaign.rules->>'badgeIcon', ''),
+            ''
+          ),
+          'badgeIconUrl', COALESCE(
+            NULLIF(item.value->>'badgeIconUrl', ''),
+            NULLIF(campaign.rules #>> '{badge,iconUrl}', ''),
+            NULLIF(campaign.rules->>'badgeIconUrl', ''),
+            ''
+          ),
+          'badgeBackgroundColor', COALESCE(
+            NULLIF(item.value->>'badgeBackgroundColor', ''),
+            NULLIF(campaign.rules #>> '{badge,backgroundColor}', ''),
+            NULLIF(campaign.rules->>'badgeBackgroundColor', ''),
+            '#FF9238'
+          ),
+          'badgeTextColor', COALESCE(
+            NULLIF(item.value->>'badgeTextColor', ''),
+            NULLIF(campaign.rules #>> '{badge,textColor}', ''),
+            NULLIF(campaign.rules->>'badgeTextColor', ''),
+            '#FFFFFF'
+          )
+        )
+        FROM mall_campaigns campaign
+        JOIN LATERAL jsonb_array_elements(COALESCE(campaign.rules->'items', '[]'::jsonb)) AS item(value) ON true
+        WHERE campaign.campaign_type = 'fixed_price'
+          AND campaign.status = 'active'
+          AND (campaign.starts_at IS NULL OR campaign.starts_at <= now())
+          AND (campaign.ends_at IS NULL OR campaign.ends_at >= now())
+          AND (
+            item.value->>'productId' = $1
+            OR item.value->>'id' = $1
+            OR item.value->>'sku' = COALESCE($2, '')
+          )
+          AND COALESCE(
+            NULLIF(item.value->>'fixedPriceCents', '')::bigint,
+            NULLIF(item.value->>'priceCents', '')::bigint,
+            NULLIF(campaign.rules->>'fixedPriceCents', '')::bigint,
+            0
+          ) > 0
+        ORDER BY campaign.updated_at DESC, campaign.created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(product_id)
+    .bind(sku)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(campaign)
+}
+
+fn fixed_price_campaign_price_cents(campaign: &Value) -> Option<i64> {
+    campaign
+        .get("fixedPriceCents")
+        .and_then(Value::as_i64)
+        .filter(|value| *value > 0)
 }
 
 async fn cart_payload(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
@@ -7068,6 +7732,7 @@ async fn cart_payload(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
             enrich_product_pricing(pool, product).await?;
         }
     }
+    apply_fixed_price_to_cart_item_values(&mut items);
     let subtotal_cents = items
         .iter()
         .filter(|item| item["selected"].as_bool().unwrap_or(false))
@@ -7104,7 +7769,7 @@ async fn cart_payload(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
 
 async fn checkout_payload(pool: &PgPool, checkout_id: &str) -> ApiResult<Value> {
     let checkout = fetch_checkout(pool, checkout_id).await?;
-    let items = checkout_products(pool, &checkout).await?;
+    let mut items = checkout_products(pool, &checkout).await?;
     if items.is_empty() {
         return Err(ApiError::BadRequest("结算商品为空".to_string()));
     }
@@ -7113,6 +7778,7 @@ async fn checkout_payload(pool: &PgPool, checkout_id: &str) -> ApiResult<Value> 
             return Err(ApiError::BadRequest(format!("{} 库存不足", item.name)));
         }
     }
+    apply_fixed_price_to_cart_rows(pool, &mut items).await?;
 
     let subtotal_cents = checkout_subtotal_cents(&items);
     let settings = fetch_mall_settings(pool).await?;
@@ -7189,6 +7855,45 @@ async fn checkout_products(
         .await;
     }
     fetch_selected_cart_products(pool, &checkout.user_id).await
+}
+
+fn apply_fixed_price_to_cart_item_values(items: &mut [Value]) {
+    for item in items {
+        let quantity = item
+            .get("quantity")
+            .and_then(Value::as_i64)
+            .unwrap_or(1)
+            .max(1);
+        let fixed_price_cents = item
+            .get("product")
+            .and_then(|product| product.get("fixedPriceCampaign"))
+            .and_then(fixed_price_campaign_price_cents);
+        let Some(fixed_price_cents) = fixed_price_cents else {
+            continue;
+        };
+        if let Some(object) = item.as_object_mut() {
+            object.insert(
+                "lineTotalCents".to_string(),
+                json!(fixed_price_cents * quantity),
+            );
+        }
+    }
+}
+
+async fn apply_fixed_price_to_cart_rows(
+    pool: &PgPool,
+    items: &mut [CartProductRow],
+) -> ApiResult<()> {
+    for item in items {
+        if let Some(campaign) =
+            find_fixed_price_campaign(pool, &item.product_id, Some(&item.sku)).await?
+        {
+            if let Some(fixed_price_cents) = fixed_price_campaign_price_cents(&campaign) {
+                item.price_cents = fixed_price_cents;
+            }
+        }
+    }
+    Ok(())
 }
 
 fn apply_cart_item_pricing(items: &mut [Value], summary: &MallPriceSummary) {
@@ -9256,6 +9961,22 @@ fn validate_group_leader_status(status: &str) -> ApiResult<()> {
     }
 }
 
+fn validate_procurement_buyer_status(status: &str) -> ApiResult<()> {
+    if matches!(status, "active" | "inactive" | "deleted") {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest("采购商状态不正确".to_string()))
+    }
+}
+
+fn validate_qualification_report_status(status: &str) -> ApiResult<()> {
+    if matches!(status, "active" | "inactive" | "deleted") {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest("资质报告状态不正确".to_string()))
+    }
+}
+
 fn validate_coupon_type(coupon_type: &str) -> ApiResult<()> {
     if matches!(
         coupon_type,
@@ -9663,6 +10384,13 @@ fn extension_for_product_image(content_type: Option<&str>) -> Option<&'static st
         Some("image/webp") => Some("webp"),
         Some("image/gif") => Some("gif"),
         _ => None,
+    }
+}
+
+fn extension_for_qualification_file(content_type: Option<&str>) -> Option<&'static str> {
+    match content_type {
+        Some("application/pdf") => Some("pdf"),
+        value => extension_for_product_image(value),
     }
 }
 

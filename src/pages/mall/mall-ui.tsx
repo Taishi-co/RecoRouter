@@ -220,20 +220,35 @@ export function MallDealProductCard({
   const originalPriceCents = product.originalPriceCents ?? product.priceCents
   const savedCents = Math.max(product.savedCents ?? originalPriceCents - discountedPriceCents, 0)
   const hasOriginal = originalPriceCents > discountedPriceCents
-  const productTag = rankLabel || product.discountLabel || product.tags?.[0] || (product.stock <= 10 ? '库存紧张' : '')
+  const fixedPriceCampaign = product.fixedPriceCampaign
+  const productTag = fixedPriceCampaign?.badgeText || rankLabel || product.discountLabel || product.tags?.[0] || (product.stock <= 10 ? '库存紧张' : '')
+  const badgeIconUrl = resolveMallImageUrl(fixedPriceCampaign?.badgeIconUrl)
 
   return (
     <View className={layout === 'list' ? 'mall-v7-product-card mall-v7-product-card-list' : 'mall-v7-product-card'}>
       <View className="mall-v7-product-media" onClick={() => onOpen?.(product)}>
         <MallProductThumb product={product} />
-        {productTag ? <Text className="mall-v7-product-tag">{productTag}</Text> : null}
+        {fixedPriceCampaign ? (
+          <View
+            className="mall-v7-product-fixed-price-badge"
+            style={{
+              background: fixedPriceCampaign.badgeBackgroundColor || '#FF9238',
+              color: fixedPriceCampaign.badgeTextColor || '#FFFFFF',
+            }}
+          >
+            {badgeIconUrl ? <Image className="mall-v7-product-fixed-price-icon" mode="aspectFit" src={badgeIconUrl} /> : null}
+            {!badgeIconUrl && fixedPriceCampaign.badgeIcon ? <Text>{fixedPriceCampaign.badgeIcon}</Text> : null}
+            <Text>{fixedPriceCampaign.badgeText || '一口价'}</Text>
+          </View>
+        ) : productTag ? <Text className="mall-v7-product-tag">{productTag}</Text> : null}
       </View>
       <View className="mall-v7-product-body" onClick={() => onOpen?.(product)}>
         <Text className="mall-v7-product-name">{product.name}</Text>
         <Text className="mall-v7-product-subtitle">
-          {product.subtitle || product.categoryName || `${product.deliveryMinutes || 30} 分钟到点`}
+          {product.subtitle || product.categoryName || `${product.deliveryMinutes || 30} 分钟送达`}
         </Text>
         <View className="mall-v7-product-badges">
+          {product.qualityGuaranteed ? <Text>品质保证</Text> : null}
           {product.couponStackable ? <Text>券可叠加</Text> : null}
           {(product.pointsDeductibleCents || 0) > 0 ? <Text>积分抵扣</Text> : null}
         </View>
@@ -254,8 +269,8 @@ export function MallDealProductCard({
 }
 
 export function MallLocationStrip({
-  title = '绿荫花园 3 号楼团长点',
-  subtitle = '明日 16:00-19:00 自提',
+  title = '请选择送货地址',
+  subtitle = '下单前请填写完整楼栋门牌和联系电话',
   active,
   onClick,
 }: {

@@ -62,16 +62,17 @@ const checks = [
       && !/王团长 138\*\*\*\*6732/.test(files.orderDetail),
   },
   {
-    name: '地址页真实接 pickup points 和地址写入',
-    pass: /listMallPickupPoints/.test(files.address)
+    name: '地址页真实写入送货地址，不再接自提点列表',
+    pass: !/listMallPickupPoints|MallPickupPoint|pickupPoints|addPickupPoint/.test(files.address)
       && /createMallAddress/.test(files.address)
+      && /addressType:\s*'delivery'/.test(files.address)
       && !/fallbackAddresses/.test(files.address),
   },
   {
-    name: '团长中心无 fake safe fallback',
-    pass: /getMallGroupLeaderCenter\(/.test(files.groupLeader)
-      && !/getMallGroupLeaderCenterSafe/.test(files.groupLeader)
-      && !/fallbackReminders/.test(files.groupLeader),
+    name: '旧团长中心在用户端隐藏为我的页面兼容跳转',
+    pass: /Taro\.redirectTo\(\{\s*url:\s*'\/pages\/mall\/profile\/index'\s*\}\)/.test(files.groupLeader)
+      && /当前商城订单仅支持送货到家/.test(files.groupLeader)
+      && !/getMallGroupLeaderCenter|verifyMallGroupLeaderFulfillment|getMallGroupLeaderCenterSafe|fallbackReminders|取货码|自提/.test(files.groupLeader),
   },
   {
     name: '注册支持用户和团长角色',

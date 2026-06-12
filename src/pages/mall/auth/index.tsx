@@ -42,7 +42,7 @@ export default function MallAuthPage() {
   const [captchaId, setCaptchaId] = useState('')
   const [captchaImage, setCaptchaImage] = useState('')
   const [captchaCode, setCaptchaCode] = useState('')
-  const [registerRole, setRegisterRole] = useState<RegisterRole>('customer')
+  const registerRole: RegisterRole = 'customer'
   const [loading, setLoading] = useState(false)
   const [wechatLoading, setWechatLoading] = useState(false)
   const [captchaLoading, setCaptchaLoading] = useState(false)
@@ -174,7 +174,7 @@ export default function MallAuthPage() {
         </View>
       </View>
       <Text className="mall-page-title">{mode === 'login' ? '登录商城' : '注册商城账号'}</Text>
-      <Text className="mall-page-subtitle">登录后查看订单、自提码、售后和邻里团购消息。</Text>
+      <Text className="mall-page-subtitle">登录后查看订单、配送进度、售后和活动消息。</Text>
 
       <View className="mall-auth-tabs">
         <View className={mode === 'login' ? 'mall-auth-tab mall-auth-tab-active' : 'mall-auth-tab'} onClick={() => switchMode('login')}>
@@ -186,22 +186,6 @@ export default function MallAuthPage() {
       </View>
 
       <View className="mall-card">
-        <Field label="身份">
-          <View className="mall-auth-tabs" style={{ marginTop: 0, marginBottom: 0 }}>
-            <View
-              className={registerRole === 'customer' ? 'mall-auth-tab mall-auth-tab-active' : 'mall-auth-tab'}
-              onClick={() => setRegisterRole('customer')}
-            >
-              <Text>我是用户</Text>
-            </View>
-            <View
-              className={registerRole === 'group_leader' ? 'mall-auth-tab mall-auth-tab-active' : 'mall-auth-tab'}
-              onClick={() => setRegisterRole('group_leader')}
-            >
-              <Text>我是团长</Text>
-            </View>
-          </View>
-        </Field>
         <MallPrimaryButton subtle onClick={wechatLogin}>
           <MessageCircle size={18} color="#63BF54" />
           <Text>{wechatLoading ? '微信登录中' : '微信快捷登录'}</Text>

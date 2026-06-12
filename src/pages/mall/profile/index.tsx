@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { Headphones, LogOut, MapPin, PackageCheck, Settings, UsersRound } from 'lucide-react-taro'
+import { Gift, Headphones, LogOut, MapPin, PackageCheck, Settings } from 'lucide-react-taro'
 import {
   getMallProfile,
   listMallOrders,
@@ -81,15 +81,12 @@ export default function MallProfilePage() {
   const couponWallet = profile?.couponWallet || {}
   const availableCouponCount = Number(couponWallet.availableCount || 0)
   const expiringCouponCount = Number(couponWallet.expiringCount || 0)
-  const pickupPointName = profile?.defaultPickupPoint?.name
-    || profile?.defaultAddress?.addressLabel
+  const deliveryAddressName = profile?.defaultAddress?.addressLabel
     || profile?.defaultAddress?.address_name
-    || '未设置自提点'
-  const pickupPointDetail = profile?.defaultPickupPoint?.addressText
-    || profile?.defaultAddress?.addressText
+    || '未设置送货地址'
+  const deliveryAddressDetail = profile?.defaultAddress?.addressText
     || profile?.defaultAddress?.address
-    || '选择常用自提点后展示到站信息'
-  const isGroupLeader = Boolean(profile?.groupLeader)
+    || '填写收货地址后用于送货到家'
 
   return (
     <MallPage active="mine">
@@ -141,8 +138,8 @@ export default function MallProfilePage() {
       />
       <ProfileLink
         icon={<MapPin size={20} color="#2F7E43" />}
-        title="收货地址"
-        subtitle={`${pickupPointName} · ${pickupPointDetail}`}
+        title="送货地址"
+        subtitle={`${deliveryAddressName} · ${deliveryAddressDetail}`}
         action="管理"
         onClick={() => Taro.navigateTo({ url: '/pages/mall/address/index' })}
       />
@@ -154,7 +151,7 @@ export default function MallProfilePage() {
         onClick={() => Taro.navigateTo({ url: '/pages/mall/support/index?topic=invoice' })}
       />
       <ProfileLink
-        icon={<UsersRound size={20} color="#2F7E43" />}
+        icon={<Gift size={20} color="#2F7E43" />}
         title="积分商城"
         subtitle={`当前 ${points} 积分，可兑换商品 / 优惠券`}
         action="兑换"
@@ -174,23 +171,6 @@ export default function MallProfilePage() {
         action="退出"
         onClick={logout}
       />
-
-      <View
-        className="mall-v7-leader-cta"
-        onClick={() => {
-          if (isGroupLeader) {
-            Taro.navigateTo({ url: '/pages/mall/group-leader/index' })
-            return
-          }
-          navigateToMallAuth('/pages/mall/group-leader/index', 'register')
-        }}
-      >
-        <View>
-          <Text>{isGroupLeader ? '进入团长后台' : '申请成为团长'}</Text>
-          <Text>自提点订单佣金 8%-12%，可查看订单、核销取货和提现</Text>
-        </View>
-        <Text>{isGroupLeader ? '进入' : '申请'}</Text>
-      </View>
     </MallPage>
   )
 }
@@ -203,11 +183,11 @@ function MallProfileLoginState() {
         <Text className="mall-breadcrumb">叁友甄选</Text>
       </View>
       <Text className="mall-page-title">我的</Text>
-      <Text className="mall-page-subtitle">登录后查看订单、自提码、售后、积分和团长权益。</Text>
+      <Text className="mall-page-subtitle">登录后查看订单、配送进度、售后、积分和优惠券。</Text>
       <View className="mall-auth-empty">
         <MallBrandMark />
         <Text className="mall-empty-title">登录商城账号</Text>
-        <Text className="mall-empty-copy">登录或注册后，“我的”会从后端同步会员、订单、自提点和客服状态。</Text>
+        <Text className="mall-empty-copy">登录或注册后，“我的”会从后端同步会员、订单、送货地址和客服状态。</Text>
         <View className="mall-auth-actions">
           <MallPrimaryButton onClick={() => navigateToMallAuth('/pages/mall/profile/index', 'login')}>
             <Text>登录</Text>
@@ -216,13 +196,6 @@ function MallProfileLoginState() {
             <Text>注册</Text>
           </MallPrimaryButton>
         </View>
-      </View>
-      <View className="mall-v7-leader-cta" onClick={() => navigateToMallAuth('/pages/mall/group-leader/index', 'register')}>
-        <View>
-          <Text>团长申请入口</Text>
-          <Text>注册时选择“我是团长”即可提交身份</Text>
-        </View>
-        <Text>注册</Text>
       </View>
     </MallPage>
   )

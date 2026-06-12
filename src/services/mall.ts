@@ -49,6 +49,21 @@ export interface MallProduct {
   updatedAt?: string | null
   variants?: MallProductVariant[]
   defaultVariantId?: string | null
+  qualityGuaranteed?: boolean
+  procurementBuyers?: MallProcurementBuyer[]
+  qualificationReports?: MallQualificationReport[]
+  fixedPriceCampaign?: MallFixedPriceCampaign | null
+}
+
+export interface MallFixedPriceCampaign {
+  campaignId?: string | null
+  campaignName?: string | null
+  fixedPriceCents?: number | null
+  badgeText?: string | null
+  badgeIcon?: string | null
+  badgeIconUrl?: string | null
+  badgeBackgroundColor?: string | null
+  badgeTextColor?: string | null
 }
 
 export interface MallProductVariant {
@@ -69,6 +84,32 @@ export interface MallProductVariant {
   weightUnitLabel?: string | null
   weightUnitGrams?: number | null
   weightToleranceBps?: number | null
+}
+
+export interface MallProcurementBuyer {
+  id: string
+  name?: string | null
+  contactName?: string | null
+  contactPhone?: string | null
+  licenseUrl?: string | null
+  status?: string | null
+  remark?: string | null
+  hideSupplier?: boolean
+}
+
+export interface MallQualificationReport {
+  id: string
+  productId?: string | null
+  buyerId?: string | null
+  buyerName?: string | null
+  reportName: string
+  reportType?: string | null
+  reportUrl: string
+  issuer?: string | null
+  issuedAt?: string | null
+  expiresAt?: string | null
+  hideSupplier?: boolean
+  status?: string | null
 }
 
 export interface MallDiscountBreakdown {

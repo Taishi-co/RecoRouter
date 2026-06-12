@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Image, Swiper, SwiperItem, Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { Bell, Clock3, Flame, MapPin, Sparkles } from 'lucide-react-taro'
+import { Bell, Clock3, Flame, Sparkles } from 'lucide-react-taro'
 import {
   addMallCartItem,
   listMallCategories,
@@ -15,7 +15,6 @@ import {
   type MallProduct,
 } from '@/services/mall'
 import {
-  MallBrandMark,
   MallDealProductCard,
   MallPage,
   MallSectionTitle,
@@ -61,10 +60,10 @@ const defaultBanners: MallHomeBanner[] = [
 ]
 
 const defaultAnnouncements = [
-  '今日到货提醒：草莓、鲜奶、鸡蛋 16:00 后可提',
-  '配送时效调整：晚 6 点场预计 20:30 前到点',
+  '今日到货提醒：草莓、鲜奶、鸡蛋 16:00 后开始配送',
+  '配送时效调整：晚 6 点场预计 20:30 前送达',
   '售后通知：坏果、破损支持订单内一键申请',
-  '团长招募：自提点订单可享 8%-12% 佣金',
+  '配送提醒：请提前填写完整楼栋门牌和联系电话',
 ]
 
 export default function MallHome() {
@@ -194,20 +193,6 @@ export default function MallHome() {
     <MallPage active="home">
       <MallHomeFixedHeader banners={banners} announcements={announcements} primaryImageUrl={primaryBannerImageUrl} onBannerTap={openBanner} />
 
-      <View className="mall-v7-pickup-strip">
-        <View className="mall-v7-pickup-brand">
-          <MallBrandMark compact />
-          <View>
-            <Text className="mall-v7-kicker">默认自提点</Text>
-            <Text className="mall-v7-pickup-title">叁友甄选 · 中庭自提点</Text>
-          </View>
-        </View>
-        <View className="mall-v7-pickup-action" onClick={() => Taro.navigateTo({ url: '/pages/mall/address/index' })}>
-          <MapPin size={15} color="#2F7E43" />
-          <Text>切换</Text>
-        </View>
-      </View>
-
       <View className="mall-v7-section mall-v7-flash-sale">
         <View className="mall-v7-section-head">
           <View>
@@ -295,7 +280,7 @@ export default function MallHome() {
       {!loading && !loadError && products.length === 0 ? (
         <View className="mall-empty">
           <Text className="mall-empty-title">暂无可售商品</Text>
-          <Text className="mall-empty-copy">团长补货中，请稍后再来。</Text>
+          <Text className="mall-empty-copy">运营补货中，请稍后再来。</Text>
         </View>
       ) : null}
     </MallPage>

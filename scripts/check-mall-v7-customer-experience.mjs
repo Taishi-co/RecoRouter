@@ -58,10 +58,15 @@ const checks = [
       && /mall-v7-add-button/.test(files.ui),
   },
   {
-    name: '分类页是一行横向分类 + 统一商品列表，不保留左侧二级分类栏',
-    pass: /mall-v7-category-tabs/.test(files.category)
+    name: '分类页按生鲜商城习惯使用左侧品类栏 + 右侧商品列表，不再保留顶部横向品类',
+    pass: /mall-v7-category-layout/.test(files.category)
+      && /mall-v7-category-sidebar/.test(files.category)
+      && /mall-v7-category-products/.test(files.category)
       && /MallDealProductCard/.test(files.category)
-      && !/mall-category-rail/.test(files.category),
+      && !/mall-v7-category-tabs/.test(files.category)
+      && /mall-v7-category-layout/.test(files.theme)
+      && /mall-v7-category-sidebar/.test(files.theme)
+      && /grid-template-columns:\s*78PX minmax\(0,\s*1fr\)/.test(files.theme),
   },
   {
     name: '分类页 tag 使用品类列表数据，并支持商品列表触底分页加载',
@@ -154,29 +159,29 @@ const checks = [
       && !/支付宝|余额支付|货到付款/.test(files.confirm),
   },
   {
-    name: '订单中心为待支付、待配送、待收货、售后四状态且不再使用本地假订单',
+    name: '订单中心为待支付、待配送、待收货、售后四状态，待收货展示配送状态和收货地址',
     pass: orderTabs.every((text) => files.orders.includes(text))
       && /pending_delivery/.test(files.orders)
       && /pending_receipt/.test(files.orders)
-      && /fulfillmentCode/.test(files.orders)
-      && /groupLeaderPhone/.test(files.orders)
+      && /deliveryStatusText/.test(files.orders)
+      && /收货地址待确认/.test(files.orders)
       && !/fallbackOrders/.test(files.orders),
   },
   {
-    name: '个人中心包含会员积分、订单入口、卡包优惠券、地址、发票、积分商城和固定团长入口',
+    name: '个人中心包含会员积分、订单入口、卡包优惠券、送货地址、发票和积分商城，并隐藏团长入口',
     pass: /couponWallet/.test(files.profile)
       && /积分商城/.test(files.profile)
       && /发票申请/.test(files.profile)
-      && /mall-v7-leader-cta/.test(files.profile)
+      && /送货地址/.test(files.profile)
+      && /deliveryAddressName/.test(files.profile)
+      && !/mall-v7-leader-cta/.test(files.profile)
       && /memberLevel/.test(files.profile),
   },
   {
-    name: '团长后台展示自提点订单、核销、佣金、提现和 8%-12% 佣金范围',
-    pass: /commissionRateBps/.test(files.leader)
-      && /pendingOrders/.test(files.leader)
-      && /verify/.test(files.leader)
-      && /提现/.test(files.leader)
-      && /8%-12%/.test(files.leader),
+    name: '旧团长中心在用户端隐藏，兼容路由跳回我的页面',
+    pass: /Taro\.redirectTo\(\{\s*url:\s*'\/pages\/mall\/profile\/index'\s*\}\)/.test(files.leader)
+      && /当前商城订单仅支持送货到家/.test(files.leader)
+      && !/verifyMallGroupLeaderFulfillment|commissionRateBps|取货码|核销|自提/.test(files.leader),
   },
   {
     name: '服务层声明 V7 价格摘要、优惠栈、会员和团长字段',
@@ -198,12 +203,12 @@ const checks = [
       && /enrich_product_pricing/.test(files.serverMall),
   },
   {
-    name: 'V7 样式包含固定首页、秒杀、商品卡、购物车摘要、团长 CTA，并禁用切换动画',
+    name: 'V7 样式包含固定首页、秒杀、商品卡、购物车摘要、地址表单，并禁用切换动画',
     pass: /mall-v7-home-fixed/.test(files.theme)
       && /mall-v7-flash-sale/.test(files.theme)
       && /mall-v7-product-card/.test(files.theme)
       && /mall-v7-cart-summary/.test(files.theme)
-      && /mall-v7-leader-cta/.test(files.theme)
+      && /mall-address-form/.test(files.theme)
       && /transition:\s*none\s*!important/.test(files.theme),
   },
   {
