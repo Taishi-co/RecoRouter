@@ -145,23 +145,32 @@ export function MallSearchBox({
   placeholder,
   onInput,
   onSearch,
+  actionText,
   trailing,
 }: {
   value?: string
   placeholder: string
   onInput?: (value: string) => void
   onSearch?: () => void
+  actionText?: string
   trailing?: ReactNode
 }) {
   return (
-    <View className="mall-search" onClick={onSearch}>
+    <View className="mall-search">
       <Search size={18} color="#64725F" />
       <Input
         className="mall-search-input"
         value={value}
         placeholder={placeholder}
+        confirmType="search"
         onInput={(event) => onInput?.(String(event.detail.value || ''))}
+        onConfirm={onSearch}
       />
+      {actionText ? (
+        <Text className="mall-search-action" onClick={onSearch}>
+          {actionText}
+        </Text>
+      ) : null}
       {trailing}
     </View>
   )

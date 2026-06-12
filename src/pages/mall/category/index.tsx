@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Picker, Text, View } from '@tarojs/components'
 import Taro, { useReachBottom } from '@tarojs/taro'
-import { SlidersHorizontal } from 'lucide-react-taro'
 import {
   addMallCartItem,
   listMallCategories,
@@ -27,7 +26,7 @@ type MallActivityType = '' | 'flash_sale' | 'full_reduction' | 'new_arrival' | '
 type MallSortKey = '' | 'price_asc' | 'price_desc' | 'newest' | 'oldest' | 'sales_desc'
 
 const activityFilters: Array<{ label: string; value: MallActivityType }> = [
-  { label: '全部活动', value: '' },
+  { label: '全部', value: '' },
   { label: '秒杀', value: 'flash_sale' },
   { label: '满减', value: 'full_reduction' },
   { label: '今日上新', value: 'new_arrival' },
@@ -229,7 +228,7 @@ export default function MallCategoryPage() {
         placeholder="搜索肉禽、鲜奶、草莓"
         onInput={setKeyword}
         onSearch={handleSearch}
-        trailing={<SlidersHorizontal size={18} color="#FF9238" />}
+        actionText="搜索"
       />
 
       <View className="mall-v7-category-tabs">
@@ -278,12 +277,6 @@ export default function MallCategoryPage() {
         </Picker>
       </View>
 
-      {loading ? (
-        <View className="mall-list-loading">
-          <Text>加载中...</Text>
-        </View>
-      ) : null}
-
       <View className="mall-v7-product-list">
         {products.map((product) => (
           <MallDealProductCard
@@ -306,6 +299,15 @@ export default function MallCategoryPage() {
       {products.length > 0 ? (
         <View className="mall-load-more">
           <Text>{loadingMore ? '加载更多商品...' : hasMore ? '上滑加载更多' : '已经到底了'}</Text>
+        </View>
+      ) : null}
+
+      {loading ? (
+        <View className="mall-loading-overlay">
+          <View className="mall-loading-card">
+            <View className="mall-loading-spinner" />
+            <Text>加载中...</Text>
+          </View>
         </View>
       ) : null}
     </MallPage>

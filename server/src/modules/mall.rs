@@ -3740,7 +3740,7 @@ async fn list_home_banners<S>(
 where
     S: Storage,
 {
-    let banners = sqlx::query_scalar::<_, Value>(
+    let mut banners = sqlx::query_scalar::<_, Value>(
         r#"
         SELECT home_banner_json(b)
         FROM mall_home_banners b
@@ -3752,6 +3752,7 @@ where
     )
     .fetch_all(&state.db)
     .await?;
+    resolve_mall_image_urls_in_list(&state.storage, &mut banners).await?;
 
     Ok(ok("查询成功", banners))
 }
@@ -5596,7 +5597,7 @@ async fn fetch_products(
         builder.push_bind(pattern.clone());
         builder.push(" OR c.name ILIKE ");
         builder.push_bind(pattern.clone());
-        builder.push(" OR COALESCE(array_to_string(p.tags, ','), '') ILIKE ");
+        builder.push(" OR COALESCE(p.tags::text, '') ILIKE ");
         builder.push_bind(pattern);
         builder.push(")");
     }
@@ -5678,7 +5679,7 @@ fn push_product_activity_filter(builder: &mut QueryBuilder<Postgres>, activity_t
                     WHERE item.value = p.id::text OR item.value = p.sku
                   )
               )
-              OR COALESCE(array_to_string(p.tags, ','), '') ~ '秒杀|特价|爆款'
+              OR COALESCE(p.tags::text, '') ~ '秒杀|特价|爆款'
             )
             "#,
             );
@@ -5715,7 +5716,7 @@ fn push_product_activity_filter(builder: &mut QueryBuilder<Postgres>, activity_t
                     WHERE item.value = p.id::text OR item.value = p.sku
                   )
               )
-              OR COALESCE(array_to_string(p.tags, ','), '') ~ '今日|新品|新上|现货'
+              OR COALESCE(p.tags::text, '') ~ '今日|新品|新上|现货'
               OR p.created_at >= now() - interval '3 days'
             )
             "#,
@@ -6460,6 +6461,31 @@ fn strip_public_product_specs(product: &mut Value) {
             "weightKg",
         ] {
             object.remove(key);
+        }
+    }
+}
+
+#[cfg(test)]
+mod product_listing_query_tests {
+    use super::*;
+
+    #[test]
+    fn activity_filters_match_jsonb_tags_without_array_functions() {
+        for activity_type in ["flash_sale", "new_arrival"] {
+            let mut builder =
+                QueryBuilder::<Postgres>::new("SELECT 1 FROM mall_products p WHERE 1 = 1");
+
+            push_product_activity_filter(&mut builder, activity_type);
+
+            let sql = builder.sql();
+            assert!(
+                !sql.contains("array_to_string(p.tags"),
+                "{activity_type} filter must not treat jsonb tags as a postgres array"
+            );
+            assert!(
+                sql.contains("p.tags::text"),
+                "{activity_type} filter should match against jsonb tag text"
+            );
         }
     }
 }
@@ -8263,7 +8289,7 @@ fn normalize_stats_period(period: &str) -> ApiResult<String> {
 fn validate_home_banner_link_type(link_type: &str) -> ApiResult<()> {
     if matches!(
         link_type,
-        "none" | "category" | "product" | "search" | "url"
+        "none" | "category" | "product" | "search" | "activity" | "url"
     ) {
         Ok(())
     } else {

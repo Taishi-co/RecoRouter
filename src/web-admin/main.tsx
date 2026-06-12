@@ -1514,6 +1514,7 @@ function linkTypeLabel(value: string) {
     category: '品类',
     product: '商品',
     search: '搜索',
+    activity: '活动',
     url: '链接',
   };
   return labels[value] || value || '-';
@@ -6463,6 +6464,7 @@ function MallHomeBannersSection({
                   <option value="category">品类</option>
                   <option value="product">商品</option>
                   <option value="search">搜索</option>
+                  <option value="activity">活动</option>
                   <option value="url">链接</option>
                 </select>
               </label>
@@ -6647,6 +6649,7 @@ function MallHomeSectionsSection({
                   <option value="category">品类</option>
                   <option value="product">商品</option>
                   <option value="search">搜索</option>
+                  <option value="activity">活动</option>
                   <option value="url">链接</option>
                 </select>
               </label>
