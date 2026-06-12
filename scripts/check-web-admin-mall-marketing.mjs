@@ -31,6 +31,9 @@ const migrations = readdirSync(resolve(root, 'server/migrations'))
   .map(name => read(`server/migrations/${name}`))
   .join('\n');
 const settingsSection = extractFunction(adminMain, 'MallSettingsSection');
+const homeBannersSection = extractFunction(adminMain, 'MallHomeBannersSection');
+const homeSectionsSection = extractFunction(adminMain, 'MallHomeSectionsSection');
+const paymentSplitSection = extractFunction(adminMain, 'MallPaymentSplitRulesSection');
 
 assert(!/designPage\('mall\.couponCreate'/.test(adminMain), 'Mall admin coupon creation must be folded into coupon center, not a separate page.');
 assert(/designPage\('mall\.coupons', '券中心'/.test(adminMain), 'Mall admin coupon page must be renamed to coupon center.');
@@ -48,7 +51,15 @@ assert(/function MallCampaignsSection\(/.test(adminMain), 'Web admin must render
 assert(/function MallSettingsSection\(/.test(adminMain), 'Web admin must keep operation settings separate from campaign management.');
 assert(/function MallDeliveryRulesSection\(/.test(adminMain), 'Web admin must render a real delivery rules section.');
 assert(/function MallPaymentSplitRulesSection\(/.test(adminMain), 'Web admin must render a real payment split rules section.');
-assert(/活动启停快捷操作/.test(settingsSection), 'Operation settings page must be a quick activity enable/disable workbench.');
+assert(/const \[isEditing, setIsEditing\] = useState\(false\)/.test(paymentSplitSection), 'Payment split rules must display first and enter edit mode explicitly.');
+assert(/const \[draft, setDraft\] = useState<SettingsForm>\(settingsForm\)/.test(paymentSplitSection), 'Payment split rules must edit a local draft before saving.');
+assert(/编辑分账规则/.test(paymentSplitSection), 'Payment split rules must expose an edit button.');
+assert(/保存分账规则/.test(paymentSplitSection), 'Payment split rules must expose an explicit save button.');
+assert(/settings-summary-grid/.test(paymentSplitSection), 'Payment split rules must render a read-only summary before editing.');
+assert(/onSettingsSave\(draft\)[\s\S]*setIsEditing\(false\)/.test(paymentSplitSection), 'Payment split rules must persist through the shared save handler before leaving edit mode.');
+assert(/Panel title="活动启停"/.test(settingsSection), 'Operation settings page must be an activity enable/disable workbench.');
+assert(/settings-campaign-list/.test(settingsSection), 'Operation settings page must show an activity list.');
+assert(/status === 'active' \? 'inactive' : 'active'/.test(settingsSection), 'Operation settings page must switch activity status directly.');
 assert(/onCampaignStatus/.test(settingsSection), 'Operation settings quick workbench must toggle campaign status through the campaign API.');
 assert(!/freeDeliveryThresholdYuan|defaultDeliveryFeeYuan|coldChainEnabled|refundReviewMinutes/.test(settingsSection), 'Operation settings page must not contain delivery or refund rule form fields.');
 assert(/activePageKey === 'mall\.coupons'[\s\S]*<MallCouponCenterSection/.test(adminMain), 'mall.coupons must route to MallCouponCenterSection.');
@@ -75,6 +86,14 @@ assert(/apiDelete\(`\/api\/admin\/mall\/campaigns\/\$\{[^}]+\}`/.test(adminMain)
 assert(/apiGet<JsonRecord\[]>\('\/api\/admin\/mall\/campaigns'/.test(adminMain), 'Campaign list must load from the real admin campaign API.');
 assert(/keyword: campaignFilters\.keyword/.test(adminMain), 'Campaign list must support keyword search.');
 assert(/categoryCode: campaignFilters\.categoryCode/.test(adminMain), 'Campaign list must support activity type search.');
+assert(/const \[modalOpen/.test(homeBannersSection), 'Home banner creation must use a modal.');
+assert(/<Panel title="首页配置列表"[\s\S]*新增首页配置/.test(homeBannersSection), 'Home banner list must expose a create button.');
+assert(/modal-backdrop[\s\S]*编辑首页配置[\s\S]*新增首页配置/.test(homeBannersSection), 'Home banner create/edit form must render inside a modal.');
+assert(!/Panel title=\{form\.id \? '编辑首页配置' : '新增首页配置'\}/.test(homeBannersSection), 'Home banner create form must not be shown as an inline page panel.');
+assert(/const \[modalOpen/.test(homeSectionsSection), 'Homepage section creation must use a modal.');
+assert(homeSectionsSection.includes('<Panel title={`${title}列表`}') && homeSectionsSection.includes('{`新增${title}`}'), 'Homepage section list must expose a create button.');
+assert(homeSectionsSection.includes('modal-backdrop') && homeSectionsSection.includes('<h2>{form.id ? `编辑${title}` : `新增${title}`}</h2>'), 'Homepage section create/edit form must render inside a modal.');
+assert(!/Panel title=\{form\.id \? `编辑\$\{title\}` : `新增\$\{title\}`\}/.test(homeSectionsSection), 'Homepage section create form must not be shown as an inline page panel.');
 assert(/export async function listMallHomeBanners\(\)/.test(mallService), 'Mall app service must expose the public home banner API.');
 assert(/apiGet\('\/api\/mall\/home-banners'\)/.test(mallService), 'Mall app service must call the public home banner endpoint.');
 assert(/export async function listMallHomeSections\(\)/.test(mallService), 'Mall app service must expose the public home section API.');
@@ -90,6 +109,25 @@ assert(/categoryCode=\$\{encodeURIComponent\(target\)\}/.test(mallHome), 'Mall h
 
 assert(/deliveryRules/.test(adminMain), 'Web admin must save delivery rules into mall settings.');
 assert(/paymentSplitRules/.test(adminMain), 'Web admin must save payment split rules into mall settings.');
+assert(/setNotice\(`\$\{label\}成功`\)/.test(adminMain), 'Write actions must show a success notice through runAction.');
+assert(/setNotice\(`\$\{label\}失败：/.test(adminMain), 'Write actions must show a failure notice through runAction.');
+[
+  '商品创建',
+  '商品更新',
+  '品类更新',
+  '品类排序保存',
+  '库存预警更新',
+  '自提点更新',
+  '团长更新',
+  '活动更新',
+  '优惠券更新',
+  '首页配置更新',
+  '首页专区配置更新',
+  '运营配置保存',
+  '权限更新',
+].forEach(label => {
+  assert(adminMain.includes(label), `${label} must keep a visible save/update result notice label.`);
+});
 assert(/delivery_rules/.test(mallBackend), 'Backend settings mutation must accept delivery_rules.');
 assert(/payment_split_rules/.test(mallBackend), 'Backend settings mutation must accept payment_split_rules.');
 assert(/delivery_rules jsonb/.test(migrations), 'Migrations must add delivery_rules JSON settings.');

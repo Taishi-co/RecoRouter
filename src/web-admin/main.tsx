@@ -1,6 +1,7 @@
 import { StrictMode, useEffect, useMemo, useState } from 'react';
 import type { DragEvent, FormEvent, ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
+import sanyouLogo from '@/assets/brand/sanyou.png';
 import './styles.css';
 
 declare const __PROJECT_DOMAIN__: string | undefined;
@@ -71,6 +72,8 @@ interface AdminSession {
 interface LoginForm {
   phone: string;
   password: string;
+  captchaId: string;
+  captchaCode: string;
 }
 
 interface DashboardData {
@@ -87,7 +90,6 @@ interface DashboardData {
   mallOrders: JsonRecord[];
   mallAfterSales: JsonRecord[];
   mallOpsOverview: JsonRecord;
-  mallListingRequests: JsonRecord[];
   mallDeliverySheets: JsonRecord[];
   mallPickupPoints: JsonRecord[];
   mallGroupLeaders: JsonRecord[];
@@ -127,6 +129,7 @@ interface ProductForm {
   supplyPriceYuan: string;
   stock: string;
   stockAlertThreshold: string;
+  minimumOrderQuantity: string;
   lengthCm: string;
   widthCm: string;
   heightCm: string;
@@ -613,11 +616,10 @@ const adminModules: AdminModuleSpec[] = [
     moduleLabel: '商城业务',
     theme: 'green',
     pages: [
-      designPage('mall.products', '商品上架', '商品管理', '维护商品资料、价格、库存和图片', 'shop', 'mallProducts'),
+      designPage('mall.products', '商品上架', '商品管理', '', 'shop', 'mallProducts'),
       designPage('mall.productList', '商品列表', '商品管理', '在售、售罄和下架商品管理', 'shop', 'mallProducts'),
       designPage('mall.categories', '品类管理', '品类管理', '社区团购类目、排序和状态', 'dashboard'),
       designPage('mall.inventory', '库存预警', '商品管理', '库存管理、低库存、缺货替换和补货提醒', 'support'),
-      designPage('mall.listingRequests', '商品上下架申请', '商品管理', '商品上架、下架申请与平台审核', 'check', 'mallProducts'),
       designPage('mall.todayOrders', '今日订单', '订单管理', '按小区汇总今日订单并生成分拣单', 'orders', 'mallOrders'),
       designPage('mall.historyOrders', '历史订单', '订单管理', '历史订单明细检索与履约回溯', 'orders', 'mallOrders'),
       designPage('mall.abnormalOrders', '异常订单', '订单管理', '退款、售后和履约异常处理', 'refund', 'mallOrders'),
@@ -643,7 +645,7 @@ const adminModules: AdminModuleSpec[] = [
       designPage('mall.afterSales', '售后申请', '客服售后', '售后单审核、证据图片和退款流转', 'refund', 'mallOrders'),
       designPage('mall.supportTickets', '客服工单', '客服售后', '内部跟进工单、跨岗位协同和处理结果', 'check', 'support'),
       designPage('mall.knowledge', '客服知识库', '客服售后', '商城 FAQ、坏果包赔和履约话术', 'support', 'support'),
-      designPage('mall.settings', '运营设置', '运营设置', '活动启停快捷操作', 'save', 'operations'),
+      designPage('mall.settings', '运营设置', '运营设置', '活动启停', 'save', 'operations'),
       designPage('mall.deliveryRules', '配送规则', '运营设置', '自提窗口、冷链承诺和服务费', 'route'),
       designPage('mall.paymentSplit', '分账规则', '运营设置', '商城分账、团长佣金和商户结算', 'refund'),
       designPage('mall.risk', '风险审核', '运营设置', '售后异常、频控和恶意退款拦截', 'x'),
@@ -673,7 +675,6 @@ const initialData: DashboardData = {
   mallOrders: [],
   mallAfterSales: [],
   mallOpsOverview: {},
-  mallListingRequests: [],
   mallDeliverySheets: [],
   mallPickupPoints: [],
   mallGroupLeaders: [],
@@ -713,6 +714,7 @@ const initialProductForm: ProductForm = {
   supplyPriceYuan: '12.80',
   stock: '80',
   stockAlertThreshold: '15',
+  minimumOrderQuantity: '1',
   lengthCm: '',
   widthCm: '',
   heightCm: '',
@@ -1122,7 +1124,6 @@ async function fetchDashboardData(
     mallOrders,
     mallAfterSales,
     mallOpsOverview,
-    mallListingRequests,
     mallDeliverySheets,
     mallPickupPoints,
     mallGroupLeaders,
@@ -1175,7 +1176,6 @@ async function fetchDashboardData(
     loadWithFallback('商城订单', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/orders')),
     loadWithFallback('售后申请', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/after-sales')),
     loadWithFallback('商城运营概览', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/ops/overview')),
-    loadWithFallback('商品上下架申请', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/listing-requests', { limit: 100 })),
     loadWithFallback('配送单', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/delivery-sheets', { limit: 100 })),
     loadWithFallback('自提点', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/pickup-points', {
       limit: 100,
@@ -1243,7 +1243,6 @@ async function fetchDashboardData(
       mallOrders,
       mallAfterSales,
       mallOpsOverview,
-      mallListingRequests,
       mallDeliverySheets,
       mallPickupPoints,
       mallGroupLeaders,
@@ -1329,6 +1328,7 @@ function validateProductForm(form: ProductForm) {
     ['库存', form.stock],
     ['规格', form.specification],
     ['售卖方式', form.saleMethod],
+    ['最小起订量', form.minimumOrderQuantity],
     ['状态', form.status],
     ['商品说明', form.description],
   ]) {
@@ -1345,6 +1345,10 @@ function validateProductForm(form: ProductForm) {
   const stock = Number(form.stock);
   if (!Number.isFinite(stock) || stock < 0) {
     throw new Error('库存不能小于0');
+  }
+  const minimumOrderQuantity = Number(form.minimumOrderQuantity);
+  if (!Number.isFinite(minimumOrderQuantity) || minimumOrderQuantity <= 0) {
+    throw new Error('最小起订量必须大于0');
   }
 }
 
@@ -1395,6 +1399,7 @@ function productToForm(product: JsonRecord, fallbackCategoryCode = 'fruit'): Pro
       : '',
     stock: String(numberValue(product, 'stock')),
     stockAlertThreshold: String(numberValue(product, 'stockAlertThreshold', 15)),
+    minimumOrderQuantity: String(numberValue(product, 'minimumOrderQuantity', 1)),
     lengthCm: stringValue(product, 'lengthCm'),
     widthCm: stringValue(product, 'widthCm'),
     heightCm: stringValue(product, 'heightCm'),
@@ -3499,61 +3504,14 @@ function MallProductDesignSection({
   return (
     <div className="mall-admin-design-page">
       <div className="mall-admin-toolbar">
-        <label>
-          默认状态
-          <select value={form.status} onChange={event => onChange({ status: event.target.value })}>
-            <option value="on_sale">上架</option>
-            <option value="off_sale">下架</option>
-            <option value="draft">草稿</option>
-          </select>
-        </label>
-        <label>
-          品类
-          <select value={form.categoryCode} onChange={event => onChange({ categoryCode: event.target.value })}>
-            {categories.map(category => (
-              <option key={stringValue(category, 'code')} value={stringValue(category, 'code')}>
-                {stringValue(category, 'name', stringValue(category, 'code'))}
-              </option>
-            ))}
-            {!categories.length ? <option value="fruit">鲜果</option> : null}
-          </select>
-        </label>
-        <label>
-          图片
-          <input value={form.imageUrl ? '已上传' : '待上传'} readOnly />
-        </label>
         <button className="mall-admin-submit" type="button" onClick={() => setCreateModalOpen(true)}>新增上架商品</button>
       </div>
 
       <div className="mall-admin-kpis">
-        <StatCard label="商品总数" value={String(products.length)} detail="当前筛选商品池" />
-        <StatCard label="库存预警" value={String(alertCount)} detail="低于商品级阈值" />
+        <StatCard label="商品总数" value={String(products.length)} detail="全部商品" />
+        <StatCard label="库存预警" value={String(alertCount)} detail="低库存商品" />
         <StatCard label="报价资料完整" value={String(completeCount)} detail="含图片、规格和售卖方式" />
       </div>
-
-      <section className="mall-admin-form-panel">
-        <div className="design-panel-head">
-          <div>
-            <h2>商品上架</h2>
-            <p>点击新增上架商品后，在弹窗中按运营报价表维护名称、类目、规格、售卖方式、进货价、售价和库存</p>
-          </div>
-          <span>{products.length} 个商品</span>
-        </div>
-        <div className="coverage-grid">
-          <div>
-            <strong>图片上传</strong>
-            <span>运营上传商品主图后，系统会保存到商品资料</span>
-          </div>
-          <div>
-            <strong>规格校验</strong>
-            <span>销售规格和售卖方式对外展示，长宽高、体积、重量和冷链信息仅用于内部装载判断</span>
-          </div>
-          <div>
-            <strong>库存预警</strong>
-            <span>上架时可同步设置商品库存和预警阈值</span>
-          </div>
-        </div>
-      </section>
 
       {createModalOpen ? (
         <ProductCreateModal
@@ -3635,6 +3593,10 @@ function ProductFormFields({
       <label className={fieldClass}>
         <span className="field-label">售卖方式<span className="required-mark">*</span></span>
         <input required value={form.saleMethod} onChange={event => onChange({ saleMethod: event.target.value })} placeholder="单瓶 / 整件 / 按斤" />
+      </label>
+      <label className={fieldClass}>
+        <span className="field-label">最小起订量<span className="required-mark">*</span></span>
+        <input required value={form.minimumOrderQuantity} type="number" min="1" onChange={event => onChange({ minimumOrderQuantity: event.target.value })} />
       </label>
       <label className={fieldClass}>
         <span className="field-label">状态<span className="required-mark">*</span></span>
@@ -4214,7 +4176,7 @@ function MallProductsSection({
                     <td>{numberValue(product, 'stock')}</td>
                     <td>
                       <span>{stringValue(product, 'specification', stringValue(product, 'subtitle', '-'))}</span>
-                      <small>{stringValue(product, 'saleMethod', '-')} · 阈值 {numberValue(product, 'stockAlertThreshold', 15)}</small>
+                      <small>{stringValue(product, 'saleMethod', '-')} · 起订 {numberValue(product, 'minimumOrderQuantity', 1)} · 阈值 {numberValue(product, 'stockAlertThreshold', 15)}</small>
                     </td>
                     <td>
                       <span className={badgeClass(status)}>{statusLabel(status)}</span>
@@ -4275,7 +4237,6 @@ function ProductCreateModal({
         <div className="panel-head">
           <div>
             <h2>新增上架商品</h2>
-            <p>按报价表维护商品名称、类目、售价、进货价、库存、规格、售卖方式和上架状态</p>
           </div>
           <button className="ghost-button" type="button" onClick={onClose}>
             <Icon name="x" />
@@ -4324,7 +4285,6 @@ function ProductEditModal({
         <div className="panel-head">
           <div>
             <h2>编辑商品</h2>
-            <p>维护报价表信息、商品说明和内部装载规格</p>
           </div>
           <button className="ghost-button" type="button" onClick={onClose}>
             <Icon name="x" />
@@ -4350,46 +4310,42 @@ function ProductEditModal({
 }
 
 function MallCategoriesSection({
-  allProducts,
   categories,
   filters,
   form,
-  inventoryFilters,
-  inventoryProducts,
   onFormChange,
   onFiltersChange,
-  onCreateInventoryAlert,
   onSearch,
   onSave,
   onDelete,
-  onDeleteInventoryAlert,
-  onEditInventoryAlert,
-  onInventoryFiltersChange,
-  onInventorySearch,
-  onReorderCategory,
-  showInventoryAlerts = false,
+  onSaveCategoryOrder,
 }: {
-  allProducts: JsonRecord[];
   categories: JsonRecord[];
   filters: MallFilterState;
   form: CategoryForm;
-  inventoryFilters: MallFilterState;
-  inventoryProducts: JsonRecord[];
   onFormChange: (patch: Partial<CategoryForm>) => void;
   onFiltersChange: (patch: Partial<MallFilterState>) => void;
-  onCreateInventoryAlert: (id: string, stock: number, stockAlertThreshold: number) => Promise<void>;
   onSearch: () => Promise<void>;
   onSave: (form: CategoryForm) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
-  onDeleteInventoryAlert: (id: string) => Promise<void>;
-  onEditInventoryAlert: (id: string, stock: number, stockAlertThreshold: number) => Promise<void>;
-  onInventoryFiltersChange: (patch: Partial<MallFilterState>) => void;
-  onInventorySearch: () => Promise<void>;
-  onReorderCategory: (draggedId: string, targetId: string) => Promise<void>;
-  showInventoryAlerts?: boolean;
+  onSaveCategoryOrder: (orderedCategories: JsonRecord[]) => Promise<void>;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
+  const [categorySortEditing, setCategorySortEditing] = useState(false);
+  const [categorySortDraft, setCategorySortDraft] = useState<JsonRecord[]>([]);
   const [draggingCategoryId, setDraggingCategoryId] = useState('');
+  const sortedCategories = useMemo(
+    () => [...categories].sort((left, right) => numberValue(left, 'sortOrder') - numberValue(right, 'sortOrder')),
+    [categories],
+  );
+  const visibleCategories = categorySortEditing ? categorySortDraft : sortedCategories;
+
+  useEffect(() => {
+    if (!categorySortEditing) {
+      setCategorySortDraft(sortedCategories);
+    }
+  }, [categorySortEditing, sortedCategories]);
+
   const openCreate = () => {
     onFormChange(initialCategoryForm);
     setModalOpen(true);
@@ -4398,17 +4354,43 @@ function MallCategoriesSection({
     onFormChange(categoryToForm(category));
     setModalOpen(true);
   };
+  const startSortEditing = () => {
+    setCategorySortDraft(sortedCategories);
+    setCategorySortEditing(true);
+  };
+  const cancelSortEditing = () => {
+    setCategorySortDraft(sortedCategories);
+    setDraggingCategoryId('');
+    setCategorySortEditing(false);
+  };
   const handleDragStart = (event: DragEvent<HTMLTableRowElement>, id: string) => {
+    if (!categorySortEditing) return;
     setDraggingCategoryId(id);
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', id);
   };
   const handleDrop = (event: DragEvent<HTMLTableRowElement>, targetId: string) => {
+    if (!categorySortEditing) return;
     event.preventDefault();
     const draggedId = event.dataTransfer.getData('text/plain') || draggingCategoryId;
     setDraggingCategoryId('');
     if (!draggedId || draggedId === targetId) return;
-    void onReorderCategory(draggedId, targetId);
+    setCategorySortDraft(current => {
+      const fromIndex = current.findIndex(category => stringValue(category, 'id') === draggedId);
+      const toIndex = current.findIndex(category => stringValue(category, 'id') === targetId);
+      if (fromIndex < 0 || toIndex < 0) return current;
+      const next = [...current];
+      const [dragged] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, dragged);
+      return next.map((category, index) => ({
+        ...category,
+        sortOrder: (index + 1) * 10,
+      }));
+    });
+  };
+  const saveSortEditing = async () => {
+    await onSaveCategoryOrder(categorySortDraft);
+    setCategorySortEditing(false);
   };
 
   return (
@@ -4428,6 +4410,23 @@ function MallCategoriesSection({
           <Icon name="plus" />
           新增品类
         </button>
+        {categorySortEditing ? (
+          <>
+            <button className="primary-button" type="button" onClick={() => void saveSortEditing()}>
+              <Icon name="save" />
+              保存排序
+            </button>
+            <button className="ghost-button" type="button" onClick={cancelSortEditing}>
+              <Icon name="x" />
+              取消排序
+            </button>
+          </>
+        ) : (
+          <button className="ghost-button" type="button" onClick={startSortEditing}>
+            <Icon name="route" />
+            编辑排序
+          </button>
+        )}
       </div>
       <Panel title="品类管理" description="维护社区团购商品品类、排序和上下架状态；拖拽行可调整前台展示顺序">
         <div className="table-wrap">
@@ -4444,19 +4443,25 @@ function MallCategoriesSection({
               </tr>
             </thead>
             <tbody>
-              {categories.map(category => {
+              {visibleCategories.map(category => {
                 const id = stringValue(category, 'id');
                 return (
                   <tr
-                    className={draggingCategoryId === id ? 'sortable-row dragging' : 'sortable-row'}
-                    draggable
+                    className={[
+                      'sortable-row',
+                      categorySortEditing ? 'sortable-row-editing' : '',
+                      draggingCategoryId === id ? 'dragging' : '',
+                    ].filter(Boolean).join(' ')}
+                    draggable={categorySortEditing}
                     key={id}
                     onDragEnd={() => setDraggingCategoryId('')}
-                    onDragOver={event => event.preventDefault()}
+                    onDragOver={event => {
+                      if (categorySortEditing) event.preventDefault();
+                    }}
                     onDragStart={event => handleDragStart(event, id)}
                     onDrop={event => handleDrop(event, id)}
                   >
-                    <td><span className="drag-handle" aria-label="拖拽排序">↕</span></td>
+                    <td><span className="drag-handle" aria-label={categorySortEditing ? '拖拽排序' : '排序'}>↕</span></td>
                     <td><strong>{stringValue(category, 'name')}</strong></td>
                     <td>{stringValue(category, 'code')}</td>
                     <td>{numberValue(category, 'sortOrder')}</td>
@@ -4481,27 +4486,12 @@ function MallCategoriesSection({
         {!categories.length ? <EmptyState text="暂无品类数据" /> : null}
       </Panel>
 
-      {showInventoryAlerts ? (
-        <MallInventorySection
-          allProducts={allProducts}
-          categories={categories}
-          filters={inventoryFilters}
-          products={inventoryProducts}
-          onCreateInventoryAlert={onCreateInventoryAlert}
-          onDeleteInventoryAlert={onDeleteInventoryAlert}
-          onEditInventoryAlert={onEditInventoryAlert}
-          onFiltersChange={onInventoryFiltersChange}
-          onSearch={onInventorySearch}
-        />
-      ) : null}
-
       {modalOpen ? (
         <div className="modal-backdrop">
           <section className="modal-panel">
             <div className="panel-head">
               <div>
                 <h2>{form.id ? '编辑品类' : '新增品类'}</h2>
-                <p>品类编码会用于商品归类和商城端筛选</p>
               </div>
               <button className="ghost-button" type="button" onClick={() => setModalOpen(false)}>
                 <Icon name="x" />
@@ -4690,7 +4680,6 @@ function MallInventorySection({
             <div className="panel-head">
               <div>
                 <h2>{modalMode === 'create' ? '新增库存预警' : '编辑库存预警'}</h2>
-                <p>选择商品并维护当前库存和预警阈值，阈值为 0 表示关闭预警</p>
               </div>
               <button className="ghost-button" type="button" onClick={() => setModalMode(null)}>
                 <Icon name="x" />
@@ -5191,105 +5180,6 @@ function MallOpsFilterbar({
         <Icon name="refresh" />
         查询
       </button>
-    </div>
-  );
-}
-
-function MallListingRequestsSection({
-  requests,
-  filters,
-  onFiltersChange,
-  onReview,
-  onSearch,
-}: {
-  requests: JsonRecord[];
-  filters: MallOpsFilterState;
-  onFiltersChange: (patch: Partial<MallOpsFilterState>) => void;
-  onReview: (id: string, action: 'approve' | 'reject') => Promise<void>;
-  onSearch: () => Promise<void>;
-}) {
-  const filteredRequests = filterMallOpsRecords(
-    requests,
-    filters,
-    ['id', 'productId', 'productName', 'sku', 'requestType', 'requesterName', 'requesterRole', 'reason', 'status'],
-    ['createdAt', 'updatedAt', 'reviewedAt'],
-  );
-  const pendingCount = requests.filter(request => ['pending', 'submitted'].includes(stringValue(request, 'status'))).length;
-  const approvedCount = requests.filter(request => stringValue(request, 'status') === 'approved').length;
-
-  return (
-    <div className="page-grid ops-page">
-      <MallOpsFilterbar
-        filters={filters}
-        placeholder="搜索商品、SKU、申请人"
-        statusOptions={[
-          ['pending', '待审核'],
-          ['submitted', '已提交'],
-          ['approved', '已通过'],
-          ['rejected', '已拒绝'],
-        ]}
-        onFiltersChange={onFiltersChange}
-        onSearch={onSearch}
-      />
-      <div className="ops-summary-grid">
-        <StatCard label="待审核" value={String(pendingCount)} detail="上下架申请队列" />
-        <StatCard label="已通过" value={String(approvedCount)} detail="平台审核后同步用户端" />
-        <StatCard label="申请总数" value={String(requests.length)} detail="包含上架、下架和草稿转正" />
-      </div>
-      <Panel title="商品上下架申请" description="平台运营审核商品上架、下架申请，第一期仅管理员账号处理">
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>商品</th>
-                <th>申请类型</th>
-                <th>申请人</th>
-                <th>目标状态</th>
-                <th>状态</th>
-                <th>时间</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRequests.map(request => {
-                const id = stringValue(request, 'id');
-                const status = stringValue(request, 'status');
-                const canReview = ['pending', 'submitted'].includes(status);
-                return (
-                  <tr key={id}>
-                    <td>
-                      <strong>{stringValue(request, 'productName', stringValue(request, 'name', shortId(stringValue(request, 'productId'))))}</strong>
-                      <small>{stringValue(request, 'sku', stringValue(request, 'reason', '-'))}</small>
-                    </td>
-                    <td>{statusLabel(stringValue(request, 'requestType', stringValue(request, 'type')))}</td>
-                    <td>
-                      <span>{stringValue(request, 'requesterName', stringValue(request, 'requesterRole', '平台运营'))}</span>
-                      <small>{stringValue(request, 'supplierName', 'A/平台运营')}</small>
-                    </td>
-                    <td>{statusLabel(stringValue(request, 'requestedStatus', stringValue(request, 'targetStatus')))}</td>
-                    <td><span className={badgeClass(status)}>{statusLabel(status)}</span></td>
-                    <td>
-                      <span>{formatDate(stringValue(request, 'createdAt'))}</span>
-                      <small>{formatDate(stringValue(request, 'reviewedAt'))}</small>
-                    </td>
-                    <td className="actions">
-                      <button className="ghost-button" type="button" disabled={!canReview} onClick={() => void onReview(id, 'approve')}>
-                        <Icon name="check" />
-                        通过
-                      </button>
-                      <button className="ghost-button danger" type="button" disabled={!canReview} onClick={() => void onReview(id, 'reject')}>
-                        <Icon name="x" />
-                        拒绝
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        {!filteredRequests.length ? <EmptyState text="暂无上下架申请" /> : null}
-      </Panel>
     </div>
   );
 }
@@ -6044,7 +5934,7 @@ function MallFinanceOpsSection({
       </div>
 
       {mode === 'withdrawals' ? (
-        <Panel title="提交提现申请" description="第一期由平台运营账号发起，不开放供应商注册">
+        <Panel title="提交提现申请" description="填写提现金额并提交审核">
           <form className="ops-withdrawal-form" onSubmit={onCreateWithdrawal}>
             <label>
               提现金额
@@ -6359,7 +6249,6 @@ function MallCouponCenterSection({
             <div className="modal-title-row">
               <div>
                 <h2>{form.id ? '编辑券' : '新建券'}</h2>
-                <p>填写券名称、类型、门槛、金额、发放数量和有效期。</p>
               </div>
               <button className="ghost-button" type="button" onClick={() => setModalOpen(false)}>
                 <Icon name="x" />
@@ -6461,81 +6350,26 @@ function MallHomeBannersSection({
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onUploadImage: (file: File) => Promise<string>;
 }) {
-  return (
-    <div className="split-grid">
-      <Panel title={form.id ? '编辑首页配置' : '新增首页配置'} description="维护商城首页 Banner、活动位、跳转目标和排序">
-        <form className="form-grid" onSubmit={onSubmit}>
-          <label>
-            标题
-            <input value={form.title} onChange={event => onChange({ title: event.target.value })} />
-          </label>
-          <label>
-            标签
-            <input value={form.tag} onChange={event => onChange({ tag: event.target.value })} />
-          </label>
-          <label className="wide">
-            副标题
-            <input value={form.subtitle} onChange={event => onChange({ subtitle: event.target.value })} />
-          </label>
-          <label className="wide">
-            图片
-            <input value={form.imageUrl} placeholder="可粘贴图片地址或上传图片" onChange={event => onChange({ imageUrl: event.target.value })} />
-            <input
-              accept="image/*"
-              type="file"
-              onChange={event => {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                void onUploadImage(file).then(imageUrl => onChange({ imageUrl }));
-                event.target.value = '';
-              }}
-            />
-          </label>
-          <label>
-            跳转类型
-            <select value={form.linkType} onChange={event => onChange({ linkType: event.target.value })}>
-              <option value="none">不跳转</option>
-              <option value="category">品类</option>
-              <option value="product">商品</option>
-              <option value="search">搜索</option>
-              <option value="url">链接</option>
-            </select>
-          </label>
-          <label>
-            跳转目标
-            <input value={form.linkTarget} onChange={event => onChange({ linkTarget: event.target.value })} />
-          </label>
-          <label>
-            排序
-            <input value={form.sortOrder} type="number" onChange={event => onChange({ sortOrder: event.target.value })} />
-          </label>
-          <label>
-            状态
-            <select value={form.status} onChange={event => onChange({ status: event.target.value })}>
-              <option value="active">启用</option>
-              <option value="draft">草稿</option>
-              <option value="inactive">停用</option>
-            </select>
-          </label>
-          <label>
-            开始时间
-            <input value={form.startsAt} type="datetime-local" onChange={event => onChange({ startsAt: event.target.value })} />
-          </label>
-          <label>
-            结束时间
-            <input value={form.endsAt} type="datetime-local" onChange={event => onChange({ endsAt: event.target.value })} />
-          </label>
-          <button className="primary-button" type="submit">
-            <Icon name="save" />
-            {form.id ? '保存配置' : '创建配置'}
-          </button>
-          <button className="ghost-button" type="button" onClick={onReset}>
-            <Icon name="x" />
-            重置
-          </button>
-        </form>
-      </Panel>
+  const [modalOpen, setModalOpen] = useState(false);
+  const openCreate = () => {
+    onReset();
+    setModalOpen(true);
+  };
+  const openEdit = (banner: JsonRecord) => {
+    onEdit(banner);
+    setModalOpen(true);
+  };
+  const closeModal = () => {
+    onReset();
+    setModalOpen(false);
+  };
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    await onSubmit(event);
+    setModalOpen(false);
+  };
 
+  return (
+    <div className="page-grid">
       <Panel title="首页配置列表" description="运营位按排序升序展示，启用后供商城首页读取">
         <div className="admin-filterbar marketing-filterbar compact">
           <input value={filters.keyword} onChange={event => onFiltersChange({ keyword: event.target.value })} placeholder="搜索标题或副标题" />
@@ -6548,6 +6382,10 @@ function MallHomeBannersSection({
           <button className="primary-button" type="button" onClick={() => void onSearch()}>
             <Icon name="refresh" />
             搜索
+          </button>
+          <button className="primary-button" type="button" onClick={openCreate}>
+            <Icon name="plus" />
+            新增首页配置
           </button>
         </div>
         <div className="list-stack">
@@ -6563,7 +6401,7 @@ function MallHomeBannersSection({
                 </div>
                 <span className={badgeClass(status)}>{statusLabel(status)}</span>
                 <div className="actions">
-                  <button className="ghost-button" type="button" onClick={() => onEdit(banner)}>
+                  <button className="ghost-button" type="button" onClick={() => openEdit(banner)}>
                     <Icon name="save" />
                     编辑
                   </button>
@@ -6578,6 +6416,91 @@ function MallHomeBannersSection({
           {!banners.length ? <EmptyState text="暂无首页配置" /> : null}
         </div>
       </Panel>
+
+      {modalOpen ? (
+        <div className="modal-backdrop">
+          <form className="modal-panel" onSubmit={submit}>
+            <div className="modal-title-row">
+              <div>
+                <h2>{form.id ? '编辑首页配置' : '新增首页配置'}</h2>
+              </div>
+              <button className="ghost-button" type="button" onClick={closeModal}>
+                <Icon name="x" />
+                关闭
+              </button>
+            </div>
+            <div className="form-grid">
+              <label>
+                标题
+                <input value={form.title} onChange={event => onChange({ title: event.target.value })} />
+              </label>
+              <label>
+                标签
+                <input value={form.tag} onChange={event => onChange({ tag: event.target.value })} />
+              </label>
+              <label className="wide">
+                副标题
+                <input value={form.subtitle} onChange={event => onChange({ subtitle: event.target.value })} />
+              </label>
+              <label className="wide">
+                图片
+                <input value={form.imageUrl} placeholder="可粘贴图片地址或上传图片" onChange={event => onChange({ imageUrl: event.target.value })} />
+                <input
+                  accept="image/*"
+                  type="file"
+                  onChange={event => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    void onUploadImage(file).then(imageUrl => onChange({ imageUrl }));
+                    event.target.value = '';
+                  }}
+                />
+              </label>
+              <label>
+                跳转类型
+                <select value={form.linkType} onChange={event => onChange({ linkType: event.target.value })}>
+                  <option value="none">不跳转</option>
+                  <option value="category">品类</option>
+                  <option value="product">商品</option>
+                  <option value="search">搜索</option>
+                  <option value="url">链接</option>
+                </select>
+              </label>
+              <label>
+                跳转目标
+                <input value={form.linkTarget} onChange={event => onChange({ linkTarget: event.target.value })} />
+              </label>
+              <label>
+                排序
+                <input value={form.sortOrder} type="number" onChange={event => onChange({ sortOrder: event.target.value })} />
+              </label>
+              <label>
+                状态
+                <select value={form.status} onChange={event => onChange({ status: event.target.value })}>
+                  <option value="active">启用</option>
+                  <option value="draft">草稿</option>
+                  <option value="inactive">停用</option>
+                </select>
+              </label>
+              <label>
+                开始时间
+                <input value={form.startsAt} type="datetime-local" onChange={event => onChange({ startsAt: event.target.value })} />
+              </label>
+              <label>
+                结束时间
+                <input value={form.endsAt} type="datetime-local" onChange={event => onChange({ endsAt: event.target.value })} />
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button className="ghost-button" type="button" onClick={closeModal}>取消</button>
+              <button className="primary-button" type="submit">
+                <Icon name="save" />
+                {form.id ? '保存配置' : '创建配置'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -6611,99 +6534,37 @@ function MallHomeSectionsSection({
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onUploadImage: (file: File) => Promise<string>;
 }) {
+  const [modalOpen, setModalOpen] = useState(false);
   const visibleSections = sections
     .filter(section => stringValue(section, 'sectionType') === sectionType)
     .sort((a, b) => numberValue(a, 'sortOrder') - numberValue(b, 'sortOrder'));
   const isAnnouncement = sectionType === 'announcement';
+  const openCreate = () => {
+    onReset();
+    setModalOpen(true);
+  };
+  const openEdit = (section: JsonRecord) => {
+    onEdit(section);
+    setModalOpen(true);
+  };
+  const closeModal = () => {
+    onReset();
+    setModalOpen(false);
+  };
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    await onSubmit(event);
+    setModalOpen(false);
+  };
 
   return (
-    <div className="split-grid">
-      <Panel title={form.id ? `编辑${title}` : `新增${title}`} description={description}>
-        <form className="form-grid" onSubmit={onSubmit}>
-          <label>
-            标题
-            <input value={form.title} onChange={event => onChange({ title: event.target.value })} />
-          </label>
-          <label>
-            状态
-            <select value={form.status} onChange={event => onChange({ status: event.target.value })}>
-              <option value="active">启用</option>
-              <option value="draft">草稿</option>
-              <option value="inactive">停用</option>
-            </select>
-          </label>
-          <label className="wide">
-            副标题
-            <input value={form.subtitle} placeholder={isAnnouncement ? '可不填' : '例：早 8 点 / 晚 6 点，每日两场'} onChange={event => onChange({ subtitle: event.target.value })} />
-          </label>
-          <label className="wide">
-            {isAnnouncement ? '公告内容' : '角标/行动文案'}
-            <textarea value={form.content} placeholder={isAnnouncement ? '例：草莓、鲜奶、鸡蛋 16:00 后可提' : '例：今日刚到 / TOP10'} onChange={event => onChange({ content: event.target.value })} />
-          </label>
-          <label>
-            跳转类型
-            <select value={form.linkType} onChange={event => onChange({ linkType: event.target.value })}>
-              <option value="none">不跳转</option>
-              <option value="category">品类</option>
-              <option value="product">商品</option>
-              <option value="search">搜索</option>
-              <option value="url">链接</option>
-            </select>
-          </label>
-          <label>
-            跳转目标
-            <input value={form.linkTarget} onChange={event => onChange({ linkTarget: event.target.value })} />
-          </label>
-          {!isAnnouncement ? (
-            <label className="wide">
-              商品编号
-              <input value={form.productIds} placeholder="按展示顺序填写，英文逗号分隔；为空则按规则自动选品" onChange={event => onChange({ productIds: event.target.value })} />
-            </label>
-          ) : null}
-          <label className="wide">
-            图片
-            <input value={form.imageUrl} placeholder="可粘贴图片地址或上传图片" onChange={event => onChange({ imageUrl: event.target.value })} />
-            <input
-              accept="image/*"
-              type="file"
-              onChange={event => {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                void onUploadImage(file).then(imageUrl => onChange({ imageUrl }));
-                event.target.value = '';
-              }}
-            />
-          </label>
-          <label>
-            排序
-            <input value={form.sortOrder} type="number" onChange={event => onChange({ sortOrder: event.target.value })} />
-          </label>
-          <label>
-            开始时间
-            <input value={form.startsAt} type="datetime-local" onChange={event => onChange({ startsAt: event.target.value })} />
-          </label>
-          <label>
-            结束时间
-            <input value={form.endsAt} type="datetime-local" onChange={event => onChange({ endsAt: event.target.value })} />
-          </label>
-          {!isAnnouncement ? (
-            <label className="wide">
-              展示规则
-              <textarea value={form.rules} onChange={event => onChange({ rules: event.target.value })} />
-            </label>
-          ) : null}
-          <button className="primary-button" type="submit">
-            <Icon name="save" />
-            {form.id ? '保存配置' : '创建配置'}
+    <div className="page-grid">
+      <Panel title={`${title}列表`} description={description}>
+        <div className="admin-filterbar marketing-filterbar compact">
+          <button className="primary-button" type="button" onClick={openCreate}>
+            <Icon name="plus" />
+            {`新增${title}`}
           </button>
-          <button className="ghost-button" type="button" onClick={onReset}>
-            <Icon name="x" />
-            重置
-          </button>
-        </form>
-      </Panel>
-
-      <Panel title={`${title}列表`} description="启用后展示在商城首页，列表按排序值升序排列">
+        </div>
         <div className="list-stack">
           {visibleSections.map(section => {
             const id = stringValue(section, 'id');
@@ -6726,7 +6587,7 @@ function MallHomeSectionsSection({
                 </div>
                 <span className={badgeClass(status)}>{statusLabel(status)}</span>
                 <div className="actions">
-                  <button className="ghost-button" type="button" onClick={() => onEdit(section)}>
+                  <button className="ghost-button" type="button" onClick={() => openEdit(section)}>
                     <Icon name="save" />
                     编辑
                   </button>
@@ -6745,6 +6606,103 @@ function MallHomeSectionsSection({
           {!visibleSections.length ? <EmptyState text={`暂无${title}配置`} /> : null}
         </div>
       </Panel>
+
+      {modalOpen ? (
+        <div className="modal-backdrop">
+          <form className="modal-panel" onSubmit={submit}>
+            <div className="modal-title-row">
+              <div>
+                <h2>{form.id ? `编辑${title}` : `新增${title}`}</h2>
+              </div>
+              <button className="ghost-button" type="button" onClick={closeModal}>
+                <Icon name="x" />
+                关闭
+              </button>
+            </div>
+            <div className="form-grid">
+              <label>
+                标题
+                <input value={form.title} onChange={event => onChange({ title: event.target.value })} />
+              </label>
+              <label>
+                状态
+                <select value={form.status} onChange={event => onChange({ status: event.target.value })}>
+                  <option value="active">启用</option>
+                  <option value="draft">草稿</option>
+                  <option value="inactive">停用</option>
+                </select>
+              </label>
+              <label className="wide">
+                副标题
+                <input value={form.subtitle} placeholder={isAnnouncement ? '可不填' : '例：早 8 点 / 晚 6 点，每日两场'} onChange={event => onChange({ subtitle: event.target.value })} />
+              </label>
+              <label className="wide">
+                {isAnnouncement ? '公告内容' : '角标/行动文案'}
+                <textarea value={form.content} placeholder={isAnnouncement ? '例：草莓、鲜奶、鸡蛋 16:00 后可提' : '例：今日刚到 / TOP10'} onChange={event => onChange({ content: event.target.value })} />
+              </label>
+              <label>
+                跳转类型
+                <select value={form.linkType} onChange={event => onChange({ linkType: event.target.value })}>
+                  <option value="none">不跳转</option>
+                  <option value="category">品类</option>
+                  <option value="product">商品</option>
+                  <option value="search">搜索</option>
+                  <option value="url">链接</option>
+                </select>
+              </label>
+              <label>
+                跳转目标
+                <input value={form.linkTarget} onChange={event => onChange({ linkTarget: event.target.value })} />
+              </label>
+              {!isAnnouncement ? (
+                <label className="wide">
+                  商品编号
+                  <input value={form.productIds} placeholder="按展示顺序填写，英文逗号分隔；为空则按规则自动选品" onChange={event => onChange({ productIds: event.target.value })} />
+                </label>
+              ) : null}
+              <label className="wide">
+                图片
+                <input value={form.imageUrl} placeholder="可粘贴图片地址或上传图片" onChange={event => onChange({ imageUrl: event.target.value })} />
+                <input
+                  accept="image/*"
+                  type="file"
+                  onChange={event => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    void onUploadImage(file).then(imageUrl => onChange({ imageUrl }));
+                    event.target.value = '';
+                  }}
+                />
+              </label>
+              <label>
+                排序
+                <input value={form.sortOrder} type="number" onChange={event => onChange({ sortOrder: event.target.value })} />
+              </label>
+              <label>
+                开始时间
+                <input value={form.startsAt} type="datetime-local" onChange={event => onChange({ startsAt: event.target.value })} />
+              </label>
+              <label>
+                结束时间
+                <input value={form.endsAt} type="datetime-local" onChange={event => onChange({ endsAt: event.target.value })} />
+              </label>
+              {!isAnnouncement ? (
+                <label className="wide">
+                  展示规则
+                  <textarea value={form.rules} onChange={event => onChange({ rules: event.target.value })} />
+                </label>
+              ) : null}
+            </div>
+            <div className="modal-actions">
+              <button className="ghost-button" type="button" onClick={closeModal}>取消</button>
+              <button className="primary-button" type="submit">
+                <Icon name="save" />
+                {form.id ? '保存配置' : '创建配置'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -6856,7 +6814,6 @@ function MallCampaignsSection({
             <div className="modal-title-row">
               <div>
                 <h2>{form.id ? '编辑营销活动' : '新建营销活动'}</h2>
-                <p>创建满减、券包、组合购、配送补贴或免配送费活动。</p>
               </div>
               <button className="ghost-button" type="button" onClick={() => setModalOpen(false)}>
                 <Icon name="x" />
@@ -6937,11 +6894,105 @@ function MallPermissionsSection({
   onToggleAction: (action: string) => void;
   onToggleModule: (module: string) => void;
 }) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const openCreate = () => {
+    onReset();
+    setModalOpen(true);
+  };
+  const openEdit = (permission: JsonRecord) => {
+    onEdit(permission);
+    setModalOpen(true);
+  };
+  const closeModal = () => {
+    onReset();
+    setModalOpen(false);
+  };
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    await onSubmit(event);
+    setModalOpen(false);
+  };
+
   return (
     <div className="permission-admin">
-      <div className="permission-admin-grid">
-        <Panel title={form.id ? '编辑权限' : '新增权限'} description="维护商城运营角色可访问的模块和动作">
-          <form className="permission-editor" onSubmit={onSubmit}>
+      <Panel title="运营权限列表" description="支持权限搜索、模块筛选、编辑和删除">
+        <div className="permission-filterbar">
+          <label>
+            权限搜索
+            <input value={filters.keyword} placeholder="名称、标识或说明" onChange={event => onFiltersChange({ keyword: event.target.value })} />
+          </label>
+          <label>
+            状态
+            <select value={filters.status} onChange={event => onFiltersChange({ status: event.target.value })}>
+              <option value="">全部状态</option>
+              <option value="active">启用</option>
+              <option value="draft">草稿</option>
+              <option value="inactive">停用</option>
+            </select>
+          </label>
+          <label>
+            模块
+            <select value={filters.module} onChange={event => onFiltersChange({ module: event.target.value })}>
+              <option value="">全部模块</option>
+              {permissionModuleOptions.map(([key, label]) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <button className="primary-button" type="button" onClick={() => void onSearch()}>
+            <Icon name="refresh" />
+            搜索
+          </button>
+          <button className="primary-button" type="button" onClick={openCreate}>
+            <Icon name="plus" />
+            新增权限
+          </button>
+        </div>
+
+        <div className="permission-list">
+          {permissions.map(permission => {
+            const id = stringValue(permission, 'id');
+            const status = stringValue(permission, 'status');
+            return (
+              <article className="permission-row" key={id}>
+                <div>
+                  <strong>{stringValue(permission, 'name')}</strong>
+                  <small>{stringValue(permission, 'roleKey')}</small>
+                </div>
+                <span className={badgeClass(status)}>{statusLabel(status)}</span>
+                <div className="permission-row-detail">
+                  <span>模块：{permissionTextList(permission, 'modules', permissionModuleLabel)}</span>
+                  <span>动作：{permissionTextList(permission, 'actions', permissionActionLabel)}</span>
+                  <small>{stringValue(permission, 'description', '暂无说明')}</small>
+                </div>
+                <div className="permission-table-actions">
+                  <button className="ghost-button" type="button" onClick={() => openEdit(permission)}>
+                    <Icon name="save" />
+                    编辑
+                  </button>
+                  <button className="ghost-button danger-button" type="button" onClick={() => void onDelete(id)}>
+                    <Icon name="x" />
+                    删除
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+          {!permissions.length ? <EmptyState text="暂无运营权限" /> : null}
+        </div>
+      </Panel>
+
+      {modalOpen ? (
+        <div className="modal-backdrop">
+          <form className="modal-panel permission-editor" onSubmit={submit}>
+            <div className="modal-title-row wide">
+              <div>
+                <h2>{form.id ? '编辑权限' : '新增权限'}</h2>
+              </div>
+              <button className="ghost-button" type="button" onClick={closeModal}>
+                <Icon name="x" />
+                关闭
+              </button>
+            </div>
             <label>
               权限名称
               <input required value={form.name} placeholder="例：商品运营" onChange={event => onChange({ name: event.target.value })} />
@@ -6983,82 +7034,16 @@ function MallPermissionsSection({
               ))}
             </fieldset>
 
-            <div className="permission-form-actions wide">
+            <div className="modal-actions wide">
+              <button className="ghost-button" type="button" onClick={closeModal}>取消</button>
               <button className="primary-button" disabled={!form.name.trim() || !form.roleKey.trim() || !form.modules.length || !form.actions.length} type="submit">
                 <Icon name="save" />
                 {form.id ? '保存权限' : '创建权限'}
               </button>
-              <button className="ghost-button" type="button" onClick={onReset}>
-                <Icon name="x" />
-                重置
-              </button>
             </div>
           </form>
-        </Panel>
-
-        <Panel title="运营权限列表" description="支持权限搜索、模块筛选、编辑和删除">
-          <div className="permission-filterbar">
-            <label>
-              权限搜索
-              <input value={filters.keyword} placeholder="名称、标识或说明" onChange={event => onFiltersChange({ keyword: event.target.value })} />
-            </label>
-            <label>
-              状态
-              <select value={filters.status} onChange={event => onFiltersChange({ status: event.target.value })}>
-                <option value="">全部状态</option>
-                <option value="active">启用</option>
-                <option value="draft">草稿</option>
-                <option value="inactive">停用</option>
-              </select>
-            </label>
-            <label>
-              模块
-              <select value={filters.module} onChange={event => onFiltersChange({ module: event.target.value })}>
-                <option value="">全部模块</option>
-                {permissionModuleOptions.map(([key, label]) => (
-                  <option key={key} value={key}>{label}</option>
-                ))}
-              </select>
-            </label>
-            <button className="primary-button" type="button" onClick={() => void onSearch()}>
-              <Icon name="refresh" />
-              搜索
-            </button>
-          </div>
-
-          <div className="permission-list">
-            {permissions.map(permission => {
-              const id = stringValue(permission, 'id');
-              const status = stringValue(permission, 'status');
-              return (
-                <article className="permission-row" key={id}>
-                  <div>
-                    <strong>{stringValue(permission, 'name')}</strong>
-                    <small>{stringValue(permission, 'roleKey')}</small>
-                  </div>
-                  <span className={badgeClass(status)}>{statusLabel(status)}</span>
-                  <div className="permission-row-detail">
-                    <span>模块：{permissionTextList(permission, 'modules', permissionModuleLabel)}</span>
-                    <span>动作：{permissionTextList(permission, 'actions', permissionActionLabel)}</span>
-                    <small>{stringValue(permission, 'description', '暂无说明')}</small>
-                  </div>
-                  <div className="permission-table-actions">
-                    <button className="ghost-button" type="button" onClick={() => onEdit(permission)}>
-                      <Icon name="save" />
-                      编辑
-                    </button>
-                    <button className="ghost-button danger-button" type="button" onClick={() => void onDelete(id)}>
-                      <Icon name="x" />
-                      删除
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-            {!permissions.length ? <EmptyState text="暂无运营权限" /> : null}
-          </div>
-        </Panel>
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -7073,7 +7058,7 @@ function MallSettingsSection({
   const visibleCampaigns = campaigns.filter(campaign => ['active', 'inactive', 'draft'].includes(stringValue(campaign, 'status')));
   return (
     <div className="page-grid">
-      <Panel title="活动启停快捷操作" description="运营设置只保留高频启停入口，活动创建、规则编辑和预算维护仍在营销活动页完成">
+      <Panel title="活动启停" description="管理活动启用和停用状态">
         <div className="settings-campaign-list">
           {visibleCampaigns.map(campaign => {
             const id = stringValue(campaign, 'id');
@@ -7156,47 +7141,101 @@ function MallDeliveryRulesSection({
 
 function MallPaymentSplitRulesSection({
   settingsForm,
-  onSettingsChange,
-  onSettingsSubmit,
+  onSettingsSave,
 }: {
   settingsForm: SettingsForm;
-  onSettingsChange: (patch: Partial<SettingsForm>) => void;
-  onSettingsSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onSettingsSave: (form: SettingsForm) => Promise<void>;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState<SettingsForm>(settingsForm);
+
+  useEffect(() => {
+    if (!isEditing) {
+      setDraft(settingsForm);
+    }
+  }, [isEditing, settingsForm]);
+
+  const settlementCycleLabels: Record<string, string> = {
+    'T+1': 'T+1',
+    'T+3': 'T+3',
+    'T+7': 'T+7',
+    monthly: '月结',
+  };
+  const summaryItems = [
+    { label: '团长佣金比例', value: `${settingsForm.leaderCommissionRate || '0'}%`, note: '按自提点订单实付金额计算' },
+    { label: '平台服务费比例', value: `${settingsForm.platformServiceRate || '0'}%`, note: '从商家结算金额中扣减' },
+    { label: '供应商结算周期', value: settlementCycleLabels[settingsForm.supplierSettlementCycle] || settingsForm.supplierSettlementCycle || '-', note: '用于账单和提现审核提示' },
+    { label: '最低提现金额', value: `${settingsForm.withdrawMinYuan || '0.00'} 元`, note: '低于门槛不能提现' },
+  ];
+
+  const updateDraft = (patch: Partial<SettingsForm>) => {
+    setDraft(current => ({ ...current, ...patch }));
+  };
+
+  const submitDraft = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await onSettingsSave(draft);
+    setIsEditing(false);
+  };
+
   return (
     <div className="page-grid">
       <Panel title="分账规则" description="维护商城订单的团长佣金、平台服务费、供应商结算周期和提现门槛">
-        <form className="form-grid settings-form split-settings-form" onSubmit={onSettingsSubmit}>
-          <label>
-            团长佣金比例
-            <input value={settingsForm.leaderCommissionRate} type="number" min="0" max="100" step="0.1" onChange={event => onSettingsChange({ leaderCommissionRate: event.target.value })} />
-          </label>
-          <label>
-            平台服务费比例
-            <input value={settingsForm.platformServiceRate} type="number" min="0" max="100" step="0.1" onChange={event => onSettingsChange({ platformServiceRate: event.target.value })} />
-          </label>
-          <label>
-            供应商结算周期
-            <select value={settingsForm.supplierSettlementCycle} onChange={event => onSettingsChange({ supplierSettlementCycle: event.target.value })}>
-              <option value="T+1">T+1</option>
-              <option value="T+3">T+3</option>
-              <option value="T+7">T+7</option>
-              <option value="monthly">月结</option>
-            </select>
-          </label>
-          <label>
-            最低提现金额
-            <input value={settingsForm.withdrawMinYuan} type="number" min="0" step="0.01" onChange={event => onSettingsChange({ withdrawMinYuan: event.target.value })} />
-          </label>
-          <div className="settings-rule-note wide">
-            <strong>当前口径</strong>
-            <span>团长佣金按自提点订单实付金额计算；平台服务费从商家结算金额中扣减；供应商结算周期用于账单和提现审核提示。</span>
+        {isEditing ? (
+          <form className="form-grid settings-form split-settings-form" onSubmit={submitDraft}>
+            <label>
+              团长佣金比例
+              <input value={draft.leaderCommissionRate} type="number" min="0" max="100" step="0.1" onChange={event => updateDraft({ leaderCommissionRate: event.target.value })} />
+            </label>
+            <label>
+              平台服务费比例
+              <input value={draft.platformServiceRate} type="number" min="0" max="100" step="0.1" onChange={event => updateDraft({ platformServiceRate: event.target.value })} />
+            </label>
+            <label>
+              供应商结算周期
+              <select value={draft.supplierSettlementCycle} onChange={event => updateDraft({ supplierSettlementCycle: event.target.value })}>
+                <option value="T+1">T+1</option>
+                <option value="T+3">T+3</option>
+                <option value="T+7">T+7</option>
+                <option value="monthly">月结</option>
+              </select>
+            </label>
+            <label>
+              最低提现金额
+              <input value={draft.withdrawMinYuan} type="number" min="0" step="0.01" onChange={event => updateDraft({ withdrawMinYuan: event.target.value })} />
+            </label>
+            <div className="settings-rule-note wide">
+              <strong>当前口径</strong>
+              <span>团长佣金按自提点订单实付金额计算；平台服务费从商家结算金额中扣减；供应商结算周期用于账单和提现审核提示。</span>
+            </div>
+            <button className="primary-button" type="submit">
+              <Icon name="save" />
+              保存分账规则
+            </button>
+          </form>
+        ) : (
+          <div className="settings-summary">
+            <div className="settings-summary-grid">
+              {summaryItems.map(item => (
+                <div className="settings-summary-card" key={item.label}>
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                  <small>{item.note}</small>
+                </div>
+              ))}
+            </div>
+            <div className="settings-rule-note">
+              <strong>当前口径</strong>
+              <span>团长佣金按自提点订单实付金额计算；平台服务费从商家结算金额中扣减；供应商结算周期用于账单和提现审核提示。</span>
+            </div>
+            <div className="settings-actions">
+              <button className="primary-button" type="button" onClick={() => setIsEditing(true)}>
+                <Icon name="save" />
+                编辑分账规则
+              </button>
+            </div>
           </div>
-          <button className="primary-button" type="submit">
-            <Icon name="save" />
-            保存分账规则
-          </button>
-        </form>
+        )}
       </Panel>
     </div>
   );
@@ -7228,7 +7267,7 @@ function SupportDataSection({
       </div>
 
       <div className="support-data-grid">
-        <Panel title="服务质量" description="单独展示客服售后指标，避免干扰会话处理">
+        <Panel title="服务质量" description="客服售后指标">
           <div className="support-data-board">
             <article>
               <span>满意度</span>
@@ -7253,7 +7292,7 @@ function SupportDataSection({
           </div>
         </Panel>
 
-        <Panel title="今日优先处理" description="给客服主管看当前最该处理的事项">
+        <Panel title="今日优先处理" description="优先待办">
           <div className="support-priority-list">
             {pendingAfterSales.map(item => (
               <article key={`sale-${stringValue(item, 'id')}`}>
@@ -7313,7 +7352,7 @@ function SupportSection({
 
   return (
     <div className="page-grid support-workbench">
-      <Panel title="客服会话筛选" description="会话页只处理用户咨询和消息回复；售后、工单、知识库在独立页面处理">
+      <Panel title="客服会话筛选" description="用户咨询和消息回复">
         <div className="support-filterbar support-filterbar-sessions">
           <label>
             关键词
@@ -7418,9 +7457,6 @@ function SupportSection({
               <span>最近更新</span>
               <strong>{selectedSession ? formatDate(stringValue(selectedSession, 'updatedAt')) : '-'}</strong>
             </article>
-            <div className="support-context-note">
-              会话页只处理即时沟通。需要退款、补发或跨岗位确认时，进入“售后申请”或“客服工单”页面处理。
-            </div>
           </div>
         </Panel>
       </div>
@@ -7537,7 +7573,7 @@ function SupportTicketsSection({
 }) {
   return (
     <div className="page-grid support-workbench">
-      <Panel title="客服工单筛选" description="工单用于内部跟进，不是用户直接提交；例如财务退款、配送异常、商品补发">
+      <Panel title="客服工单筛选" description="内部跟进事项">
         <div className="support-filterbar">
           <label>
             关键词
@@ -7581,7 +7617,7 @@ function SupportTicketsSection({
       </Panel>
 
       <div className="support-ticket-board">
-        <Panel title="内部跟进工单" description="客服把需要其他岗位介入的事项放到这里，处理完关闭">
+        <Panel title="内部跟进工单" description="跨岗位事项处理">
           <form className="support-ticket-form" onSubmit={onCreateTicket}>
             <input required value={form.ticketTitle} onChange={event => onFormChange({ ticketTitle: event.target.value })} placeholder="工单标题" />
             <input value={form.userId} onChange={event => onFormChange({ userId: event.target.value })} placeholder="用户编号" />
@@ -7647,7 +7683,7 @@ function SupportKnowledgeSection({
   return (
     <div className="page-grid support-workbench">
       <div className="support-knowledge-panel">
-        <Panel title="客服知识库" description="只保留知识库维护：FAQ、坏果包赔、退款、配送和团长自提话术">
+        <Panel title="客服知识库" description="FAQ、坏果包赔、退款、配送和团长自提话术">
           <form className="form-grid" onSubmit={onCreateKnowledge}>
             <label>
               标题
@@ -7701,13 +7737,57 @@ function LoginScreen({
   loading: boolean;
   onSubmit: (form: LoginForm) => Promise<void>;
 }) {
-  const [form, setForm] = useState<LoginForm>({ phone: '', password: '' });
+  const [form, setForm] = useState<LoginForm>({ phone: '', password: '', captchaId: '', captchaCode: '' });
+  const [captchaImage, setCaptchaImage] = useState('');
+  const [captchaLoading, setCaptchaLoading] = useState(false);
+  const [captchaError, setCaptchaError] = useState('');
+
+  const loadCaptcha = async () => {
+    setCaptchaLoading(true);
+    setCaptchaError('');
+    try {
+      const captcha = await apiGet<JsonRecord>('/api/auth/captcha');
+      const captchaId = stringValue(captcha, 'captchaId');
+      const image = stringValue(captcha, 'image');
+      if (!captchaId || !image) {
+        throw new Error('验证码返回内容不完整');
+      }
+      setCaptchaImage(image);
+      setForm(current => ({ ...current, captchaId, captchaCode: '' }));
+    } catch (loadError) {
+      setCaptchaImage('');
+      setForm(current => ({ ...current, captchaId: '', captchaCode: '' }));
+      setCaptchaError(loadError instanceof Error ? loadError.message : '验证码加载失败');
+    } finally {
+      setCaptchaLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadCaptcha();
+  }, []);
+
+  useEffect(() => {
+    if (error) {
+      void loadCaptcha();
+    }
+  }, [error]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!form.captchaId) {
+      setCaptchaError('请刷新图形验证码');
+      return;
+    }
+    if (!form.captchaCode.trim()) {
+      setCaptchaError('请输入图形验证码');
+      return;
+    }
     await onSubmit({
       phone: form.phone.trim(),
       password: form.password,
+      captchaId: form.captchaId,
+      captchaCode: form.captchaCode.trim(),
     });
   };
 
@@ -7747,8 +7827,31 @@ function LoginScreen({
               onChange={event => setForm(current => ({ ...current, password: event.target.value }))}
             />
           </label>
+          <label>
+            图形验证码
+            <div className="login-captcha-row">
+              <input
+                autoComplete="off"
+                inputMode="text"
+                maxLength={6}
+                placeholder="请输入验证码"
+                value={form.captchaCode}
+                onChange={event => setForm(current => ({ ...current, captchaCode: event.target.value.toUpperCase() }))}
+              />
+              <button
+                aria-label="刷新验证码"
+                className="login-captcha-button"
+                disabled={captchaLoading}
+                type="button"
+                onClick={() => void loadCaptcha()}
+              >
+                {captchaImage ? <img alt="图形验证码" src={captchaImage} /> : <span>{captchaLoading ? '加载中' : '刷新验证码'}</span>}
+              </button>
+            </div>
+          </label>
+          {captchaError ? <div className="login-error">{captchaError}</div> : null}
           {error ? <div className="login-error">{error}</div> : null}
-          <button className="primary-button login-submit" disabled={loading || !form.phone.trim() || !form.password} type="submit">
+          <button className="primary-button login-submit" disabled={loading || captchaLoading || !form.phone.trim() || !form.password || !form.captchaId || !form.captchaCode.trim()} type="submit">
             {loading ? '登录中...' : '登录管理端'}
           </button>
         </form>
@@ -7767,6 +7870,9 @@ function App() {
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState('正在加载管理数据');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [moduleSwitcherCollapsed, setModuleSwitcherCollapsed] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   const [productForm, setProductForm] = useState<ProductForm>(initialProductForm);
@@ -7857,6 +7963,7 @@ function App() {
     setGroupLeaderFilters(initialGroupLeaderFilters);
     setMallOpsFilters(initialMallOpsFilters);
     setWithdrawalForm(initialWithdrawalForm);
+    setLogoutConfirmOpen(false);
     setBusy('');
     setLoading(false);
   };
@@ -7961,7 +8068,6 @@ function App() {
       const [
         mallOpsOverview,
         mallOrders,
-        mallListingRequests,
         mallDeliverySheets,
         mallPickupPoints,
         mallFinanceBills,
@@ -7971,7 +8077,6 @@ function App() {
       ] = await Promise.all([
         apiGet<JsonRecord>('/api/admin/mall/ops/overview', query),
         apiGet<JsonRecord[]>('/api/admin/mall/orders', query),
-        apiGet<JsonRecord[]>('/api/admin/mall/listing-requests', query),
         apiGet<JsonRecord[]>('/api/admin/mall/delivery-sheets', query),
         apiGet<JsonRecord[]>('/api/admin/mall/pickup-points', query),
         apiGet<JsonRecord[]>('/api/admin/mall/finance/bills', query),
@@ -7984,7 +8089,6 @@ function App() {
         ...current,
         mallOpsOverview,
         mallOrders,
-        mallListingRequests,
         mallDeliverySheets,
         mallPickupPoints,
         mallFinanceBills,
@@ -7995,12 +8099,12 @@ function App() {
     });
   };
 
-  const handleLogin = async ({ phone, password }: LoginForm) => {
+  const handleLogin = async ({ phone, password, captchaId, captchaCode }: LoginForm) => {
     setAuthError('');
     setAuthLoading(true);
 
     try {
-      const loginResult = await apiPost<JsonRecord>('/api/auth/login', { phone, password });
+      const loginResult = await apiPost<JsonRecord>('/api/auth/login', { phone, password, captchaId, captchaCode });
       const user = normalizeAdminUser(loginResult);
 
       if (!user) {
@@ -8116,6 +8220,7 @@ function App() {
         supplyPriceCents: moneyFromYuan(productForm.supplyPriceYuan),
         stock: Number(productForm.stock) || 0,
         stockAlertThreshold: Number(productForm.stockAlertThreshold) || 15,
+        minimumOrderQuantity: Number(productForm.minimumOrderQuantity) || 1,
         lengthCm: optionalNumber(productForm.lengthCm),
         widthCm: optionalNumber(productForm.widthCm),
         heightCm: optionalNumber(productForm.heightCm),
@@ -8158,6 +8263,7 @@ function App() {
         supplyPriceCents: moneyFromYuan(form.supplyPriceYuan),
         stock: Number(form.stock) || 0,
         stockAlertThreshold: Number(form.stockAlertThreshold) || 15,
+        minimumOrderQuantity: Number(form.minimumOrderQuantity) || 1,
         lengthCm: optionalNumber(form.lengthCm),
         widthCm: optionalNumber(form.widthCm),
         heightCm: optionalNumber(form.heightCm),
@@ -8219,15 +8325,9 @@ function App() {
     });
   };
 
-  const reorderCategory = async (draggedId: string, targetId: string) => {
-    await runAction('品类排序更新', async () => {
-      const ordered = [...data.mallCategories].sort((left, right) => numberValue(left, 'sortOrder') - numberValue(right, 'sortOrder'));
-      const fromIndex = ordered.findIndex(category => stringValue(category, 'id') === draggedId);
-      const toIndex = ordered.findIndex(category => stringValue(category, 'id') === targetId);
-      if (fromIndex < 0 || toIndex < 0) return;
-      const [dragged] = ordered.splice(fromIndex, 1);
-      ordered.splice(toIndex, 0, dragged);
-      const nextCategories = ordered.map((category, index) => ({
+  const saveCategoryOrder = async (orderedCategories: JsonRecord[]) => {
+    await runAction('品类排序保存', async () => {
+      const nextCategories = orderedCategories.map((category, index) => ({
         ...category,
         sortOrder: (index + 1) * 10,
       }));
@@ -8399,16 +8499,6 @@ function App() {
         amountCents,
         reason: '管理端发起退款',
         handlingMethod: '原路退回',
-      });
-      await reload();
-    });
-  };
-
-  const reviewListingRequest = async (id: string, action: 'approve' | 'reject') => {
-    await runAction('上下架申请审核', async () => {
-      await apiPost(`/api/admin/mall/listing-requests/${id}/review`, {
-        action,
-        reviewNote: action === 'approve' ? '平台运营审核通过' : '平台运营审核拒绝',
       });
       await reload();
     });
@@ -8773,38 +8863,43 @@ function App() {
     });
   };
 
-  const saveSettings = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const saveSettingsForm = async (form: SettingsForm) => {
     await runAction('运营配置保存', async () => {
-      const freeDeliveryThresholdCents = moneyFromYuan(settingsForm.freeDeliveryThresholdYuan);
-      const defaultDeliveryFeeCents = moneyFromYuan(settingsForm.defaultDeliveryFeeYuan);
-      const refundReviewMinutes = Number(settingsForm.refundReviewMinutes) || 10;
+      const freeDeliveryThresholdCents = moneyFromYuan(form.freeDeliveryThresholdYuan);
+      const defaultDeliveryFeeCents = moneyFromYuan(form.defaultDeliveryFeeYuan);
+      const refundReviewMinutes = Number(form.refundReviewMinutes) || 10;
       await apiPut('/api/admin/mall/settings', {
         freeDeliveryThresholdCents,
         defaultDeliveryFeeCents,
-        deliveryPromiseMinutes: Number(settingsForm.deliveryPromiseMinutes) || 18,
+        deliveryPromiseMinutes: Number(form.deliveryPromiseMinutes) || 18,
         refundReviewMinutes,
-        coldChainEnabled: settingsForm.coldChainEnabled,
+        coldChainEnabled: form.coldChainEnabled,
         deliveryRules: {
-          pickupWindowStart: settingsForm.pickupWindowStart,
-          pickupWindowEnd: settingsForm.pickupWindowEnd,
-          deliveryBatchTimes: settingsForm.deliveryBatchTimes,
+          pickupWindowStart: form.pickupWindowStart,
+          pickupWindowEnd: form.pickupWindowEnd,
+          deliveryBatchTimes: form.deliveryBatchTimes,
           deliveryFeeCents: defaultDeliveryFeeCents,
           freeDeliveryThresholdCents,
-          coldChainRequired: settingsForm.coldChainEnabled,
+          coldChainRequired: form.coldChainEnabled,
           refundReviewMinutes,
         },
         paymentSplitRules: {
-          leaderCommissionRate: Number(settingsForm.leaderCommissionRate) || 0,
-          platformServiceRate: Number(settingsForm.platformServiceRate) || 0,
-          supplierSettlementCycle: settingsForm.supplierSettlementCycle,
-          withdrawMinCents: moneyFromYuan(settingsForm.withdrawMinYuan),
+          leaderCommissionRate: Number(form.leaderCommissionRate) || 0,
+          platformServiceRate: Number(form.platformServiceRate) || 0,
+          supplierSettlementCycle: form.supplierSettlementCycle,
+          withdrawMinCents: moneyFromYuan(form.withdrawMinYuan),
         },
         roles: recordValue(data.mallSettings, 'roles'),
         riskThresholds: recordValue(data.mallSettings, 'riskThresholds'),
       });
+      setSettingsForm(form);
       await reload();
     });
+  };
+
+  const saveSettings = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await saveSettingsForm(settingsForm);
   };
 
   const resetPermissionForm = () => {
@@ -8993,6 +9088,10 @@ function App() {
     }
   };
 
+  const togglePageGroup = (groupKey: string) => {
+    setCollapsedGroups(current => ({ ...current, [groupKey]: !current[groupKey] }));
+  };
+
   const renderActivePage = () => {
     if (activePageKey === 'platform.overview') {
       return <OperationsDataScreen data={data} errors={errors} />;
@@ -9074,22 +9173,13 @@ function App() {
     if (activePageKey === 'mall.categories') {
       return (
         <MallCategoriesSection
-          allProducts={data.mallProducts}
           categories={data.mallCategories}
           filters={categoryFilters}
           form={categoryForm}
-          inventoryFilters={inventoryFilters}
-          inventoryProducts={data.mallInventoryAlerts}
-          showInventoryAlerts
-          onCreateInventoryAlert={createInventoryAlert}
           onDelete={deleteCategory}
-          onEditInventoryAlert={editInventoryAlert}
-          onDeleteInventoryAlert={deleteInventoryAlert}
           onFiltersChange={patch => setCategoryFilters(current => ({ ...current, ...patch }))}
           onFormChange={patch => setCategoryForm(current => ({ ...current, ...patch }))}
-          onInventoryFiltersChange={patch => setInventoryFilters(current => ({ ...current, ...patch }))}
-          onInventorySearch={reload}
-          onReorderCategory={reorderCategory}
+          onSaveCategoryOrder={saveCategoryOrder}
           onSave={saveCategory}
           onSearch={reload}
         />
@@ -9107,17 +9197,6 @@ function App() {
           onEditInventoryAlert={editInventoryAlert}
           onFiltersChange={patch => setInventoryFilters(current => ({ ...current, ...patch }))}
           onSearch={reload}
-        />
-      );
-    }
-    if (activePageKey === 'mall.listingRequests') {
-      return (
-        <MallListingRequestsSection
-          filters={mallOpsFilters}
-          requests={data.mallListingRequests}
-          onFiltersChange={patch => setMallOpsFilters(current => ({ ...current, ...patch }))}
-          onReview={reviewListingRequest}
-          onSearch={searchMallOpsData}
         />
       );
     }
@@ -9343,8 +9422,7 @@ function App() {
       return (
         <MallPaymentSplitRulesSection
           settingsForm={settingsForm}
-          onSettingsChange={patch => setSettingsForm(current => ({ ...current, ...patch }))}
-          onSettingsSubmit={saveSettings}
+          onSettingsSave={saveSettingsForm}
         />
       );
     }
@@ -9443,6 +9521,7 @@ function App() {
   const currentAdminRole = roleLabel(currentAdmin.role);
   const currentAdminName = currentAdmin.name || currentAdminRole;
   const currentAdminContact = currentAdmin.phone || shortId(currentAdmin.id);
+  const moduleCollapsed = moduleSwitcherCollapsed;
 
   return (
     <div className={`admin-shell design-admin module-${currentModule.theme}${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
@@ -9450,7 +9529,11 @@ function App() {
         <div className="sidebar-top">
           <div className="sidebar-head">
             <div className="brand" title={`${currentModule.brand} ${currentModule.subtitle}`}>
-              <div className="brand-mark">{currentModule.brand.slice(0, 1)}</div>
+              <div className="brand-mark">
+                {currentModule.key === 'mall' ? (
+                  <img alt="" className="brand-mark-image" src={sanyouLogo} />
+                ) : currentModule.brand.slice(0, 1)}
+              </div>
               <div className="brand-copy">
                 <strong>{currentModule.brand}</strong>
                 <span>{currentModule.subtitle}</span>
@@ -9479,40 +9562,74 @@ function App() {
         </div>
 
         <div className="module-switcher">
-          {adminModules.map(module => (
-            <button
-              aria-label={`${module.moduleLabel}，${module.pages.length} 页`}
-              className={module.key === activeModuleKey ? 'module-button active' : 'module-button'}
-              key={module.key}
-              title={`${module.moduleLabel}，${module.pages.length} 页`}
-              type="button"
-              onClick={() => selectModule(module.key)}
-            >
-              <b className="module-button-mark">{module.moduleLabel.slice(0, 1)}</b>
-              <span>{module.moduleLabel}</span>
-              <small>{module.pages.length} 页</small>
-            </button>
-          ))}
+          <button
+            aria-expanded={!moduleCollapsed}
+            className="sidebar-section-toggle"
+            title={moduleCollapsed ? '展开业务模块' : '收起业务模块'}
+            type="button"
+            onClick={() => setModuleSwitcherCollapsed(current => !current)}
+          >
+            <strong className="sidebar-section-mark">模</strong>
+            <span>业务模块</span>
+            <small>平台治理 / 无人车 / 商城</small>
+            <b>{moduleCollapsed ? '展开' : '收起'}</b>
+          </button>
+          <div className={moduleCollapsed ? 'module-pages module-pages-collapsed' : 'module-pages'}>
+            {adminModules.map(module => (
+              <button
+                aria-label={`${module.moduleLabel}，${module.pages.length} 页`}
+                className={module.key === activeModuleKey ? 'module-button active' : 'module-button'}
+                key={module.key}
+                title={`${module.moduleLabel}，${module.pages.length} 页`}
+                type="button"
+                onClick={() => selectModule(module.key)}
+              >
+                <b className="module-button-mark">
+                  {module.key === 'mall' ? (
+                    <img alt="" className="module-button-mark-image" src={sanyouLogo} />
+                  ) : module.moduleLabel.slice(0, 1)}
+                </b>
+                <span>{module.moduleLabel}</span>
+                <small>{module.pages.length} 页</small>
+              </button>
+            ))}
+          </div>
         </div>
 
         <nav className="design-nav">
-          {moduleGroups(currentModule).map(group => (
-            <div className="page-menu-section" key={group}>
-              <span className="page-menu-title">{group}</span>
-              {currentModule.pages.filter(page => page.group === group).map(page => (
+          {moduleGroups(currentModule).map(group => {
+            const groupKey = `${currentModule.key}:${group}`;
+            const groupCollapsed = Boolean(collapsedGroups[groupKey]);
+            const pages = currentModule.pages.filter(page => page.group === group);
+            return (
+              <div className="page-menu-section" key={group}>
                 <button
-                  className={page.key === activePageKey ? 'nav-item active' : 'nav-item'}
-                  key={page.key}
-                  title={page.label}
+                  aria-expanded={!groupCollapsed}
+                  className="page-menu-title"
+                  title={groupCollapsed ? `展开${group}` : `收起${group}`}
                   type="button"
-                  onClick={() => selectPage(page.key)}
+                  onClick={() => togglePageGroup(groupKey)}
                 >
-                  <Icon name={page.icon} />
-                  <span>{page.label}</span>
+                  <span>{group}</span>
+                  <small>{pages.length} 项</small>
                 </button>
-              ))}
-            </div>
-          ))}
+                <div className={groupCollapsed ? 'page-menu-items page-menu-items-collapsed' : 'page-menu-items'}>
+                  {pages.map(page => (
+                    <button
+                      className={page.key === activePageKey ? 'nav-item active' : 'nav-item'}
+                      key={page.key}
+                      title={page.label}
+                      type="button"
+                      onClick={() => selectPage(page.key)}
+                    >
+                      <Icon name={page.icon} />
+                      <span>{page.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </nav>
 
         <div className="sidebar-bottom">
@@ -9521,7 +9638,7 @@ function App() {
             className="sidebar-logout"
             title="退出登录"
             type="button"
-            onClick={handleLogout}
+            onClick={() => setLogoutConfirmOpen(true)}
             disabled={Boolean(busy)}
           >
             <Icon name="logout" />
@@ -9535,7 +9652,7 @@ function App() {
           <div>
             <span className="design-breadcrumb">{currentModule.moduleLabel} / {currentPage.group}</span>
             <h1>{currentPage.label}</h1>
-            <p>{currentPage.description}</p>
+            {currentPage.description ? <p>{currentPage.description}</p> : null}
           </div>
           <div className="topbar-actions">
             <span className={Object.keys(errors).length ? 'status-dot warning' : 'status-dot'}>{notice}</span>
@@ -9559,6 +9676,28 @@ function App() {
           setMallOrderDetailError('');
         }}
       />
+      {logoutConfirmOpen ? (
+        <div className="modal-backdrop">
+          <section className="modal-panel confirm-modal" aria-labelledby="logout-confirm-title">
+            <div className="modal-title-row">
+              <div>
+                <h2 id="logout-confirm-title">确认退出登录</h2>
+                <p>退出后需要重新登录才能进入 Web 管理端。</p>
+              </div>
+              <button className="ghost-button" type="button" onClick={() => setLogoutConfirmOpen(false)}>
+                <Icon name="x" />
+              </button>
+            </div>
+            <div className="modal-actions">
+              <button className="ghost-button" type="button" onClick={() => setLogoutConfirmOpen(false)}>取消</button>
+              <button className="danger-button" disabled={Boolean(busy)} type="button" onClick={() => void handleLogout()}>
+                <Icon name="logout" />
+                确认退出
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

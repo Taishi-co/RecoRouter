@@ -35,7 +35,6 @@ for (const forbidden of ['#0062FF', 'bg-blue-50', 'text-blue-600']) {
 for (const label of [
   '商品管理',
   '库存管理',
-  '上下架申请',
   '今日订单',
   '历史订单',
   '异常订单',
@@ -55,9 +54,6 @@ for (const label of [
 
 for (const fnName of [
   'adminGetMallOpsOverview',
-  'adminListMallProductListingRequests',
-  'adminCreateMallProductListingRequest',
-  'adminReviewMallProductListingRequest',
   'adminListMallDeliverySheets',
   'adminGenerateMallDeliverySheet',
   'adminUpdateMallDeliverySheetStatus',
@@ -72,8 +68,6 @@ for (const fnName of [
 
 for (const endpoint of [
   '/api/admin/mall/ops/overview',
-  '/api/admin/mall/listing-requests',
-  '/api/admin/mall/listing-requests/:id/review',
   '/api/admin/mall/delivery-sheets',
   '/api/admin/mall/delivery-sheets/generate',
   '/api/admin/mall/delivery-sheets/:id/status',
@@ -86,7 +80,6 @@ for (const endpoint of [
 }
 
 for (const table of [
-  'mall_product_listing_requests',
   'mall_delivery_sheets',
   'mall_settlement_records',
   'mall_withdrawal_requests',
@@ -100,6 +93,26 @@ assertIncludes(mallService, 'supplyPriceCents', 'Mall product service type must 
 assertIncludes(webAdmin, '/api/admin/mall/delivery-sheets/generate', 'Web admin must generate delivery sheets through backend')
 assertIncludes(webAdmin, '/api/admin/mall/finance/withdrawals', 'Web admin must submit withdrawal requests through backend')
 assertIncludes(webAdmin, '/api/admin/mall/stats/sales', 'Web admin must load real mall sales stats')
+
+for (const forbidden of [
+  '上下架申请',
+  'adminListMallProductListingRequests',
+  'adminCreateMallProductListingRequest',
+  'adminReviewMallProductListingRequest',
+  'mall.listingRequests',
+]) {
+  assert(!miniappAdmin.includes(forbidden), `Miniapp mall ops page must not expose removed listing-request feature: ${forbidden}`)
+  assert(!webAdmin.includes(forbidden), `Web admin must not expose removed listing-request feature: ${forbidden}`)
+}
+
+for (const forbiddenService of [
+  'function adminListMallProductListingRequests',
+  'function adminCreateMallProductListingRequest',
+  'function adminReviewMallProductListingRequest',
+  'MallProductListingRequest',
+]) {
+  assert(!mallService.includes(forbiddenService), `Mall service must not export removed listing-request API: ${forbiddenService}`)
+}
 
 assert(
   packageJson.scripts['check:mall-ops-dual-surface'] === 'node scripts/check-mall-ops-dual-surface.mjs',

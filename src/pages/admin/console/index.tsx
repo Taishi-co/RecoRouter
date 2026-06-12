@@ -217,7 +217,7 @@ export default function AdminConsolePage() {
                         操作提醒
                       </Text>
                       <Text className="mt-1 block text-xs leading-relaxed" style={{ color: module.theme.muted }}>
-                        涉及资金、导出、配置和审核的操作会保留审计记录，方便后续复核。
+                        涉及资金、导出、配置和审核的操作会保留审计记录，便于复核。
                       </Text>
                     </View>
 

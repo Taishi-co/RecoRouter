@@ -22,7 +22,6 @@ import { BottomNav } from '@/components/layout/bottom-nav'
 import { Input } from '@/components/ui/input'
 import {
   adminCreateMallProduct,
-  adminCreateMallProductListingRequest,
   adminCreateMallGroupLeader,
   adminCreateMallPickupPoint,
   adminDeleteMallGroupLeader,
@@ -37,11 +36,9 @@ import {
   adminListMallGroupLeaders,
   adminListMallOrders,
   adminListMallPickupPoints,
-  adminListMallProductListingRequests,
   adminListMallProducts,
   adminListMallSettlementRecords,
   adminRefundMallOrder,
-  adminReviewMallProductListingRequest,
   adminUpdateMallDeliverySheetStatus,
   adminUpdateMallGroupLeader,
   adminUpdateMallOrderStatus,
@@ -184,7 +181,6 @@ export default function AdminMallWorkbench() {
   const [orders, setOrders] = useState<MallOrder[]>([])
   const [pickupPoints, setPickupPoints] = useState<MallPickupPoint[]>([])
   const [groupLeaders, setGroupLeaders] = useState<MallGroupLeader[]>([])
-  const [listingRequests, setListingRequests] = useState<RecordItem[]>([])
   const [deliverySheets, setDeliverySheets] = useState<RecordItem[]>([])
   const [financeBills, setFinanceBills] = useState<RecordItem[]>([])
   const [settlements, setSettlements] = useState<RecordItem[]>([])
@@ -273,7 +269,6 @@ export default function AdminMallWorkbench() {
       adminListMallOrders(),
       adminListMallPickupPoints(),
       adminListMallGroupLeaders(),
-      adminListMallProductListingRequests(),
       adminListMallDeliverySheets(),
       adminListMallFinanceBills(),
       adminListMallSettlementRecords(),
@@ -285,11 +280,10 @@ export default function AdminMallWorkbench() {
     if (results[2].status === 'fulfilled') setOrders(toList<MallOrder>(results[2].value))
     if (results[3].status === 'fulfilled') setPickupPoints(toList<MallPickupPoint>(results[3].value))
     if (results[4].status === 'fulfilled') setGroupLeaders(toList<MallGroupLeader>(results[4].value))
-    if (results[5].status === 'fulfilled') setListingRequests(toList<RecordItem>(results[5].value))
-    if (results[6].status === 'fulfilled') setDeliverySheets(toList<RecordItem>(results[6].value))
-    if (results[7].status === 'fulfilled') setFinanceBills(toList<RecordItem>(results[7].value))
-    if (results[8].status === 'fulfilled') setSettlements(toList<RecordItem>(results[8].value))
-    if (results[9].status === 'fulfilled') setSalesStats(asRecord(results[9].value))
+    if (results[5].status === 'fulfilled') setDeliverySheets(toList<RecordItem>(results[5].value))
+    if (results[6].status === 'fulfilled') setFinanceBills(toList<RecordItem>(results[6].value))
+    if (results[7].status === 'fulfilled') setSettlements(toList<RecordItem>(results[7].value))
+    if (results[8].status === 'fulfilled') setSalesStats(asRecord(results[8].value))
 
     const failed = results.find((result) => result.status === 'rejected')
     if (failed?.status === 'rejected') {
@@ -358,39 +352,6 @@ export default function AdminMallWorkbench() {
       await loadAll()
     } catch (error) {
       showError(error, '库存更新失败')
-    }
-  }
-
-  const submitListingRequest = async (product: MallProduct) => {
-    const requestedStatus = product.status === 'on_sale' ? 'off_sale' : 'on_sale'
-    try {
-      await adminCreateMallProductListingRequest({
-        productId: product.id,
-        requestType: requestedStatus === 'on_sale' ? 'listing' : 'delisting',
-        requestedStatus,
-        reason: `平台运营提交${requestedStatus === 'on_sale' ? '上架' : '下架'}申请`,
-      })
-      Taro.showToast({ title: '上下架申请已提交', icon: 'success' })
-      await loadAll()
-    } catch (error) {
-      showError(error, '提交申请失败')
-    }
-  }
-
-  const reviewListingRequest = async (request: RecordItem, approved: boolean) => {
-    const id = textOf(request, ['id'])
-    if (!id) return
-
-    try {
-      await adminReviewMallProductListingRequest(id, {
-        status: approved ? 'approved' : 'rejected',
-        reviewStatus: approved ? 'approved' : 'rejected',
-        reviewNote: approved ? '平台运营审核通过' : '平台运营驳回申请',
-      })
-      Taro.showToast({ title: approved ? '申请已通过' : '申请已驳回', icon: 'success' })
-      await loadAll()
-    } catch (error) {
-      showError(error, '审核失败')
     }
   }
 
@@ -667,24 +628,6 @@ export default function AdminMallWorkbench() {
                 >
                   <ActionButton label="更新库存" size="sm" variant="outline" onClick={() => updateInventory(product)} />
                   <ActionButton label={product.status === 'on_sale' ? '下架' : '上架'} size="sm" onClick={() => toggleProduct(product)} />
-                  <ActionButton label="申请" size="sm" variant="outline" onClick={() => submitListingRequest(product)} />
-                </RecordRow>
-              ))}
-            </RecordList>
-          </Section>
-
-          <Section icon={CircleCheck} title="上下架申请" caption="提交申请并由平台运营审核后同步用户端">
-            <RecordList emptyText="暂无上下架申请">
-              {listingRequests.map((request) => (
-                <RecordRow
-                  key={textOf(request, ['id'])}
-                  title={textOf(request, ['productName', 'name'], '未命名商品')}
-                  subtitle={`${listingRequestType(request)} · ${textOf(request, ['reason'], '无备注')}`}
-                  badge={listingRequestStatus(request)}
-                  tone={listingRequestStatus(request) === 'pending' ? 'warn' : 'normal'}
-                >
-                  <ActionButton label="通过" size="sm" onClick={() => reviewListingRequest(request, true)} />
-                  <ActionButton label="驳回" size="sm" variant="danger" onClick={() => reviewListingRequest(request, false)} />
                 </RecordRow>
               ))}
             </RecordList>
@@ -1352,17 +1295,6 @@ function specText(product: MallProduct) {
   const size = parts.length > 0 ? parts.join('x') : '未填尺寸'
   const weight = product.weightKg ? `${product.weightKg}kg` : '未填重量'
   return `${size} · ${weight}`
-}
-
-function listingRequestType(request: RecordItem) {
-  const requestedStatus = textOf(request, ['requestedStatus', 'requested_status'])
-  if (requestedStatus === 'on_sale') return '上架申请'
-  if (requestedStatus === 'off_sale') return '下架申请'
-  return textOf(request, ['requestType', 'request_type'], '上下架申请')
-}
-
-function listingRequestStatus(request: RecordItem) {
-  return textOf(request, ['status', 'reviewStatus', 'review_status'], 'pending')
 }
 
 function isAbnormalOrder(order: MallOrder) {

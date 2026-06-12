@@ -13,7 +13,7 @@ import {
   type SupportMessage,
   type SupportSession,
 } from '@/services/mall'
-import { MallPage } from '../mall-ui'
+import { MallBrandMark, MallPage } from '../mall-ui'
 import { redirectToMallAuth } from '../auth-route'
 
 interface StoredUser {
@@ -111,7 +111,10 @@ export default function MallSupportCenter() {
     <MallPage active="mine">
       <View className="mall-back-row">
         <ChevronLeft size={24} color="#1F2D1F" onClick={() => Taro.navigateBack()} />
-        <Text className="mall-top-brand">叁友甄选</Text>
+        <View className="mall-back-brand">
+          <MallBrandMark compact />
+          <Text className="mall-top-brand">叁友甄选</Text>
+        </View>
       </View>
       <Text className="mall-breadcrumb">我的 / 客服聊天</Text>
       <Text className="mall-page-title">客服聊天</Text>

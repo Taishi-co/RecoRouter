@@ -13,6 +13,7 @@ import {
   type MallCartItem,
 } from '@/services/mall'
 import {
+  MallBrandMark,
   MallLocationStrip,
   MallPage,
   MallPrimaryButton,
@@ -137,9 +138,12 @@ export default function MallCartPage() {
   return (
     <MallPage active="cart">
       <View className="mall-v7-page-head">
-        <View>
-          <Text className="mall-v7-kicker">叁友甄选</Text>
-          <Text className="mall-page-title">购物车</Text>
+        <View className="mall-v7-head-brand">
+          <MallBrandMark compact />
+          <View>
+            <Text className="mall-v7-kicker">叁友甄选</Text>
+            <Text className="mall-page-title">购物车</Text>
+          </View>
         </View>
         <View className="mall-v7-head-pill">
           <Text>{cart.selectedCount || 0} 件已选</Text>

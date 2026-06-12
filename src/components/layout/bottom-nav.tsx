@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Text, View } from '@tarojs/components'
+import { Image, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow } from '@tarojs/taro'
 import {
   Bell,
@@ -17,6 +17,7 @@ import {
   Users,
   Wallet,
 } from 'lucide-react-taro'
+import sanyouLogo from '@/assets/brand/sanyou.png'
 import { cn } from '@/lib/utils'
 import { IS_H5_ENV } from '@/presets/env'
 import { getFixedBottomPadding } from '@/lib/safe-area'
@@ -28,12 +29,13 @@ interface BottomNavItem {
   label: string
   icon: NavIcon
   url: string
+  brandIcon?: 'sanyou'
 }
 
 const merchantItems: BottomNavItem[] = [
   { key: 'publish', label: '发布需求', icon: ClipboardList, url: '/pages/merchant/demands/publish' },
   { key: 'demands', label: '需求', icon: Route, url: '/pages/merchant/demands/list' },
-  { key: 'mall', label: '商城', icon: ShoppingCart, url: '/pages/mall/index/index' },
+  { key: 'mall', label: '商城', icon: ShoppingCart, url: '/pages/mall/index/index', brandIcon: 'sanyou' },
   { key: 'orders', label: '订单', icon: ReceiptText, url: '/pages/merchant/orders/index' },
   { key: 'profile', label: '我的', icon: User, url: '/pages/merchant/profile/index' },
 ]
@@ -57,7 +59,7 @@ const enterpriseItems: BottomNavItem[] = [
 const adminItems: BottomNavItem[] = [
   { key: 'users', label: '用户', icon: Users, url: '/pages/admin/users/index' },
   { key: 'vehicles', label: '车辆', icon: Truck, url: '/pages/admin/vehicles/index' },
-  { key: 'mall', label: '商城', icon: ShoppingCart, url: '/pages/admin/mall/index' },
+  { key: 'mall', label: '商城', icon: ShoppingCart, url: '/pages/admin/mall/index', brandIcon: 'sanyou' },
   { key: 'support', label: '客服', icon: Headphones, url: '/pages/admin/support/index' },
   { key: 'orders', label: '订单', icon: ClipboardList, url: '/pages/admin/orders/index' },
   { key: 'profile', label: '我的', icon: User, url: '/pages/admin/settings/index' },
@@ -248,7 +250,21 @@ export const BottomNav = ({ type, active, tone = 'default' }: BottomNavProps) =>
               style={{ flex: '1 1 0', minWidth: 0 }}
               onClick={() => navigateTo(item)}
             >
-              <Icon size={16} color={selected ? '#FFFFFF' : isMallTone ? '#6C7568' : '#8B95A7'} strokeWidth={2.2} />
+              {item.brandIcon === 'sanyou' ? (
+                <Image
+                  className="bottom-nav-brand-icon"
+                  mode="aspectFit"
+                  src={sanyouLogo}
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: '50%',
+                    backgroundColor: '#FFFFFF',
+                  }}
+                />
+              ) : (
+                <Icon size={16} color={selected ? '#FFFFFF' : isMallTone ? '#6C7568' : '#8B95A7'} strokeWidth={2.2} />
+              )}
               <Text
                 className={cn('text-xs font-bold leading-none transition-colors duration-300', selected ? 'text-white' : 'text-gray-500')}
                 style={!selected && isMallTone ? { color: '#6C7568' } : undefined}

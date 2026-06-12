@@ -13,6 +13,7 @@ import {
   ShoppingCart,
   UserRound,
 } from 'lucide-react-taro'
+import sanyouLogo from '@/assets/brand/sanyou.png'
 import { resolveMallImageUrl, type MallProduct, yuan } from '@/services/mall'
 import { Input } from '@/components/ui/input'
 import './mall-theme.css'
@@ -21,11 +22,13 @@ type MallTabKey = 'home' | 'category' | 'cart' | 'mine'
 
 type MallIcon = typeof House
 
+export const SANYOU_LOGO = sanyouLogo
+
 const MALL_H5_BODY_CLASS = 'reco-mall-h5'
 let mallH5PageCount = 0
 
-const tabItems: Array<{ key: MallTabKey; label: string; url: string; icon: MallIcon }> = [
-  { key: 'home', label: '首页', url: '/pages/mall/index/index', icon: House },
+const tabItems: Array<{ key: MallTabKey; label: string; url: string; icon: MallIcon; brandIcon?: boolean }> = [
+  { key: 'home', label: '首页', url: '/pages/mall/index/index', icon: House, brandIcon: true },
   { key: 'category', label: '分类', url: '/pages/mall/category/index', icon: Grid2x2 },
   { key: 'cart', label: '购物车', url: '/pages/mall/cart/index', icon: ShoppingCart },
   { key: 'mine', label: '我的', url: '/pages/mall/profile/index', icon: UserRound },
@@ -41,6 +44,16 @@ export function mallYuan(cents?: number | null) {
 
 export function MallStatusBar() {
   return null
+}
+
+export function MallBrandMark({ compact }: { compact?: boolean }) {
+  return (
+    <Image
+      className={compact ? 'mall-brand-mark mall-brand-mark-compact' : 'mall-brand-mark'}
+      mode="aspectFit"
+      src={SANYOU_LOGO}
+    />
+  )
 }
 
 export function MallPage({
@@ -89,7 +102,15 @@ export function MallBottomNav({ active }: { active: MallTabKey }) {
               Taro.redirectTo({ url: item.url })
             }}
           >
-            <Icon size={21} color={isActive ? '#63BF54' : '#6D766B'} />
+            {item.brandIcon ? (
+              <Image
+                className={isActive ? 'mall-tab-brand-icon mall-tab-brand-icon-active' : 'mall-tab-brand-icon'}
+                mode="aspectFit"
+                src={SANYOU_LOGO}
+              />
+            ) : (
+              <Icon size={21} color={isActive ? '#63BF54' : '#6D766B'} />
+            )}
             <Text className="mall-tab-label">{item.label}</Text>
           </View>
         )

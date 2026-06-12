@@ -4,7 +4,7 @@ import Taro from '@tarojs/taro'
 import { ChevronLeft, MessageCircle, RefreshCw, ShieldCheck } from 'lucide-react-taro'
 import { Input } from '@/components/ui/input'
 import { Network } from '@/network'
-import { MallPage, MallPrimaryButton } from '../mall-ui'
+import { MallBrandMark, MallPage, MallPrimaryButton } from '../mall-ui'
 
 type AuthMode = 'login' | 'register'
 type RegisterRole = 'customer' | 'group_leader'
@@ -28,7 +28,8 @@ interface ApiEnvelope<T> {
   data?: T
 }
 
-const defaultReturnUrl = '/pages/mall/profile/index'
+const mallHomeUrl = '/pages/mall/index/index'
+const defaultReturnUrl = mallHomeUrl
 
 export default function MallAuthPage() {
   const params = Taro.getCurrentInstance().router?.params || {}
@@ -166,8 +167,11 @@ export default function MallAuthPage() {
   return (
     <MallPage active="mine" noTab>
       <View className="mall-back-row">
-        <ChevronLeft size={24} color="#1F2D1F" onClick={() => Taro.navigateBack()} />
-        <Text className="mall-section-action">叁友甄选</Text>
+        <ChevronLeft size={24} color="#1F2D1F" onClick={() => Taro.redirectTo({ url: mallHomeUrl })} />
+        <View className="mall-back-brand">
+          <MallBrandMark compact />
+          <Text className="mall-section-action">叁友甄选</Text>
+        </View>
       </View>
       <Text className="mall-page-title">{mode === 'login' ? '登录商城' : '注册商城账号'}</Text>
       <Text className="mall-page-subtitle">登录后查看订单、自提码、售后和邻里团购消息。</Text>

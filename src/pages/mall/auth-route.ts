@@ -2,10 +2,12 @@ import Taro from '@tarojs/taro'
 
 export type MallAuthMode = 'login' | 'register'
 
-export function mallAuthUrl(returnUrl = '/pages/mall/profile/index', mode: MallAuthMode = 'login') {
+const defaultMallAuthReturnUrl = '/pages/mall/index/index'
+
+export function mallAuthUrl(returnUrl = defaultMallAuthReturnUrl, mode: MallAuthMode = 'login') {
   const safeReturnUrl = returnUrl.startsWith('/pages/mall/')
     ? returnUrl
-    : '/pages/mall/profile/index'
+    : defaultMallAuthReturnUrl
   return `/pages/mall/auth/index?mode=${mode}&returnUrl=${encodeURIComponent(safeReturnUrl)}`
 }
 

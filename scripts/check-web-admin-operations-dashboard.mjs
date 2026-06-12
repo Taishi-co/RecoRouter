@@ -16,6 +16,11 @@ function assert(condition, message) {
 const adminMain = read('src/web-admin/main.tsx');
 const adminStyles = read('src/web-admin/styles.css');
 const packageJson = JSON.parse(read('package.json'));
+const operationsStylesStart = adminStyles.indexOf('.operations-screen');
+const operationsStylesEnd = adminStyles.indexOf('.primary-button.small', operationsStylesStart);
+const operationsStyles = operationsStylesStart >= 0 && operationsStylesEnd > operationsStylesStart
+  ? adminStyles.slice(operationsStylesStart, operationsStylesEnd)
+  : '';
 
 assert(/function OperationsDataScreen\(/.test(adminMain), 'Web admin must render operations data through a dedicated big-screen component.');
 assert(/buildOperationsScreenModel/.test(adminMain), 'Operations dashboard must build a cross-business data model.');
@@ -39,6 +44,10 @@ assert(/operationsCategorySales/.test(adminMain), 'Operations dashboard must der
 assert(/operationsHotProducts/.test(adminMain), 'Operations dashboard must derive hot products from loaded data.');
 
 assert(/\.operations-screen/.test(adminStyles), 'Operations dashboard styles must define the screen shell.');
+assert(/background: #ffffff;/.test(operationsStyles), 'Operations dashboard must use the same readable light shell as the web admin.');
+assert(/background: #fbfaf6;/.test(operationsStyles), 'Operations dashboard must use the mall admin warm surface instead of a black big-screen theme.');
+assert(!/#111613|#172018|#181d1a|#20261f|#202720|#2d3830|#344034/.test(operationsStyles), 'Operations dashboard must not use the old dark big-screen palette.');
+assert(!/color: #ffffff|color: #eef4ef|color: #f7fbf6/.test(operationsStyles), 'Operations dashboard text must be readable on light admin surfaces.');
 assert(/\.operations-hero/.test(adminStyles), 'Operations dashboard styles must define the hero region.');
 assert(/\.operations-kpi-grid/.test(adminStyles), 'Operations dashboard styles must define KPI grid.');
 assert(/\.operations-trend-bars/.test(adminStyles), 'Operations dashboard styles must define trend bars.');

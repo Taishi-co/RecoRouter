@@ -269,6 +269,10 @@ struct ProductQuery {
     category_id: Option<String>,
     keyword: Option<String>,
     status: Option<String>,
+    #[serde(alias = "activity", alias = "activity_type", alias = "campaign_type")]
+    activity_type: Option<String>,
+    #[serde(alias = "orderBy", alias = "order_by")]
+    sort: Option<String>,
     #[serde(alias = "stock_status")]
     stock_status: Option<String>,
     page: Option<i64>,
@@ -718,6 +722,12 @@ struct ProductMutationRequest {
     stock: Option<i32>,
     #[serde(alias = "stock_alert_threshold")]
     stock_alert_threshold: Option<i32>,
+    #[serde(
+        alias = "minimumOrderQuantity",
+        alias = "minimum_order_quantity",
+        alias = "min_order_quantity"
+    )]
+    minimum_order_quantity: Option<i32>,
     #[serde(alias = "length_cm")]
     length_cm: Option<f64>,
     #[serde(alias = "width_cm")]
@@ -2827,6 +2837,8 @@ where
     if stock < 0 {
         return Err(ApiError::BadRequest("库存不能小于0".to_string()));
     }
+    let minimum_order_quantity = body.minimum_order_quantity.unwrap_or(1);
+    validate_positive_i32(minimum_order_quantity, "最小起订量必须大于0")?;
     ensure_category(&state.db, &category_code).await?;
     let tags = serde_json::to_value(body.tags.unwrap_or_default())
         .map_err(|err| ApiError::BadRequest(err.to_string()))?;
@@ -2843,13 +2855,13 @@ where
           category_id, category_code, sku, name, subtitle, description, image_url, specification, sale_method,
           supply_price_cents, price_cents, original_price_cents, stock, status, tags, delivery_minutes,
           cold_chain_required, length_cm, width_cm, height_cm, volume_liters,
-          weight_kg, stock_alert_threshold
+          weight_kg, stock_alert_threshold, minimum_order_quantity
         )
         VALUES (
           (SELECT id FROM mall_categories WHERE code = $1),
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
           COALESCE($13, 'on_sale'), $14, COALESCE($15, 18), COALESCE($16, false),
-          $17, $18, $19, $20, $21, COALESCE($22, 15)
+          $17, $18, $19, $20, $21, COALESCE($22, 15), $23
         )
         RETURNING id
         "#,
@@ -2876,6 +2888,7 @@ where
     .bind(body.volume_liters)
     .bind(body.weight_kg)
     .bind(body.stock_alert_threshold)
+    .bind(minimum_order_quantity)
     .fetch_one(&state.db)
     .await?;
 
@@ -2904,6 +2917,9 @@ where
     validate_optional_non_negative_f64(body.height_cm, "高不能小于0")?;
     validate_optional_non_negative_f64(body.volume_liters, "体积不能小于0")?;
     validate_optional_non_negative_f64(body.weight_kg, "重量不能小于0")?;
+    if let Some(minimum_order_quantity) = body.minimum_order_quantity {
+        validate_positive_i32(minimum_order_quantity, "最小起订量必须大于0")?;
+    }
     let tags = match body.tags {
         Some(tags) => {
             Some(serde_json::to_value(tags).map_err(|err| ApiError::BadRequest(err.to_string()))?)
@@ -2936,6 +2952,7 @@ where
             volume_liters = COALESCE($21, volume_liters),
             weight_kg = COALESCE($22, weight_kg),
             stock_alert_threshold = COALESCE($23, stock_alert_threshold),
+            minimum_order_quantity = COALESCE($24, minimum_order_quantity),
             updated_at = now()
         WHERE id = $1
         RETURNING id
@@ -2964,6 +2981,7 @@ where
     .bind(body.volume_liters)
     .bind(body.weight_kg)
     .bind(body.stock_alert_threshold)
+    .bind(body.minimum_order_quantity)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| ApiError::NotFound("商品不存在".to_string()))?;
@@ -5530,6 +5548,15 @@ async fn fetch_products(
     query: ProductQuery,
     public_only: bool,
 ) -> ApiResult<Vec<Value>> {
+    let activity_type = match non_empty(query.activity_type) {
+        Some(value) => Some(normalize_product_activity_type(&value)?),
+        None => None,
+    };
+    let sort_key = match non_empty(query.sort) {
+        Some(value) => normalize_product_sort(&value)?,
+        None if activity_type.as_deref() == Some("best_seller") => "sales_desc".to_string(),
+        None => "default".to_string(),
+    };
     let mut builder = QueryBuilder::<Postgres>::new(
         r#"
         SELECT product_json(p, c.name)
@@ -5564,8 +5591,17 @@ async fn fetch_products(
         builder.push(" OR p.specification ILIKE ");
         builder.push_bind(pattern.clone());
         builder.push(" OR p.sale_method ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR p.sku ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR c.name ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR COALESCE(array_to_string(p.tags, ','), '') ILIKE ");
         builder.push_bind(pattern);
         builder.push(")");
+    }
+    if let Some(activity_type) = activity_type.as_deref() {
+        push_product_activity_filter(&mut builder, activity_type);
     }
     if let Some(stock_status) = non_empty(query.stock_status) {
         match stock_status.as_str() {
@@ -5577,7 +5613,8 @@ async fn fetch_products(
     }
     let page = query.page.unwrap_or(1).max(1);
     let page_size = query.page_size.unwrap_or(50).clamp(1, 100);
-    builder.push(" ORDER BY p.sort_order ASC, p.created_at DESC LIMIT ");
+    push_product_order(&mut builder, &sort_key);
+    builder.push(" LIMIT ");
     builder.push_bind(page_size);
     builder.push(" OFFSET ");
     builder.push_bind((page - 1) * page_size);
@@ -5586,6 +5623,136 @@ async fn fetch_products(
         .build_query_scalar::<Value>()
         .fetch_all(pool)
         .await?)
+}
+
+fn normalize_product_activity_type(value: &str) -> ApiResult<String> {
+    match value.trim() {
+        "" | "all" | "全部" => Ok("all".to_string()),
+        "flashSale" | "flash_sale" | "seckill" | "秒杀" => Ok("flash_sale".to_string()),
+        "fullReduction" | "full_reduction" | "discount" | "满减" => {
+            Ok("full_reduction".to_string())
+        }
+        "newArrival" | "new_arrival" | "new" | "新品" | "上新" => Ok("new_arrival".to_string()),
+        "bestSeller" | "best_seller" | "hot" | "爆款" => Ok("best_seller".to_string()),
+        _ => Err(ApiError::BadRequest("活动筛选条件不正确".to_string())),
+    }
+}
+
+fn normalize_product_sort(value: &str) -> ApiResult<String> {
+    match value.trim() {
+        "" | "default" | "comprehensive" | "综合" => Ok("default".to_string()),
+        "priceAsc" | "price_asc" => Ok("price_asc".to_string()),
+        "priceDesc" | "price_desc" => Ok("price_desc".to_string()),
+        "newest" | "dateDesc" | "date_desc" | "createdDesc" | "created_desc" => {
+            Ok("newest".to_string())
+        }
+        "oldest" | "dateAsc" | "date_asc" | "createdAsc" | "created_asc" => {
+            Ok("oldest".to_string())
+        }
+        "salesDesc" | "sales_desc" | "soldDesc" | "sold_desc" | "bestSeller" | "best_seller" => {
+            Ok("sales_desc".to_string())
+        }
+        "stockAsc" | "stock_asc" => Ok("stock_asc".to_string()),
+        "stockDesc" | "stock_desc" => Ok("stock_desc".to_string()),
+        _ => Err(ApiError::BadRequest("商品排序条件不正确".to_string())),
+    }
+}
+
+fn push_product_activity_filter(builder: &mut QueryBuilder<Postgres>, activity_type: &str) {
+    match activity_type {
+        "all" => {}
+        "flash_sale" => {
+            builder.push(
+                r#"
+            AND (
+              EXISTS (
+                SELECT 1
+                FROM mall_home_sections s
+                WHERE s.section_type = 'flash_sale'
+                  AND s.status = 'active'
+                  AND (s.starts_at IS NULL OR s.starts_at <= now())
+                  AND (s.ends_at IS NULL OR s.ends_at >= now())
+                  AND EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements_text(COALESCE(s.product_ids, '[]'::jsonb)) AS item(value)
+                    WHERE item.value = p.id::text OR item.value = p.sku
+                  )
+              )
+              OR COALESCE(array_to_string(p.tags, ','), '') ~ '秒杀|特价|爆款'
+            )
+            "#,
+            );
+        }
+        "full_reduction" => {
+            builder.push(
+                r#"
+            AND EXISTS (
+              SELECT 1
+              FROM mall_campaigns campaign
+              WHERE campaign.status = 'active'
+                AND (campaign.starts_at IS NULL OR campaign.starts_at <= now())
+                AND (campaign.ends_at IS NULL OR campaign.ends_at >= now())
+                AND campaign.rules ? 'thresholdCents'
+                AND campaign.rules ? 'discountCents'
+            )
+            "#,
+            );
+        }
+        "new_arrival" => {
+            builder.push(
+                r#"
+            AND (
+              EXISTS (
+                SELECT 1
+                FROM mall_home_sections s
+                WHERE s.section_type = 'new_arrival'
+                  AND s.status = 'active'
+                  AND (s.starts_at IS NULL OR s.starts_at <= now())
+                  AND (s.ends_at IS NULL OR s.ends_at >= now())
+                  AND EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements_text(COALESCE(s.product_ids, '[]'::jsonb)) AS item(value)
+                    WHERE item.value = p.id::text OR item.value = p.sku
+                  )
+              )
+              OR COALESCE(array_to_string(p.tags, ','), '') ~ '今日|新品|新上|现货'
+              OR p.created_at >= now() - interval '3 days'
+            )
+            "#,
+            );
+        }
+        "best_seller" => {}
+        _ => {}
+    };
+}
+
+fn push_product_order(builder: &mut QueryBuilder<Postgres>, sort_key: &str) {
+    match sort_key {
+        "price_asc" => {
+            builder.push(" ORDER BY p.price_cents ASC, p.sort_order ASC, p.created_at DESC");
+        }
+        "price_desc" => {
+            builder.push(" ORDER BY p.price_cents DESC, p.sort_order ASC, p.created_at DESC");
+        }
+        "newest" => {
+            builder.push(" ORDER BY p.created_at DESC, p.sort_order ASC");
+        }
+        "oldest" => {
+            builder.push(" ORDER BY p.created_at ASC, p.sort_order ASC");
+        }
+        "sales_desc" => {
+            builder.push(" ORDER BY p.sold_count DESC, p.created_at DESC");
+        }
+        "stock_asc" => {
+            builder.push(" ORDER BY p.stock ASC, p.sort_order ASC, p.created_at DESC");
+        }
+        "stock_desc" => {
+            builder.push(" ORDER BY p.stock DESC, p.sort_order ASC, p.created_at DESC");
+        }
+        _ => {
+            builder.push(" ORDER BY p.sort_order ASC, p.created_at DESC");
+        }
+    };
 }
 
 async fn fetch_categories(pool: &PgPool, query: CategoryQuery) -> ApiResult<Vec<Value>> {

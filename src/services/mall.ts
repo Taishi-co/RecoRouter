@@ -25,6 +25,7 @@ export interface MallProduct {
   originalPriceCents?: number | null
   stock: number
   stockAlertThreshold?: number | null
+  minimumOrderQuantity?: number | null
   soldCount: number
   rating: number
   status: string
@@ -41,6 +42,8 @@ export interface MallProduct {
   couponStackable?: boolean
   pointsDeductibleCents?: number | null
   discountLabel?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
 }
 
 export interface MallDiscountBreakdown {
@@ -505,7 +508,6 @@ export interface MallSettings {
 export interface MallOpsOverview {
   onSaleProducts?: number
   stockAlerts?: number
-  pendingListingRequests?: number
   todayOrders?: number
   historyOrders?: number
   exceptionOrders?: number
@@ -513,26 +515,6 @@ export interface MallOpsOverview {
   pendingWithdrawals?: number
   todayRevenueCents?: number
   todaySupplyCents?: number
-}
-
-export interface MallProductListingRequest {
-  id: string
-  productId: string
-  productName?: string | null
-  sku?: string | null
-  currentStatus?: string | null
-  requestType: string
-  requestedStatus: string
-  requesterId?: string | null
-  requesterRole?: string | null
-  supplierId?: string | null
-  reason?: string | null
-  status: string
-  reviewedBy?: string | null
-  reviewedAt?: string | null
-  reviewNote?: string | null
-  createdAt?: string
-  updatedAt?: string
 }
 
 export interface MallDeliverySheet {
@@ -685,6 +667,11 @@ export async function listMallProducts(params: {
   keyword?: string
   categoryCode?: string
   status?: string
+  activityType?: string
+  sort?: string
+  page?: number
+  pageSize?: number
+  limit?: number
 } = {}): Promise<MallProduct[]> {
   return apiGet('/api/mall/products', params)
 }
@@ -864,36 +851,6 @@ export async function adminRefundMallOrder(id: string, data: {
   handlingMethod?: string
 }) {
   return apiPost(`/api/admin/mall/orders/${id}/refund`, data)
-}
-
-export async function adminListMallProductListingRequests(params: {
-  status?: string
-  productId?: string
-  requestType?: string
-  supplierId?: string
-} = {}): Promise<MallProductListingRequest[]> {
-  return apiGet('/api/admin/mall/listing-requests', params)
-}
-
-export async function adminCreateMallProductListingRequest(data: {
-  productId: string
-  requestType?: string
-  requestedStatus: string
-  requesterId?: string
-  requesterRole?: string
-  supplierId?: string
-  reason?: string
-}): Promise<MallProductListingRequest> {
-  return apiPost('/api/admin/mall/listing-requests', data)
-}
-
-export async function adminReviewMallProductListingRequest(id: string, data: {
-  status: 'approved' | 'rejected' | string
-  reviewStatus?: 'approved' | 'rejected' | string
-  reviewedBy?: string
-  reviewNote?: string
-}): Promise<MallProductListingRequest> {
-  return apiPost(`/api/admin/mall/listing-requests/${id}/review`, data)
 }
 
 export async function adminListMallDeliverySheets(params: {

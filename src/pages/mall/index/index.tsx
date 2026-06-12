@@ -1,68 +1,62 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Image, Swiper, SwiperItem, Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
 import { Bell, Clock3, Flame, MapPin, Sparkles } from 'lucide-react-taro'
 import {
   addMallCartItem,
+  listMallCategories,
   listMallHomeBanners,
   listMallHomeSections,
   listMallProducts,
   resolveMallImageUrl,
+  type MallCategory,
   type MallHomeBanner,
   type MallHomeSection,
   type MallProduct,
 } from '@/services/mall'
 import {
+  MallBrandMark,
   MallDealProductCard,
   MallPage,
   MallSectionTitle,
 } from '../mall-ui'
 import { redirectToMallAuth } from '../auth-route'
+import { mallCategoryOptionsFromCategories } from '../category-options'
 
 interface StoredUser {
   id?: string
 }
-
-const quickCategories = [
-  { label: '肉禽', keyword: '肉禽' },
-  { label: '蛋奶', keyword: '鲜奶' },
-  { label: '蔬菜', keyword: '蔬菜' },
-  { label: '水果', keyword: '水果' },
-  { label: '零食', keyword: '零食' },
-  { label: '酒水', keyword: '酒水' },
-  { label: '日用', keyword: '日用' },
-]
 
 const defaultBanners: MallHomeBanner[] = [
   {
     id: 'opening-promo',
     title: '开业大促',
     subtitle: '社区鲜品低至 8.8 折',
-    linkType: 'search',
-    linkTarget: '开业大促',
+    linkType: 'activity',
+    linkTarget: 'full_reduction',
     sortOrder: 1,
     status: 'active',
-    metadata: { tag: '今日主推' },
+    metadata: { tag: '今日主推', activityType: 'full_reduction' },
   },
   {
     id: 'full-reduction',
     title: '满减活动',
     subtitle: '满 49 减 6，可叠加积分',
-    linkType: 'search',
-    linkTarget: '满减',
+    linkType: 'activity',
+    linkTarget: 'full_reduction',
     sortOrder: 2,
     status: 'active',
-    metadata: { tag: '省钱优先' },
+    metadata: { tag: '省钱优先', activityType: 'full_reduction' },
   },
   {
     id: 'new-launch',
     title: '新品首发',
     subtitle: '每日上新 10-15 款，节日福利同步上线',
-    linkType: 'search',
-    linkTarget: '新品',
+    linkType: 'activity',
+    linkTarget: 'new_arrival',
     sortOrder: 3,
     status: 'active',
-    metadata: { tag: '今日刚到' },
+    metadata: { tag: '今日刚到', activityType: 'new_arrival' },
   },
 ]
 
@@ -75,14 +69,21 @@ const defaultAnnouncements = [
 
 export default function MallHome() {
   const [products, setProducts] = useState<MallProduct[]>([])
+  const [categories, setCategories] = useState<MallCategory[]>([])
   const [homeBanners, setHomeBanners] = useState<MallHomeBanner[]>([])
   const [homeSections, setHomeSections] = useState<MallHomeSection[]>([])
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
+  const [now, setNow] = useState(() => Date.now())
 
   useDidShow(() => {
     loadProducts()
   })
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
 
   const banners = useMemo(() => {
     const active = homeBanners.filter((banner) => banner.status !== 'draft').slice(0, 3)
@@ -106,7 +107,11 @@ export default function MallHome() {
     () => resolveSectionProducts(products, bestSellerSection, pickBestSellerProducts),
     [products, bestSellerSection],
   )
-  const countdown = useMemo(() => buildFlashCountdown(numberArrayValue(flashSaleSection?.rules, 'sessions', [8, 18])), [flashSaleSection])
+  const quickCategories = useMemo(
+    () => mallCategoryOptionsFromCategories(categories).slice(0, 12),
+    [categories],
+  )
+  const flashSaleState = useMemo(() => buildFlashSaleState(flashSaleSection?.rules, now), [flashSaleSection, now])
 
   const currentUser = () => Taro.getStorageSync('userInfo') as StoredUser | undefined
 
@@ -122,6 +127,9 @@ export default function MallHome() {
       setProducts(productData)
       setHomeBanners(bannerData)
       setHomeSections(sectionData)
+      listMallCategories()
+        .then(setCategories)
+        .catch(() => setCategories([]))
     } catch (error) {
       setProducts([])
       setLoadError(error instanceof Error ? error.message : '商品加载失败')
@@ -136,7 +144,13 @@ export default function MallHome() {
 
   const openBanner = (banner: MallHomeBanner) => {
     const target = banner.linkTarget?.trim()
-    if (!target || banner.linkType === 'none') return
+    if (banner.linkType === 'none') return
+    const activityType = resolveBannerActivityType(banner)
+    if (activityType) {
+      openActivity(activityType)
+      return
+    }
+    if (!target) return
     if (banner.linkType === 'category') {
       Taro.navigateTo({ url: `/pages/mall/category/index?categoryCode=${encodeURIComponent(target)}` })
       return
@@ -146,6 +160,12 @@ export default function MallHome() {
       return
     }
     Taro.navigateTo({ url: `/pages/mall/category/index?keyword=${encodeURIComponent(target)}` })
+  }
+
+  const openActivity = (activityType: string, sort = '') => {
+    const query = [`activityType=${encodeURIComponent(activityType)}`]
+    if (sort) query.push(`sort=${encodeURIComponent(sort)}`)
+    Taro.navigateTo({ url: `/pages/mall/category/index?${query.join('&')}` })
   }
 
   const handleAddCart = async (product: MallProduct) => {
@@ -175,9 +195,12 @@ export default function MallHome() {
       <MallHomeFixedHeader banners={banners} announcements={announcements} primaryImageUrl={primaryBannerImageUrl} onBannerTap={openBanner} />
 
       <View className="mall-v7-pickup-strip">
-        <View>
-          <Text className="mall-v7-kicker">默认自提点</Text>
-          <Text className="mall-v7-pickup-title">叁友甄选 · 中庭自提点</Text>
+        <View className="mall-v7-pickup-brand">
+          <MallBrandMark compact />
+          <View>
+            <Text className="mall-v7-kicker">默认自提点</Text>
+            <Text className="mall-v7-pickup-title">叁友甄选 · 中庭自提点</Text>
+          </View>
         </View>
         <View className="mall-v7-pickup-action" onClick={() => Taro.navigateTo({ url: '/pages/mall/address/index' })}>
           <MapPin size={15} color="#2F7E43" />
@@ -190,13 +213,13 @@ export default function MallHome() {
           <View>
             <View className="mall-v7-title-with-icon">
               <Flame size={19} color="#FF8A1F" />
-              <Text className="mall-v7-section-title">{flashSaleSection?.title || '秒杀专区'}</Text>
+            <Text className="mall-v7-section-title">{flashSaleSection?.title || '秒杀专区'}</Text>
             </View>
-            <Text className="mall-v7-section-subtitle">{flashSaleSection?.subtitle || '早 8 点 / 晚 6 点，每日两场'}</Text>
+            <Text className="mall-v7-section-subtitle">{flashSaleSection?.subtitle || flashSaleState.sessionText}</Text>
           </View>
-          <View className="mall-v7-countdown">
+          <View className="mall-v7-countdown" onClick={() => openActivity('flash_sale')}>
             <Clock3 size={14} color="#FFFFFF" />
-            <Text>{countdown}</Text>
+            <Text>{flashSaleState.countdownText}</Text>
           </View>
         </View>
         <View className="mall-v7-horizontal-products">
@@ -212,7 +235,11 @@ export default function MallHome() {
         </View>
       </View>
 
-      <MallSectionTitle title={newArrivalSection?.title || '新上专区'} action={newArrivalSection?.content || rulesStringValue(newArrivalSection?.rules, 'badge', '今日刚到')} />
+      <MallSectionTitle
+        title={newArrivalSection?.title || '新上专区'}
+        action={newArrivalSection?.content || rulesStringValue(newArrivalSection?.rules, 'badge', '今日刚到')}
+        onAction={() => openActivity('new_arrival', 'newest')}
+      />
       <View className="mall-v7-product-list">
         {newArrivalProducts.map((product) => (
           <MallDealProductCard
@@ -229,9 +256,9 @@ export default function MallHome() {
       <View className="mall-v7-category-tabs">
         {quickCategories.map((category) => (
           <View
-            key={category.label}
+            key={category.code || category.label}
             className="mall-v7-category-tab"
-            onClick={() => Taro.navigateTo({ url: `/pages/mall/category/index?keyword=${encodeURIComponent(category.keyword)}` })}
+            onClick={() => Taro.navigateTo({ url: `/pages/mall/category/index?categoryCode=${encodeURIComponent(category.code)}` })}
           >
             <Text>{category.label}</Text>
           </View>
@@ -241,7 +268,7 @@ export default function MallHome() {
       <MallSectionTitle
         title={bestSellerSection?.title || '爆款推荐'}
         action={bestSellerSection?.content || rulesStringValue(bestSellerSection?.rules, 'badgePrefix', 'TOP10')}
-        onAction={() => Taro.navigateTo({ url: '/pages/mall/category/index?sort=bestSeller' })}
+        onAction={() => openActivity('best_seller', 'sales_desc')}
       />
       <View className="mall-v7-product-grid">
         {bestSellerProducts.map((product, index) => (
@@ -389,19 +416,65 @@ function numberArrayValue(rules: Record<string, unknown> | undefined, key: strin
   return parsed.length ? parsed : fallback
 }
 
-function buildFlashCountdown(sessions: number[] = [8, 18]) {
-  const now = new Date()
+function buildFlashSaleState(rules: Record<string, unknown> | undefined, nowMs: number) {
+  const sessions = numberArrayValue(rules, 'sessions', [8, 18])
+  const durationMinutes = numberRuleValue(rules, 'durationMinutes', numberRuleValue(rules, 'sessionDurationMinutes', 120))
+  const now = new Date(nowMs)
   const sortedSessions = [...sessions].sort((a, b) => a - b)
-  const nextHour = sortedSessions.find((hour) => now.getHours() < hour) ?? sortedSessions[0] + 24
-  const target = new Date(now)
-  if (nextHour >= 24) {
-    target.setDate(target.getDate() + 1)
-    target.setHours(nextHour - 24, 0, 0, 0)
-  } else {
-    target.setHours(nextHour, 0, 0, 0)
+  const currentSession = sortedSessions
+    .map((hour) => {
+      const startsAt = new Date(now)
+      startsAt.setHours(hour, 0, 0, 0)
+      const endsAt = new Date(startsAt.getTime() + durationMinutes * 60 * 1000)
+      return { hour, startsAt, endsAt }
+    })
+    .find((session) => now >= session.startsAt && now < session.endsAt)
+
+  if (currentSession) {
+    return {
+      sessionText: `${formatSessionHour(currentSession.hour)} 秒杀进行中`,
+      countdownText: `本场剩 ${formatDurationSeconds(Math.max(Math.floor((currentSession.endsAt.getTime() - nowMs) / 1000), 0))}`,
+    }
   }
-  const diffSeconds = Math.max(Math.floor((target.getTime() - now.getTime()) / 1000), 0)
+
+  const nextHour = sortedSessions.find((hour) => {
+    const startsAt = new Date(now)
+    startsAt.setHours(hour, 0, 0, 0)
+    return startsAt.getTime() > nowMs
+  }) ?? sortedSessions[0] + 24
+  const nextStartsAt = new Date(now)
+  if (nextHour >= 24) {
+    nextStartsAt.setDate(nextStartsAt.getDate() + 1)
+    nextStartsAt.setHours(nextHour - 24, 0, 0, 0)
+  } else {
+    nextStartsAt.setHours(nextHour, 0, 0, 0)
+  }
+  return {
+    sessionText: `下一场 ${formatSessionHour(nextHour % 24)}`,
+    countdownText: `距开抢 ${formatDurationSeconds(Math.max(Math.floor((nextStartsAt.getTime() - nowMs) / 1000), 0))}`,
+  }
+}
+
+function formatDurationSeconds(diffSeconds: number) {
   const hours = String(Math.floor(diffSeconds / 3600)).padStart(2, '0')
   const minutes = String(Math.floor((diffSeconds % 3600) / 60)).padStart(2, '0')
-  return `${hours}:${minutes}`
+  const seconds = String(diffSeconds % 60).padStart(2, '0')
+  return `${hours}:${minutes}:${seconds}`
+}
+
+function formatSessionHour(hour: number) {
+  return `${String(hour).padStart(2, '0')}:00`
+}
+
+function resolveBannerActivityType(banner: MallHomeBanner) {
+  const metadataActivity = banner.metadata?.activityType
+  if (typeof metadataActivity === 'string' && metadataActivity.trim()) return metadataActivity.trim()
+  const target = banner.linkTarget?.trim()
+  if (banner.linkType === 'activity' && target) return target
+  const text = [banner.title, banner.subtitle, target].filter(Boolean).join(' ')
+  if (/秒杀|限时|抢/.test(text)) return 'flash_sale'
+  if (/满减|大促|折扣|福利|省/.test(text)) return 'full_reduction'
+  if (/新品|新上|刚到|首发/.test(text)) return 'new_arrival'
+  if (/爆款|TOP|热销/.test(text)) return 'best_seller'
+  return ''
 }

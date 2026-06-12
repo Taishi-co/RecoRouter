@@ -3,7 +3,7 @@ import { Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { ChevronLeft, Clock, MapPin, UserRound } from 'lucide-react-taro'
 import { listMallPickupPoints, type MallPickupPoint } from '@/services/mall'
-import { MallLocationStrip, MallPage, MallPrimaryButton } from '../mall-ui'
+import { MallBrandMark, MallLocationStrip, MallPage, MallPrimaryButton } from '../mall-ui'
 
 export default function MallPickupPage() {
   const [points, setPoints] = useState<MallPickupPoint[]>([])
@@ -31,7 +31,10 @@ export default function MallPickupPage() {
     <MallPage active="home">
       <View className="mall-back-row">
         <ChevronLeft size={24} color="#1F2D1F" onClick={() => Taro.navigateBack()} />
-        <Text className="mall-breadcrumb">叁友甄选 / 自提点</Text>
+        <View className="mall-back-brand">
+          <MallBrandMark compact />
+          <Text className="mall-breadcrumb">叁友甄选 / 自提点</Text>
+        </View>
       </View>
       <Text className="mall-page-title">今日自提点</Text>
       <Text className="mall-page-subtitle">选择离你最近的邻里驿站，团长到货后通知取货。</Text>

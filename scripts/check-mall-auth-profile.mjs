@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 const appConfigSource = readFileSync(resolve('src/app.config.ts'), 'utf8')
 const profileSource = readFileSync(resolve('src/pages/mall/profile/index.tsx'), 'utf8')
 const mallServiceSource = readFileSync(resolve('src/services/mall.ts'), 'utf8')
+const authRouteSource = readFileSync(resolve('src/pages/mall/auth-route.ts'), 'utf8')
 
 const authPagePath = 'src/pages/mall/auth/index.tsx'
 let authPageSource = ''
@@ -35,6 +36,14 @@ if (/role:\s*['"](owner|merchant|enterprise)['"]/.test(authPageSource)) {
 
 if (!/Taro\.setStorageSync\(\s*['"]userInfo['"]/.test(authPageSource) || !/Taro\.setStorageSync\(\s*['"]token['"]/.test(authPageSource)) {
   throw new Error('Mall auth page must persist both userInfo and token after login/register')
+}
+
+if (
+  !/defaultReturnUrl\s*=\s*mallHomeUrl/.test(authPageSource)
+  || !/Taro\.redirectTo\(\{\s*url:\s*mallHomeUrl\s*\}\)/.test(authPageSource)
+  || !/defaultMallAuthReturnUrl\s*=\s*['"]\/pages\/mall\/index\/index['"]/.test(authRouteSource)
+) {
+  throw new Error('Mall auth must return to the mall home page by default and when tapping the back button')
 }
 
 if (/getMallProfileSafe/.test(profileSource)) {

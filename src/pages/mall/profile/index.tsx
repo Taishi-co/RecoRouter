@@ -8,7 +8,7 @@ import {
   type MallOrder,
   type MallProfile,
 } from '@/services/mall'
-import { MallPage, MallPrimaryButton, mallYuan } from '../mall-ui'
+import { MallBrandMark, MallPage, MallPrimaryButton, mallYuan } from '../mall-ui'
 import { navigateToMallAuth } from '../auth-route'
 
 interface StoredUser {
@@ -198,13 +198,14 @@ export default function MallProfilePage() {
 function MallProfileLoginState() {
   return (
     <MallPage active="mine">
-      <Text className="mall-breadcrumb">叁友甄选</Text>
+      <View className="mall-v7-head-brand">
+        <MallBrandMark compact />
+        <Text className="mall-breadcrumb">叁友甄选</Text>
+      </View>
       <Text className="mall-page-title">我的</Text>
       <Text className="mall-page-subtitle">登录后查看订单、自提码、售后、积分和团长权益。</Text>
       <View className="mall-auth-empty">
-        <View className="mall-profile-avatar mall-profile-avatar-large">
-          <Text>叁</Text>
-        </View>
+        <MallBrandMark />
         <Text className="mall-empty-title">登录商城账号</Text>
         <Text className="mall-empty-copy">登录或注册后，“我的”会从后端同步会员、订单、自提点和客服状态。</Text>
         <View className="mall-auth-actions">

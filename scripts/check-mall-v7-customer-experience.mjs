@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const root = process.cwd()
@@ -10,15 +10,22 @@ const files = {
   theme: read('src/pages/mall/mall-theme.css'),
   home: read('src/pages/mall/index/index.tsx'),
   category: read('src/pages/mall/category/index.tsx'),
+  product: read('src/pages/mall/product/index.tsx'),
+  bottomNav: read('src/components/layout/bottom-nav.tsx'),
   cart: read('src/pages/mall/cart/index.tsx'),
   confirm: read('src/pages/mall/confirm/index.tsx'),
   orders: read('src/pages/mall/orders/index.tsx'),
   profile: read('src/pages/mall/profile/index.tsx'),
+  auth: read('src/pages/mall/auth/index.tsx'),
+  authRoute: read('src/pages/mall/auth-route.ts'),
+  categoryOptions: read('src/pages/mall/category-options.ts'),
   leader: read('src/pages/mall/group-leader/index.tsx'),
   serverMall: read('server/src/modules/mall.rs'),
+  productDetailMigration: readOptional('server/migrations/0027_mall_product_detail_fields.sql'),
+  webAdmin: read('src/web-admin/main.tsx'),
+  webAdminStyles: read('src/web-admin/styles.css'),
 }
 
-const requiredCategories = ['肉禽', '蛋奶', '蔬菜', '水果', '零食', '酒水', '日用']
 const homeCampaigns = ['开业大促', '满减活动', '新品首发', '节日福利']
 const orderTabs = ['待支付', '待配送', '待收货', '售后']
 
@@ -35,9 +42,10 @@ const checks = [
       && /bestSellerProducts/.test(files.home),
   },
   {
-    name: '首页广告和快捷分类覆盖设计稿业务文案',
+    name: '首页广告覆盖设计稿业务文案，快捷分类与品类接口保持一致',
     pass: homeCampaigns.every((text) => files.home.includes(text))
-      && requiredCategories.every((text) => files.home.includes(text)),
+      && /listMallCategories/.test(files.home)
+      && /mallCategoryOptionsFromCategories/.test(files.home),
   },
   {
     name: '全局商品卡展示满减后实付价、原价划线、省钱、券和积分标签、一键加购',
@@ -54,6 +62,70 @@ const checks = [
     pass: /mall-v7-category-tabs/.test(files.category)
       && /MallDealProductCard/.test(files.category)
       && !/mall-category-rail/.test(files.category),
+  },
+  {
+    name: '分类页 tag 使用品类列表数据，并支持商品列表触底分页加载',
+    pass: /listMallCategories/.test(files.category)
+      && /mallCategoryOptionsFromCategories/.test(files.category)
+      && /useReachBottom/.test(files.category)
+      && /pageSize/.test(files.category)
+      && /page:\s*nextPage/.test(files.category)
+      && /setProducts\(\(current\)\s*=>\s*append/.test(files.category)
+      && /onReachBottomDistance/.test(read('src/pages/mall/category/index.config.ts'))
+      && /fallbackMallCategoryOptions/.test(files.categoryOptions),
+  },
+  {
+    name: '分类页支持活动筛选、条件搜索、排序和 tag 切换加载态',
+    pass: /activityFilters/.test(files.category)
+      && /sortOptions/.test(files.category)
+      && /activityType:\s*nextActivityType/.test(files.category)
+      && /sort:\s*nextSort/.test(files.category)
+      && /mall-v7-filter-panel/.test(files.category)
+      && /mall-list-loading/.test(files.category)
+      && /setLoading\(true\)[\s\S]{0,420}setActiveCode/.test(files.category)
+      && /handleSearch/.test(files.category)
+      && /Picker/.test(files.category),
+  },
+  {
+    name: '商品详情页提供电商式商品详情、规格参数、起订信息和售后说明',
+    pass: /商品详情/.test(files.product)
+      && /规格参数/.test(files.product)
+      && /起订信息/.test(files.product)
+      && /售后说明/.test(files.product)
+      && /minimumOrderQuantity/.test(files.product)
+      && /mall-product-detail-section/.test(files.theme),
+  },
+  {
+    name: '商品最小起订量贯通后端商品 JSON、管理端录入和服务类型',
+    pass: /minimum_order_quantity/.test(files.serverMall)
+      && /minimumOrderQuantity/.test(files.serverMall)
+      && /minimumOrderQuantity/.test(files.service)
+      && /minimumOrderQuantity/.test(files.webAdmin)
+      && /最小起订量/.test(files.webAdmin)
+      && /minimum_order_quantity/.test(files.productDetailMigration)
+      && /product_json/.test(files.productDetailMigration),
+  },
+  {
+    name: '首页秒杀倒计时真实刷新，banner 和营销专区能进入活动筛选列表',
+    pass: /setInterval\(\(\)\s*=>\s*setNow\(Date\.now\(\)\),\s*1000\)/.test(files.home)
+      && /buildFlashSaleState/.test(files.home)
+      && /formatDurationSeconds/.test(files.home)
+      && /resolveBannerActivityType/.test(files.home)
+      && /linkType:\s*'activity'/.test(files.home)
+      && /activityType=/.test(files.home)
+      && /openActivity\('flash_sale'/.test(files.home)
+      && /openActivity\('best_seller',\s*'sales_desc'\)/.test(files.home),
+  },
+  {
+    name: '后端商品列表支持关键词扩展搜索、活动筛选和排序白名单',
+    pass: /activity_type:\s*Option<String>/.test(files.serverMall)
+      && /sort:\s*Option<String>/.test(files.serverMall)
+      && /normalize_product_activity_type/.test(files.serverMall)
+      && /normalize_product_sort/.test(files.serverMall)
+      && /push_product_activity_filter/.test(files.serverMall)
+      && /push_product_order/.test(files.serverMall)
+      && /p\.sku ILIKE/.test(files.serverMall)
+      && /array_to_string\(p\.tags/.test(files.serverMall),
   },
   {
     name: '购物车展示满减前合计、满减后实付、省钱、单品折后价和凑单提示',
@@ -132,6 +204,28 @@ const checks = [
       && /mall-v7-leader-cta/.test(files.theme)
       && /transition:\s*none\s*!important/.test(files.theme),
   },
+  {
+    name: '商城品牌图标使用叁友甄选新 icon，覆盖商城底部导航、商城入口和 Web 管理端商城模块',
+    pass: existsSync(join(root, 'src/assets/brand/sanyou.png'))
+      && /sanyou\.png/.test(files.ui)
+      && /mall-tab-brand-icon/.test(files.ui)
+      && /MallBrandMark/.test(files.ui)
+      && /mall-brand-mark/.test(files.theme)
+      && /bottom-nav-brand-icon/.test(files.bottomNav)
+      && /brandIcon:\s*'sanyou'/.test(files.bottomNav)
+      && /sanyouLogo/.test(files.webAdmin)
+      && /brand-mark-image/.test(files.webAdmin)
+      && /module-button-mark-image/.test(files.webAdmin)
+      && /brand-mark-image/.test(files.webAdminStyles)
+      && /module-button-mark-image/.test(files.webAdminStyles),
+  },
+  {
+    name: '商城登录默认和返回按钮回到商城首页，带 returnUrl 的业务登录仍可回原页面',
+    pass: /defaultReturnUrl\s*=\s*mallHomeUrl/.test(files.auth)
+      && /Taro\.redirectTo\(\{\s*url:\s*mallHomeUrl\s*\}\)/.test(files.auth)
+      && /defaultMallAuthReturnUrl\s*=\s*['"]\/pages\/mall\/index\/index['"]/.test(files.authRoute)
+      && /returnUrl\.startsWith\(['"]\/pages\/mall\/['"]\)/.test(files.authRoute),
+  },
 ]
 
 const failures = checks.filter((check) => !check.pass)
@@ -148,4 +242,9 @@ console.log(`Mall V7 customer experience checks passed (${checks.length} checks)
 
 function read(path) {
   return readFileSync(join(root, path), 'utf8')
+}
+
+function readOptional(path) {
+  const file = join(root, path)
+  return existsSync(file) ? readFileSync(file, 'utf8') : ''
 }

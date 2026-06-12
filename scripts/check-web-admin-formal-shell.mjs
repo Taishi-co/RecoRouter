@@ -13,17 +13,25 @@ function expect(condition, message) {
 }
 
 expect(mainSource.includes('sidebarCollapsed'), 'web admin shell must keep a sidebarCollapsed state.');
+expect(mainSource.includes('moduleSwitcherCollapsed'), 'web admin shell must let the main sidebar module switcher collapse.');
+expect(mainSource.includes('collapsedGroups'), 'web admin shell must let page function groups collapse independently.');
 expect(mainSource.includes('sidebar-toggle'), 'web admin sidebar must expose a collapse/expand toggle.');
 expect(mainSource.includes('sidebar-admin-card'), 'current admin details must live in the sidebar.');
 expect(mainSource.includes('sidebar-logout'), 'logout action must live in the sidebar.');
 expect(mainSource.includes('退出登录'), 'sidebar logout action should use the complete label 退出登录.');
 expect(mainSource.includes('aria-label="退出登录"'), 'icon-only collapsed logout must keep an accessible name.');
 expect(mainSource.includes('aria-label={`${module.moduleLabel}，${module.pages.length} 页`}'), 'collapsed module buttons must keep full accessible names.');
+expect(mainSource.includes('aria-expanded={!moduleCollapsed}'), 'module buttons must expose expanded state.');
+expect(mainSource.includes('aria-expanded={!groupCollapsed}'), 'page group buttons must expose expanded state.');
+expect(mainSource.includes('module-pages-collapsed'), 'collapsed modules must hide their page list.');
+expect(mainSource.includes('page-menu-items-collapsed'), 'collapsed page groups must hide their function list.');
 expect(mainSource.includes('normalizeLoadedValue'), 'dashboard loading must normalize malformed API payloads.');
 expect(mainSource.includes('Array.isArray(fallback)'), 'dashboard loading must guard list payloads before rendering.');
 expect(cssSource.includes('.design-admin.sidebar-collapsed'), 'collapsed sidebar layout must be styled.');
 expect(cssSource.includes('.sidebar-collapsed .design-sidebar'), 'collapsed sidebar must restyle the sidebar itself.');
 expect(cssSource.includes('.sidebar-bottom'), 'sidebar bottom area must be styled for account actions.');
+expect(cssSource.includes('.module-pages-collapsed'), 'sidebar module collapse must be styled.');
+expect(cssSource.includes('.page-menu-items-collapsed'), 'sidebar page group collapse must be styled.');
 
 const topbarMatch = mainSource.match(/<header className="topbar design-topbar">[\s\S]*?<\/header>/);
 expect(Boolean(topbarMatch), 'web admin shell must keep a topbar header.');

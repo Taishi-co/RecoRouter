@@ -42,6 +42,10 @@ assert(/新增权限/.test(adminMain), 'Mall permissions page must support creat
 assert(/编辑权限/.test(adminMain), 'Mall permissions page must support edit.');
 assert(/删除/.test(adminMain), 'Mall permissions page must support delete.');
 assert(/权限搜索/.test(adminMain), 'Mall permissions page must support search.');
+assert(/const \[modalOpen/.test(permissionsSection), 'Mall permissions create/edit form must use a modal.');
+assert(/<Panel title="运营权限列表"[\s\S]*新增权限/.test(permissionsSection), 'Mall permissions list must expose a create button.');
+assert(/modal-backdrop[\s\S]*编辑权限[\s\S]*新增权限/.test(permissionsSection), 'Mall permissions create/edit form must render inside a modal.');
+assert(!/Panel title=\{form\.id \? '编辑权限' : '新增权限'\}/.test(permissionsSection), 'Mall permissions form must not be shown as an inline page panel.');
 assert(!/permission-summary-grid/.test(permissionsSection), 'Mall permissions page must not render metrics or data summary cards.');
 assert(!/权限总数|启用权限|停用\/草稿/.test(permissionsSection), 'Mall permissions page must only focus on permission CRUD.');
 

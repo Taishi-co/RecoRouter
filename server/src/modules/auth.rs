@@ -122,6 +122,15 @@ struct RegisterRequest {
 struct LoginRequest {
     phone: String,
     password: String,
+    #[serde(
+        rename = "captchaCode",
+        alias = "captcha_code",
+        alias = "verificationCode",
+        alias = "verification_code"
+    )]
+    captcha_code: Option<String>,
+    #[serde(rename = "captchaId", alias = "captcha_id")]
+    captcha_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -305,6 +314,17 @@ where
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| ApiError::Unauthorized("用户不存在".to_string()))?;
+
+    if row.role.as_deref() == Some("admin") {
+        let captcha_id = body.captcha_id.as_deref().unwrap_or_default();
+        let captcha_code = body.captcha_code.as_deref().unwrap_or_default();
+        if captcha_id.trim().is_empty() || captcha_code.trim().is_empty() {
+            return Err(ApiError::BadRequest("请输入图形验证码".to_string()));
+        }
+        if !state.captcha_store.verify(captcha_id, captcha_code) {
+            return Err(ApiError::BadRequest("图形验证码错误或已过期".to_string()));
+        }
+    }
 
     let password_hash = row.password.as_deref().unwrap_or_default();
     let password_matches = verify(&body.password, password_hash)
