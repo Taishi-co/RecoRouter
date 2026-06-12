@@ -81,7 +81,8 @@ const checks = [
       && /activityType:\s*nextActivityType/.test(files.category)
       && /sort:\s*nextSort/.test(files.category)
       && /mall-v7-filter-panel/.test(files.category)
-      && /mall-list-loading/.test(files.category)
+      && /mall-loading-overlay/.test(files.category)
+      && /mall-loading-spinner/.test(files.theme)
       && /setLoading\(true\)[\s\S]{0,420}setActiveCode/.test(files.category)
       && /handleSearch/.test(files.category)
       && /Picker/.test(files.category),
@@ -125,7 +126,8 @@ const checks = [
       && /push_product_activity_filter/.test(files.serverMall)
       && /push_product_order/.test(files.serverMall)
       && /p\.sku ILIKE/.test(files.serverMall)
-      && /array_to_string\(p\.tags/.test(files.serverMall),
+      && /COALESCE\(p\.tags::text,\s*''\)/.test(files.serverMall)
+      && !/COALESCE\(array_to_string\(p\.tags/.test(files.serverMall),
   },
   {
     name: '购物车展示满减前合计、满减后实付、省钱、单品折后价和凑单提示',
