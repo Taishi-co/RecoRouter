@@ -158,13 +158,7 @@ where
     router
         .merge(mall::router::<S>())
         .merge(payments::router::<S>())
-        .merge(trips::router::<S>())
-        .merge(
-            trips::admin_router::<S>().route_layer(middleware::from_fn_with_state(
-                state.clone(),
-                auth::admin_guard::<S>,
-            )),
-        )
+        // trips 路由已在 vehicle_routes 中添加，避免重复注册
         .merge(
             mall::admin_router::<S>().route_layer(middleware::from_fn_with_state(
                 state.clone(),

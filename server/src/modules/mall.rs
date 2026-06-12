@@ -3,7 +3,7 @@ use axum::{
     routing::{get, post, put},
     Json, Router,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
 
@@ -251,6 +251,21 @@ struct UpdateCartItemRequest {
     selected: Option<bool>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Waypoint {
+    #[serde(alias = "latitude")]
+    latitude: Option<String>,
+    #[serde(alias = "longitude")]
+    longitude: Option<String>,
+    #[serde(alias = "address")]
+    address: Option<String>,
+    #[serde(alias = "name")]
+    name: Option<String>,
+    #[serde(alias = "sequence")]
+    sequence: Option<i32>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CreateMallOrderRequest {
@@ -273,6 +288,14 @@ struct CreateMallOrderRequest {
     #[serde(alias = "pickup_method")]
     pickup_method: Option<String>,
     remark: Option<String>,
+    #[serde(alias = "waypoints")]
+    waypoints: Option<Vec<Waypoint>>,
+    #[serde(alias = "origin_latitude")]
+    origin_latitude: Option<String>,
+    #[serde(alias = "origin_longitude")]
+    origin_longitude: Option<String>,
+    #[serde(alias = "origin_address")]
+    origin_address: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1568,15 +1591,19 @@ where
         }
     });
 
+    let waypoints_json = body.waypoints.as_ref().map(|waypoints| {
+        serde_json::to_value(waypoints).unwrap_or(json!([]))
+    });
+    
     let order_id: String = sqlx::query_scalar(
         r#"
         INSERT INTO mall_orders (
           order_no, user_id, address_id, pickup_point_id, recipient_name, recipient_phone, address_text,
           latitude, longitude, delivery_method, pickup_method, expected_delivery_window,
           subtotal_cents, delivery_fee_cents, coupon_cents, payable_cents,
-          cabin_code, remark
+          cabin_code, remark, waypoints, origin_latitude, origin_longitude, origin_address
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::numeric, $9::numeric, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::numeric, $9::numeric, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20::numeric, $21::numeric, $22)
         RETURNING id
         "#,
     )
@@ -1598,6 +1625,10 @@ where
     .bind(payable_cents)
     .bind(cabin_code)
     .bind(body.remark)
+    .bind(waypoints_json)
+    .bind(body.origin_latitude.clone())
+    .bind(body.origin_longitude.clone())
+    .bind(body.origin_address.clone())
     .fetch_one(&mut *tx)
     .await?;
 
