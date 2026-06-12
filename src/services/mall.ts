@@ -17,11 +17,18 @@ export interface MallProduct {
   name: string
   subtitle?: string | null
   description?: string | null
+  imageKey?: string | null
   imageUrl?: string | null
+  imageKeys?: string[] | null
+  images?: string[]
+  specification?: string | null
+  saleMethod?: string | null
+  supplyPriceCents?: number | null
   priceCents: number
   originalPriceCents?: number | null
   stock: number
   stockAlertThreshold?: number | null
+  minimumOrderQuantity?: number | null
   soldCount: number
   rating: number
   status: string
@@ -33,6 +40,113 @@ export interface MallProduct {
   heightCm?: number | null
   volumeLiters?: number | null
   weightKg?: number | null
+  discountedPriceCents?: number | null
+  savedCents?: number | null
+  couponStackable?: boolean
+  pointsDeductibleCents?: number | null
+  discountLabel?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+  variants?: MallProductVariant[]
+  defaultVariantId?: string | null
+  qualityGuaranteed?: boolean
+  procurementBuyers?: MallProcurementBuyer[]
+  qualificationReports?: MallQualificationReport[]
+  fixedPriceCampaign?: MallFixedPriceCampaign | null
+}
+
+export interface MallFixedPriceCampaign {
+  campaignId?: string | null
+  campaignName?: string | null
+  fixedPriceCents?: number | null
+  badgeText?: string | null
+  badgeIcon?: string | null
+  badgeIconUrl?: string | null
+  badgeBackgroundColor?: string | null
+  badgeTextColor?: string | null
+}
+
+export interface MallProductVariant {
+  id: string
+  name: string
+  sku?: string | null
+  specification?: string | null
+  saleMethod?: string | null
+  priceCents: number
+  originalPriceCents?: number | null
+  supplyPriceCents?: number | null
+  stock: number
+  minimumOrderQuantity?: number | null
+  status: string
+  sortOrder?: number | null
+  pricingMode?: 'fixed' | 'weighed' | string
+  weightUnit?: string | null
+  weightUnitLabel?: string | null
+  weightUnitGrams?: number | null
+  weightToleranceBps?: number | null
+}
+
+export interface MallProcurementBuyer {
+  id: string
+  name?: string | null
+  contactName?: string | null
+  contactPhone?: string | null
+  licenseUrl?: string | null
+  status?: string | null
+  remark?: string | null
+  hideSupplier?: boolean
+}
+
+export interface MallQualificationReport {
+  id: string
+  productId?: string | null
+  buyerId?: string | null
+  buyerName?: string | null
+  reportName: string
+  reportType?: string | null
+  reportUrl: string
+  issuer?: string | null
+  issuedAt?: string | null
+  expiresAt?: string | null
+  hideSupplier?: boolean
+  status?: string | null
+}
+
+export interface MallDiscountBreakdown {
+  type: 'full_reduction' | 'coupon' | 'member' | 'points' | string
+  label: string
+  amountCents: number
+}
+
+export interface MallHomeBanner {
+  id: string
+  title: string
+  subtitle?: string | null
+  imageUrl?: string | null
+  linkType: string
+  linkTarget?: string | null
+  sortOrder: number
+  status: string
+  metadata?: Record<string, unknown>
+  startsAt?: string | null
+  endsAt?: string | null
+}
+
+export interface MallHomeSection {
+  id: string
+  sectionType: 'announcement' | 'flash_sale' | 'new_arrival' | 'best_seller' | string
+  title: string
+  subtitle?: string | null
+  content?: string | null
+  imageUrl?: string | null
+  linkType: string
+  linkTarget?: string | null
+  productIds?: string[]
+  rules?: Record<string, unknown>
+  sortOrder: number
+  status: string
+  startsAt?: string | null
+  endsAt?: string | null
 }
 
 export function resolveMallImageUrl(imageUrl?: string | null) {
@@ -51,10 +165,25 @@ export interface MallCartItem {
   id: string
   userId: string
   productId: string
+  variantId?: string | null
+  variantName?: string | null
   quantity: number
   selected: boolean
   product?: MallProduct
   lineTotalCents?: number
+  originalUnitPriceCents?: number
+  discountedUnitPriceCents?: number
+  lineDiscountCents?: number
+  linePayableCents?: number
+  savedCents?: number
+  pricingMode?: string | null
+  estimatedWeightGrams?: number | null
+  actualWeightGrams?: number | null
+  weightUnitLabel?: string | null
+  weightUnitGrams?: number | null
+  weightToleranceBps?: number | null
+  couponStackable?: boolean
+  pointsDeductibleCents?: number
 }
 
 export interface MallCart {
@@ -66,6 +195,20 @@ export interface MallCart {
   discountDescription?: string | null
   discountThresholdCents?: number | null
   discountRuleCents?: number | null
+  fullReductionCents?: number
+  couponDiscountCents?: number
+  memberDiscountCents?: number
+  pointsRedeemedCents?: number
+  totalDiscountCents?: number
+  discountBreakdown?: MallDiscountBreakdown[]
+  nextDiscountGapCents?: number | null
+  nextDiscountCents?: number | null
+  availablePoints?: number
+  memberLevel?: {
+    code?: string
+    name?: string
+    discountBps?: number
+  } | null
   selectedCount: number
 }
 
@@ -112,16 +255,35 @@ export interface MallPickupPoint {
   id: string
   name: string
   addressText: string
+  communityName?: string | null
   contactName?: string | null
   contactPhone?: string | null
+  leaderName?: string | null
+  leaderPhone?: string | null
   latitude?: number | null
   longitude?: number | null
   businessHours?: string | null
   distanceMeters?: number | null
   groupLeaderId?: string | null
   groupLeaderName?: string | null
+  sortOrder?: number | null
   status: string
   isDefault?: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface MallGroupLeader {
+  id: string
+  pickupPointId: string
+  pickupPointName?: string | null
+  pickupPointAddress?: string | null
+  communityName?: string | null
+  userId?: string | null
+  name: string
+  phone?: string | null
+  status: string
+  serviceNote?: string | null
   createdAt?: string
   updatedAt?: string
 }
@@ -211,6 +373,9 @@ export interface MallOrder {
   deliveryFeeCents: number
   couponCents: number
   payableCents: number
+  estimatedPayableCents?: number | null
+  weightAdjustmentStatus?: string | null
+  weightAdjustmentCents?: number | null
   paymentStatus: string
   status: string
   refundStatus?: string | null
@@ -223,10 +388,24 @@ export interface MallOrder {
   items: Array<{
     id: string
     productId: string
+    variantId?: string | null
+    variantName?: string | null
     productName: string
+    sku?: string | null
     unitPriceCents: number
     quantity: number
     lineTotalCents: number
+    estimatedLineTotalCents?: number | null
+    pricingMode?: string | null
+    estimatedWeightGrams?: number | null
+    actualWeightGrams?: number | null
+    weightUnit?: string | null
+    weightUnitLabel?: string | null
+    weightUnitGrams?: number | null
+    weightToleranceBps?: number | null
+    weightAdjustmentStatus?: string | null
+    weightAdjustmentNote?: string | null
+    weightAdjustedAt?: string | null
   }>
   events?: MallOrderEvent[]
   afterSales?: MallAfterSale[]
@@ -238,25 +417,61 @@ export interface MallCheckout {
   userId: string
   source: 'cart' | 'buy_now' | string
   productId?: string | null
+  variantId?: string | null
   quantity?: number
   addressId?: string | null
   pickupPointId?: string | null
   items: Array<{
     id?: string
     productId: string
+    variantId?: string | null
+    variantName?: string | null
     sku?: string
     productName: string
     categoryCode?: string | null
     imageUrl?: string | null
     unitPriceCents: number
+    originalUnitPriceCents?: number
+    discountedUnitPriceCents?: number
     quantity: number
     lineTotalCents: number
+    lineDiscountCents?: number
+    linePayableCents?: number
+    estimatedLineTotalCents?: number | null
+    pricingMode?: string | null
+    estimatedWeightGrams?: number | null
+    actualWeightGrams?: number | null
+    weightUnit?: string | null
+    weightUnitLabel?: string | null
+    weightUnitGrams?: number | null
+    weightToleranceBps?: number | null
+    weightAdjustmentStatus?: string | null
+    savedCents?: number
+    couponStackable?: boolean
+    pointsDeductibleCents?: number
     product?: MallProduct
   }>
   subtotalCents: number
   deliveryFeeCents: number
   couponCents: number
   payableCents: number
+  estimatedPayableCents?: number | null
+  weightAdjustmentStatus?: string | null
+  weightAdjustmentCents?: number | null
+  fullReductionCents?: number
+  couponDiscountCents?: number
+  memberDiscountCents?: number
+  pointsRedeemedCents?: number
+  totalDiscountCents?: number
+  discountBreakdown?: MallDiscountBreakdown[]
+  nextDiscountGapCents?: number | null
+  nextDiscountCents?: number | null
+  availablePoints?: number
+  memberLevel?: {
+    code?: string
+    name?: string
+    discountBps?: number
+  } | null
   discountDescription?: string | null
   discountThresholdCents?: number | null
   discountRuleCents?: number | null
@@ -317,6 +532,11 @@ export interface MallProfile {
     openTickets?: number
     afterSales?: number
   }
+  couponWallet?: {
+    availableCount?: number
+    expiringCount?: number
+    nearestExpiry?: string | null
+  }
   groupLeader?: Record<string, unknown> | null
 }
 
@@ -328,10 +548,16 @@ export interface MallGroupLeaderCenter {
   pendingShareCount?: number
   pendingVerificationCount?: number
   stockIssueCount?: number
+  commissionRateBps?: number
+  commissionRateRange?: string
+  withdrawableCents?: number
+  monthlyRewardCents?: number
   leader?: Record<string, unknown>
   pickupPoint?: MallPickupPoint | null
   today?: {
     readyForPickup?: number
+    pendingPickup?: number
+    orderCount?: number
     completed?: number
     afterSales?: number
     totalPayableCents?: number
@@ -355,6 +581,23 @@ export interface MallCampaign {
   status: string
 }
 
+export interface MallDeliveryRules {
+  pickupWindowStart?: string
+  pickupWindowEnd?: string
+  deliveryBatchTimes?: string
+  deliveryFeeCents?: number
+  freeDeliveryThresholdCents?: number
+  coldChainRequired?: boolean
+  refundReviewMinutes?: number
+}
+
+export interface MallPaymentSplitRules {
+  leaderCommissionRate?: number
+  platformServiceRate?: number
+  supplierSettlementCycle?: string
+  withdrawMinCents?: number
+}
+
 export interface MallSettings {
   id: string
   freeDeliveryThresholdCents: number
@@ -362,8 +605,115 @@ export interface MallSettings {
   deliveryPromiseMinutes: number
   coldChainEnabled: boolean
   refundReviewMinutes: number
+  deliveryRules: MallDeliveryRules
+  paymentSplitRules: MallPaymentSplitRules
   roles: Record<string, unknown>
   riskThresholds: Record<string, unknown>
+}
+
+export interface MallOpsOverview {
+  onSaleProducts?: number
+  stockAlerts?: number
+  todayOrders?: number
+  historyOrders?: number
+  exceptionOrders?: number
+  deliverySheets?: number
+  pendingWithdrawals?: number
+  todayRevenueCents?: number
+  todaySupplyCents?: number
+}
+
+export interface MallDeliverySheet {
+  id: string
+  sheetDate: string
+  pickupPointId: string
+  pickupPointName: string
+  communityName?: string | null
+  status: string
+  orderCount: number
+  itemCount: number
+  totalPayableCents: number
+  generatedBy?: string | null
+  generatedAt?: string
+  shippedAt?: string | null
+  deliveredAt?: string | null
+  metadata?: Record<string, unknown>
+}
+
+export interface MallFinanceBill {
+  period?: string
+  periodStart: string
+  periodEnd?: string
+  orderCount?: number
+  payableCents?: number
+  supplyAmountCents?: number
+  refundAmountCents?: number
+  settlementAmountCents?: number
+}
+
+export interface MallSettlementRecord {
+  id: string
+  periodType: string
+  periodStart: string
+  periodEnd: string
+  supplierId?: string | null
+  supplyAmountCents: number
+  refundAmountCents: number
+  settlementAmountCents: number
+  status: string
+  voucherUrl?: string | null
+  paidAt?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface MallWithdrawalRequest {
+  id: string
+  requesterId?: string | null
+  requesterRole: string
+  supplierId?: string | null
+  amountCents: number
+  status: string
+  bankAccountSnapshot?: Record<string, unknown>
+  reviewedBy?: string | null
+  reviewedAt?: string | null
+  paidAt?: string | null
+  voucherUrl?: string | null
+  note?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface MallSalesStats {
+  period: string
+  summary?: {
+    orderCount?: number
+    salesCents?: number
+    itemQuantity?: number
+  }
+  productStats?: Array<{
+    productId: string
+    productName: string
+    quantity: number
+    salesCents: number
+  }>
+  categoryStats?: Array<{
+    categoryCode: string
+    categoryName: string
+    quantity: number
+    salesCents: number
+  }>
+  topProducts?: Array<{
+    productId: string
+    productName: string
+    quantity: number
+    salesCents: number
+  }>
+  trend?: Array<{
+    bucket: string
+    orderCount: number
+    salesCents: number
+  }>
 }
 
 export interface SupportSession {
@@ -423,8 +773,21 @@ export async function listMallProducts(params: {
   keyword?: string
   categoryCode?: string
   status?: string
+  activityType?: string
+  sort?: string
+  page?: number
+  pageSize?: number
+  limit?: number
 } = {}): Promise<MallProduct[]> {
   return apiGet('/api/mall/products', params)
+}
+
+export async function listMallHomeBanners(): Promise<MallHomeBanner[]> {
+  return apiGet('/api/mall/home-banners')
+}
+
+export async function listMallHomeSections(): Promise<MallHomeSection[]> {
+  return apiGet('/api/mall/home-sections')
 }
 
 export async function getMallProduct(id: string): Promise<MallProduct> {
@@ -435,8 +798,8 @@ export async function getMallCart(userId: string): Promise<MallCart> {
   return apiGet('/api/mall/cart', { userId })
 }
 
-export async function addMallCartItem(userId: string, productId: string, quantity: number) {
-  return apiPost<MallCartItem>('/api/mall/cart/items', { userId, productId, quantity })
+export async function addMallCartItem(userId: string, productId: string, quantity: number, variantId?: string) {
+  return apiPost<MallCartItem>('/api/mall/cart/items', { userId, productId, quantity, variantId })
 }
 
 export async function updateMallCartItem(id: string, data: { quantity?: number; selected?: boolean }) {
@@ -473,6 +836,7 @@ export async function createMallCheckout(data: {
   userId: string
   source: 'cart' | 'buy_now'
   productId?: string
+  variantId?: string
   quantity?: number
   addressId?: string
   pickupPointId?: string
@@ -520,6 +884,51 @@ export async function adminListMallProducts(): Promise<MallProduct[]> {
   return apiGet('/api/admin/mall/products')
 }
 
+export async function adminGetMallOpsOverview(): Promise<MallOpsOverview> {
+  return apiGet('/api/admin/mall/ops/overview')
+}
+
+export async function adminListMallPickupPoints(params: {
+  keyword?: string
+  status?: string
+  communityName?: string
+  community?: string
+} = {}): Promise<MallPickupPoint[]> {
+  return apiGet('/api/admin/mall/pickup-points', params)
+}
+
+export async function adminCreateMallPickupPoint(data: Partial<MallPickupPoint> & Record<string, unknown>) {
+  return apiPost<MallPickupPoint>('/api/admin/mall/pickup-points', data)
+}
+
+export async function adminUpdateMallPickupPoint(id: string, data: Partial<MallPickupPoint> & Record<string, unknown>) {
+  return apiPut<MallPickupPoint>(`/api/admin/mall/pickup-points/${id}`, data)
+}
+
+export async function adminDeleteMallPickupPoint(id: string) {
+  return apiDelete(`/api/admin/mall/pickup-points/${id}`)
+}
+
+export async function adminListMallGroupLeaders(params: {
+  keyword?: string
+  status?: string
+  pickupPointId?: string
+} = {}): Promise<MallGroupLeader[]> {
+  return apiGet('/api/admin/mall/group-leaders', params)
+}
+
+export async function adminCreateMallGroupLeader(data: Partial<MallGroupLeader> & { pickupPointId: string; name: string }) {
+  return apiPost<MallGroupLeader>('/api/admin/mall/group-leaders', data)
+}
+
+export async function adminUpdateMallGroupLeader(id: string, data: Partial<MallGroupLeader>) {
+  return apiPut<MallGroupLeader>(`/api/admin/mall/group-leaders/${id}`, data)
+}
+
+export async function adminDeleteMallGroupLeader(id: string) {
+  return apiDelete(`/api/admin/mall/group-leaders/${id}`)
+}
+
 export async function adminCreateMallProduct(data: Partial<MallProduct> & { categoryCode: string; priceCents: number }) {
   return apiPost<MallProduct>('/api/admin/mall/products', data)
 }
@@ -549,6 +958,69 @@ export async function adminRefundMallOrder(id: string, data: {
   handlingMethod?: string
 }) {
   return apiPost(`/api/admin/mall/orders/${id}/refund`, data)
+}
+
+export async function adminListMallDeliverySheets(params: {
+  sheetDate?: string
+  status?: string
+  pickupPointId?: string
+} = {}): Promise<MallDeliverySheet[]> {
+  return apiGet('/api/admin/mall/delivery-sheets', params)
+}
+
+export async function adminGenerateMallDeliverySheet(data: {
+  sheetDate?: string
+  pickupPointId?: string
+  generatedBy?: string
+} = {}): Promise<MallDeliverySheet[]> {
+  return apiPost('/api/admin/mall/delivery-sheets/generate', data)
+}
+
+export async function adminUpdateMallDeliverySheetStatus(id: string, status: string | { status: string }): Promise<MallDeliverySheet> {
+  return apiPut(`/api/admin/mall/delivery-sheets/${id}/status`, typeof status === 'string' ? { status } : status)
+}
+
+export async function adminListMallFinanceBills(params: {
+  period?: 'day' | 'week' | 'month' | string
+  startDate?: string
+  endDate?: string
+  supplierId?: string
+} = {}): Promise<MallFinanceBill[]> {
+  return apiGet('/api/admin/mall/finance/bills', params)
+}
+
+export async function adminListMallSettlementRecords(params: {
+  period?: 'day' | 'week' | 'month' | string
+  status?: string
+  supplierId?: string
+} = {}): Promise<MallSettlementRecord[]> {
+  return apiGet('/api/admin/mall/finance/settlements', params)
+}
+
+export async function adminListMallWithdrawalRequests(params: {
+  status?: string
+  supplierId?: string
+} = {}): Promise<MallWithdrawalRequest[]> {
+  return apiGet('/api/admin/mall/finance/withdrawals', params)
+}
+
+export async function adminCreateMallWithdrawal(data: {
+  requesterId?: string
+  requesterRole?: string
+  supplierId?: string
+  amountCents: number
+  bankAccountSnapshot?: Record<string, unknown>
+  note?: string
+}): Promise<MallWithdrawalRequest> {
+  return apiPost('/api/admin/mall/finance/withdrawals', data)
+}
+
+export async function adminGetMallSalesStats(params: {
+  period?: 'day' | 'week' | 'month' | string
+  startDate?: string
+  endDate?: string
+} = {}): Promise<MallSalesStats> {
+  return apiGet('/api/admin/mall/stats/sales', params)
 }
 
 export async function adminCreateFulfillmentCode(orderId: string, data: {
@@ -618,6 +1090,14 @@ export async function getMallProfileSafe(userId: string): Promise<MallProfile> {
 
 export async function getMallGroupLeaderCenter(userId: string): Promise<MallGroupLeaderCenter> {
   return apiGet('/api/mall/group-leader/workbench', { userId })
+}
+
+export async function verifyMallGroupLeaderFulfillment(data: {
+  userId: string
+  orderId: string
+  code: string
+}): Promise<MallFulfillmentCode> {
+  return apiPost('/api/mall/group-leader/verify-fulfillment', data)
 }
 
 export async function getMallGroupLeaderCenterSafe(userId: string): Promise<MallGroupLeaderCenter> {

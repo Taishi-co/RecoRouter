@@ -1,25 +1,42 @@
 import { useEffect, useState } from 'react'
 import { Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
-import { ChevronLeft, MapPin, Plus } from 'lucide-react-taro'
+import { ChevronLeft, Plus } from 'lucide-react-taro'
+import { Input } from '@/components/ui/input'
 import {
   createMallAddress,
   listMallAddresses,
-  listMallPickupPoints,
   type MallAddress,
-  type MallPickupPoint,
 } from '@/services/mall'
 import { MallLocationStrip, MallPage, MallPrimaryButton } from '../mall-ui'
 
 interface StoredUser {
   id?: string
+  name?: string
+  phone?: string
+}
+
+interface AddressForm {
+  contactName: string
+  contactPhone: string
+  addressLabel: string
+  addressText: string
+}
+
+const initialForm: AddressForm = {
+  contactName: '',
+  contactPhone: '',
+  addressLabel: '',
+  addressText: '',
 }
 
 export default function MallAddressPage() {
   const [addresses, setAddresses] = useState<MallAddress[]>([])
-  const [pickupPoints, setPickupPoints] = useState<MallPickupPoint[]>([])
+  const [form, setForm] = useState<AddressForm>(initialForm)
   const [loading, setLoading] = useState(false)
-  const userId = (Taro.getStorageSync('userInfo') as StoredUser | undefined)?.id || ''
+  const [saving, setSaving] = useState(false)
+  const storedUser = (Taro.getStorageSync('userInfo') as StoredUser | undefined) || {}
+  const userId = storedUser.id || ''
 
   useEffect(() => {
     loadAddresses()
@@ -29,12 +46,15 @@ export default function MallAddressPage() {
     if (!userId) return
     setLoading(true)
     try {
-      const [data, points] = await Promise.all([
-        listMallAddresses(userId),
-        listMallPickupPoints({ status: 'active' }),
-      ])
+      const data = await listMallAddresses(userId)
       setAddresses(data)
-      setPickupPoints(points)
+      if (!form.contactName && !form.contactPhone) {
+        setForm((current) => ({
+          ...current,
+          contactName: storedUser.name || '',
+          contactPhone: storedUser.phone || '',
+        }))
+      }
     } catch (error) {
       Taro.showToast({
         title: error instanceof Error ? error.message : '地址加载失败',
@@ -45,31 +65,41 @@ export default function MallAddressPage() {
     }
   }
 
-  const addPickupPoint = async (point?: MallPickupPoint) => {
+  const saveAddress = async () => {
     if (!userId) return
-    const selectedPoint = point || pickupPoints[0]
-    if (!selectedPoint) {
-      Taro.showToast({ title: '暂无可用自提点', icon: 'none' })
+    if (!form.contactName.trim()) {
+      Taro.showToast({ title: '请填写收货人', icon: 'none' })
       return
     }
+    if (!form.contactPhone.trim()) {
+      Taro.showToast({ title: '请填写手机号', icon: 'none' })
+      return
+    }
+    if (!form.addressText.trim()) {
+      Taro.showToast({ title: '请填写送货地址', icon: 'none' })
+      return
+    }
+    setSaving(true)
     try {
       const address = await createMallAddress({
         userId,
-        contactName: selectedPoint.contactName || selectedPoint.groupLeaderName || selectedPoint.name,
-        contactPhone: selectedPoint.contactPhone || undefined,
-        addressLabel: selectedPoint.name,
-        addressText: selectedPoint.addressText,
-        addressType: 'pickup_point',
-        pickupPointId: selectedPoint.id,
+        contactName: form.contactName.trim(),
+        contactPhone: form.contactPhone.trim(),
+        addressLabel: form.addressLabel.trim() || '默认送货地址',
+        addressText: form.addressText.trim(),
+        addressType: 'delivery',
         isDefault: addresses.length === 0,
       })
       setAddresses((current) => [address, ...current])
-      Taro.showToast({ title: '已添加自提点', icon: 'success' })
+      setForm(initialForm)
+      Taro.showToast({ title: '收货地址已保存', icon: 'success' })
     } catch (error) {
       Taro.showToast({
         title: error instanceof Error ? error.message : '新增失败',
         icon: 'none',
       })
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -77,54 +107,44 @@ export default function MallAddressPage() {
     <MallPage active="mine">
       <View className="mall-back-row">
         <ChevronLeft size={24} color="#1F2D1F" onClick={() => Taro.navigateBack()} />
-        <Text className="mall-breadcrumb">我的 / 自提点</Text>
+        <Text className="mall-breadcrumb">我的 / 收货地址</Text>
       </View>
-      <Text className="mall-page-title">自提点列表</Text>
-      <Text className="mall-page-subtitle">常用自提点会用于购物车和确认订单。</Text>
+      <Text className="mall-page-title">收货地址</Text>
+      <Text className="mall-page-subtitle">下单后将按这里的地址送货到家。</Text>
 
-      {pickupPoints[0] ? (
-        <View className="mall-map-card" onClick={() => addPickupPoint(pickupPoints[0])}>
-          <MapPin size={30} color="#63BF54" />
-          <View>
-            <Text className="mall-list-title">{pickupPoints[0].name}</Text>
-            <Text className="mall-page-subtitle">{pickupPoints[0].addressText}</Text>
-          </View>
+      <View className="mall-card">
+        <Text className="mall-list-title">新增送货地址</Text>
+        <View className="mall-address-form">
+          <Input className="mall-form-input" value={form.contactName} placeholder="收货人" onInput={(event) => setForm((current) => ({ ...current, contactName: String(event.detail.value) }))} />
+          <Input className="mall-form-input" value={form.contactPhone} placeholder="手机号" type="number" onInput={(event) => setForm((current) => ({ ...current, contactPhone: String(event.detail.value) }))} />
+          <Input className="mall-form-input" value={form.addressLabel} placeholder="地址标签，例如家、公司" onInput={(event) => setForm((current) => ({ ...current, addressLabel: String(event.detail.value) }))} />
+          <Input className="mall-form-input" value={form.addressText} placeholder="详细送货地址，楼栋门牌越完整越好" onInput={(event) => setForm((current) => ({ ...current, addressText: String(event.detail.value) }))} />
         </View>
-      ) : null}
+        <View style={{ marginTop: 14 }}>
+          <MallPrimaryButton onClick={saveAddress}>
+            <Plus size={18} color="#FFFFFF" />
+            <Text style={{ marginLeft: 6 }}>{saving ? '保存中' : '保存收货地址'}</Text>
+          </MallPrimaryButton>
+        </View>
+      </View>
 
       {addresses.map((address) => (
         <View key={address.id} style={{ marginTop: 12 }}>
           <MallLocationStrip
             active={address.isDefault || address.is_default}
-            title={address.addressLabel || address.address_name || '路北区邻里驿站'}
-            subtitle={address.addressText || address.address || '团长王姐 · 距离 320m，可冷藏代收'}
+            title={address.addressLabel || address.address_name || '送货地址'}
+            subtitle={address.addressText || address.address || '详细地址待补充'}
             onClick={() => Taro.navigateBack()}
           />
         </View>
       ))}
+
       {!addresses.length ? (
         <View className="mall-empty">
-          <Text className="mall-empty-title">{loading ? '加载中...' : '暂无常用自提点'}</Text>
-          <Text className="mall-empty-copy">请从真实自提点列表中添加。</Text>
+          <Text className="mall-empty-title">{loading ? '加载中...' : '暂无收货地址'}</Text>
+          <Text className="mall-empty-copy">填写地址后，购物车和确认订单会自动使用。</Text>
         </View>
       ) : null}
-
-      {pickupPoints.slice(addresses.length ? 0 : 1).map((point) => (
-        <View key={point.id} style={{ marginTop: 12 }}>
-          <MallLocationStrip
-            title={point.name}
-            subtitle={`${point.addressText}${point.groupLeaderName ? ` · ${point.groupLeaderName}` : ''}`}
-            onClick={() => addPickupPoint(point)}
-          />
-        </View>
-      ))}
-
-      <View style={{ marginTop: 18 }}>
-        <MallPrimaryButton onClick={() => addPickupPoint()}>
-          <Plus size={18} color="#FFFFFF" />
-          <Text style={{ marginLeft: 6 }}>新增常用自提点</Text>
-        </MallPrimaryButton>
-      </View>
     </MallPage>
   )
 }

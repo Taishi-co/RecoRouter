@@ -948,12 +948,15 @@ async fn auth_captcha_answer(app: &Router) -> (String, String) {
 }
 
 async fn login_auth_user(app: &Router, phone: &str, password: &str) -> (StatusCode, Value) {
+    let (captcha_id, captcha_code) = auth_captcha_answer(app).await;
     post_json(
         app,
         "/api/auth/login",
         serde_json::json!({
             "phone": phone,
-            "password": password
+            "password": password,
+            "captchaId": captcha_id,
+            "captchaCode": captcha_code
         }),
     )
     .await
@@ -2288,6 +2291,33 @@ async fn core_admin_routes_require_active_admin_bearer_session() {
     .fetch_one(&context.pool)
     .await
     .expect("admin user should insert");
+
+    let (missing_captcha_status, missing_captcha_body) = post_json(
+        &context.app,
+        "/api/auth/login",
+        serde_json::json!({
+            "phone": "13900000111",
+            "password": "secret123"
+        }),
+    )
+    .await;
+    assert_eq!(missing_captcha_status, StatusCode::BAD_REQUEST);
+    assert_eq!(missing_captcha_body["message"], "请输入图形验证码");
+
+    let (captcha_id, _) = auth_captcha_answer(&context.app).await;
+    let (wrong_captcha_status, wrong_captcha_body) = post_json(
+        &context.app,
+        "/api/auth/login",
+        serde_json::json!({
+            "phone": "13900000111",
+            "password": "secret123",
+            "captchaId": captcha_id,
+            "captchaCode": "ZZZZ"
+        }),
+    )
+    .await;
+    assert_eq!(wrong_captcha_status, StatusCode::BAD_REQUEST);
+    assert_eq!(wrong_captcha_body["message"], "图形验证码错误或已过期");
 
     let (admin_login_status, admin_login_body) =
         login_auth_user(&context.app, "13900000111", "secret123").await;

@@ -15,8 +15,8 @@ import {
 } from './admin-pages'
 
 const statusText: Record<AdminPageStatus, string> = {
-  'shell-ready': '页面壳就绪',
-  'capability-shell': '平台能力壳',
+  'shell-ready': '可使用',
+  'capability-shell': '待配置',
 }
 
 const auditKeywords = ['审核', '导出', '支付', '退款', '转账', '分账', 'COS', '配置', '权限', '禁用']
@@ -79,7 +79,7 @@ export default function AdminConsolePage() {
                 Web 管理运营端
               </Text>
               <Text className="mt-1 block text-sm font-semibold" style={{ color: module.theme.muted }}>
-                mUU7R 三模块后台 registry：设计页 {adminDesignPageCount}，含平台能力页 {adminConsolePageCount}
+                三端运营管理：覆盖 {adminDesignPageCount + adminConsolePageCount} 个运营页面
               </Text>
             </View>
             <View className="flex flex-row flex-wrap gap-2">
@@ -117,10 +117,10 @@ export default function AdminConsolePage() {
         </View>
 
         <View className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <MetricCard label="设计稿页面" value={`${module.designCount}`} hint="mUU7R 页面级画板" theme={module.theme} />
-          <MetricCard label="平台能力页" value={`${module.capabilityCount}`} hint="复用治理后台壳" theme={module.theme} />
-          <MetricCard label="业务分组" value={`${groups.length - 1}`} hint="按后台侧边栏聚合" theme={module.theme} />
-          <MetricCard label="接口边界" value={module.serviceLabel} hint={module.description} theme={module.theme} compact />
+          <MetricCard label="业务页面" value={`${module.designCount}`} hint="覆盖日常运营流程" theme={module.theme} />
+          <MetricCard label="平台能力" value={`${module.capabilityCount}`} hint="账号、审计和公共配置" theme={module.theme} />
+          <MetricCard label="业务分组" value={`${groups.length - 1}`} hint="按常用工作区聚合" theme={module.theme} />
+          <MetricCard label="业务范围" value={module.serviceLabel} hint={module.description} theme={module.theme} compact />
         </View>
 
         <View className="flex flex-col gap-3 xl:flex-row">
@@ -206,18 +206,18 @@ export default function AdminConsolePage() {
                     </View>
 
                     <View className="flex flex-col gap-2">
-                      <DetailRow label="服务" value={selectedPage.service} theme={module.theme} />
-                      <DetailRow label="接口占位" value={selectedPage.api} theme={module.theme} />
-                      <DetailRow label="接入状态" value={statusText[selectedPage.status]} theme={module.theme} />
+                      <DetailRow label="所属模块" value={module.title} theme={module.theme} />
+                      <DetailRow label="所属分组" value={selectedPage.group} theme={module.theme} />
+                      <DetailRow label="页面状态" value={statusText[selectedPage.status]} theme={module.theme} />
                       <DetailRow label="审计要求" value={selectedNeedsAudit ? '需要写审计日志' : '常规业务操作'} theme={module.theme} />
                     </View>
 
                     <View className="rounded-lg border p-3" style={{ borderColor: module.theme.border, backgroundColor: module.theme.accentSoft }}>
                       <Text className="block text-sm font-black" style={{ color: module.theme.ink }}>
-                        真实接口接入提示
+                        操作提醒
                       </Text>
                       <Text className="mt-1 block text-xs leading-relaxed" style={{ color: module.theme.muted }}>
-                        Agent F 可用 key 定位页面，用 service 选择服务边界，用 api 对齐接口路径；资金、导出、配置和审核动作进入平台审计。
+                        涉及资金、导出、配置和审核的操作会保留审计记录，便于复核。
                       </Text>
                     </View>
 
@@ -225,9 +225,9 @@ export default function AdminConsolePage() {
                       <Button
                         className="rounded-lg"
                         style={{ backgroundColor: module.theme.primary }}
-                        onClick={() => showActionToast('接口占位已选中')}
+                        onClick={() => showActionToast('已打开当前操作')}
                       >
-                        <Text className="text-sm font-black text-white">接入接口</Text>
+                        <Text className="text-sm font-black text-white">开始处理</Text>
                       </Button>
                       <Button
                         variant="outline"
@@ -338,16 +338,22 @@ function PageListItem({
             {page.title}
           </Text>
           <Text className="mt-1 block text-xs font-semibold" style={{ color: theme.muted }}>
-            {page.group} / {page.service}
+            {page.group} / {serviceName(page.service)}
           </Text>
         </View>
         <View className="flex flex-row flex-wrap gap-2">
           <MiniPill label={statusText[page.status]} theme={theme} active={active} />
-          <MiniPill label={page.api} theme={theme} active={false} />
+          <MiniPill label={needsAudit(page) ? '需审计' : '常规'} theme={theme} active={false} />
         </View>
       </View>
     </View>
   )
+}
+
+function serviceName(service: AdminPage['service']) {
+  if (service === 'vehicle-api') return '无人车业务'
+  if (service === 'mall-api') return '商城业务'
+  return '平台治理'
 }
 
 function DetailRow({ label, value, theme }: { label: string; value: string; theme: AdminModuleTheme }) {

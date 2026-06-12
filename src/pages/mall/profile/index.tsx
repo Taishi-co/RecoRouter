@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import { Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { Headphones, LogOut, MapPin, PackageCheck, Settings, UsersRound } from 'lucide-react-taro'
+import { Gift, Headphones, LogOut, MapPin, PackageCheck, Settings } from 'lucide-react-taro'
 import {
   getMallProfile,
   listMallOrders,
   type MallOrder,
   type MallProfile,
 } from '@/services/mall'
-import { MallPage, MallPrimaryButton, mallYuan } from '../mall-ui'
+import { MallBrandMark, MallPage, MallPrimaryButton, mallYuan } from '../mall-ui'
 import { navigateToMallAuth } from '../auth-route'
 
 interface StoredUser {
@@ -74,45 +74,32 @@ export default function MallProfilePage() {
 
   const member = profile?.member
   const displayName = member?.name || member?.username || user.name || user.nickname || maskPhone(member?.phone || user.phone) || '商城用户'
-  const memberLevel = member?.level?.name || '普通会员'
+  const memberLevel = member?.level?.name || profile?.memberLevel || '普通会员'
   const points = Number(member?.points || 0)
   const totalSpendCents = Number(member?.totalSpendCents || 0)
-  const pickupPointName = profile?.defaultPickupPoint?.name
-    || profile?.defaultAddress?.addressLabel
-    || profile?.defaultAddress?.address_name
-    || '未设置自提点'
-  const pickupPointDetail = profile?.defaultPickupPoint?.addressText
-    || profile?.defaultAddress?.addressText
-    || profile?.defaultAddress?.address
-    || '选择常用自提点后展示到站信息'
   const orderCounts = orderCountView(profile, orders)
-  const support = profile?.support
-  const supportSubtitle = `客服会话 ${Number(support?.openSessions || 0)} 个 · 售后 ${Number(support?.afterSales || 0)} 单`
+  const couponWallet = profile?.couponWallet || {}
+  const availableCouponCount = Number(couponWallet.availableCount || 0)
+  const expiringCouponCount = Number(couponWallet.expiringCount || 0)
+  const deliveryAddressName = profile?.defaultAddress?.addressLabel
+    || profile?.defaultAddress?.address_name
+    || '未设置送货地址'
+  const deliveryAddressDetail = profile?.defaultAddress?.addressText
+    || profile?.defaultAddress?.address
+    || '填写收货地址后用于送货到家'
 
   return (
     <MallPage active="mine">
-      <View className="mall-title-row">
-        <View>
-          <Text className="mall-breadcrumb">叁友甄选</Text>
-          <Text className="mall-page-title">我的</Text>
-        </View>
-        <View className="mall-pill" onClick={() => Taro.navigateTo({ url: '/pages/mall/settings/index' })}>
-          <Text>{memberLevel}</Text>
-        </View>
-      </View>
-
-      <View className="mall-profile-hero">
+      <View className="mall-v7-profile-hero">
         <View className="mall-profile-avatar">
           <Text>{displayName.slice(0, 1)}</Text>
         </View>
-        <View className="mall-profile-copy">
+        <View className="mall-v7-profile-main">
           <Text className="mall-profile-name">{displayName}</Text>
-          <Text className="mall-profile-meta">
-            {pickupPointName} · 积分 {points}
-          </Text>
-          <View className="mall-profile-tags">
+          <Text className="mall-v7-profile-meta">{memberLevel} · 当前积分 {points}</Text>
+          <View className="mall-v7-profile-stats">
             <Text>累计消费 {mallYuan(totalSpendCents)}</Text>
-            <Text>{member?.status === 'disabled' ? '账号已停用' : '账号正常'}</Text>
+            <Text>100 积分抵 1 元</Text>
           </View>
         </View>
       </View>
@@ -132,52 +119,53 @@ export default function MallProfilePage() {
       <View className="mall-card">
         <View className="mall-list-row" style={{ marginTop: 0 }}>
           <Text className="mall-list-title">我的订单</Text>
-          <Text className="mall-section-action" onClick={() => Taro.navigateTo({ url: '/pages/mall/orders/index' })}>全部订单</Text>
+          <Text className="mall-section-action" onClick={() => Taro.navigateTo({ url: '/pages/mall/orders/index' })}>全部</Text>
         </View>
-        <View className="mall-stat-grid">
-          <StatTile value={loading ? 0 : orderCounts.pendingPayment} label="待付款" />
-          <StatTile value={loading ? 0 : orderCounts.pendingPickup} label="待自提" />
-          <StatTile value={loading ? 0 : orderCounts.afterSales} label="售后" />
+        <View className="mall-v7-order-entry-grid">
+          <ProfileEntry label="全部" value={loading ? 0 : orderCounts.total} onClick={() => Taro.navigateTo({ url: '/pages/mall/orders/index' })} />
+          <ProfileEntry label="待支付" value={loading ? 0 : orderCounts.pendingPayment} onClick={() => Taro.navigateTo({ url: '/pages/mall/orders/index' })} />
+          <ProfileEntry label="待收货" value={loading ? 0 : orderCounts.pendingReceipt} onClick={() => Taro.navigateTo({ url: '/pages/mall/orders/index' })} />
+          <ProfileEntry label="售后" value={loading ? 0 : orderCounts.afterSales} onClick={() => Taro.navigateTo({ url: '/pages/mall/orders/index' })} />
         </View>
       </View>
 
       <ProfileLink
-        icon={<UsersRound size={20} color="#63BF54" />}
-        title="我的团购"
-        subtitle={`已参与 ${orderCounts.activeGroups} 单 · 共 ${orderCounts.total} 个商城订单`}
+        icon={<PackageCheck size={20} color="#2F7E43" />}
+        title="卡包优惠券"
+        subtitle={`可用 ${availableCouponCount} 张${expiringCouponCount > 0 ? ` · ${expiringCouponCount} 张即将过期` : ''}`}
         action="查看"
-        onClick={() => Taro.navigateTo({ url: '/pages/mall/orders/index' })}
+        onClick={() => Taro.navigateTo({ url: '/pages/mall/category/index?keyword=优惠券' })}
       />
       <ProfileLink
-        icon={<MapPin size={20} color="#63BF54" />}
-        title="常用自提点"
-        subtitle={`${pickupPointName} · ${pickupPointDetail}`}
+        icon={<MapPin size={20} color="#2F7E43" />}
+        title="送货地址"
+        subtitle={`${deliveryAddressName} · ${deliveryAddressDetail}`}
         action="管理"
         onClick={() => Taro.navigateTo({ url: '/pages/mall/address/index' })}
       />
       <ProfileLink
-        icon={<Headphones size={20} color="#63BF54" />}
-        title="商城客服"
-        subtitle={supportSubtitle}
+        icon={<Settings size={20} color="#2F7E43" />}
+        title="发票申请"
+        subtitle="按商城订单申请电子发票，状态同步到客服售后"
+        action="申请"
+        onClick={() => Taro.navigateTo({ url: '/pages/mall/support/index?topic=invoice' })}
+      />
+      <ProfileLink
+        icon={<Gift size={20} color="#2F7E43" />}
+        title="积分商城"
+        subtitle={`当前 ${points} 积分，可兑换商品 / 优惠券`}
+        action="兑换"
+        onClick={() => Taro.navigateTo({ url: '/pages/mall/category/index?keyword=积分兑换' })}
+      />
+      <ProfileLink
+        icon={<Headphones size={20} color="#2F7E43" />}
+        title="客服售后"
+        subtitle={`售后 ${Number(profile?.support?.afterSales || 0)} 单 · 会话 ${Number(profile?.support?.openSessions || 0)} 个`}
         action="联系"
         onClick={() => Taro.navigateTo({ url: '/pages/mall/support/index' })}
       />
       <ProfileLink
-        icon={<PackageCheck size={20} color="#63BF54" />}
-        title="团长中心"
-        subtitle={profile?.groupLeader ? '已绑定团长身份，可处理自提核销' : '未绑定团长身份，进入后可查看权限状态'}
-        action="进入"
-        onClick={() => Taro.navigateTo({ url: '/pages/mall/group-leader/index' })}
-      />
-      <ProfileLink
-        icon={<Settings size={20} color="#63BF54" />}
-        title="消息与设置"
-        subtitle="团购提醒、自提通知、售后客服消息"
-        action="设置"
-        onClick={() => Taro.navigateTo({ url: '/pages/mall/settings/index' })}
-      />
-      <ProfileLink
-        icon={<LogOut size={20} color="#FF9238" />}
+        icon={<LogOut size={20} color="#B45309" />}
         title="退出登录"
         subtitle={maskPhone(member?.phone || user.phone) || '退出当前商城账号'}
         action="退出"
@@ -190,15 +178,16 @@ export default function MallProfilePage() {
 function MallProfileLoginState() {
   return (
     <MallPage active="mine">
-      <Text className="mall-breadcrumb">叁友甄选</Text>
+      <View className="mall-v7-head-brand">
+        <MallBrandMark compact />
+        <Text className="mall-breadcrumb">叁友甄选</Text>
+      </View>
       <Text className="mall-page-title">我的</Text>
-      <Text className="mall-page-subtitle">登录后查看订单、自提码、售后和邻里团购消息。</Text>
+      <Text className="mall-page-subtitle">登录后查看订单、配送进度、售后、积分和优惠券。</Text>
       <View className="mall-auth-empty">
-        <View className="mall-profile-avatar mall-profile-avatar-large">
-          <Text>叁</Text>
-        </View>
+        <MallBrandMark />
         <Text className="mall-empty-title">登录商城账号</Text>
-        <Text className="mall-empty-copy">登录或注册后，“我的”会从后端同步会员、订单、自提点和客服状态。</Text>
+        <Text className="mall-empty-copy">登录或注册后，“我的”会从后端同步会员、订单、送货地址和客服状态。</Text>
         <View className="mall-auth-actions">
           <MallPrimaryButton onClick={() => navigateToMallAuth('/pages/mall/profile/index', 'login')}>
             <Text>登录</Text>
@@ -212,11 +201,11 @@ function MallProfileLoginState() {
   )
 }
 
-function StatTile({ value, label }: { value: number; label: string }) {
+function ProfileEntry({ label, value, onClick }: { label: string; value: number; onClick: () => void }) {
   return (
-    <View className="mall-stat-tile">
-      <Text className="mall-stat-value">{value}</Text>
-      <Text className="mall-stat-label">{label}</Text>
+    <View className="mall-v7-profile-entry" onClick={onClick}>
+      <Text>{value}</Text>
+      <Text>{label}</Text>
     </View>
   )
 }
@@ -249,17 +238,15 @@ function ProfileLink({
 function orderCountView(profile: MallProfile | null, orders: MallOrder[]) {
   const backendCounts = profile?.orderCounts
   const pendingPayment = Number(backendCounts?.pendingPayment ?? orders.filter((order) => order.paymentStatus !== 'paid').length)
-  const pendingPickup = Number(backendCounts?.pendingPickup ?? orders.filter((order) => order.status.includes('pickup') || order.status.includes('paid')).length)
+  const pendingReceipt = orders.filter((order) => order.paymentStatus === 'paid' && ['ready_for_pickup', 'pending_pickup', 'delivering'].some((status) => order.status.includes(status))).length
   const afterSales = Number(backendCounts?.afterSales ?? orders.filter((order) => order.afterSaleStatus || order.refundStatus).length)
   const total = Number(backendCounts?.total ?? orders.length)
-  const activeGroups = orders.filter((order) => !['cancelled', 'completed'].includes(order.status)).length
 
   return {
     pendingPayment,
-    pendingPickup,
+    pendingReceipt,
     afterSales,
     total,
-    activeGroups,
   }
 }
 

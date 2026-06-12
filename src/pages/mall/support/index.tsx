@@ -13,7 +13,7 @@ import {
   type SupportMessage,
   type SupportSession,
 } from '@/services/mall'
-import { MallPage } from '../mall-ui'
+import { MallBrandMark, MallPage } from '../mall-ui'
 import { redirectToMallAuth } from '../auth-route'
 
 interface StoredUser {
@@ -98,20 +98,23 @@ export default function MallSupportCenter() {
     }
   }
 
-  const contactLeader = () => {
-    const phone = order?.groupLeaderPhone || order?.recipientPhone
+  const contactDelivery = () => {
+    const phone = order?.recipientPhone
     if (phone) {
       Taro.makePhoneCall({ phoneNumber: phone })
       return
     }
-    Taro.showToast({ title: '订单暂无团长联系方式', icon: 'none' })
+    Taro.showToast({ title: '订单暂无配送联系方式', icon: 'none' })
   }
 
   return (
     <MallPage active="mine">
       <View className="mall-back-row">
         <ChevronLeft size={24} color="#1F2D1F" onClick={() => Taro.navigateBack()} />
-        <Text className="mall-top-brand">叁友甄选</Text>
+        <View className="mall-back-brand">
+          <MallBrandMark compact />
+          <Text className="mall-top-brand">叁友甄选</Text>
+        </View>
       </View>
       <Text className="mall-breadcrumb">我的 / 客服聊天</Text>
       <Text className="mall-page-title">客服聊天</Text>
@@ -128,7 +131,7 @@ export default function MallSupportCenter() {
         <View className="mall-support-facts">
           <Fact label="订单号" value={order?.orderNo || (orderId ? String(orderId).slice(0, 10) : '未关联')} />
           <Fact label="售后状态" value={order?.afterSaleStatus || '暂无售后'} />
-          <Fact label="团长" value={order?.groupLeaderName || order?.recipientName || '待确认'} />
+          <Fact label="收货人" value={order?.recipientName || '待确认'} />
         </View>
       </View>
       {error ? <Text className="mall-empty-copy">{error}</Text> : null}
@@ -156,9 +159,9 @@ export default function MallSupportCenter() {
         <View className="mall-small-button" onClick={() => Taro.navigateTo({ url: `/pages/mall/after-sale/index?orderId=${orderId || ''}` })}>
           <Text>查看进度</Text>
         </View>
-        <View className="mall-small-button" onClick={contactLeader}>
+        <View className="mall-small-button" onClick={contactDelivery}>
           <Headphones size={15} color="#1F2D1F" />
-          <Text>联系团长</Text>
+          <Text>联系配送客服</Text>
         </View>
       </View>
 

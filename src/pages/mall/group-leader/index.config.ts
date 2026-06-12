@@ -1,3 +1,3 @@
 export default definePageConfig({
-  navigationBarTitleText: '团长中心',
+  navigationBarTitleText: '我的',
 })

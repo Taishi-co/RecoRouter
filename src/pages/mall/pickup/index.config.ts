@@ -1,3 +1,3 @@
 export default definePageConfig({
-  navigationBarTitleText: '自提点',
+  navigationBarTitleText: '收货地址',
 })

@@ -35,19 +35,19 @@ export default function MallPaymentSuccessPage() {
         </View>
         <Text className="mall-page-title">{order ? paymentStatusText(order) : error || '正在确认支付结果'}</Text>
         <Text className="mall-page-subtitle">
-          {order ? `${order.expectedDeliveryWindow || '待团长确认自提时间'} 到 ${order.pickupPointName || order.addressText} 自提` : '请稍后刷新订单状态'}
+          {order ? `${order.expectedDeliveryWindow || '明日 17:00-20:00'} 送达 ${order.addressText || '收货地址'}` : '请稍后刷新订单状态'}
         </Text>
       </View>
 
       <View className="mall-card" style={{ textAlign: 'center' }}>
-        <Text className="mall-page-subtitle">自提码</Text>
-        <Text className="mall-code">{order?.fulfillmentCode?.code || order?.cabinCode || '待生成'}</Text>
-        <Text className="mall-page-subtitle">{order?.fulfillmentCode ? '到点后向团长出示，支持截图保存' : '支付确认后由后端生成自提码'}</Text>
+        <Text className="mall-page-subtitle">配送状态</Text>
+        <Text className="mall-code">{order?.status ? deliveryStatusText(order.status) : '待确认'}</Text>
+        <Text className="mall-page-subtitle">我们会按收货地址安排配送，状态可在订单详情查看。</Text>
       </View>
 
       <View className="mall-card mall-card-soft">
         <View className="mall-avatar-row">
-          {[order?.groupLeaderName || '团长', '我'].map((name) => (
+          {['配送员', '我'].map((name) => (
             <View key={name} className={name === '我' ? 'mall-avatar mall-avatar-active' : 'mall-avatar'}>
               <Text>{name}</Text>
             </View>
@@ -75,8 +75,13 @@ function paymentStatusText(order: MallOrder) {
 }
 
 function groupStatusText(order?: MallOrder | null) {
-  if (!order) return '正在读取订单团购状态'
+  if (!order) return '正在读取订单状态'
   const count = order.items.reduce((sum, item) => sum + item.quantity, 0)
-  const leader = order.groupLeaderName ? `，团长 ${order.groupLeaderName} 将处理自提` : ''
-  return `${count || 0} 件商品已锁定，应付 ${mallYuan(order.payableCents)}${leader}`
+  return `${count || 0} 件商品已锁定，应付 ${mallYuan(order.payableCents)}，等待配送`
+}
+
+function deliveryStatusText(status: string) {
+  if (status.includes('deliver')) return '配送中'
+  if (status.includes('complete') || status.includes('finish')) return '已完成'
+  return '待配送'
 }
