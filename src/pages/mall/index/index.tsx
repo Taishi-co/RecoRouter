@@ -7,12 +7,14 @@ import {
   listMallCategories,
   listMallHomeBanners,
   listMallHomeSections,
+  listMallPromotionVenues,
   listMallProducts,
   resolveMallImageUrl,
   type MallCategory,
   type MallHomeBanner,
   type MallHomeSection,
   type MallProduct,
+  type MallPromotionVenue,
 } from '@/services/mall'
 import {
   MallDealProductCard,
@@ -71,6 +73,7 @@ export default function MallHome() {
   const [categories, setCategories] = useState<MallCategory[]>([])
   const [homeBanners, setHomeBanners] = useState<MallHomeBanner[]>([])
   const [homeSections, setHomeSections] = useState<MallHomeSection[]>([])
+  const [promotionVenues, setPromotionVenues] = useState<MallPromotionVenue[]>([])
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [now, setNow] = useState(() => Date.now())
@@ -94,6 +97,10 @@ export default function MallHome() {
   const flashSaleSection = useMemo(() => firstHomeSection(homeSections, 'flash_sale'), [homeSections])
   const newArrivalSection = useMemo(() => firstHomeSection(homeSections, 'new_arrival'), [homeSections])
   const bestSellerSection = useMemo(() => firstHomeSection(homeSections, 'best_seller'), [homeSections])
+  const homePromotionVenues = useMemo(
+    () => promotionVenues.filter((venue) => isHomePromotionVenue(venue)).slice(0, 4),
+    [promotionVenues],
+  )
   const flashSaleProducts = useMemo(
     () => resolveSectionProducts(products, flashSaleSection, pickFlashSaleProducts),
     [products, flashSaleSection],
@@ -118,14 +125,16 @@ export default function MallHome() {
     setLoading(true)
     setLoadError('')
     try {
-      const [productData, bannerData, sectionData] = await Promise.all([
+      const [productData, bannerData, sectionData, venueData] = await Promise.all([
         listMallProducts({}),
         listMallHomeBanners().catch(() => []),
         listMallHomeSections().catch(() => []),
+        listMallPromotionVenues().catch(() => []),
       ])
       setProducts(productData)
       setHomeBanners(bannerData)
       setHomeSections(sectionData)
+      setPromotionVenues(venueData)
       listMallCategories()
         .then(setCategories)
         .catch(() => setCategories([]))
@@ -167,6 +176,12 @@ export default function MallHome() {
     Taro.navigateTo({ url: `/pages/mall/category/index?${query.join('&')}` })
   }
 
+  const openPromotionVenue = (venue: MallPromotionVenue) => {
+    Taro.navigateTo({
+      url: `/pages/mall/category/index?activityType=promotion_venue&venueId=${encodeURIComponent(venue.id)}`,
+    })
+  }
+
   const handleAddCart = async (product: MallProduct) => {
     const user = currentUser()
     if (!user?.id) {
@@ -192,6 +207,42 @@ export default function MallHome() {
   return (
     <MallPage active="home">
       <MallHomeFixedHeader banners={banners} announcements={announcements} primaryImageUrl={primaryBannerImageUrl} onBannerTap={openBanner} />
+
+      {homePromotionVenues.length ? (
+        <View className="mall-v7-section mall-v7-promotion-venues">
+          <View className="mall-v7-promotion-venue-list">
+            {homePromotionVenues.map((venue) => {
+              const rules = venue.rules || {}
+              const iconUrl = resolveMallImageUrl(rules.iconUrl)
+              const backgroundImageUrl = resolveMallImageUrl(rules.backgroundImageUrl)
+              return (
+                <View
+                  key={venue.id}
+                  className="mall-v7-promotion-venue-card"
+                  style={{
+                    background: backgroundImageUrl
+                      ? `${rules.backgroundColor || '#F4FBF5'} url(${backgroundImageUrl}) center/cover no-repeat`
+                      : rules.backgroundColor || '#F4FBF5',
+                    color: rules.textColor || '#153A24',
+                  }}
+                  onClick={() => openPromotionVenue(venue)}
+                >
+                  <View className="mall-v7-promotion-venue-main">
+                    <View className="mall-v7-promotion-venue-icon">
+                      {iconUrl ? <Image src={iconUrl} mode="aspectFill" /> : <Text>{rules.iconText || '促'}</Text>}
+                    </View>
+                    <View>
+                      <Text className="mall-v7-promotion-venue-title">{rules.title || venue.name}</Text>
+                      <Text className="mall-v7-promotion-venue-copy">{rules.copy || rules.subtitle || '精选好货限时上新'}</Text>
+                    </View>
+                  </View>
+                  <Text className="mall-v7-promotion-venue-action">{rules.buttonText || '进入会场'}</Text>
+                </View>
+              )
+            })}
+          </View>
+        </View>
+      ) : null}
 
       <View className="mall-v7-section mall-v7-flash-sale">
         <View className="mall-v7-section-head">
@@ -357,6 +408,12 @@ function firstHomeSection(sections: MallHomeSection[], sectionType: string) {
   return sections
     .filter((section) => section.sectionType === sectionType && section.status !== 'draft')
     .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))[0]
+}
+
+function isHomePromotionVenue(venue: MallPromotionVenue) {
+  if (venue.status !== 'active') return false
+  const entryPosition = venue.rules?.entryPosition || 'home_after_banner'
+  return entryPosition === 'home_top' || entryPosition === 'home_after_banner' || entryPosition === 'home_after_flash'
 }
 
 function buildAnnouncements(homeSections: MallHomeSection[]) {

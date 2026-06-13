@@ -36,6 +36,10 @@ where
         .route("/api/mall/categories", get(list_categories::<S>))
         .route("/api/mall/home-banners", get(list_home_banners::<S>))
         .route("/api/mall/home-sections", get(list_home_sections::<S>))
+        .route(
+            "/api/mall/promotion-venues",
+            get(list_promotion_venues::<S>),
+        )
         .route("/api/mall/products", get(list_products::<S>))
         .route("/api/mall/products/:id", get(get_product::<S>))
         .route("/api/mall/cart", get(get_cart::<S>))
@@ -297,6 +301,8 @@ struct ProductQuery {
     status: Option<String>,
     #[serde(alias = "activity", alias = "activity_type", alias = "campaign_type")]
     activity_type: Option<String>,
+    #[serde(alias = "venueId", alias = "venue_id", alias = "campaign_id")]
+    venue_id: Option<String>,
     #[serde(alias = "orderBy", alias = "order_by")]
     sort: Option<String>,
     #[serde(alias = "stock_status")]
@@ -1137,8 +1143,14 @@ struct RefundRequest {
 struct AfterSaleRequest {
     #[serde(alias = "user_id")]
     user_id: String,
+    #[serde(alias = "after_sale_type")]
+    after_sale_type: Option<String>,
     reason: String,
     description: Option<String>,
+    #[serde(alias = "selected_items")]
+    selected_items: Option<Value>,
+    #[serde(alias = "requested_amount_cents")]
+    requested_amount_cents: Option<i64>,
     #[serde(alias = "amount_cents")]
     amount_cents: Option<i64>,
     #[serde(alias = "evidence_images")]
@@ -1151,7 +1163,23 @@ struct UpdateAfterSaleRequest {
     status: Option<String>,
     #[serde(alias = "handling_method")]
     handling_method: Option<String>,
+    #[serde(alias = "approved_amount_cents")]
+    approved_amount_cents: Option<i64>,
+    #[serde(alias = "solution_type")]
+    solution_type: Option<String>,
+    #[serde(alias = "negotiation_status")]
+    negotiation_status: Option<String>,
+    #[serde(alias = "return_logistics")]
+    return_logistics: Option<Value>,
     resolution: Option<String>,
+}
+
+#[derive(Debug, FromRow)]
+struct AfterSaleOrderContext {
+    id: String,
+    order_no: String,
+    user_id: String,
+    payable_cents: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1324,6 +1352,31 @@ struct OrderFulfillmentSeedRow {
 struct MallSettingsRow {
     free_delivery_threshold_cents: i64,
     default_delivery_fee_cents: i64,
+    delivery_rules: Value,
+}
+
+#[derive(Debug, Clone)]
+struct DeliveryFeeTier {
+    min_km: f64,
+    max_km: f64,
+    fee_cents_per_km: i64,
+}
+
+#[derive(Debug, Clone)]
+struct DeliveryRangeRule {
+    enabled: bool,
+    origin_latitude: Option<f64>,
+    origin_longitude: Option<f64>,
+    range_radius_km: Option<f64>,
+    range_polygon: Vec<(f64, f64)>,
+    fee_tiers: Vec<DeliveryFeeTier>,
+    out_of_range_blocked: bool,
+}
+
+#[derive(Debug, Clone)]
+struct DeliveryFeeQuote {
+    fee_cents: i64,
+    distance_km: Option<f64>,
 }
 
 #[derive(Clone)]
@@ -1505,6 +1558,44 @@ where
     }
     resolve_mall_image_urls_in_list(&state.storage, &mut products).await?;
     Ok(ok("查询成功", products))
+}
+
+async fn list_promotion_venues<S>(
+    State(state): State<AppState<S>>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let venues = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT campaign_json(c)
+        FROM mall_campaigns c
+        WHERE c.campaign_type = 'promotion_venue'
+          AND c.status = 'active'
+          AND (c.starts_at IS NULL OR c.starts_at <= now())
+          AND (c.ends_at IS NULL OR c.ends_at >= now())
+        ORDER BY
+          CASE
+            WHEN c.rules->>'entryPosition' = 'home_top' THEN 0
+            WHEN c.rules->>'entryPosition' = 'home_after_banner' THEN 1
+            WHEN c.rules->>'entryPosition' = 'home_after_flash' THEN 2
+            WHEN c.rules->>'entryPosition' = 'category_top' THEN 3
+            ELSE 9
+          END ASC,
+          CASE
+            WHEN COALESCE(c.rules->>'sortOrder', '') ~ '^-?[0-9]+$'
+            THEN (c.rules->>'sortOrder')::integer
+            ELSE 0
+          END ASC,
+          c.updated_at DESC,
+          c.created_at DESC
+        LIMIT 50
+        "#,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(ok("查询成功", venues))
 }
 
 async fn admin_list_inventory_alerts<S>(
@@ -2939,7 +3030,8 @@ where
         .iter()
         .map(|item| item.price_cents * i64::from(item.quantity))
         .sum();
-    let delivery_fee_cents = mall_delivery_fee_cents(subtotal_cents, &settings);
+    let delivery_quote = mall_delivery_fee_cents(subtotal_cents, &settings, Some(&address))?;
+    let delivery_fee_cents = delivery_quote.fee_cents;
     let summary = calculate_mall_price_summary(
         &state.db,
         Some(&body.user_id),
@@ -3225,34 +3317,88 @@ where
     S: Storage,
 {
     validate_required(&body.reason, "售后原因不能为空")?;
-    ensure_order_exists(&state.db, &order_id).await?;
-    let amount_cents = body.amount_cents.unwrap_or_else(|| 0).max(0);
+    let after_sale_type = normalize_after_sale_type(body.after_sale_type.as_deref())?;
+    let order = fetch_after_sale_order_context(&state.db, &order_id).await?;
+    if order.user_id != body.user_id {
+        return Err(ApiError::BadRequest("只能为自己的订单申请售后".to_string()));
+    }
+    let selected_items =
+        normalize_after_sale_selected_items(&state.db, &order.id, body.selected_items.as_ref())
+            .await?;
+    let requested_amount_cents = body
+        .requested_amount_cents
+        .or(body.amount_cents)
+        .unwrap_or_else(|| {
+            selected_items_amount_cents(&selected_items).unwrap_or(order.payable_cents)
+        })
+        .max(0);
+    let amount_cents = requested_amount_cents;
     let evidence_images = json!(body.evidence_images.unwrap_or_default());
+    let type_label = after_sale_type_label(after_sale_type);
+    let topic = format!("{type_label} · {}", order.order_no);
+    let support_session_id: String = sqlx::query_scalar(
+        r#"
+        INSERT INTO support_sessions (user_id, channel, topic, last_message)
+        VALUES ($1, 'mall_after_sales', $2, $3)
+        RETURNING id
+        "#,
+    )
+    .bind(&body.user_id)
+    .bind(&topic)
+    .bind(format!("用户已提交{type_label}申请"))
+    .fetch_one(&state.db)
+    .await?;
+    let timeline = json!([{
+        "status": "submitted",
+        "title": "售后申请已提交",
+        "description": format!("用户提交{type_label}，等待客服处理"),
+        "createdAt": chrono::Utc::now().to_rfc3339()
+    }]);
 
     let after_sale = sqlx::query_scalar::<_, Value>(
         r#"
-        INSERT INTO mall_after_sales (order_id, user_id, reason, description, amount_cents, evidence_images)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO mall_after_sales (
+          order_id, user_id, after_sale_type, reason, description,
+          selected_items, amount_cents, requested_amount_cents,
+          evidence_images, status, handling_method, solution_type,
+          negotiation_status, support_session_id, timeline
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, 'submitted', $9, $3, 'pending', $10, $11)
         RETURNING jsonb_build_object(
           'id', id,
           'orderId', order_id,
           'userId', user_id,
+          'afterSaleType', after_sale_type,
           'reason', reason,
           'description', description,
+          'selectedItems', selected_items,
           'amountCents', amount_cents,
+          'requestedAmountCents', requested_amount_cents,
+          'approvedAmountCents', approved_amount_cents,
           'evidenceImages', evidence_images,
           'status', status,
           'handlingMethod', handling_method,
+          'solutionType', solution_type,
+          'negotiationStatus', negotiation_status,
+          'returnLogistics', return_logistics,
+          'supportSessionId', support_session_id,
+          'resolution', resolution,
+          'timeline', timeline,
           'createdAt', created_at
         )
         "#,
     )
-    .bind(&order_id)
-    .bind(body.user_id)
+    .bind(&order.id)
+    .bind(&body.user_id)
+    .bind(after_sale_type)
     .bind(body.reason)
     .bind(body.description)
+    .bind(selected_items)
     .bind(amount_cents)
     .bind(evidence_images)
+    .bind(type_label)
+    .bind(&support_session_id)
+    .bind(timeline)
     .fetch_one(&state.db)
     .await?;
 
@@ -3264,15 +3410,15 @@ where
         WHERE id = $1
         "#,
     )
-    .bind(&order_id)
+    .bind(&order.id)
     .execute(&state.db)
     .await?;
     insert_order_event(
         &state.db,
-        &order_id,
+        &order.id,
         "after_sale_submitted",
         "已提交申请",
-        "上传破损照片与说明",
+        "售后申请已进入客服处理",
         "done",
     )
     .await?;
@@ -3293,12 +3439,22 @@ where
           'id', id,
           'orderId', order_id,
           'userId', user_id,
+          'afterSaleType', after_sale_type,
           'reason', reason,
           'description', description,
+          'selectedItems', selected_items,
           'amountCents', amount_cents,
+          'requestedAmountCents', requested_amount_cents,
+          'approvedAmountCents', approved_amount_cents,
           'evidenceImages', evidence_images,
           'status', status,
           'handlingMethod', handling_method,
+          'solutionType', solution_type,
+          'negotiationStatus', negotiation_status,
+          'returnLogistics', return_logistics,
+          'supportSessionId', support_session_id,
+          'resolution', resolution,
+          'timeline', timeline,
           'createdAt', created_at,
           'updatedAt', updated_at
         )
@@ -3312,6 +3468,60 @@ where
     .await?;
 
     Ok(ok("查询成功", list))
+}
+
+async fn fetch_after_sale_order_context(
+    pool: &PgPool,
+    order_identifier: &str,
+) -> ApiResult<AfterSaleOrderContext> {
+    sqlx::query_as::<_, AfterSaleOrderContext>(
+        r#"
+        SELECT id, order_no, user_id, payable_cents
+        FROM mall_orders
+        WHERE id = $1
+           OR lower(order_no) = lower($1)
+        "#,
+    )
+    .bind(order_identifier.trim())
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("订单不存在".to_string()))
+}
+
+async fn normalize_after_sale_selected_items(
+    pool: &PgPool,
+    order_id: &str,
+    selected_items: Option<&Value>,
+) -> ApiResult<Value> {
+    if let Some(Value::Array(items)) = selected_items {
+        if !items.is_empty() {
+            return Ok(Value::Array(items.clone()));
+        }
+    }
+
+    let items = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT COALESCE(jsonb_agg(jsonb_build_object(
+          'orderItemId', item.id,
+          'productId', item.product_id,
+          'variantId', item.variant_id,
+          'variantName', item.variant_name,
+          'productName', item.product_name,
+          'sku', item.sku,
+          'unitPriceCents', item.unit_price_cents,
+          'quantity', item.quantity,
+          'lineTotalCents', item.line_total_cents,
+          'pricingMode', item.pricing_mode
+        ) ORDER BY item.created_at ASC), '[]'::jsonb)
+        FROM mall_order_items item
+        WHERE item.order_id = $1
+        "#,
+    )
+    .bind(order_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(items)
 }
 
 async fn admin_create_product<S>(
@@ -3724,16 +3934,33 @@ where
     .await?;
     let after_sale = sqlx::query_scalar::<_, Value>(
         r#"
-        INSERT INTO mall_after_sales (order_id, user_id, reason, description, amount_cents, status, handling_method)
-        SELECT id, user_id, COALESCE($2, '平台退款处理'), $3, $4, 'approved', COALESCE($5, '极速退款')
+        INSERT INTO mall_after_sales (
+          order_id, user_id, after_sale_type, reason, description,
+          amount_cents, requested_amount_cents, approved_amount_cents,
+          status, handling_method, solution_type, negotiation_status, timeline
+        )
+        SELECT id, user_id, 'refund_only', COALESCE($2, '平台退款处理'), $3,
+               $4, $4, $4, 'approved', COALESCE($5, '极速退款'), 'refund_only', 'agreed',
+               jsonb_build_array(jsonb_build_object(
+                 'status', 'approved',
+                 'title', '退款已审核',
+                 'description', '管理端已发起退款',
+                 'createdAt', now()
+               ))
         FROM mall_orders
         WHERE id = $1
         RETURNING jsonb_build_object(
           'id', id,
           'orderId', order_id,
+          'afterSaleType', after_sale_type,
           'status', status,
           'amountCents', amount_cents,
-          'handlingMethod', handling_method
+          'requestedAmountCents', requested_amount_cents,
+          'approvedAmountCents', approved_amount_cents,
+          'handlingMethod', handling_method,
+          'solutionType', solution_type,
+          'negotiationStatus', negotiation_status,
+          'timeline', timeline
         )
         "#,
     )
@@ -3770,21 +3997,31 @@ where
         SELECT jsonb_build_object(
           'id', sale.id,
           'orderId', sale.order_id,
-          'orderNo', orders.order_no,
-          'userId', sale.user_id,
-          'userPhone', users.phone,
-          'recipientName', orders.recipient_name,
-          'recipientPhone', orders.recipient_phone,
-          'productName', first_item.product_name,
-          'reason', sale.reason,
-          'description', sale.description,
-          'amountCents', sale.amount_cents,
-          'evidenceImages', sale.evidence_images,
-          'status', sale.status,
-          'handlingMethod', sale.handling_method,
-          'createdAt', sale.created_at,
-          'updatedAt', sale.updated_at
-        )
+	          'orderNo', orders.order_no,
+	          'userId', sale.user_id,
+	          'userPhone', users.phone,
+	          'recipientName', orders.recipient_name,
+	          'recipientPhone', orders.recipient_phone,
+	          'productName', first_item.product_name,
+	          'afterSaleType', sale.after_sale_type,
+	          'reason', sale.reason,
+	          'description', sale.description,
+	          'selectedItems', sale.selected_items,
+	          'amountCents', sale.amount_cents,
+	          'requestedAmountCents', sale.requested_amount_cents,
+	          'approvedAmountCents', sale.approved_amount_cents,
+	          'evidenceImages', sale.evidence_images,
+	          'status', sale.status,
+	          'handlingMethod', sale.handling_method,
+	          'solutionType', sale.solution_type,
+	          'negotiationStatus', sale.negotiation_status,
+	          'returnLogistics', sale.return_logistics,
+	          'supportSessionId', sale.support_session_id,
+	          'resolution', sale.resolution,
+	          'timeline', sale.timeline,
+	          'createdAt', sale.created_at,
+	          'updatedAt', sale.updated_at
+	        )
         FROM mall_after_sales sale
         JOIN mall_orders orders ON orders.id = sale.order_id
         LEFT JOIN users ON users.id = sale.user_id
@@ -3870,16 +4107,38 @@ where
     if let Some(status) = body.status.as_deref() {
         validate_after_sale_status(status)?;
     }
+    if let Some(solution_type) = body.solution_type.as_deref() {
+        validate_after_sale_type(solution_type)?;
+    }
+    if let Some(negotiation_status) = body.negotiation_status.as_deref() {
+        validate_after_sale_negotiation_status(negotiation_status)?;
+    }
 
     let handling_method = non_empty(body.handling_method);
     let resolution = non_empty(body.resolution);
+    let timeline_event = body.status.as_deref().map(|status| {
+        json!([{
+            "status": status,
+            "title": after_sale_status_title(status),
+            "description": resolution.as_deref().unwrap_or_else(|| after_sale_status_title(status)),
+            "createdAt": chrono::Utc::now().to_rfc3339()
+        }])
+    }).unwrap_or_else(|| json!([]));
     let after_sale = sqlx::query_scalar::<_, Value>(
         r#"
         WITH updated AS (
           UPDATE mall_after_sales
           SET status = COALESCE($2, status),
               handling_method = COALESCE($3, handling_method),
-              description = COALESCE($4, description),
+              resolution = COALESCE($4, resolution),
+              approved_amount_cents = COALESCE($5, approved_amount_cents),
+              solution_type = COALESCE($6, solution_type),
+              negotiation_status = COALESCE($7, negotiation_status),
+              return_logistics = COALESCE($8, return_logistics),
+              timeline = CASE
+                WHEN jsonb_typeof($9::jsonb) = 'array' AND jsonb_array_length($9::jsonb) > 0 THEN timeline || $9::jsonb
+                ELSE timeline
+              END,
               updated_at = now()
           WHERE id = $1
           RETURNING *
@@ -3890,18 +4149,28 @@ where
           'orderNo', orders.order_no,
           'userId', sale.user_id,
           'userPhone', users.phone,
-          'recipientName', orders.recipient_name,
-          'recipientPhone', orders.recipient_phone,
-          'productName', first_item.product_name,
-          'reason', sale.reason,
-          'description', sale.description,
-          'amountCents', sale.amount_cents,
-          'evidenceImages', sale.evidence_images,
-          'status', sale.status,
-          'handlingMethod', sale.handling_method,
-          'createdAt', sale.created_at,
-          'updatedAt', sale.updated_at
-        )
+	          'recipientName', orders.recipient_name,
+	          'recipientPhone', orders.recipient_phone,
+	          'productName', first_item.product_name,
+	          'afterSaleType', sale.after_sale_type,
+	          'reason', sale.reason,
+	          'description', sale.description,
+	          'selectedItems', sale.selected_items,
+	          'amountCents', sale.amount_cents,
+	          'requestedAmountCents', sale.requested_amount_cents,
+	          'approvedAmountCents', sale.approved_amount_cents,
+	          'evidenceImages', sale.evidence_images,
+	          'status', sale.status,
+	          'handlingMethod', sale.handling_method,
+	          'solutionType', sale.solution_type,
+	          'negotiationStatus', sale.negotiation_status,
+	          'returnLogistics', sale.return_logistics,
+	          'supportSessionId', sale.support_session_id,
+	          'resolution', sale.resolution,
+	          'timeline', sale.timeline,
+	          'createdAt', sale.created_at,
+	          'updatedAt', sale.updated_at
+	        )
         FROM updated sale
         JOIN mall_orders orders ON orders.id = sale.order_id
         LEFT JOIN users ON users.id = sale.user_id
@@ -3918,6 +4187,11 @@ where
     .bind(body.status.as_deref())
     .bind(handling_method)
     .bind(resolution.clone())
+    .bind(body.approved_amount_cents.map(|amount| amount.max(0)))
+    .bind(body.solution_type.as_deref())
+    .bind(body.negotiation_status.as_deref())
+    .bind(body.return_logistics)
+    .bind(timeline_event)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| ApiError::NotFound("售后申请不存在".to_string()))?;
@@ -6194,6 +6468,7 @@ async fn fetch_products(
         Some(value) => Some(normalize_product_activity_type(&value)?),
         None => None,
     };
+    let venue_id = non_empty(query.venue_id);
     let sort_key = match non_empty(query.sort) {
         Some(value) => normalize_product_sort(&value)?,
         None if activity_type.as_deref() == Some("best_seller") => "sales_desc".to_string(),
@@ -6243,7 +6518,13 @@ async fn fetch_products(
         builder.push(")");
     }
     if let Some(activity_type) = activity_type.as_deref() {
-        push_product_activity_filter(&mut builder, activity_type);
+        if activity_type == "promotion_venue" {
+            push_product_promotion_venue_filter(&mut builder, venue_id.as_deref());
+        } else {
+            push_product_activity_filter(&mut builder, activity_type);
+        }
+    } else if let Some(venue_id) = venue_id.as_deref() {
+        push_product_promotion_venue_filter(&mut builder, Some(venue_id));
     }
     if let Some(stock_status) = non_empty(query.stock_status) {
         match stock_status.as_str() {
@@ -6470,6 +6751,8 @@ fn normalize_product_activity_type(value: &str) -> ApiResult<String> {
         "fixedPrice" | "fixed_price" | "onePrice" | "one_price" | "fixed" | "一口价" => {
             Ok("fixed_price".to_string())
         }
+        "promotionVenue" | "promotion_venue" | "venue" | "festival" | "大促" | "会场"
+        | "大促会场" => Ok("promotion_venue".to_string()),
         "newArrival" | "new_arrival" | "new" | "新品" | "上新" => Ok("new_arrival".to_string()),
         "bestSeller" | "best_seller" | "hot" | "爆款" => Ok("best_seller".to_string()),
         _ => Err(ApiError::BadRequest("活动筛选条件不正确".to_string())),
@@ -6596,6 +6879,38 @@ fn push_product_activity_filter(builder: &mut QueryBuilder<Postgres>, activity_t
         "best_seller" => {}
         _ => {}
     };
+}
+
+fn push_product_promotion_venue_filter(
+    builder: &mut QueryBuilder<Postgres>,
+    venue_id: Option<&str>,
+) {
+    builder.push(
+        r#"
+            AND EXISTS (
+              SELECT 1
+              FROM mall_campaigns campaign
+              JOIN LATERAL jsonb_array_elements(COALESCE(campaign.rules->'items', '[]'::jsonb)) AS item(value) ON true
+              WHERE campaign.campaign_type = 'promotion_venue'
+                AND campaign.status = 'active'
+                AND (campaign.starts_at IS NULL OR campaign.starts_at <= now())
+                AND (campaign.ends_at IS NULL OR campaign.ends_at >= now())
+        "#,
+    );
+    if let Some(venue_id) = venue_id {
+        builder.push(" AND campaign.id::text = ");
+        builder.push_bind(venue_id.to_string());
+    }
+    builder.push(
+        r#"
+                AND (
+                  item.value->>'productId' = p.id::text
+                  OR item.value->>'id' = p.id::text
+                  OR item.value->>'sku' = p.sku
+                )
+            )
+        "#,
+    );
 }
 
 fn push_product_order(builder: &mut QueryBuilder<Postgres>, sort_key: &str) {
@@ -7739,7 +8054,8 @@ async fn cart_payload(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
         .map(|item| item["lineTotalCents"].as_i64().unwrap_or_default())
         .sum::<i64>();
     let settings = fetch_mall_settings(pool).await?;
-    let delivery_fee_cents = mall_delivery_fee_cents(subtotal_cents, &settings);
+    let delivery_quote = mall_delivery_fee_cents(subtotal_cents, &settings, None)?;
+    let delivery_fee_cents = delivery_quote.fee_cents;
     let summary =
         calculate_mall_price_summary(pool, Some(user_id), subtotal_cents, delivery_fee_cents)
             .await?;
@@ -7782,7 +8098,18 @@ async fn checkout_payload(pool: &PgPool, checkout_id: &str) -> ApiResult<Value> 
 
     let subtotal_cents = checkout_subtotal_cents(&items);
     let settings = fetch_mall_settings(pool).await?;
-    let delivery_fee_cents = mall_delivery_fee_cents(subtotal_cents, &settings);
+    let address = match (
+        checkout.address_id.as_deref(),
+        checkout.pickup_point_id.as_deref(),
+    ) {
+        (None, None) => None,
+        (address_id, pickup_point_id) => Some(
+            fetch_order_address_snapshot(pool, &checkout.user_id, address_id, pickup_point_id)
+                .await?,
+        ),
+    };
+    let delivery_quote = mall_delivery_fee_cents(subtotal_cents, &settings, address.as_ref())?;
+    let delivery_fee_cents = delivery_quote.fee_cents;
     let summary = calculate_mall_price_summary(
         pool,
         Some(&checkout.user_id),
@@ -7804,6 +8131,7 @@ async fn checkout_payload(pool: &PgPool, checkout_id: &str) -> ApiResult<Value> 
         "items": item_values,
         "subtotalCents": subtotal_cents,
         "deliveryFeeCents": delivery_fee_cents,
+        "deliveryDistanceKm": delivery_quote.distance_km,
         "couponCents": summary.total_discount_cents,
         "payableCents": summary.payable_cents,
         "discountDescription": summary.discount_description,
@@ -8197,7 +8525,7 @@ async fn fetch_order_address_snapshot(
 async fn fetch_mall_settings(pool: &PgPool) -> ApiResult<MallSettingsRow> {
     sqlx::query_as::<_, MallSettingsRow>(
         r#"
-        SELECT free_delivery_threshold_cents, default_delivery_fee_cents
+        SELECT free_delivery_threshold_cents, default_delivery_fee_cents, delivery_rules
         FROM mall_operation_settings
         WHERE id = 'default'
         "#,
@@ -8207,12 +8535,198 @@ async fn fetch_mall_settings(pool: &PgPool) -> ApiResult<MallSettingsRow> {
     .ok_or_else(|| ApiError::NotFound("商城设置不存在".to_string()))
 }
 
-fn mall_delivery_fee_cents(subtotal_cents: i64, settings: &MallSettingsRow) -> i64 {
-    if subtotal_cents >= settings.free_delivery_threshold_cents {
+fn mall_delivery_fee_cents(
+    subtotal_cents: i64,
+    settings: &MallSettingsRow,
+    address: Option<&AddressSnapshotRow>,
+) -> ApiResult<DeliveryFeeQuote> {
+    let range_rule = parse_delivery_range_rule(&settings.delivery_rules);
+    let distance_km = calculate_delivery_distance_km(&range_rule, address)?;
+    let fee_cents = if subtotal_cents >= settings.free_delivery_threshold_cents {
         0
+    } else if let Some(distance_km) = distance_km {
+        delivery_fee_for_distance_cents(&range_rule, distance_km)
+            .unwrap_or(settings.default_delivery_fee_cents)
     } else {
         settings.default_delivery_fee_cents
+    };
+    Ok(DeliveryFeeQuote {
+        fee_cents,
+        distance_km,
+    })
+}
+
+fn parse_delivery_range_rule(delivery_rules: &Value) -> DeliveryRangeRule {
+    DeliveryRangeRule {
+        enabled: json_bool_value(delivery_rules, "rangeEnabled").unwrap_or(false),
+        origin_latitude: json_f64_value(delivery_rules, "originLatitude"),
+        origin_longitude: json_f64_value(delivery_rules, "originLongitude"),
+        range_radius_km: json_f64_value(delivery_rules, "rangeRadiusKm"),
+        range_polygon: parse_delivery_range_polygon(delivery_rules.get("rangePolygon")),
+        fee_tiers: parse_delivery_fee_tiers(delivery_rules.get("feeTiers")),
+        out_of_range_blocked: json_bool_value(delivery_rules, "outOfRangeBlocked").unwrap_or(true),
     }
+}
+
+fn json_bool_value(value: &Value, key: &str) -> Option<bool> {
+    value.get(key).and_then(|item| match item {
+        Value::Bool(flag) => Some(*flag),
+        Value::String(text) => text.parse::<bool>().ok(),
+        _ => None,
+    })
+}
+
+fn json_f64_value(value: &Value, key: &str) -> Option<f64> {
+    value.get(key).and_then(|item| match item {
+        Value::Number(number) => number.as_f64(),
+        Value::String(text) => text.parse::<f64>().ok(),
+        _ => None,
+    })
+}
+
+fn parse_delivery_range_polygon(value: Option<&Value>) -> Vec<(f64, f64)> {
+    value
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let latitude = json_f64_value(item, "latitude")?;
+                    let longitude = json_f64_value(item, "longitude")?;
+                    Some((latitude, longitude))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_delivery_fee_tiers(value: Option<&Value>) -> Vec<DeliveryFeeTier> {
+    let mut tiers = value
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let min_km = json_f64_value(item, "minKm")?;
+                    let max_km = json_f64_value(item, "maxKm")?;
+                    let fee_cents_per_km = item
+                        .get("feeCentsPerKm")
+                        .and_then(Value::as_i64)
+                        .or_else(|| {
+                            json_f64_value(item, "feeYuanPerKm")
+                                .map(|fee_yuan| (fee_yuan * 100.0).round() as i64)
+                        })?;
+                    if max_km <= min_km || fee_cents_per_km < 0 {
+                        return None;
+                    }
+                    Some(DeliveryFeeTier {
+                        min_km,
+                        max_km,
+                        fee_cents_per_km,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    tiers.sort_by(|left, right| {
+        left.min_km
+            .partial_cmp(&right.min_km)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    tiers
+}
+
+fn calculate_delivery_distance_km(
+    range_rule: &DeliveryRangeRule,
+    address: Option<&AddressSnapshotRow>,
+) -> ApiResult<Option<f64>> {
+    if !range_rule.enabled {
+        return Ok(None);
+    }
+    let origin_latitude = range_rule
+        .origin_latitude
+        .ok_or_else(|| ApiError::BadRequest("配送范围未设置起点纬度".to_string()))?;
+    let origin_longitude = range_rule
+        .origin_longitude
+        .ok_or_else(|| ApiError::BadRequest("配送范围未设置起点经度".to_string()))?;
+    let address = address.ok_or_else(|| ApiError::BadRequest("收货地址不能为空".to_string()))?;
+    let latitude = address
+        .latitude
+        .ok_or_else(|| ApiError::BadRequest("收货地址缺少定位，请重新选择地址".to_string()))?;
+    let longitude = address
+        .longitude
+        .ok_or_else(|| ApiError::BadRequest("收货地址缺少定位，请重新选择地址".to_string()))?;
+
+    let distance_km = haversine_distance_km(origin_latitude, origin_longitude, latitude, longitude);
+    let outside_radius = range_rule
+        .range_radius_km
+        .map(|radius_km| radius_km > 0.0 && distance_km > radius_km)
+        .unwrap_or(false);
+    let outside_polygon =
+        !range_rule.range_polygon.is_empty()
+            && !point_in_delivery_polygon(latitude, longitude, &range_rule.range_polygon);
+    if range_rule.out_of_range_blocked && (outside_radius || outside_polygon) {
+        return Err(ApiError::BadRequest(format!(
+            "超出配送范围，当前距离约{:.1}公里",
+            distance_km
+        )));
+    }
+    Ok(Some(distance_km))
+}
+
+fn delivery_fee_for_distance_cents(
+    range_rule: &DeliveryRangeRule,
+    distance_km: f64,
+) -> Option<i64> {
+    range_rule
+        .fee_tiers
+        .iter()
+        .find(|tier| distance_km >= tier.min_km && distance_km <= tier.max_km)
+        .map(|tier| (distance_km * tier.fee_cents_per_km as f64).ceil() as i64)
+}
+
+fn haversine_distance_km(
+    origin_latitude: f64,
+    origin_longitude: f64,
+    target_latitude: f64,
+    target_longitude: f64,
+) -> f64 {
+    let earth_radius_km = 6371.0_f64;
+    let lat_delta = (target_latitude - origin_latitude).to_radians();
+    let lon_delta = (target_longitude - origin_longitude).to_radians();
+    let origin_lat = origin_latitude.to_radians();
+    let target_lat = target_latitude.to_radians();
+    let a = (lat_delta / 2.0).sin().powi(2)
+        + origin_lat.cos() * target_lat.cos() * (lon_delta / 2.0).sin().powi(2);
+    let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
+    earth_radius_km * c
+}
+
+fn point_in_delivery_polygon(latitude: f64, longitude: f64, polygon: &[(f64, f64)]) -> bool {
+    if polygon.len() < 3 {
+        return true;
+    }
+    let mut inside = false;
+    let mut previous = polygon.len() - 1;
+    for current in 0..polygon.len() {
+        let (current_latitude, current_longitude) = polygon[current];
+        let (previous_latitude, previous_longitude) = polygon[previous];
+        let latitude_delta = previous_latitude - current_latitude;
+        if latitude_delta.abs() < f64::EPSILON {
+            previous = current;
+            continue;
+        }
+        let intersects = ((current_latitude > latitude) != (previous_latitude > latitude))
+            && (longitude
+                < (previous_longitude - current_longitude) * (latitude - current_latitude)
+                    / latitude_delta
+                    + current_longitude);
+        if intersects {
+            inside = !inside;
+        }
+        previous = current;
+    }
+    inside
 }
 
 async fn calculate_mall_discount_cents(
@@ -10263,8 +10777,13 @@ fn validate_after_sale_status(status: &str) -> ApiResult<()> {
     if matches!(
         status,
         "submitted"
+            | "negotiating"
             | "approved"
             | "processing"
+            | "return_pending"
+            | "returning"
+            | "exchange_processing"
+            | "replacement_sent"
             | "refunding"
             | "refunded"
             | "rejected"
@@ -10277,9 +10796,71 @@ fn validate_after_sale_status(status: &str) -> ApiResult<()> {
     }
 }
 
+fn normalize_after_sale_type(value: Option<&str>) -> ApiResult<&'static str> {
+    let normalized = match value.map(str::trim).filter(|value| !value.is_empty()) {
+        Some("return_refund") | Some("退货退款") => "return_refund",
+        Some("exchange") | Some("换货") => "exchange",
+        Some("refund_only") | Some("仅退款") => "refund_only",
+        Some(_) => return Err(ApiError::BadRequest("售后类型不正确".to_string())),
+        None => "refund_only",
+    };
+    Ok(normalized)
+}
+
+fn validate_after_sale_type(value: &str) -> ApiResult<()> {
+    normalize_after_sale_type(Some(value)).map(|_| ())
+}
+
+fn validate_after_sale_negotiation_status(value: &str) -> ApiResult<()> {
+    if matches!(
+        value,
+        "pending" | "negotiating" | "agreed" | "rejected" | "closed"
+    ) {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest("协商状态不正确".to_string()))
+    }
+}
+
+fn after_sale_type_label(value: &str) -> &'static str {
+    match value {
+        "return_refund" => "退货退款",
+        "exchange" => "换货",
+        "refund_only" => "仅退款",
+        _ => "售后",
+    }
+}
+
+fn selected_items_amount_cents(value: &Value) -> Option<i64> {
+    let items = value.as_array()?;
+    let total = items
+        .iter()
+        .map(|item| {
+            item.get("lineTotalCents")
+                .or_else(|| item.get("line_total_cents"))
+                .and_then(Value::as_i64)
+                .unwrap_or_else(|| {
+                    let unit_price = item
+                        .get("unitPriceCents")
+                        .or_else(|| item.get("unit_price_cents"))
+                        .and_then(Value::as_i64)
+                        .unwrap_or(0);
+                    let quantity = item.get("quantity").and_then(Value::as_i64).unwrap_or(1);
+                    unit_price.saturating_mul(quantity)
+                })
+        })
+        .sum::<i64>();
+    Some(total.max(0))
+}
+
 fn refund_status_for_after_sale(status: &str) -> Option<&'static str> {
     match status {
-        "approved" | "refunding" => Some("approved"),
+        "approved"
+        | "return_pending"
+        | "returning"
+        | "exchange_processing"
+        | "replacement_sent"
+        | "refunding" => Some("approved"),
         "refunded" | "resolved" | "closed" => Some("refunded"),
         "rejected" => Some("rejected"),
         _ => None,
@@ -10288,7 +10869,12 @@ fn refund_status_for_after_sale(status: &str) -> Option<&'static str> {
 
 fn order_after_sale_status(status: &str) -> &'static str {
     match status {
+        "negotiating" => "negotiating",
         "approved" => "approved",
+        "return_pending" => "return_pending",
+        "returning" => "returning",
+        "exchange_processing" => "exchange_processing",
+        "replacement_sent" => "replacement_sent",
         "processing" => "processing",
         "refunding" => "refunding",
         "refunded" => "refunded",
@@ -10322,8 +10908,13 @@ fn order_status_title(status: &str) -> &'static str {
 
 fn after_sale_status_title(status: &str) -> &'static str {
     match status {
+        "negotiating" => "客服协商中",
         "approved" => "售后审核通过",
         "processing" => "售后处理中",
+        "return_pending" => "等待退货",
+        "returning" => "退货处理中",
+        "exchange_processing" => "换货处理中",
+        "replacement_sent" => "换货已发出",
         "refunding" => "退款处理中",
         "refunded" => "退款已完成",
         "rejected" => "售后已驳回",
@@ -10408,5 +10999,72 @@ mod tests {
 
         assert!(body.address_id.is_none());
         assert_eq!(body.pickup_point_id.as_deref(), Some("pickup-point-1"));
+    }
+
+    #[test]
+    fn delivery_range_uses_distance_fee_tier() {
+        let settings = MallSettingsRow {
+            free_delivery_threshold_cents: 9900,
+            default_delivery_fee_cents: 600,
+            delivery_rules: json!({
+                "rangeEnabled": true,
+                "outOfRangeBlocked": true,
+                "originLatitude": 0,
+                "originLongitude": 0,
+                "rangeRadiusKm": 5,
+                "feeTiers": [
+                    { "minKm": 0, "maxKm": 2, "feeCentsPerKm": 0 },
+                    { "minKm": 2, "maxKm": 3, "feeCentsPerKm": 300 },
+                    { "minKm": 3, "maxKm": 5, "feeCentsPerKm": 400 }
+                ]
+            }),
+        };
+        let address = AddressSnapshotRow {
+            address_id: Some("addr-1".to_string()),
+            pickup_point_id: None,
+            contact_name: Some("张三".to_string()),
+            contact_phone: Some("18888888888".to_string()),
+            address_text: "测试地址".to_string(),
+            latitude: Some(0.0),
+            longitude: Some(0.025),
+        };
+
+        let quote = mall_delivery_fee_cents(1000, &settings, Some(&address)).unwrap();
+
+        assert!(quote.distance_km.unwrap() > 2.0);
+        assert!(quote.distance_km.unwrap() < 3.0);
+        assert!(quote.fee_cents > 800);
+        assert!(quote.fee_cents < 900);
+    }
+
+    #[test]
+    fn delivery_range_blocks_out_of_range_address() {
+        let settings = MallSettingsRow {
+            free_delivery_threshold_cents: 9900,
+            default_delivery_fee_cents: 600,
+            delivery_rules: json!({
+                "rangeEnabled": true,
+                "outOfRangeBlocked": true,
+                "originLatitude": 0,
+                "originLongitude": 0,
+                "rangeRadiusKm": 1,
+                "feeTiers": [
+                    { "minKm": 0, "maxKm": 5, "feeCentsPerKm": 300 }
+                ]
+            }),
+        };
+        let address = AddressSnapshotRow {
+            address_id: Some("addr-1".to_string()),
+            pickup_point_id: None,
+            contact_name: Some("张三".to_string()),
+            contact_phone: Some("18888888888".to_string()),
+            address_text: "测试地址".to_string(),
+            latitude: Some(0.0),
+            longitude: Some(0.02),
+        };
+
+        let error = mall_delivery_fee_cents(1000, &settings, Some(&address)).unwrap_err();
+
+        assert!(format!("{error}").contains("超出配送范围"));
     }
 }

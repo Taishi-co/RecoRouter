@@ -22,7 +22,7 @@ interface StoredUser {
 }
 
 const pageSize = 12
-type MallActivityType = '' | 'flash_sale' | 'full_reduction' | 'new_arrival' | 'best_seller'
+type MallActivityType = '' | 'flash_sale' | 'full_reduction' | 'new_arrival' | 'best_seller' | 'promotion_venue'
 type MallSortKey = '' | 'price_asc' | 'price_desc' | 'newest' | 'oldest' | 'sales_desc'
 
 const activityFilters: Array<{ label: string; value: MallActivityType }> = [
@@ -31,6 +31,7 @@ const activityFilters: Array<{ label: string; value: MallActivityType }> = [
   { label: '满减', value: 'full_reduction' },
   { label: '今日上新', value: 'new_arrival' },
   { label: '爆款', value: 'best_seller' },
+  { label: '会场', value: 'promotion_venue' },
 ]
 
 const sortOptions: Array<{ label: string; value: MallSortKey }> = [
@@ -48,6 +49,7 @@ export default function MallCategoryPage() {
   const initialCode = decodeRouteParam(routeParams?.categoryCode)
   const initialActivityType = normalizeInitialActivityType(routeParams?.activityType || routeParams?.activity)
   const initialSort = normalizeInitialSort(routeParams?.sort)
+  const venueId = decodeRouteParam(routeParams?.venueId || routeParams?.venue_id || routeParams?.campaignId)
   const [categories, setCategories] = useState<MallCategory[]>([])
   const [products, setProducts] = useState<MallProduct[]>([])
   const [activeCode, setActiveCode] = useState(initialCode)
@@ -135,6 +137,7 @@ export default function MallCategoryPage() {
         keyword: nextKeyword.trim() || undefined,
         categoryCode: nextActiveCode || undefined,
         activityType: nextActivityType || undefined,
+        venueId: nextActivityType === 'promotion_venue' ? venueId || undefined : undefined,
         sort: nextSort || undefined,
         page: nextPage,
         pageSize,
@@ -344,7 +347,7 @@ function applyProductListPresentation(
 }
 
 function filterProductsByActivity(products: MallProduct[], activityType: MallActivityType) {
-  if (!activityType || activityType === 'best_seller') return []
+  if (!activityType || activityType === 'best_seller' || activityType === 'promotion_venue') return []
   return products.filter((product) => {
     const tags = product.tags?.join('') || ''
     const label = product.discountLabel || ''
@@ -408,6 +411,10 @@ function normalizeInitialActivityType(value?: string | string[]): MallActivityTy
     case 'bestSeller':
     case 'best_seller':
       return 'best_seller'
+    case 'promotionVenue':
+    case 'promotion_venue':
+    case 'venue':
+      return 'promotion_venue'
     default:
       return ''
   }

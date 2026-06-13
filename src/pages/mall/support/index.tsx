@@ -29,8 +29,10 @@ export default function MallSupportCenter() {
   const [draft, setDraft] = useState('我的订单售后需要协助，请帮我查看进度。')
   const userId = (Taro.getStorageSync('userInfo') as StoredUser | undefined)?.id || ''
   const orderId = Taro.getCurrentInstance().router?.params?.orderId
+  const sessionId = Taro.getCurrentInstance().router?.params?.sessionId
+  const afterSaleId = Taro.getCurrentInstance().router?.params?.afterSaleId
   const topic = Taro.getCurrentInstance().router?.params?.topic === 'after-sale'
-    ? '环果包赔 · 草莓拼团'
+    ? '订单售后协商'
     : '商城订单售后咨询'
 
   useEffect(() => {
@@ -53,7 +55,9 @@ export default function MallSupportCenter() {
       ])
       setOrder(nextOrder)
       setSessions(nextSessions)
-      const session = nextSessions[0]
+      const session = sessionId
+        ? nextSessions.find((item) => item.id === String(sessionId)) || nextSessions[0]
+        : nextSessions[0]
       if (session) {
         setSelectedSession(session)
         setMessages(await listSupportMessages(session.id))
@@ -87,6 +91,10 @@ export default function MallSupportCenter() {
         senderId: userId,
         senderRole: 'user',
         content: draft.trim(),
+        metadata: {
+          orderId: orderId ? String(orderId) : undefined,
+          afterSaleId: afterSaleId ? String(afterSaleId) : undefined,
+        },
       })
       setMessages((current) => [...current, message])
       setDraft('')
@@ -105,6 +113,28 @@ export default function MallSupportCenter() {
       return
     }
     Taro.showToast({ title: '订单暂无配送联系方式', icon: 'none' })
+  }
+
+  const uploadEvidence = async () => {
+    try {
+      const result = await Taro.chooseImage({ count: 3 })
+      if (!result.tempFilePaths.length) return
+      const session = await ensureSession()
+      const message = await createSupportMessage(session.id, {
+        senderId: userId,
+        senderRole: 'user',
+        content: `补充售后凭证 ${result.tempFilePaths.length} 张`,
+        metadata: {
+          orderId: orderId ? String(orderId) : undefined,
+          afterSaleId: afterSaleId ? String(afterSaleId) : undefined,
+          localImages: result.tempFilePaths,
+        },
+      })
+      setMessages((current) => [...current, message])
+      Taro.showToast({ title: '凭证已发送', icon: 'success' })
+    } catch {
+      Taro.showToast({ title: '未选择照片', icon: 'none' })
+    }
   }
 
   return (
@@ -152,7 +182,7 @@ export default function MallSupportCenter() {
       </View>
 
       <View className="mall-support-actions">
-        <View className="mall-small-button" onClick={() => Taro.showToast({ title: '请选择照片', icon: 'none' })}>
+        <View className="mall-small-button" onClick={uploadEvidence}>
           <Camera size={15} color="#1F2D1F" />
           <Text>上传照片</Text>
         </View>
