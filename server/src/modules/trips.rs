@@ -31,6 +31,7 @@ where
         .route("/api/trips/:id/unlock", post(unlock_trip::<S>))
         .route("/api/trips/:id/start", post(start_trip::<S>))
         .route("/api/trips/:id/complete", post(complete_trip::<S>))
+        .route("/api/trips/:id/cancel", post(cancel_trip::<S>))
         .route("/api/trips/:id/stops", post(add_stop::<S>))
         .route(
             "/api/trips/:id/stops/:stop_id",
@@ -159,6 +160,11 @@ struct AssignOrdersRequest {
 struct ReorderStopsRequest {
     #[serde(rename = "stopIds", alias = "stop_ids")]
     stop_ids: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CancelTripRequest {
+    reason: Option<String>,
 }
 
 #[derive(Debug, FromRow)]
@@ -374,6 +380,18 @@ where
     do_complete_trip(&state.db, &id).await
 }
 
+async fn cancel_trip<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<CancelTripRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let result = do_cancel_trip(&state.db, &id, body.reason.as_deref()).await?;
+    Ok(ok("行程已取消，关联订单已退回订单池", result))
+}
+
 async fn add_stop<S>(
     State(state): State<AppState<S>>,
     Path(id): Path<String>,
@@ -515,33 +533,7 @@ where
         r#"
         SELECT row_to_json(order_row)
         FROM (
-            SELECT 
-                o.id,
-                o.order_no as orderNo,
-                o.user_id as userId,
-                o.recipient_name as recipientName,
-                o.recipient_phone as recipientPhone,
-                o.address_text as addressText,
-                o.latitude,
-                o.longitude,
-                o.delivery_method as deliveryMethod,
-                o.pickup_method as pickupMethod,
-                o.expected_delivery_window as expectedDeliveryWindow,
-                o.status,
-                o.payment_status as paymentStatus,
-                o.subtotal_cents as subtotalCents,
-                o.delivery_fee_cents as deliveryFeeCents,
-                o.coupon_cents as couponCents,
-                o.payable_cents as payableCents,
-                o.cabin_code as cabinCode,
-                o.remark,
-                o.created_at as createdAt,
-                o.updated_at as updatedAt,
-                o.paid_at as paidAt,
-                COALESCE(o.waypoints, '[]'::jsonb) as waypoints,
-                o.origin_latitude as originLatitude,
-                o.origin_longitude as originLongitude,
-                o.origin_address as originAddress,
+            SELECT o.*,
                 COALESCE(
                     json_agg(
                         json_build_object(
@@ -672,15 +664,12 @@ where
     .await?;
 
     for (idx, order_id) in body.order_ids.iter().enumerate() {
-        // Verify order exists and is assignable, including waypoints
+        // Verify order exists and is assignable
         let order: Option<Value> = sqlx::query_scalar(
             r#"
             SELECT jsonb_build_object('id', id, 'status', status, 'tripId', trip_id,
                 'addressText', address_text, 'latitude', latitude, 'longitude', longitude,
-                'recipientName', recipient_name, 'recipientPhone', recipient_phone,
-                'waypoints', COALESCE(waypoints, '[]'::jsonb),
-                'originLatitude', origin_latitude, 'originLongitude', origin_longitude,
-                'originAddress', origin_address)
+                'recipientName', recipient_name, 'recipientPhone', recipient_phone)
             FROM mall_orders
             WHERE id = $1 AND status IN ('paid', 'ready_for_pickup', 'dispatching')
             "#,
@@ -696,43 +685,9 @@ where
             continue;
         }
 
-        let seq = max_seq.unwrap_or(0) + (idx as i32 * 10) + 1;
-        let mut current_seq = seq;
+        let seq = max_seq.unwrap_or(0) + (idx as i32 * 2) + 1;
 
-        // If there are waypoints, create stops for each waypoint first
-        if let Some(waypoints) = order.get("waypoints").and_then(Value::as_array) {
-            for (_wp_idx, wp) in waypoints.iter().enumerate() {
-                let wp_lat = wp.get("latitude").and_then(|v| v.as_str()).and_then(|s| s.parse::<f64>().ok());
-                let wp_lng = wp.get("longitude").and_then(|v| v.as_str()).and_then(|s| s.parse::<f64>().ok());
-                let wp_address = wp.get("address").and_then(Value::as_str);
-                let wp_name = wp.get("name").and_then(Value::as_str);
-
-                if wp_lat.is_some() && wp_lng.is_some() {
-                    sqlx::query(
-                        r#"
-                        INSERT INTO trip_stops (trip_id, mall_order_id, stop_type, stop_sequence,
-                            address, latitude, longitude, contact_name, contact_phone, cargo_info, status)
-                        VALUES ($1, $2, 'waypoint', $3, $4, $5, $6, $7, $8, $9, 'pending')
-                        "#,
-                    )
-                    .bind(&trip_id)
-                    .bind(order_id)
-                    .bind(current_seq)
-                    .bind(wp_address)
-                    .bind(wp_lat)
-                    .bind(wp_lng)
-                    .bind(wp_name)
-                    .bind(None::<&str>)
-                    .bind(order.get("id").and_then(Value::as_str))
-                    .execute(&mut *tx)
-                    .await?;
-
-                    current_seq += 1;
-                }
-            }
-        }
-
-        // Create delivery stop for this order (final destination)
+        // Create delivery stop for this order
         sqlx::query(
             r#"
             INSERT INTO trip_stops (trip_id, mall_order_id, stop_type, stop_sequence,
@@ -742,7 +697,7 @@ where
         )
         .bind(&trip_id)
         .bind(order_id)
-        .bind(current_seq)
+        .bind(seq + 1)
         .bind(order.get("addressText").and_then(Value::as_str))
         .bind(order.get("latitude").and_then(|v| v.as_f64()))
         .bind(order.get("longitude").and_then(|v| v.as_f64()))
@@ -1122,6 +1077,74 @@ async fn do_unlock_trip(pool: &sqlx::PgPool, id: &str) -> ApiResult<Json<ApiEnve
 
     let trip = fetch_trip_detail(pool, id).await?;
     Ok(ok("行程已解锁", trip))
+}
+
+async fn do_cancel_trip(pool: &sqlx::PgPool, id: &str, reason: Option<&str>) -> ApiResult<Value> {
+    let status: Option<String> = sqlx::query_scalar(
+        "SELECT status FROM vehicle_trips WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .flatten();
+
+    let status = status.ok_or_else(|| ApiError::NotFound("行程不存在".to_string()))?;
+    if status == "completed" || status == "cancelled" {
+        return Err(ApiError::BadRequest("已完成或已取消的行程无法取消".to_string()));
+    }
+
+    let vehicle_id: Option<String> = sqlx::query_scalar(
+        "SELECT vehicle_id FROM vehicle_trips WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .flatten();
+
+    let mut tx = pool.begin().await?;
+
+    sqlx::query(
+        r#"
+        UPDATE vehicle_trips
+        SET status = 'cancelled',
+            cancel_reason = $2,
+            cancelled_at = now(),
+            updated_at = now()
+        WHERE id = $1
+        "#,
+    )
+    .bind(id)
+    .bind(reason)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "UPDATE mall_orders SET trip_id = NULL, status = 'dispatching', updated_at = now() WHERE trip_id = $1",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query("DELETE FROM trip_stops WHERE trip_id = $1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+    if let Some(vid) = vehicle_id {
+        let _ = sqlx::query("UPDATE vehicles SET trip_status = 'idle', updated_at = now() WHERE id = $1")
+            .bind(&vid)
+            .execute(&mut *tx)
+            .await;
+    }
+
+    tx.commit().await?;
+
+    let trip = sqlx::query_scalar::<_, Value>("SELECT row_to_json(vehicle_trips) FROM vehicle_trips WHERE id = $1")
+        .bind(id)
+        .fetch_one(pool)
+        .await?;
+
+    Ok(trip)
 }
 
 async fn do_add_stop(
