@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, Query, State},
-    routing::{get, post},
+    routing::get,
     Json, Router,
 };
 use chrono::{Datelike, Utc};
@@ -14,7 +14,10 @@ where
     S: Storage,
 {
     Router::new()
-        .route("/api/enterprise", post(create_enterprise::<S>))
+        .route(
+            "/api/enterprise",
+            get(list_enterprises::<S>).post(create_enterprise::<S>),
+        )
         .route("/api/enterprise/stats", get(stats_by_query::<S>))
         .route("/api/enterprise/admin/:admin_id", get(by_admin::<S>))
         .route(
@@ -46,6 +49,40 @@ struct UpdateEnterpriseBody {
 #[derive(Debug, Deserialize)]
 struct EnterpriseQuery {
     enterprise_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct EnterpriseListQuery {
+    limit: Option<i64>,
+}
+
+async fn list_enterprises<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<EnterpriseListQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let limit = query.limit.unwrap_or(100).clamp(1, 200);
+    let enterprises = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT row_to_json(enterprise_row)
+        FROM (
+            SELECT enterprises.*,
+                   users.name AS admin_name,
+                   users.phone AS admin_phone
+            FROM enterprises
+            LEFT JOIN users ON users.id = enterprises.admin_id
+            ORDER BY enterprises.created_at DESC
+            LIMIT $1
+        ) enterprise_row
+        "#,
+    )
+    .bind(limit)
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(success(enterprises))
 }
 
 async fn create_enterprise<S>(

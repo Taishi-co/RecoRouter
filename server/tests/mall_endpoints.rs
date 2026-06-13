@@ -278,6 +278,47 @@ async fn insert_session(pool: &PgPool, user_id: &str, token: &str) -> String {
 }
 
 #[tokio::test]
+async fn undispatched_orders_returns_mall_orders_without_demand_linkage() {
+    let Some(context) = TestContext::new().await else {
+        return;
+    };
+
+    sqlx::query(
+        r#"
+        INSERT INTO mall_orders (id, order_no, user_id, address_text, status, payable_cents)
+        VALUES ('undispatched-order-1', 'MALL-UNDISPATCHED-1', 'mall-user-1', '测试配送地址', 'paid', 1990)
+        "#,
+    )
+    .execute(&context.pool)
+    .await
+    .expect("undispatched mall order should be inserted");
+    sqlx::query(
+        r#"
+        INSERT INTO mall_order_items (
+            id, order_id, product_id, sku, product_name, unit_price_cents, quantity, line_total_cents
+        )
+        VALUES (
+            'undispatched-item-1', 'undispatched-order-1', 'product-1', 'SKU-1', '测试商品', 1990, 1, 1990
+        )
+        "#,
+    )
+    .execute(&context.pool)
+    .await
+    .expect("undispatched mall order item should be inserted");
+
+    let (status, body) = get_json(&context.app, "/api/trips/undispatched-orders").await;
+    assert_eq!(status, StatusCode::OK);
+    let orders = body["data"]
+        .as_array()
+        .expect("undispatched order data should be an array");
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0]["id"], "undispatched-order-1");
+    assert_eq!(orders[0]["items"][0]["productName"], "测试商品");
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
 async fn mall_cart_checkout_and_tracking_are_real_endpoints() {
     let Some(context) = TestContext::new().await else {
         return;

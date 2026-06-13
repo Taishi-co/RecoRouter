@@ -570,19 +570,11 @@ where
                         )
                     ) FILTER (WHERE oi.id IS NOT NULL),
                     '[]'
-                ) as items,
-                d.goods_name as demand_goods_name,
-                d.weight_kg as demand_weight_kg,
-                d.volume_m3 as demand_volume_m3,
-                d.pickup_address as demand_pickup_address,
-                d.delivery_address as demand_delivery_address,
-                d.pickup_time as demand_pickup_time,
-                d.delivery_time as demand_delivery_time
+                ) as items
             FROM mall_orders o
             LEFT JOIN mall_order_items oi ON oi.order_id = o.id
-            LEFT JOIN demands d ON d.mall_order_id = o.id
             WHERE o.trip_id IS NULL AND o.status IN ('paid', 'ready_for_pickup', 'dispatching')
-            GROUP BY o.id, d.id
+            GROUP BY o.id
             ORDER BY o.created_at ASC
         ) order_row
         "#,
