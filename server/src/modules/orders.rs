@@ -1216,11 +1216,97 @@ async fn fetch_order(pool: &PgPool, id: &str) -> ApiResult<OrderRow> {
 }
 
 async fn fetch_order_value(pool: &PgPool, id: &str) -> ApiResult<Value> {
-    sqlx::query_scalar::<_, Value>("SELECT row_to_json(orders) FROM orders WHERE id = $1")
-        .bind(id)
-        .fetch_optional(pool)
-        .await?
-        .ok_or_else(|| ApiError::NotFound("订单不存在".to_string()))
+    let order = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT order_payload
+        FROM (
+            SELECT
+                to_jsonb(o) || jsonb_build_object(
+                    'demand', CASE
+                        WHEN d.id IS NULL THEN NULL
+                        ELSE jsonb_build_object(
+                            'id', d.id,
+                            'cargoName', d.cargo_name,
+                            'cargoWeight', d.cargo_weight,
+                            'cargoVolume', d.cargo_volume,
+                            'pickupAddress', d.pickup_address,
+                            'deliveryAddress', d.delivery_address,
+                            'pickupTime', d.pickup_time,
+                            'deliveryTime', d.delivery_time,
+                            'demandSource', d.demand_source,
+                            'status', d.status
+                        )
+                    END,
+                    'vehicle', CASE
+                        WHEN v.id IS NULL THEN NULL
+                        ELSE jsonb_build_object(
+                            'id', v.id,
+                            'vehicleCode', v.vehicle_code,
+                            'licensePlate', v.license_plate,
+                            'vehicleType', v.vehicle_type,
+                            'loadCapacity', v.load_capacity,
+                            'volume', v.volume,
+                            'status', v.status,
+                            'tripStatus', v.trip_status
+                        )
+                    END,
+                    'owner', CASE
+                        WHEN owner_user.id IS NULL THEN NULL
+                        ELSE jsonb_build_object(
+                            'id', owner_user.id,
+                            'name', owner_user.name,
+                            'phone', owner_user.phone,
+                            'creditScore', owner_user.credit_score
+                        )
+                    END,
+                    'merchant', CASE
+                        WHEN merchant_user.id IS NULL THEN NULL
+                        ELSE jsonb_build_object(
+                            'id', merchant_user.id,
+                            'name', merchant_user.name,
+                            'phone', merchant_user.phone
+                        )
+                    END,
+                    'cancellationStatus', latest_cancel.status,
+                    'cancellationRequest', CASE
+                        WHEN latest_cancel.id IS NULL THEN NULL
+                        ELSE jsonb_build_object(
+                            'id', latest_cancel.id,
+                            'orderId', latest_cancel.order_id,
+                            'requestorId', latest_cancel.requestor_id,
+                            'responderId', latest_cancel.responder_id,
+                            'reason', latest_cancel.reason,
+                            'status', latest_cancel.status,
+                            'responseReason', latest_cancel.response_reason,
+                            'respondedAt', latest_cancel.responded_at,
+                            'createdAt', latest_cancel.created_at
+                        )
+                    END
+                ) AS order_payload
+            FROM orders o
+            LEFT JOIN demands d ON d.id = o.demand_id
+            LEFT JOIN vehicles v ON v.id = o.vehicle_id
+            LEFT JOIN users owner_user ON owner_user.id = o.owner_id
+            LEFT JOIN users merchant_user ON merchant_user.id = o.merchant_id
+            LEFT JOIN LATERAL (
+                SELECT cr.id, cr.order_id, cr.requestor_id, cr.responder_id,
+                       cr.reason, cr.status, cr.response_reason,
+                       cr.responded_at, cr.created_at
+                FROM cancellation_requests cr
+                WHERE cr.order_id = o.id
+                ORDER BY cr.created_at DESC
+                LIMIT 1
+            ) latest_cancel ON true
+            WHERE o.id = $1
+        ) order_row
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("订单不存在".to_string()))?;
+
+    Ok(order)
 }
 
 async fn validate_vehicle_rental_permission(
