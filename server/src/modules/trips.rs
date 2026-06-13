@@ -80,6 +80,28 @@ where
             "/api/admin/trips/:id/complete",
             post(admin_complete_trip::<S>),
         )
+        // 调度运营报表
+        .route(
+            "/api/admin/dispatch/vehicle-utilization",
+            get(dispatch_vehicle_utilization::<S>),
+        )
+        .route(
+            "/api/admin/dispatch/trip-efficiency",
+            get(dispatch_trip_efficiency::<S>),
+        )
+        .route(
+            "/api/admin/dispatch/delivery-performance",
+            get(dispatch_delivery_performance::<S>),
+        )
+        .route(
+            "/api/admin/dispatch/overview",
+            get(dispatch_overview::<S>),
+        )
+        // 自动调度
+        .route(
+            "/api/admin/dispatch/auto-assign",
+            post(dispatch_auto_assign::<S>),
+        )
 }
 
 #[derive(Debug, Deserialize)]
@@ -538,18 +560,32 @@ where
                     json_agg(
                         json_build_object(
                             'id', oi.id,
+                            'productId', oi.product_id,
                             'productName', oi.product_name,
+                            'variantName', oi.variant_name,
+                            'sku', oi.sku,
                             'quantity', oi.quantity,
+                            'unitPriceCents', oi.unit_price_cents,
                             'lineTotalCents', oi.line_total_cents,
-                            'imageUrl', oi.image_url
+                            'imageUrl', oi.image_url,
+                            'weightUnit', oi.weight_unit_label,
+                            'pricingMode', oi.pricing_mode
                         )
                     ) FILTER (WHERE oi.id IS NOT NULL),
                     '[]'
-                ) as items
+                ) as items,
+                d.goods_name as demand_goods_name,
+                d.weight_kg as demand_weight_kg,
+                d.volume_m3 as demand_volume_m3,
+                d.pickup_address as demand_pickup_address,
+                d.delivery_address as demand_delivery_address,
+                d.pickup_time as demand_pickup_time,
+                d.delivery_time as demand_delivery_time
             FROM mall_orders o
             LEFT JOIN mall_order_items oi ON oi.order_id = o.id
+            LEFT JOIN demands d ON d.mall_order_id = o.id
             WHERE o.trip_id IS NULL AND o.status IN ('paid', 'ready_for_pickup', 'dispatching')
-            GROUP BY o.id
+            GROUP BY o.id, d.id
             ORDER BY o.created_at ASC
         ) order_row
         "#,
@@ -1257,4 +1293,388 @@ async fn fetch_trip_detail(pool: &sqlx::PgPool, id: &str) -> ApiResult<Value> {
     .ok_or_else(|| ApiError::NotFound("行程不存在".to_string()))?;
 
     Ok(trip)
+}
+
+// ==================== 调度运营报表 ====================
+
+/// 调度概览 - 今日关键指标
+async fn dispatch_overview<S>(
+    State(state): State<AppState<S>>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let overview = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT json_build_object(
+            'todayTrips', (SELECT count(*) FROM vehicle_trips WHERE date(created_at) = current_date),
+            'activeTrips', (SELECT count(*) FROM vehicle_trips WHERE status IN ('locked', 'in_progress')),
+            'todayOrders', (SELECT count(*) FROM mall_orders WHERE date(created_at) = current_date),
+            'pendingOrders', (SELECT count(*) FROM mall_orders WHERE trip_id IS NULL AND status IN ('paid', 'ready_for_pickup', 'dispatching')),
+            'availableVehicles', (SELECT count(*) FROM vehicles WHERE status = 'active' AND trip_status = 'idle'),
+            'todayCompletedOrders', (SELECT count(*) FROM mall_orders WHERE date(completed_at) = current_date),
+            'todayCancelledTrips', (SELECT count(*) FROM vehicle_trips WHERE date(cancelled_at) = current_date)
+        )
+        "#,
+    )
+    .fetch_one(&state.db)
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("查询调度概览失败: {err}")))?;
+
+    Ok(ok("查询成功", overview))
+}
+
+/// 车辆利用率统计
+async fn dispatch_vehicle_utilization<S>(
+    State(state): State<AppState<S>>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let stats = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT json_build_object(
+            'totalVehicles', (SELECT count(*) FROM vehicles WHERE status = 'active'),
+            'idleVehicles', (SELECT count(*) FROM vehicles WHERE status = 'active' AND trip_status = 'idle'),
+            'inTransitVehicles', (SELECT count(*) FROM vehicles WHERE status = 'active' AND trip_status = 'in_transit'),
+            'utilizationRate', (
+                SELECT CASE WHEN count(*) = 0 THEN 0
+                    ELSE round(100.0 * count(*) FILTER (WHERE trip_status = 'in_transit') / count(*), 2)
+                END
+                FROM vehicles WHERE status = 'active'
+            ),
+            'vehicleDetails', (
+                SELECT COALESCE(json_agg(json_build_object(
+                    'vehicleCode', v.vehicle_code,
+                    'licensePlate', v.license_plate,
+                    'tripStatus', v.trip_status,
+                    'todayTrips', (SELECT count(*) FROM vehicle_trips WHERE vehicle_id = v.id AND date(created_at) = current_date),
+                    'todayOrders', (
+                        SELECT count(DISTINCT ts.mall_order_id)
+                        FROM vehicle_trips vt
+                        JOIN trip_stops ts ON ts.trip_id = vt.id
+                        WHERE vt.vehicle_id = v.id AND date(vt.created_at) = current_date
+                    )
+                )), '[]')
+                FROM vehicles v
+                WHERE v.status = 'active'
+                ORDER BY v.vehicle_code
+            )
+        )
+        "#,
+    )
+    .fetch_one(&state.db)
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("查询车辆利用率失败: {err}")))?;
+
+    Ok(ok("查询成功", stats))
+}
+
+/// 行程效率统计
+async fn dispatch_trip_efficiency<S>(
+    State(state): State<AppState<S>>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let stats = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT json_build_object(
+            'todayTrips', (SELECT count(*) FROM vehicle_trips WHERE date(created_at) = current_date),
+            'completedTrips', (SELECT count(*) FROM vehicle_trips WHERE date(created_at) = current_date AND status = 'completed'),
+            'cancelledTrips', (SELECT count(*) FROM vehicle_trips WHERE date(cancelled_at) = current_date),
+            'inProgressTrips', (SELECT count(*) FROM vehicle_trips WHERE status IN ('locked', 'in_progress')),
+            'completionRate', (
+                SELECT CASE WHEN count(*) = 0 THEN 0
+                    ELSE round(100.0 * count(*) FILTER (WHERE status = 'completed') / count(*), 2)
+                END
+                FROM vehicle_trips WHERE date(created_at) = current_date
+            ),
+            'avgOrdersPerTrip', (
+                SELECT COALESCE(round(avg(total_orders)::numeric, 2), 0)
+                FROM vehicle_trips WHERE date(created_at) = current_date AND status = 'completed'
+            ),
+            'tripDetails', (
+                SELECT COALESCE(json_agg(json_build_object(
+                    'tripId', t.id,
+                    'vehicleCode', v.vehicle_code,
+                    'status', t.status,
+                    'totalOrders', t.total_orders,
+                    'completedStops', (SELECT count(*) FROM trip_stops WHERE trip_id = t.id AND status = 'completed'),
+                    'totalStops', (SELECT count(*) FROM trip_stops WHERE trip_id = t.id),
+                    'createdAt', t.created_at,
+                    'completedAt', t.completed_at
+                )), '[]')
+                FROM vehicle_trips t
+                LEFT JOIN vehicles v ON v.id = t.vehicle_id
+                WHERE date(t.created_at) = current_date
+                ORDER BY t.created_at DESC
+            )
+        )
+        "#,
+    )
+    .fetch_one(&state.db)
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("查询行程效率失败: {err}")))?;
+
+    Ok(ok("查询成功", stats))
+}
+
+/// 配送时效统计
+async fn dispatch_delivery_performance<S>(
+    State(state): State<AppState<S>>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let stats = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT json_build_object(
+            'todayDelivered', (SELECT count(*) FROM mall_orders WHERE date(completed_at) = current_date),
+            'avgDeliveryTime', (
+                SELECT COALESCE(round(avg(extract(epoch from (completed_at - created_at)) / 3600)::numeric, 2), 0)
+                FROM mall_orders
+                WHERE date(completed_at) = current_date
+            ),
+            'onTimeRate', (
+                SELECT CASE WHEN count(*) = 0 THEN 0
+                    ELSE round(100.0 * count(*) FILTER (
+                        WHERE expected_delivery_window IS NULL
+                        OR completed_at::time < (substring(expected_delivery_window from '(\d{2}:\d{2})-\d{2}:\d{2}') || ':00')::time
+                    ) / count(*), 2)
+                END
+                FROM mall_orders
+                WHERE date(completed_at) = current_date
+            ),
+            'timeSlotDistribution', (
+                SELECT COALESCE(json_agg(json_build_object(
+                    'timeSlot', delivery_time_slot,
+                    'orderCount', count(*)
+                )), '[]')
+                FROM mall_orders
+                WHERE date(created_at) = current_date AND delivery_time_slot IS NOT NULL
+                GROUP BY delivery_time_slot
+                ORDER BY delivery_time_slot
+            ),
+            'pendingOrders', (
+                SELECT json_build_object(
+                    'total', count(*),
+                    'withTimeSlot', count(*) FILTER (WHERE delivery_time_slot IS NOT NULL),
+                    'byTimeSlot', (
+                        SELECT COALESCE(json_agg(json_build_object(
+                            'timeSlot', delivery_time_slot,
+                            'count', count(*)
+                        )), '[]')
+                        FROM mall_orders
+                        WHERE trip_id IS NULL AND status IN ('paid', 'ready_for_pickup', 'dispatching') AND delivery_time_slot IS NOT NULL
+                        GROUP BY delivery_time_slot
+                        ORDER BY delivery_time_slot
+                    )
+                )
+                FROM mall_orders
+                WHERE trip_id IS NULL AND status IN ('paid', 'ready_for_pickup', 'dispatching')
+            )
+        )
+        "#,
+    )
+    .fetch_one(&state.db)
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("查询配送时效失败: {err}")))?;
+
+    Ok(ok("查询成功", stats))
+}
+
+// ==================== 自动调度策略 ====================
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AutoAssignRequest {
+    /// 要分配的订单ID列表（可选，不传则分配所有待分配订单）
+    order_ids: Option<Vec<String>>,
+    /// 每辆车每个时间段最大订单数（默认 5）
+    max_orders_per_slot: Option<i32>,
+    /// 是否只预览不执行（默认 false）
+    dry_run: Option<bool>,
+}
+
+/// 自动调度 - 硬编码策略：避免同一时间段订单拥挤在一辆车
+/// 
+/// 使用场景：
+/// 1. 调度员在调度中心选择一批订单
+/// 2. 点击"智能调度"按钮
+/// 3. 系统自动分配到合适的车辆
+/// 
+/// 策略规则：
+/// 1. 每辆车每个时间段最多 N 个订单（默认 5 个）
+/// 2. 优先分配负载最少的车辆
+/// 3. 按时间段分组订单
+async fn dispatch_auto_assign<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<AutoAssignRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let max_per_slot = body.max_orders_per_slot.unwrap_or(5);
+    let dry_run = body.dry_run.unwrap_or(false);
+
+    // 1. 获取待分配订单（指定订单或全部）
+    let pending_orders = if let Some(ref order_ids) = body.order_ids {
+        // 用户指定了订单列表
+        if order_ids.is_empty() {
+            return Ok(ok("未选择订单", json!({"assigned": 0, "details": []})));
+        }
+        sqlx::query_as::<_, (String, Option<String>, Option<String>)>(
+            r#"
+            SELECT id, delivery_time_slot, delivery_date
+            FROM mall_orders
+            WHERE id = ANY($1) AND trip_id IS NULL AND status IN ('paid', 'ready_for_pickup', 'dispatching')
+            ORDER BY created_at ASC
+            "#,
+        )
+        .bind(order_ids)
+        .fetch_all(&state.db)
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("查询指定订单失败: {err}")))?
+    } else {
+        // 未指定，获取所有待分配订单
+        sqlx::query_as::<_, (String, Option<String>, Option<String>)>(
+            r#"
+            SELECT id, delivery_time_slot, delivery_date
+            FROM mall_orders
+            WHERE trip_id IS NULL AND status IN ('paid', 'ready_for_pickup', 'dispatching')
+            ORDER BY created_at ASC
+            "#,
+        )
+        .fetch_all(&state.db)
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("查询待分配订单失败: {err}")))?
+    };
+
+    if pending_orders.is_empty() {
+        return Ok(ok("没有待分配的订单", json!({"assigned": 0, "details": []})));
+    }
+
+    // 2. 获取可用车辆
+    let available_vehicles = sqlx::query_as::<_, (String, String)>(
+        r#"
+        SELECT id, vehicle_code
+        FROM vehicles
+        WHERE status = 'active' AND trip_status = 'idle'
+        ORDER BY vehicle_code
+        "#,
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("查询可用车辆失败: {err}")))?;
+
+    if available_vehicles.is_empty() {
+        return Ok(ok("没有可用车辆", json!({"assigned": 0, "details": []})));
+    }
+
+    // 3. 获取每辆车今天各时间段的订单数
+    let vehicle_loads = sqlx::query_as::<_, (String, Option<String>, i64)>(
+        r#"
+        SELECT v.id as vehicle_id, o.delivery_time_slot, count(*) as order_count
+        FROM vehicles v
+        LEFT JOIN vehicle_trips t ON t.vehicle_id = v.id AND date(t.created_at) = current_date
+        LEFT JOIN trip_stops ts ON ts.trip_id = t.id
+        LEFT JOIN mall_orders o ON o.id = ts.mall_order_id
+        WHERE v.status = 'active'
+        GROUP BY v.id, o.delivery_time_slot
+        "#,
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("查询车辆负载失败: {err}")))?;
+
+    // 构建车辆负载映射: (vehicle_id, time_slot) -> count
+    let mut load_map: std::collections::HashMap<(String, Option<String>), i64> = 
+        std::collections::HashMap::new();
+    for (vid, slot, count) in vehicle_loads {
+        load_map.insert((vid, slot), count);
+    }
+
+    // 4. 分配订单
+    let mut assignments: Vec<Value> = Vec::new();
+    let mut assigned_count = 0;
+
+    for (order_id, time_slot, _delivery_date) in pending_orders {
+        // 找到负载最少的车辆
+        let best_vehicle = available_vehicles.iter()
+            .filter(|(vid, _)| {
+                // 检查该车辆在该时间段的负载是否已满
+                let current_load = load_map.get(&(vid.clone(), time_slot.clone())).copied().unwrap_or(0);
+                current_load < max_per_slot as i64
+            })
+            .min_by_key(|(vid, _)| {
+                // 选择负载最少的车辆
+                load_map.get(&(vid.clone(), time_slot.clone())).copied().unwrap_or(0)
+            });
+
+        if let Some((vehicle_id, vehicle_code)) = best_vehicle {
+            // 更新负载映射
+            let key = (vehicle_id.clone(), time_slot.clone());
+            *load_map.entry(key).or_insert(0) += 1;
+
+            assignments.push(json!({
+                "orderId": order_id,
+                "vehicleId": vehicle_id,
+                "vehicleCode": vehicle_code,
+                "timeSlot": time_slot
+            }));
+            assigned_count += 1;
+
+            // 如果不是预览模式，执行分配
+            if !dry_run {
+                // 创建或获取行程
+                let trip_id: String = sqlx::query_scalar(
+                    r#"
+                    INSERT INTO vehicle_trips (vehicle_id, status, total_orders)
+                    VALUES ($1, 'locked', 1)
+                    RETURNING id
+                    "#,
+                )
+                .bind(vehicle_id)
+                .fetch_one(&state.db)
+                .await
+                .map_err(|err| ApiError::BadRequest(format!("创建行程失败: {err}")))?;
+
+                // 分配订单到行程
+                sqlx::query(
+                    r#"
+                    UPDATE mall_orders
+                    SET trip_id = $1, status = 'dispatching', dispatched_at = now(), updated_at = now()
+                    WHERE id = $2
+                    "#,
+                )
+                .bind(&trip_id)
+                .bind(&order_id)
+                .execute(&state.db)
+                .await
+                .map_err(|err| ApiError::BadRequest(format!("分配订单失败: {err}")))?;
+
+                // 更新车辆状态
+                sqlx::query(
+                    r#"
+                    UPDATE vehicles SET trip_status = 'in_transit', updated_at = now() WHERE id = $1
+                    "#,
+                )
+                .bind(vehicle_id)
+                .execute(&state.db)
+                .await
+                .ok();
+            }
+        }
+    }
+
+    Ok(ok(
+        if dry_run { "预览完成" } else { "分配完成" },
+        json!({
+            "assigned": assigned_count,
+            "maxOrdersPerSlot": max_per_slot,
+            "dryRun": dry_run,
+            "details": assignments
+        })
+    ))
 }
