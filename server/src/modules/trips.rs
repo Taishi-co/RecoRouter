@@ -329,8 +329,10 @@ where
         ));
     }
 
-    // Unlink mall orders from this trip
-    sqlx::query("UPDATE mall_orders SET trip_id = NULL WHERE trip_id = $1")
+    // Return assignable mall orders to the public dispatch pool.
+    sqlx::query(
+        "UPDATE mall_orders SET trip_id = NULL, status = 'dispatching', dispatched_at = NULL, updated_at = now() WHERE trip_id = $1 AND status IN ('paid', 'ready_for_pickup', 'dispatching')",
+    )
         .bind(&id)
         .execute(&state.db)
         .await?;
@@ -424,12 +426,13 @@ where
 
 async fn update_stop<S>(
     State(state): State<AppState<S>>,
-    Path((_trip_id, stop_id)): Path<(String, String)>,
+    Path((trip_id, stop_id)): Path<(String, String)>,
     Json(body): Json<UpdateStopRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
+    ensure_trip_editable(&state.db, &trip_id).await?;
     let stop = sqlx::query_scalar::<_, Value>(
         r#"
         UPDATE trip_stops
@@ -442,7 +445,7 @@ where
             cargo_info = COALESCE($10, cargo_info),
             status = COALESCE($11, status),
             notes = COALESCE($12, notes)
-        WHERE id = $1
+        WHERE id = $1 AND trip_id = $13
         RETURNING row_to_json(trip_stops)
         "#,
     )
@@ -458,6 +461,7 @@ where
     .bind(&body.cargo_info)
     .bind(&body.status)
     .bind(&body.notes)
+    .bind(&trip_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| ApiError::NotFound("站点不存在".to_string()))?;
@@ -467,29 +471,34 @@ where
 
 async fn remove_stop<S>(
     State(state): State<AppState<S>>,
-    Path((_trip_id, stop_id)): Path<(String, String)>,
+    Path((trip_id, stop_id)): Path<(String, String)>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    let mall_order_id: Option<String> =
-        sqlx::query_scalar("SELECT mall_order_id FROM trip_stops WHERE id = $1")
-            .bind(&stop_id)
-            .fetch_optional(&state.db)
-            .await?
-            .flatten();
+    ensure_trip_editable(&state.db, &trip_id).await?;
+    let mut tx = state.db.begin().await?;
+    let mall_order_id: Option<String> = sqlx::query_scalar(
+        "DELETE FROM trip_stops WHERE id = $1 AND trip_id = $2 RETURNING mall_order_id",
+    )
+    .bind(&stop_id)
+    .bind(&trip_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("站点不存在".to_string()))?;
 
     if let Some(order_id) = &mall_order_id {
-        sqlx::query("UPDATE mall_orders SET trip_id = NULL, status = 'dispatching' WHERE id = $1")
+        sqlx::query(
+            "UPDATE mall_orders SET trip_id = NULL, status = 'dispatching', dispatched_at = NULL, updated_at = now() WHERE id = $1 AND trip_id = $2",
+        )
             .bind(order_id)
-            .execute(&state.db)
+            .bind(&trip_id)
+            .execute(&mut *tx)
             .await?;
     }
 
-    sqlx::query("DELETE FROM trip_stops WHERE id = $1")
-        .bind(&stop_id)
-        .execute(&state.db)
-        .await?;
+    sync_trip_counts(&mut tx, &trip_id).await?;
+    tx.commit().await?;
 
     Ok(ok("删除成功", json!({ "id": stop_id })))
 }
@@ -501,43 +510,48 @@ async fn complete_stop<S>(
 where
     S: Storage,
 {
+    let trip_status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM vehicle_trips WHERE id = $1")
+            .bind(&trip_id)
+            .fetch_optional(&state.db)
+            .await?
+            .flatten();
+    if trip_status.as_deref() != Some("in_progress") {
+        return Err(ApiError::BadRequest(
+            "只有进行中的行程可以完成站点".to_string(),
+        ));
+    }
+
+    let mut tx = state.db.begin().await?;
     let stop = sqlx::query_scalar::<_, Value>(
         r#"
         UPDATE trip_stops
         SET status = 'completed', completed_at = now()
-        WHERE id = $1
+        WHERE id = $1 AND trip_id = $2
         RETURNING row_to_json(trip_stops)
         "#,
     )
     .bind(&stop_id)
-    .fetch_optional(&state.db)
+    .bind(&trip_id)
+    .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| ApiError::NotFound("站点不存在".to_string()))?;
 
-    // Update completed_orders count on trip
-    sqlx::query(
-        "UPDATE vehicle_trips SET completed_orders = (SELECT count(*) FROM trip_stops WHERE trip_id = $1 AND stop_type = 'delivery' AND status = 'completed'), updated_at = now() WHERE id = $1",
-    )
-    .bind(&trip_id)
-    .execute(&state.db)
-    .await?;
-
-    // If this stop has a mall_order_id and it's a delivery stop, mark the order as completed
-    let mall_order_id: Option<String> =
-        sqlx::query_scalar("SELECT mall_order_id FROM trip_stops WHERE id = $1")
-            .bind(&stop_id)
-            .fetch_optional(&state.db)
-            .await?
-            .flatten();
-
-    if let Some(order_id) = &mall_order_id {
-        let _ = sqlx::query(
-            "UPDATE mall_orders SET status = 'completed', completed_at = now(), updated_at = now() WHERE id = $1",
-        )
-        .bind(order_id)
-        .execute(&state.db)
-        .await;
+    if stop.get("stop_type").and_then(Value::as_str) == Some("delivery") {
+        let mall_order_id = stop.get("mall_order_id").and_then(Value::as_str);
+        if let Some(order_id) = mall_order_id {
+            sqlx::query(
+                "UPDATE mall_orders SET status = 'completed', completed_at = now(), updated_at = now() WHERE id = $1 AND trip_id = $2 AND status IN ('paid', 'ready_for_pickup', 'dispatching')",
+            )
+            .bind(order_id)
+            .bind(&trip_id)
+            .execute(&mut *tx)
+            .await?;
+        }
     }
+
+    sync_trip_counts(&mut tx, &trip_id).await?;
+    tx.commit().await?;
 
     Ok(ok("站点已完成", stop))
 }
@@ -689,28 +703,29 @@ where
     .await?;
 
     for (idx, order_id) in body.order_ids.iter().enumerate() {
-        // Verify order exists and is assignable
         let order: Option<Value> = sqlx::query_scalar(
             r#"
-            SELECT jsonb_build_object('id', id, 'status', status, 'tripId', trip_id,
+            UPDATE mall_orders
+            SET trip_id = $2,
+                status = 'dispatching',
+                dispatched_at = COALESCE(dispatched_at, now()),
+                updated_at = now()
+            WHERE id = $1
+              AND trip_id IS NULL
+              AND status IN ('paid', 'ready_for_pickup', 'dispatching')
+            RETURNING jsonb_build_object('id', id, 'status', status,
                 'addressText', address_text, 'latitude', latitude, 'longitude', longitude,
                 'recipientName', recipient_name, 'recipientPhone', recipient_phone)
-            FROM mall_orders
-            WHERE id = $1 AND status IN ('paid', 'ready_for_pickup', 'dispatching')
             "#,
         )
         .bind(order_id)
+        .bind(&trip_id)
         .fetch_optional(&mut *tx)
         .await?;
 
         let Some(order) = order else { continue };
 
-        // Skip if already assigned to a trip
-        if order.get("tripId").and_then(Value::as_str).is_some() {
-            continue;
-        }
-
-        let seq = max_seq.unwrap_or(0) + (idx as i32 * 2) + 1;
+        let seq = max_seq.unwrap_or(0) + idx as i32 + 1;
 
         // Create delivery stop for this order
         sqlx::query(
@@ -722,7 +737,7 @@ where
         )
         .bind(&trip_id)
         .bind(order_id)
-        .bind(seq + 1)
+        .bind(seq)
         .bind(order.get("addressText").and_then(Value::as_str))
         .bind(order.get("latitude").and_then(|v| v.as_f64()))
         .bind(order.get("longitude").and_then(|v| v.as_f64()))
@@ -732,23 +747,16 @@ where
         .execute(&mut *tx)
         .await?;
 
-        // Link order to trip
-        sqlx::query("UPDATE mall_orders SET trip_id = $1, status = 'dispatching', dispatched_at = COALESCE(dispatched_at, now()), updated_at = now() WHERE id = $2")
-            .bind(&trip_id)
-            .bind(order_id)
-            .execute(&mut *tx)
-            .await?;
-
         added_count += 1;
     }
 
-    // Update total_orders count
-    sqlx::query(
-        "UPDATE vehicle_trips SET total_orders = (SELECT count(DISTINCT mall_order_id) FROM trip_stops WHERE trip_id = $1 AND mall_order_id IS NOT NULL), updated_at = now() WHERE id = $1",
-    )
-    .bind(&trip_id)
-    .execute(&mut *tx)
-    .await?;
+    if added_count == 0 {
+        return Err(ApiError::BadRequest(
+            "所选订单均已被分配或当前状态不可分配".to_string(),
+        ));
+    }
+
+    sync_trip_counts(&mut tx, &trip_id).await?;
 
     tx.commit().await?;
 
@@ -763,6 +771,7 @@ async fn admin_remove_order<S>(
 where
     S: Storage,
 {
+    ensure_trip_editable(&state.db, &trip_id).await?;
     let mut tx = state.db.begin().await?;
 
     let returned_order_id: Option<String> = sqlx::query_scalar(
@@ -795,12 +804,7 @@ where
         .execute(&mut *tx)
         .await?;
 
-    sqlx::query(
-        "UPDATE vehicle_trips SET total_orders = (SELECT count(DISTINCT mall_order_id) FROM trip_stops WHERE trip_id = $1 AND mall_order_id IS NOT NULL), updated_at = now() WHERE id = $1",
-    )
-    .bind(&trip_id)
-    .execute(&mut *tx)
-    .await?;
+    sync_trip_counts(&mut tx, &trip_id).await?;
 
     tx.commit().await?;
 
@@ -816,14 +820,40 @@ async fn admin_reorder_stops<S>(
 where
     S: Storage,
 {
+    ensure_trip_editable(&state.db, &trip_id).await?;
+    let unique_stop_ids = body
+        .stop_ids
+        .iter()
+        .collect::<std::collections::HashSet<_>>();
+    if unique_stop_ids.len() != body.stop_ids.len() {
+        return Err(ApiError::BadRequest("站点列表不能包含重复项".to_string()));
+    }
+
+    let existing_stop_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM trip_stops WHERE trip_id = $1")
+            .bind(&trip_id)
+            .fetch_one(&state.db)
+            .await?;
+    if existing_stop_count != body.stop_ids.len() as i64 {
+        return Err(ApiError::BadRequest(
+            "请提交该行程的完整站点列表".to_string(),
+        ));
+    }
+
     let mut tx = state.db.begin().await?;
     for (idx, stop_id) in body.stop_ids.iter().enumerate() {
-        sqlx::query("UPDATE trip_stops SET stop_sequence = $1 WHERE id = $2 AND trip_id = $3")
-            .bind((idx + 1) as i32)
-            .bind(stop_id)
-            .bind(&trip_id)
-            .execute(&mut *tx)
-            .await?;
+        let result =
+            sqlx::query("UPDATE trip_stops SET stop_sequence = $1 WHERE id = $2 AND trip_id = $3")
+                .bind((idx + 1) as i32)
+                .bind(stop_id)
+                .bind(&trip_id)
+                .execute(&mut *tx)
+                .await?;
+        if result.rows_affected() != 1 {
+            return Err(ApiError::BadRequest(
+                "站点列表包含不属于该行程的站点".to_string(),
+            ));
+        }
     }
     tx.commit().await?;
 
@@ -905,6 +935,7 @@ async fn do_create_trip(pool: &sqlx::PgPool, body: &CreateTripRequest) -> ApiRes
         .and_then(Value::as_str)
         .map(String::from);
 
+    let mut tx = pool.begin().await?;
     let trip: Value = sqlx::query_scalar(
         r#"
         INSERT INTO vehicle_trips (vehicle_id, vehicle_code, license_plate, vehicle_type, driver_id, planned_departure_time, notes, status, created_by)
@@ -920,68 +951,67 @@ async fn do_create_trip(pool: &sqlx::PgPool, body: &CreateTripRequest) -> ApiRes
     .bind(body.planned_departure_time.as_deref())
     .bind(&body.notes)
     .bind(&body.driver_id)
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|err| ApiError::BadRequest(format!("创建行程失败: {err}")))?;
 
-    // If order_ids provided, assign them
+    let trip_id = trip.get("id").and_then(Value::as_str).unwrap_or("");
+    let mut assigned_count = 0;
     if let Some(order_ids) = &body.order_ids {
-        if !order_ids.is_empty() {
-            let trip_id = trip.get("id").and_then(Value::as_str).unwrap_or("");
-            let mut seq: i32 = 0;
-            for order_id in order_ids {
-                let order: Option<Value> = sqlx::query_scalar(
-                    r#"
-                    SELECT jsonb_build_object('id', id, 'status', status, 'tripId', trip_id,
-                        'addressText', address_text, 'latitude', latitude, 'longitude', longitude,
-                        'recipientName', recipient_name, 'recipientPhone', recipient_phone)
-                    FROM mall_orders
-                    WHERE id = $1 AND status IN ('paid', 'ready_for_pickup', 'dispatching') AND trip_id IS NULL
-                    "#,
+        for order_id in order_ids {
+            let order: Option<Value> = sqlx::query_scalar(
+                r#"
+                UPDATE mall_orders
+                SET trip_id = $1,
+                    status = 'dispatching',
+                    dispatched_at = COALESCE(dispatched_at, now()),
+                    updated_at = now()
+                WHERE id = $2
+                  AND trip_id IS NULL
+                  AND status IN ('paid', 'ready_for_pickup', 'dispatching')
+                RETURNING jsonb_build_object(
+                    'id', id, 'addressText', address_text, 'latitude', latitude,
+                    'longitude', longitude, 'recipientName', recipient_name,
+                    'recipientPhone', recipient_phone
                 )
-                .bind(order_id)
-                .fetch_optional(pool)
-                .await?;
-
-                let Some(order) = order else { continue };
-
-                seq += 1;
-                sqlx::query(
-                    r#"
-                    INSERT INTO trip_stops (trip_id, mall_order_id, stop_type, stop_sequence,
-                        address, latitude, longitude, contact_name, contact_phone, cargo_info, status)
-                    VALUES ($1, $2, 'delivery', $3, $4, $5, $6, $7, $8, $9, 'pending')
-                    "#,
-                )
-                .bind(trip_id)
-                .bind(order_id)
-                .bind(seq)
-                .bind(order.get("addressText").and_then(Value::as_str))
-                .bind(order.get("latitude").and_then(|v| v.as_f64()))
-                .bind(order.get("longitude").and_then(|v| v.as_f64()))
-                .bind(order.get("recipientName").and_then(Value::as_str))
-                .bind(order.get("recipientPhone").and_then(Value::as_str))
-                .bind(order.get("id").and_then(Value::as_str))
-                .execute(pool)
-                .await?;
-
-                sqlx::query("UPDATE mall_orders SET trip_id = $1, status = 'dispatching', dispatched_at = COALESCE(dispatched_at, now()), updated_at = now() WHERE id = $2")
-                    .bind(trip_id)
-                    .bind(order_id)
-                    .execute(pool)
-                    .await?;
-            }
-
-            sqlx::query(
-                "UPDATE vehicle_trips SET total_orders = (SELECT count(DISTINCT mall_order_id) FROM trip_stops WHERE trip_id = $1 AND mall_order_id IS NOT NULL) WHERE id = $1",
+                "#,
             )
             .bind(trip_id)
-            .execute(pool)
+            .bind(order_id)
+            .fetch_optional(&mut *tx)
             .await?;
+
+            let Some(order) = order else { continue };
+            assigned_count += 1;
+            sqlx::query(
+                r#"
+                INSERT INTO trip_stops (trip_id, mall_order_id, stop_type, stop_sequence,
+                    address, latitude, longitude, contact_name, contact_phone, cargo_info, status)
+                VALUES ($1, $2, 'delivery', $3, $4, $5, $6, $7, $8, $9, 'pending')
+                "#,
+            )
+            .bind(trip_id)
+            .bind(order_id)
+            .bind(assigned_count)
+            .bind(order.get("addressText").and_then(Value::as_str))
+            .bind(order.get("latitude").and_then(Value::as_f64))
+            .bind(order.get("longitude").and_then(Value::as_f64))
+            .bind(order.get("recipientName").and_then(Value::as_str))
+            .bind(order.get("recipientPhone").and_then(Value::as_str))
+            .bind(order_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        if !order_ids.is_empty() && assigned_count == 0 {
+            return Err(ApiError::BadRequest(
+                "所选订单已被分配或当前状态不可分配".to_string(),
+            ));
         }
     }
 
-    let trip_id = trip.get("id").and_then(Value::as_str).unwrap_or("");
+    sync_trip_counts(&mut tx, trip_id).await?;
+    tx.commit().await?;
     fetch_trip_detail(pool, trip_id).await
 }
 
@@ -997,6 +1027,7 @@ async fn do_start_trip(pool: &sqlx::PgPool, id: &str) -> ApiResult<Json<ApiEnvel
     if status != "locked" {
         return Err(ApiError::BadRequest("只有已锁定的行程可以出发".to_string()));
     }
+    ensure_trip_has_orders(pool, id).await?;
 
     let vehicle_id: Option<String> =
         sqlx::query_scalar("SELECT vehicle_id FROM vehicle_trips WHERE id = $1")
@@ -1048,7 +1079,7 @@ async fn do_complete_trip(pool: &sqlx::PgPool, id: &str) -> ApiResult<Json<ApiEn
 
     let mut tx = pool.begin().await?;
 
-    sqlx::query("UPDATE vehicle_trips SET status = 'completed', completed_time = now(), updated_at = now() WHERE id = $1")
+    sqlx::query("UPDATE vehicle_trips SET status = 'completed', completed_time = now(), completed_orders = total_orders, updated_at = now() WHERE id = $1")
         .bind(id)
         .execute(&mut *tx)
         .await?;
@@ -1060,7 +1091,7 @@ async fn do_complete_trip(pool: &sqlx::PgPool, id: &str) -> ApiResult<Json<ApiEn
         .await?;
 
     // Complete all mall orders in this trip
-    sqlx::query("UPDATE mall_orders SET status = 'completed', completed_at = now(), updated_at = now() WHERE trip_id = $1 AND status != 'completed'")
+    sqlx::query("UPDATE mall_orders SET status = 'completed', completed_at = now(), updated_at = now() WHERE trip_id = $1 AND status IN ('paid', 'ready_for_pickup', 'dispatching')")
         .bind(id)
         .execute(&mut *tx)
         .await?;
@@ -1091,6 +1122,7 @@ async fn do_lock_trip(pool: &sqlx::PgPool, id: &str) -> ApiResult<Json<ApiEnvelo
     if status != "planned" {
         return Err(ApiError::BadRequest("只有未锁定的行程可以锁定".to_string()));
     }
+    ensure_trip_has_orders(pool, id).await?;
 
     sqlx::query("UPDATE vehicle_trips SET status = 'locked', updated_at = now() WHERE id = $1")
         .bind(id)
@@ -1163,7 +1195,7 @@ async fn do_cancel_trip(pool: &sqlx::PgPool, id: &str, reason: Option<&str>) -> 
     .await?;
 
     sqlx::query(
-        "UPDATE mall_orders SET trip_id = NULL, status = 'dispatching', updated_at = now() WHERE trip_id = $1",
+        "UPDATE mall_orders SET trip_id = NULL, status = 'dispatching', dispatched_at = NULL, updated_at = now() WHERE trip_id = $1 AND status IN ('paid', 'ready_for_pickup', 'dispatching')",
     )
     .bind(id)
     .execute(&mut *tx)
@@ -1200,12 +1232,49 @@ async fn do_add_stop(
     trip_id: &str,
     body: &AddStopRequest,
 ) -> ApiResult<Json<ApiEnvelope<Value>>> {
+    ensure_trip_editable(pool, trip_id).await?;
     let stop_type = body.stop_type.as_deref().unwrap_or("delivery");
-    let sequence = body.stop_sequence.unwrap_or_else(|| {
-        // Default to end of list
-        999
-    });
+    if !matches!(stop_type, "pickup" | "delivery") {
+        return Err(ApiError::BadRequest("站点类型不合法".to_string()));
+    }
 
+    let mut tx = pool.begin().await?;
+    if let Some(order_id) = &body.mall_order_id {
+        let assigned_order: Option<String> = sqlx::query_scalar(
+            r#"
+            UPDATE mall_orders
+            SET trip_id = $1,
+                status = 'dispatching',
+                dispatched_at = COALESCE(dispatched_at, now()),
+                updated_at = now()
+            WHERE id = $2
+              AND trip_id IS NULL
+              AND status IN ('paid', 'ready_for_pickup', 'dispatching')
+            RETURNING id
+            "#,
+        )
+        .bind(trip_id)
+        .bind(order_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if assigned_order.is_none() {
+            return Err(ApiError::BadRequest(
+                "订单不存在、已被分配或当前状态不可分配".to_string(),
+            ));
+        }
+    }
+
+    let sequence = match body.stop_sequence {
+        Some(sequence) => sequence,
+        None => {
+            sqlx::query_scalar::<_, i32>(
+                "SELECT COALESCE(MAX(stop_sequence), 0) + 1 FROM trip_stops WHERE trip_id = $1",
+            )
+            .bind(trip_id)
+            .fetch_one(&mut *tx)
+            .await?
+        }
+    };
     let stop = sqlx::query_scalar::<_, Value>(
         r#"
         INSERT INTO trip_stops (trip_id, mall_order_id, stop_type, stop_sequence,
@@ -1225,28 +1294,74 @@ async fn do_add_stop(
     .bind(&body.contact_phone)
     .bind(&body.cargo_info)
     .bind(&body.notes)
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|err| ApiError::BadRequest(format!("添加站点失败: {err}")))?;
 
-    // If linked to a mall order, update it
-    if let Some(order_id) = &body.mall_order_id {
-        sqlx::query("UPDATE mall_orders SET trip_id = $1, status = 'dispatching', dispatched_at = COALESCE(dispatched_at, now()), updated_at = now() WHERE id = $2")
-            .bind(trip_id)
-            .bind(order_id)
-            .execute(pool)
-            .await?;
-    }
-
-    // Update total_orders
-    sqlx::query(
-        "UPDATE vehicle_trips SET total_orders = (SELECT count(DISTINCT mall_order_id) FROM trip_stops WHERE trip_id = $1 AND mall_order_id IS NOT NULL), updated_at = now() WHERE id = $1",
-    )
-    .bind(trip_id)
-    .execute(pool)
-    .await?;
+    sync_trip_counts(&mut tx, trip_id).await?;
+    tx.commit().await?;
 
     Ok(ok("站点已添加", stop))
+}
+
+async fn ensure_trip_editable(pool: &sqlx::PgPool, trip_id: &str) -> ApiResult<()> {
+    let status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM vehicle_trips WHERE id = $1")
+            .bind(trip_id)
+            .fetch_optional(pool)
+            .await?
+            .flatten();
+
+    match status.as_deref() {
+        Some("planned" | "locked") => Ok(()),
+        Some(_) => Err(ApiError::BadRequest(
+            "只有未锁定或已锁定的行程可以调整订单和站点".to_string(),
+        )),
+        None => Err(ApiError::NotFound("行程不存在".to_string())),
+    }
+}
+
+async fn ensure_trip_has_orders(pool: &sqlx::PgPool, trip_id: &str) -> ApiResult<()> {
+    let order_count: i64 = sqlx::query_scalar(
+        "SELECT count(DISTINCT mall_order_id) FROM trip_stops WHERE trip_id = $1 AND mall_order_id IS NOT NULL",
+    )
+    .bind(trip_id)
+    .fetch_one(pool)
+    .await?;
+    if order_count == 0 {
+        return Err(ApiError::BadRequest("空行程不能锁定或发车".to_string()));
+    }
+    Ok(())
+}
+
+async fn sync_trip_counts(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    trip_id: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        UPDATE vehicle_trips
+        SET total_orders = (
+                SELECT count(DISTINCT mall_order_id)
+                FROM trip_stops
+                WHERE trip_id = $1 AND mall_order_id IS NOT NULL
+            ),
+            completed_orders = (
+                SELECT count(DISTINCT mall_order_id)
+                FROM trip_stops
+                WHERE trip_id = $1
+                  AND mall_order_id IS NOT NULL
+                  AND stop_type = 'delivery'
+                  AND status = 'completed'
+            ),
+            updated_at = now()
+        WHERE id = $1
+        "#,
+    )
+    .bind(trip_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 async fn fetch_trip_detail(pool: &sqlx::PgPool, id: &str) -> ApiResult<Value> {
@@ -1611,8 +1726,7 @@ where
     }
 
     // 4. 分配订单
-    let mut assignments: Vec<Value> = Vec::new();
-    let mut assigned_count = 0;
+    let mut planned_assignments: Vec<(String, String, String, Option<String>)> = Vec::new();
 
     for (order_id, time_slot, _delivery_date) in pending_orders {
         // 找到负载最少的车辆
@@ -1639,57 +1753,122 @@ where
             let key = (vehicle_id.clone(), time_slot.clone());
             *load_map.entry(key).or_insert(0) += 1;
 
+            planned_assignments.push((
+                order_id,
+                vehicle_id.clone(),
+                vehicle_code.clone(),
+                time_slot,
+            ));
+        }
+    }
+
+    let mut assignments: Vec<Value> = Vec::new();
+    if dry_run {
+        assignments = planned_assignments
+            .into_iter()
+            .map(|(order_id, vehicle_id, vehicle_code, time_slot)| {
+                json!({
+                    "orderId": order_id,
+                    "vehicleId": vehicle_id,
+                    "vehicleCode": vehicle_code,
+                    "timeSlot": time_slot
+                })
+            })
+            .collect();
+    } else {
+        let mut tx = state.db.begin().await?;
+        let mut trip_ids = std::collections::HashMap::<String, String>::new();
+
+        for (order_id, vehicle_id, vehicle_code, time_slot) in planned_assignments {
+            let trip_id = if let Some(trip_id) = trip_ids.get(&vehicle_id) {
+                trip_id.clone()
+            } else {
+                let trip_id: String = sqlx::query_scalar(
+                    r#"
+                    INSERT INTO vehicle_trips (vehicle_id, vehicle_code, status)
+                    VALUES ($1, $2, 'planned')
+                    RETURNING id
+                    "#,
+                )
+                .bind(&vehicle_id)
+                .bind(&vehicle_code)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|err| ApiError::BadRequest(format!("创建行程失败: {err}")))?;
+                trip_ids.insert(vehicle_id.clone(), trip_id.clone());
+                trip_id
+            };
+
+            let order: Option<Value> = sqlx::query_scalar(
+                r#"
+                UPDATE mall_orders
+                SET trip_id = $1,
+                    status = 'dispatching',
+                    dispatched_at = COALESCE(dispatched_at, now()),
+                    updated_at = now()
+                WHERE id = $2
+                  AND trip_id IS NULL
+                  AND status IN ('paid', 'ready_for_pickup', 'dispatching')
+                RETURNING jsonb_build_object(
+                    'address', address_text, 'latitude', latitude, 'longitude', longitude,
+                    'contactName', recipient_name, 'contactPhone', recipient_phone
+                )
+                "#,
+            )
+            .bind(&trip_id)
+            .bind(&order_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+
+            let Some(order) = order else { continue };
+            let sequence: i32 = sqlx::query_scalar(
+                "SELECT COALESCE(MAX(stop_sequence), 0) + 1 FROM trip_stops WHERE trip_id = $1",
+            )
+            .bind(&trip_id)
+            .fetch_one(&mut *tx)
+            .await?;
+            sqlx::query(
+                r#"
+                INSERT INTO trip_stops (
+                    trip_id, mall_order_id, stop_type, stop_sequence, address, latitude,
+                    longitude, contact_name, contact_phone, cargo_info, status
+                )
+                VALUES ($1, $2, 'delivery', $3, $4, $5, $6, $7, $8, $2, 'pending')
+                "#,
+            )
+            .bind(&trip_id)
+            .bind(&order_id)
+            .bind(sequence)
+            .bind(order.get("address").and_then(Value::as_str))
+            .bind(order.get("latitude").and_then(Value::as_f64))
+            .bind(order.get("longitude").and_then(Value::as_f64))
+            .bind(order.get("contactName").and_then(Value::as_str))
+            .bind(order.get("contactPhone").and_then(Value::as_str))
+            .execute(&mut *tx)
+            .await?;
+
             assignments.push(json!({
                 "orderId": order_id,
                 "vehicleId": vehicle_id,
                 "vehicleCode": vehicle_code,
+                "tripId": trip_id,
                 "timeSlot": time_slot
             }));
-            assigned_count += 1;
-
-            // 如果不是预览模式，执行分配
-            if !dry_run {
-                // 创建或获取行程
-                let trip_id: String = sqlx::query_scalar(
-                    r#"
-                    INSERT INTO vehicle_trips (vehicle_id, status, total_orders)
-                    VALUES ($1, 'locked', 1)
-                    RETURNING id
-                    "#,
-                )
-                .bind(vehicle_id)
-                .fetch_one(&state.db)
-                .await
-                .map_err(|err| ApiError::BadRequest(format!("创建行程失败: {err}")))?;
-
-                // 分配订单到行程
-                sqlx::query(
-                    r#"
-                    UPDATE mall_orders
-                    SET trip_id = $1, status = 'dispatching', dispatched_at = now(), updated_at = now()
-                    WHERE id = $2
-                    "#,
-                )
-                .bind(&trip_id)
-                .bind(&order_id)
-                .execute(&state.db)
-                .await
-                .map_err(|err| ApiError::BadRequest(format!("分配订单失败: {err}")))?;
-
-                // 更新车辆状态
-                sqlx::query(
-                    r#"
-                    UPDATE vehicles SET trip_status = 'in_transit', updated_at = now() WHERE id = $1
-                    "#,
-                )
-                .bind(vehicle_id)
-                .execute(&state.db)
-                .await
-                .ok();
-            }
         }
+
+        for trip_id in trip_ids.values() {
+            sync_trip_counts(&mut tx, trip_id).await?;
+        }
+        sqlx::query(
+            "DELETE FROM vehicle_trips WHERE id = ANY($1) AND NOT EXISTS (SELECT 1 FROM trip_stops WHERE trip_id = vehicle_trips.id)",
+        )
+        .bind(trip_ids.values().cloned().collect::<Vec<_>>())
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
     }
 
+    let assigned_count = assignments.len();
     Ok(ok(
         if dry_run {
             "预览完成"

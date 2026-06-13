@@ -343,6 +343,29 @@ async fn undispatched_orders_returns_mall_orders_without_demand_linkage() {
     assert_eq!(assigned_status, StatusCode::OK);
     assert_eq!(assigned_body["data"].as_array().unwrap().len(), 0);
 
+    sqlx::query("INSERT INTO vehicle_trips (id, vehicle_id) VALUES ('other-trip-1', 'vehicle-2')")
+        .execute(&context.pool)
+        .await
+        .expect("other trip should be inserted");
+    let (wrong_trip_status, _) =
+        delete_json(&context.app, "/api/trips/other-trip-1/stops/trip-stop-1").await;
+    assert_eq!(wrong_trip_status, StatusCode::NOT_FOUND);
+
+    sqlx::query("UPDATE vehicle_trips SET status = 'in_progress' WHERE id = 'trip-with-order-1'")
+        .execute(&context.pool)
+        .await
+        .expect("trip should become in progress");
+    let (in_progress_status, _) = delete_json(
+        &context.app,
+        "/api/admin/trips/trip-with-order-1/remove-order/undispatched-order-1",
+    )
+    .await;
+    assert_eq!(in_progress_status, StatusCode::BAD_REQUEST);
+    sqlx::query("UPDATE vehicle_trips SET status = 'planned' WHERE id = 'trip-with-order-1'")
+        .execute(&context.pool)
+        .await
+        .expect("trip should become editable again");
+
     let (remove_status, remove_body) = delete_json(
         &context.app,
         "/api/admin/trips/trip-with-order-1/remove-order/undispatched-order-1",
@@ -371,6 +394,12 @@ async fn undispatched_orders_returns_mall_orders_without_demand_linkage() {
     .await
     .expect("trip stop count should load");
     assert_eq!(stop_count, 0);
+    let trip_order_count: i32 =
+        sqlx::query_scalar("SELECT total_orders FROM vehicle_trips WHERE id = 'trip-with-order-1'")
+            .fetch_one(&context.pool)
+            .await
+            .expect("trip order count should load");
+    assert_eq!(trip_order_count, 0);
 
     context.cleanup().await;
 }

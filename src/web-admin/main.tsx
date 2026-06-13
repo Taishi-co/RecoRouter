@@ -3646,7 +3646,10 @@ function DispatchSection({
                                 <div><span style={{ color: '#6b7280' }}>地址：</span>{stringValue(order, 'address_text', stringValue(order, 'addressText', '-'))}</div>
                                 <div><span style={{ color: '#6b7280' }}>收货人：</span>{stringValue(order, 'recipient_name', stringValue(order, 'recipientName', '-'))}</div>
                                 <div><span style={{ color: '#6b7280' }}>电话：</span>{stringValue(order, 'recipient_phone', stringValue(order, 'recipientPhone', '-'))}</div>
-                                <div><span style={{ color: '#6b7280' }}>期望送达：</span>{formatDate(stringValue(order, 'expected_delivery_time', stringValue(order, 'expectedDeliveryTime', ''))) || '无'}</div>
+                                <div><span style={{ color: '#6b7280' }}>期望送达：</span>{[
+                                  stringValue(order, 'delivery_date', stringValue(order, 'deliveryDate', '')),
+                                  stringValue(order, 'delivery_time_slot', stringValue(order, 'deliveryTimeSlot', stringValue(order, 'expected_delivery_window', stringValue(order, 'expectedDeliveryWindow', ''))))
+                                ].filter(Boolean).join(' ') || '无'}</div>
                               </div>
                             </div>
                           </div>
