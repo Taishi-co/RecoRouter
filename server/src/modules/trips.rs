@@ -763,27 +763,46 @@ async fn admin_remove_order<S>(
 where
     S: Storage,
 {
-    // Remove stops for this order
+    let mut tx = state.db.begin().await?;
+
+    let returned_order_id: Option<String> = sqlx::query_scalar(
+        r#"
+        UPDATE mall_orders
+        SET trip_id = NULL,
+            status = 'dispatching',
+            dispatched_at = NULL,
+            updated_at = now()
+        WHERE id = $1
+          AND trip_id = $2
+          AND status IN ('paid', 'ready_for_pickup', 'dispatching')
+        RETURNING id
+        "#,
+    )
+    .bind(&order_id)
+    .bind(&trip_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    if returned_order_id.is_none() {
+        return Err(ApiError::BadRequest(
+            "订单不属于该行程或当前状态不可移除".to_string(),
+        ));
+    }
+
     sqlx::query("DELETE FROM trip_stops WHERE trip_id = $1 AND mall_order_id = $2")
         .bind(&trip_id)
         .bind(&order_id)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await?;
 
-    // Unlink order from trip
-    sqlx::query("UPDATE mall_orders SET trip_id = NULL, status = 'dispatching', updated_at = now() WHERE id = $1 AND trip_id = $2")
-        .bind(&order_id)
-        .bind(&trip_id)
-        .execute(&state.db)
-        .await?;
-
-    // Update total_orders count
     sqlx::query(
         "UPDATE vehicle_trips SET total_orders = (SELECT count(DISTINCT mall_order_id) FROM trip_stops WHERE trip_id = $1 AND mall_order_id IS NOT NULL), updated_at = now() WHERE id = $1",
     )
     .bind(&trip_id)
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?;
+
+    tx.commit().await?;
 
     let trip = fetch_trip_detail(&state.db, &trip_id).await?;
     Ok(ok("订单已移除", trip))
