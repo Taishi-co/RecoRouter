@@ -93,10 +93,7 @@ where
             "/api/admin/dispatch/delivery-performance",
             get(dispatch_delivery_performance::<S>),
         )
-        .route(
-            "/api/admin/dispatch/overview",
-            get(dispatch_overview::<S>),
-        )
+        .route("/api/admin/dispatch/overview", get(dispatch_overview::<S>))
         // 自动调度
         .route(
             "/api/admin/dispatch/auto-assign",
@@ -1116,26 +1113,26 @@ async fn do_unlock_trip(pool: &sqlx::PgPool, id: &str) -> ApiResult<Json<ApiEnve
 }
 
 async fn do_cancel_trip(pool: &sqlx::PgPool, id: &str, reason: Option<&str>) -> ApiResult<Value> {
-    let status: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM vehicle_trips WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?
-    .flatten();
+    let status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM vehicle_trips WHERE id = $1")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?
+            .flatten();
 
     let status = status.ok_or_else(|| ApiError::NotFound("行程不存在".to_string()))?;
     if status == "completed" || status == "cancelled" {
-        return Err(ApiError::BadRequest("已完成或已取消的行程无法取消".to_string()));
+        return Err(ApiError::BadRequest(
+            "已完成或已取消的行程无法取消".to_string(),
+        ));
     }
 
-    let vehicle_id: Option<String> = sqlx::query_scalar(
-        "SELECT vehicle_id FROM vehicle_trips WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?
-    .flatten();
+    let vehicle_id: Option<String> =
+        sqlx::query_scalar("SELECT vehicle_id FROM vehicle_trips WHERE id = $1")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?
+            .flatten();
 
     let mut tx = pool.begin().await?;
 
@@ -1167,18 +1164,22 @@ async fn do_cancel_trip(pool: &sqlx::PgPool, id: &str, reason: Option<&str>) -> 
         .await?;
 
     if let Some(vid) = vehicle_id {
-        let _ = sqlx::query("UPDATE vehicles SET trip_status = 'idle', updated_at = now() WHERE id = $1")
-            .bind(&vid)
-            .execute(&mut *tx)
-            .await;
+        let _ = sqlx::query(
+            "UPDATE vehicles SET trip_status = 'idle', updated_at = now() WHERE id = $1",
+        )
+        .bind(&vid)
+        .execute(&mut *tx)
+        .await;
     }
 
     tx.commit().await?;
 
-    let trip = sqlx::query_scalar::<_, Value>("SELECT row_to_json(vehicle_trips) FROM vehicle_trips WHERE id = $1")
-        .bind(id)
-        .fetch_one(pool)
-        .await?;
+    let trip = sqlx::query_scalar::<_, Value>(
+        "SELECT row_to_json(vehicle_trips) FROM vehicle_trips WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await?;
 
     Ok(trip)
 }
@@ -1498,12 +1499,12 @@ struct AutoAssignRequest {
 }
 
 /// 自动调度 - 硬编码策略：避免同一时间段订单拥挤在一辆车
-/// 
+///
 /// 使用场景：
 /// 1. 调度员在调度中心选择一批订单
 /// 2. 点击"智能调度"按钮
 /// 3. 系统自动分配到合适的车辆
-/// 
+///
 /// 策略规则：
 /// 1. 每辆车每个时间段最多 N 个订单（默认 5 个）
 /// 2. 优先分配负载最少的车辆
@@ -1552,7 +1553,10 @@ where
     };
 
     if pending_orders.is_empty() {
-        return Ok(ok("没有待分配的订单", json!({"assigned": 0, "details": []})));
+        return Ok(ok(
+            "没有待分配的订单",
+            json!({"assigned": 0, "details": []}),
+        ));
     }
 
     // 2. 获取可用车辆
@@ -1589,7 +1593,7 @@ where
     .map_err(|err| ApiError::BadRequest(format!("查询车辆负载失败: {err}")))?;
 
     // 构建车辆负载映射: (vehicle_id, time_slot) -> count
-    let mut load_map: std::collections::HashMap<(String, Option<String>), i64> = 
+    let mut load_map: std::collections::HashMap<(String, Option<String>), i64> =
         std::collections::HashMap::new();
     for (vid, slot, count) in vehicle_loads {
         load_map.insert((vid, slot), count);
@@ -1601,15 +1605,22 @@ where
 
     for (order_id, time_slot, _delivery_date) in pending_orders {
         // 找到负载最少的车辆
-        let best_vehicle = available_vehicles.iter()
+        let best_vehicle = available_vehicles
+            .iter()
             .filter(|(vid, _)| {
                 // 检查该车辆在该时间段的负载是否已满
-                let current_load = load_map.get(&(vid.clone(), time_slot.clone())).copied().unwrap_or(0);
+                let current_load = load_map
+                    .get(&(vid.clone(), time_slot.clone()))
+                    .copied()
+                    .unwrap_or(0);
                 current_load < max_per_slot as i64
             })
             .min_by_key(|(vid, _)| {
                 // 选择负载最少的车辆
-                load_map.get(&(vid.clone(), time_slot.clone())).copied().unwrap_or(0)
+                load_map
+                    .get(&(vid.clone(), time_slot.clone()))
+                    .copied()
+                    .unwrap_or(0)
             });
 
         if let Some((vehicle_id, vehicle_code)) = best_vehicle {
@@ -1669,12 +1680,16 @@ where
     }
 
     Ok(ok(
-        if dry_run { "预览完成" } else { "分配完成" },
+        if dry_run {
+            "预览完成"
+        } else {
+            "分配完成"
+        },
         json!({
             "assigned": assigned_count,
             "maxOrdersPerSlot": max_per_slot,
             "dryRun": dry_run,
             "details": assignments
-        })
+        }),
     ))
 }

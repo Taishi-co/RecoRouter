@@ -45,11 +45,6 @@ impl EnvGuard {
         assert!(TOUCHED_ENV_KEYS.contains(&key));
         env::set_var(key, value);
     }
-
-    fn remove(&self, key: &'static str) {
-        assert!(TOUCHED_ENV_KEYS.contains(&key));
-        env::remove_var(key);
-    }
 }
 
 impl Drop for EnvGuard {
@@ -326,7 +321,7 @@ fn config_reads_required_database_url() {
 fn config_defaults_local_upload_dir_to_relative_uploads() {
     let env = EnvGuard::new();
     set_required_env(&env);
-    env.remove("LOCAL_UPLOAD_DIR");
+    env.set("LOCAL_UPLOAD_DIR", "");
 
     let config = recorouter_api::config::Config::from_env().expect("config should load");
 

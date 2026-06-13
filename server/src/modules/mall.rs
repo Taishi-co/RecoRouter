@@ -61,7 +61,10 @@ where
         )
         .route("/api/mall/addresses/:id", put(update_mall_address::<S>))
         .route("/api/mall/pickup-points", get(list_pickup_points::<S>))
-        .route("/api/mall/delivery-time-slots", get(get_delivery_time_slots::<S>))
+        .route(
+            "/api/mall/delivery-time-slots",
+            get(get_delivery_time_slots::<S>),
+        )
         .route(
             "/api/mall/community-posts",
             get(list_community_posts::<S>).post(create_community_post::<S>),
@@ -768,7 +771,11 @@ struct ProductMutationRequest {
     image_url: Option<String>,
     images: Option<Vec<String>>,
     variants: Option<Vec<ProductVariantMutation>>,
-    #[serde(alias = "procurement_buyer_ids", alias = "buyer_ids", alias = "supplier_ids")]
+    #[serde(
+        alias = "procurement_buyer_ids",
+        alias = "buyer_ids",
+        alias = "supplier_ids"
+    )]
     procurement_buyer_ids: Option<Vec<String>>,
     #[serde(alias = "qualification_reports", alias = "quality_reports")]
     qualification_reports: Option<Vec<ProductQualificationReportMutation>>,
@@ -1753,7 +1760,10 @@ where
     }
     builder.push(" ORDER BY updated_at DESC, created_at DESC LIMIT 200");
 
-    let mut buyers = builder.build_query_scalar::<Value>().fetch_all(&state.db).await?;
+    let mut buyers = builder
+        .build_query_scalar::<Value>()
+        .fetch_all(&state.db)
+        .await?;
     resolve_mall_image_urls_in_list(&state.storage, &mut buyers).await?;
     Ok(ok("查询成功", buyers))
 }
@@ -2984,10 +2994,11 @@ where
         }
     });
 
-    let waypoints_json = body.waypoints.as_ref().map(|waypoints| {
-        serde_json::to_value(waypoints).unwrap_or(json!([]))
-    });
-    
+    let waypoints_json = body
+        .waypoints
+        .as_ref()
+        .map(|waypoints| serde_json::to_value(waypoints).unwrap_or(json!([])));
+
     let order_id: String = sqlx::query_scalar(
         r#"
         INSERT INTO mall_orders (
@@ -6439,7 +6450,10 @@ fn normalize_qualification_reports(
             .ok_or_else(|| ApiError::BadRequest("资质报告名称不能为空".to_string()))?;
         let report_url = normalize_product_image_value(report.report_url.as_deref())
             .ok_or_else(|| ApiError::BadRequest("资质报告文件不能为空".to_string()))?;
-        let status = report.status.clone().unwrap_or_else(|| "active".to_string());
+        let status = report
+            .status
+            .clone()
+            .unwrap_or_else(|| "active".to_string());
         validate_qualification_report_status(&status)?;
 
         normalized.push(NormalizedQualificationReport {
@@ -10427,10 +10441,13 @@ where
         json!({"slot": "20:00-21:00", "label": "20:00-21:00"}),
     ];
 
-    Ok(ok("获取成功", json!({
-        "slots": slots,
-        "description": "配送时间段按一小时划分，请在下单时选择期望的配送时间段"
-    })))
+    Ok(ok(
+        "获取成功",
+        json!({
+            "slots": slots,
+            "description": "配送时间段按一小时划分，请在下单时选择期望的配送时间段"
+        }),
+    ))
 }
 
 #[cfg(test)]
