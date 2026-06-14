@@ -481,13 +481,41 @@ export interface MallAfterSale {
   id: string
   orderId: string
   userId?: string
+  afterSaleType?: 'return_refund' | 'exchange' | 'refund_only' | string
   reason: string
   description?: string | null
+  selectedItems?: Array<{
+    orderItemId?: string
+    id?: string
+    productId?: string
+    variantId?: string | null
+    variantName?: string | null
+    productName?: string
+    sku?: string | null
+    unitPriceCents?: number
+    quantity?: number
+    lineTotalCents?: number
+    pricingMode?: string | null
+  }>
   evidenceImages?: string[]
   amountCents: number
+  requestedAmountCents?: number
+  approvedAmountCents?: number | null
   status: string
   handlingMethod: string
+  solutionType?: string | null
+  negotiationStatus?: string | null
+  returnLogistics?: Record<string, unknown>
+  supportSessionId?: string | null
+  resolution?: string | null
+  timeline?: Array<{
+    status?: string
+    title?: string
+    description?: string
+    createdAt?: string
+  }>
   createdAt?: string
+  updatedAt?: string
 }
 
 export interface MallProfile {
@@ -579,6 +607,34 @@ export interface MallCampaign {
   spentCents: number
   rules: Record<string, unknown>
   status: string
+}
+
+export interface MallPromotionVenueItem {
+  productId: string
+  sku?: string | null
+  productName?: string | null
+  sortOrder?: number | null
+}
+
+export interface MallPromotionVenueRules {
+  [key: string]: unknown
+  title?: string
+  subtitle?: string
+  copy?: string
+  buttonText?: string
+  iconText?: string
+  iconUrl?: string
+  backgroundImageUrl?: string
+  backgroundColor?: string
+  textColor?: string
+  entryPosition?: string
+  sortOrder?: number
+  items?: MallPromotionVenueItem[]
+}
+
+export interface MallPromotionVenue extends MallCampaign {
+  campaignType: 'promotion_venue' | string
+  rules: MallPromotionVenueRules
 }
 
 export interface MallDeliveryRules {
@@ -774,6 +830,7 @@ export async function listMallProducts(params: {
   categoryCode?: string
   status?: string
   activityType?: string
+  venueId?: string
   sort?: string
   page?: number
   pageSize?: number
@@ -788,6 +845,10 @@ export async function listMallHomeBanners(): Promise<MallHomeBanner[]> {
 
 export async function listMallHomeSections(): Promise<MallHomeSection[]> {
   return apiGet('/api/mall/home-sections')
+}
+
+export async function listMallPromotionVenues(): Promise<MallPromotionVenue[]> {
+  return apiGet('/api/mall/promotion-venues')
 }
 
 export async function getMallProduct(id: string): Promise<MallProduct> {
@@ -872,8 +933,11 @@ export async function getMallTracking(id: string): Promise<{ order: MallOrder; e
 
 export async function createMallAfterSale(orderId: string, data: {
   userId: string
+  afterSaleType?: 'return_refund' | 'exchange' | 'refund_only' | string
   reason: string
   description?: string
+  selectedItems?: MallAfterSale['selectedItems']
+  requestedAmountCents?: number
   amountCents?: number
   evidenceImages?: string[]
 }): Promise<MallAfterSale> {
@@ -1226,6 +1290,7 @@ export async function createSupportMessage(sessionId: string, data: {
   senderId?: string
   senderRole: string
   content: string
+  metadata?: Record<string, unknown>
 }): Promise<SupportMessage> {
   return apiPost(`/api/support/sessions/${sessionId}/messages`, data)
 }

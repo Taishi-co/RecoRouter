@@ -13,6 +13,7 @@ interface AdminMessageItem {
   id: string;
   type: AdminMessageType;
   content: string;
+  createdAt: number;
 }
 
 type AdminMessageHandler = (type: AdminMessageType, content: string) => void;
@@ -115,6 +116,7 @@ interface DashboardData {
   mallSalesStats: JsonRecord;
   campaigns: JsonRecord[];
   fixedPriceCampaigns: JsonRecord[];
+  promotionVenues: JsonRecord[];
   mallCoupons: JsonRecord[];
   mallHomeBanners: JsonRecord[];
   mallHomeSections: JsonRecord[];
@@ -286,6 +288,28 @@ interface FixedPriceCampaignForm {
   items: FixedPriceCampaignItemForm[];
 }
 
+interface PromotionVenueItemForm {
+  productId: string;
+}
+
+interface PromotionVenueForm {
+  id: string;
+  name: string;
+  status: string;
+  title: string;
+  subtitle: string;
+  copy: string;
+  buttonText: string;
+  iconText: string;
+  iconUrl: string;
+  backgroundImageUrl: string;
+  backgroundColor: string;
+  textColor: string;
+  entryPosition: string;
+  sortOrder: string;
+  items: PromotionVenueItemForm[];
+}
+
 interface CouponForm {
   id: string;
   name: string;
@@ -338,6 +362,13 @@ interface SettingsForm {
   deliveryPromiseMinutes: string;
   refundReviewMinutes: string;
   coldChainEnabled: boolean;
+  deliveryRangeEnabled: boolean;
+  deliveryOriginLatitude: string;
+  deliveryOriginLongitude: string;
+  deliveryOriginAddress: string;
+  deliveryRangeRadiusKm: string;
+  deliveryRangePolygon: string;
+  deliveryFeeTiersText: string;
   pickupWindowStart: string;
   pickupWindowEnd: string;
   deliveryBatchTimes: string;
@@ -721,6 +752,7 @@ const adminModules: AdminModuleSpec[] = [
       designPage('mall.community', '邻里圈', '营销中心', '自提点动态、拼团和用户互动', 'megaphone'),
       designPage('mall.campaigns', '营销活动', '营销中心', '活动搜索、创建、编辑、启停和删除', 'megaphone', 'operations'),
       designPage('mall.fixedPriceCampaigns', '一口价', '营销中心', '商品一口价活动和商品图角标配置', 'megaphone', 'operations'),
+      designPage('mall.promotionVenues', '大促会场', '营销中心', '会场入口、视觉配置和商品池', 'megaphone', 'operations'),
       designPage('mall.coupons', '券中心', '营销中心', '券创建、编辑、发放量、核销状态和启停', 'megaphone'),
       designPage('mall.banners', '轮播广告位', '首页配置', '首页 3 张轮播、图片、跳转和排序', 'dashboard'),
       designPage('mall.homeNotices', '公告栏配置', '首页配置', '今日到货、配送时效、售后通知和团长招募', 'megaphone'),
@@ -801,6 +833,7 @@ const initialData: DashboardData = {
   mallSalesStats: {},
   campaigns: [],
   fixedPriceCampaigns: [],
+  promotionVenues: [],
   mallCoupons: [],
   mallHomeBanners: [],
   mallHomeSections: [],
@@ -992,6 +1025,24 @@ const initialFixedPriceCampaignForm: FixedPriceCampaignForm = {
   items: [],
 };
 
+const initialPromotionVenueForm: PromotionVenueForm = {
+  id: '',
+  name: '周末大促会场',
+  status: 'active',
+  title: '周末大促',
+  subtitle: '限时精选',
+  copy: '生鲜好货集中上新',
+  buttonText: '进入会场',
+  iconText: '促',
+  iconUrl: '',
+  backgroundImageUrl: '',
+  backgroundColor: '#F4FBF5',
+  textColor: '#153A24',
+  entryPosition: 'home_after_banner',
+  sortOrder: '10',
+  items: [],
+};
+
 const initialCouponForm: CouponForm = {
   id: '',
   name: '新人满49减6',
@@ -1104,6 +1155,13 @@ const initialSettingsForm: SettingsForm = {
   deliveryPromiseMinutes: '18',
   refundReviewMinutes: '10',
   coldChainEnabled: true,
+  deliveryRangeEnabled: false,
+  deliveryOriginLatitude: '',
+  deliveryOriginLongitude: '',
+  deliveryOriginAddress: '',
+  deliveryRangeRadiusKm: '5',
+  deliveryRangePolygon: '',
+  deliveryFeeTiersText: '0-2=0\n2-3=3\n3-5=4',
   pickupWindowStart: '16:00',
   pickupWindowEnd: '20:00',
   deliveryBatchTimes: '10:00,14:00,18:00',
@@ -1326,6 +1384,7 @@ async function fetchDashboardData(
     mallSalesStats,
     campaigns,
     fixedPriceCampaigns,
+    promotionVenues,
     mallCoupons,
     mallHomeBanners,
     mallHomeSections,
@@ -1400,6 +1459,10 @@ async function fetchDashboardData(
       campaignType: 'fixed_price',
       limit: 200,
     })),
+    loadWithFallback('大促会场', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/campaigns', {
+      campaignType: 'promotion_venue',
+      limit: 200,
+    })),
     loadWithFallback('优惠券', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/coupons', {
       keyword: couponFilters.keyword,
       status: couponFilters.status,
@@ -1454,6 +1517,7 @@ async function fetchDashboardData(
       mallSalesStats,
       campaigns,
       fixedPriceCampaigns,
+      promotionVenues,
       mallCoupons,
       mallHomeBanners,
       mallHomeSections,
@@ -1520,6 +1584,135 @@ function optionalNumber(value: string) {
   if (!value.trim()) return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function numberTextValue(record: JsonRecord | undefined, key: string, fallback = '') {
+  const value = record?.[key];
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value === 'string') return value;
+  return fallback;
+}
+
+function parseDeliveryFeeTiers(text: string) {
+  return text
+    .split(/\n+/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const match = line.match(/^(\d+(?:\.\d+)?)\s*(?:-|~|至)\s*(\d+(?:\.\d+)?)\s*(?:公里|km)?\s*(?:=|:|：|\s+)\s*(\d+(?:\.\d+)?)\s*(?:元\/公里|元每公里|元|\/km)?$/i);
+      if (!match) {
+        throw new Error(`阶梯运费格式不正确：${line}`);
+      }
+      const [, minValue, maxValue, feeValue] = match;
+      const minKm = Number(minValue);
+      const maxKm = Number(maxValue);
+      const feeYuanPerKm = Number(feeValue);
+      if (!Number.isFinite(minKm) || !Number.isFinite(maxKm) || !Number.isFinite(feeYuanPerKm) || maxKm <= minKm || feeYuanPerKm < 0) {
+        throw new Error(`阶梯运费数值不正确：${line}`);
+      }
+      return {
+        minKm,
+        maxKm,
+        feeYuanPerKm,
+        feeCentsPerKm: Math.round(feeYuanPerKm * 100),
+      };
+    });
+}
+
+function formatDeliveryFeeTiers(value: unknown) {
+  if (!Array.isArray(value)) return initialSettingsForm.deliveryFeeTiersText;
+  const lines = value
+    .map(item => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return '';
+      const record = item as JsonRecord;
+      const minKm = numberValue(record, 'minKm', Number.NaN);
+      const maxKm = numberValue(record, 'maxKm', Number.NaN);
+      const feeYuanPerKm = numberValue(record, 'feeYuanPerKm', numberValue(record, 'feeCentsPerKm', 0) / 100);
+      if (!Number.isFinite(minKm) || !Number.isFinite(maxKm) || !Number.isFinite(feeYuanPerKm)) return '';
+      return `${minKm}-${maxKm}=${feeYuanPerKm}`;
+    })
+    .filter(Boolean);
+  return lines.length ? lines.join('\n') : initialSettingsForm.deliveryFeeTiersText;
+}
+
+function deliveryFeeTierSummary(text: string) {
+  try {
+    const tiers = parseDeliveryFeeTiers(text);
+    if (!tiers.length) return '未设置';
+    return tiers.map(tier => `${tier.minKm}-${tier.maxKm}km ¥${tier.feeYuanPerKm}/km`).join('，');
+  } catch {
+    return '格式待修正';
+  }
+}
+
+function deliveryFeeTierCount(text: string) {
+  try {
+    return parseDeliveryFeeTiers(text).length;
+  } catch {
+    return 0;
+  }
+}
+
+function parseDeliveryRangePolygon(text: string) {
+  const raw = text.trim();
+  if (!raw) return [];
+  const normalizePoint = (item: unknown) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+    const record = item as JsonRecord;
+    const latitude = numberValue(record, 'latitude', Number.NaN);
+    const longitude = numberValue(record, 'longitude', Number.NaN);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    return { latitude, longitude };
+  };
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      throw new Error('范围坐标 JSON 必须是数组');
+    }
+    const points = parsed.map(normalizePoint).filter(Boolean) as Array<{ latitude: number; longitude: number }>;
+    if (points.length !== parsed.length || (points.length > 0 && points.length < 3)) {
+      throw new Error('范围坐标至少需要 3 个点');
+    }
+    return points;
+  } catch (error) {
+    if (raw.startsWith('[')) {
+      throw error instanceof Error ? error : new Error('范围坐标格式不正确');
+    }
+  }
+
+  const points = raw
+    .split(/\n+/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const [latitudeText, longitudeText] = line.split(/[,，\s]+/);
+      const latitude = Number(latitudeText);
+      const longitude = Number(longitudeText);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        throw new Error(`范围坐标格式不正确：${line}`);
+      }
+      return { latitude, longitude };
+    });
+  if (points.length > 0 && points.length < 3) {
+    throw new Error('范围坐标至少需要 3 个点');
+  }
+  return points;
+}
+
+function formatDeliveryRangePolygon(value: unknown) {
+  if (!Array.isArray(value)) return '';
+  return value
+    .map(item => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return '';
+      const record = item as JsonRecord;
+      const latitude = numberValue(record, 'latitude', Number.NaN);
+      const longitude = numberValue(record, 'longitude', Number.NaN);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return '';
+      return `${latitude},${longitude}`;
+    })
+    .filter(Boolean)
+    .join('\n');
 }
 
 function validateProductForm(form: ProductForm) {
@@ -1623,6 +1816,16 @@ function formatDate(value: string) {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+  }).format(date);
+}
+
+function formatMessageTime(value: number) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return new Intl.DateTimeFormat('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
   }).format(date);
 }
 
@@ -1918,8 +2121,20 @@ function campaignTypeLabel(value: string) {
     delivery_subsidy: '配送补贴',
     free_delivery: '免配送费',
     fixed_price: '一口价',
+    promotion_venue: '大促会场',
   };
   return labels[value] || value || '-';
+}
+
+const promotionVenueEntryPositionOptions = [
+  { value: 'home_top', label: '首页顶部' },
+  { value: 'home_after_banner', label: '轮播下方' },
+  { value: 'home_after_flash', label: '秒杀下方' },
+  { value: 'category_top', label: '商品列表顶部' },
+];
+
+function promotionVenueEntryPositionLabel(value: string) {
+  return promotionVenueEntryPositionOptions.find(option => option.value === value)?.label || value || '-';
 }
 
 function linkTypeLabel(value: string) {
@@ -2072,6 +2287,64 @@ function fixedPriceCampaignRules(form: FixedPriceCampaignForm, products: JsonRec
   };
 }
 
+function promotionVenueToForm(campaign: JsonRecord): PromotionVenueForm {
+  const rules = recordValue(campaign, 'rules');
+  const items = arrayValue(rules, 'items')
+    .map(item => {
+      const record = item && typeof item === 'object' && !Array.isArray(item) ? item as JsonRecord : {};
+      const productId = stringValue(record, 'productId', stringValue(record, 'id'));
+      if (!productId) return null;
+      return { productId };
+    })
+    .filter((item): item is PromotionVenueItemForm => Boolean(item));
+
+  return {
+    id: stringValue(campaign, 'id'),
+    name: stringValue(campaign, 'name', '周末大促会场'),
+    status: stringValue(campaign, 'status', 'active'),
+    title: stringValue(rules, 'title', stringValue(campaign, 'name', '周末大促')),
+    subtitle: stringValue(rules, 'subtitle', '限时精选'),
+    copy: stringValue(rules, 'copy', '生鲜好货集中上新'),
+    buttonText: stringValue(rules, 'buttonText', '进入会场'),
+    iconText: stringValue(rules, 'iconText', '促'),
+    iconUrl: stringValue(rules, 'iconUrl'),
+    backgroundImageUrl: stringValue(rules, 'backgroundImageUrl'),
+    backgroundColor: stringValue(rules, 'backgroundColor', '#F4FBF5'),
+    textColor: stringValue(rules, 'textColor', '#153A24'),
+    entryPosition: stringValue(rules, 'entryPosition', 'home_after_banner'),
+    sortOrder: String(numberValue(rules, 'sortOrder', 10)),
+    items,
+  };
+}
+
+function promotionVenueRules(form: PromotionVenueForm, products: JsonRecord[]) {
+  const productById = new Map(products.map(product => [stringValue(product, 'id'), product]));
+  return {
+    title: form.title.trim() || form.name.trim(),
+    subtitle: form.subtitle.trim(),
+    copy: form.copy.trim(),
+    buttonText: form.buttonText.trim() || '进入会场',
+    iconText: form.iconText.trim(),
+    iconUrl: form.iconUrl.trim(),
+    backgroundImageUrl: form.backgroundImageUrl.trim(),
+    backgroundColor: form.backgroundColor || '#F4FBF5',
+    textColor: form.textColor || '#153A24',
+    entryPosition: form.entryPosition || 'home_after_banner',
+    sortOrder: Number(form.sortOrder) || 0,
+    items: form.items
+      .map((item, index) => {
+        const product = productById.get(item.productId);
+        return {
+          productId: item.productId,
+          sku: product ? stringValue(product, 'sku') : '',
+          productName: product ? stringValue(product, 'name') : '',
+          sortOrder: index + 1,
+        };
+      })
+      .filter(item => item.productId),
+  };
+}
+
 function couponToForm(coupon: JsonRecord): CouponForm {
   return {
     id: stringValue(coupon, 'id'),
@@ -2148,8 +2421,18 @@ function statusLabel(value: string) {
     resolved: '已解决',
     published: '已发布',
     submitted: '已提交',
+    negotiating: '协商中',
     processing: '处理中',
+    return_pending: '待退货',
+    returning: '退货中',
+    exchange_processing: '换货中',
+    replacement_sent: '换货已发出',
     refunding: '退款中',
+    refunded: '已退款',
+    return_refund: '退货退款',
+    refund_only: '仅退款',
+    exchange: '换货',
+    agreed: '已协商一致',
     commission_pending: '佣金待审',
     expired: '已过期',
   };
@@ -2172,10 +2455,10 @@ function roleLabel(value: string) {
 }
 
 function badgeClass(status: string) {
-  if (['active', 'on_sale', 'paid', 'completed', 'approved', 'published', 'resolved', 'delivered', 'shipped'].includes(status)) {
+  if (['active', 'on_sale', 'paid', 'completed', 'approved', 'published', 'resolved', 'delivered', 'shipped', 'refunded', 'agreed'].includes(status)) {
     return 'badge badge-green';
   }
-  if (['pending', 'pending_payment', 'dispatching', 'delivering', 'generated', 'shipping', 'open', 'submitted', 'processing', 'refunding', 'refund_pending', 'commission_pending'].includes(status)) {
+  if (['pending', 'pending_payment', 'dispatching', 'delivering', 'generated', 'shipping', 'open', 'submitted', 'negotiating', 'processing', 'return_pending', 'returning', 'exchange_processing', 'replacement_sent', 'refunding', 'refund_pending', 'commission_pending'].includes(status)) {
     return 'badge badge-blue';
   }
   if (['rejected', 'cancelled', 'off_sale', 'inactive', 'closed', 'expired', 'failed', 'deleted'].includes(status)) {
@@ -2189,7 +2472,7 @@ function updateRecordList(list: JsonRecord[], id: string, patch: JsonRecord) {
 }
 
 function isOpenSupportStatus(status: string) {
-  return ['open', 'submitted', 'approved', 'processing', 'refunding', 'pending'].includes(status);
+  return ['open', 'submitted', 'negotiating', 'approved', 'processing', 'return_pending', 'returning', 'exchange_processing', 'replacement_sent', 'refunding', 'pending'].includes(status);
 }
 
 function supportSearchText(record: JsonRecord, keys: string[]) {
@@ -2232,6 +2515,27 @@ function buildAfterSalesQueue(orders: JsonRecord[]) {
       });
     })
     .sort((left, right) => new Date(stringValue(right, 'createdAt')).getTime() - new Date(stringValue(left, 'createdAt')).getTime());
+}
+
+function afterSaleTypeLabel(value: string) {
+  if (value === 'return_refund') return '退货退款';
+  if (value === 'exchange') return '换货';
+  if (value === 'refund_only') return '仅退款';
+  return value || '售后';
+}
+
+function afterSaleSelectedItemsText(item: JsonRecord) {
+  const selectedItems = arrayValue(item, 'selectedItems');
+  if (!selectedItems.length) return stringValue(item, 'productName', '订单商品');
+  return selectedItems
+    .map(selected => {
+      const record = selected && typeof selected === 'object' && !Array.isArray(selected) ? selected as JsonRecord : {};
+      const name = stringValue(record, 'productName', stringValue(item, 'productName', '订单商品'));
+      const variant = stringValue(record, 'variantName');
+      const quantity = numberValue(record, 'quantity') || 1;
+      return `${name}${variant ? `/${variant}` : ''} x${quantity}`;
+    })
+    .join('、');
 }
 
 function supportDashboardStats(data: DashboardData, afterSales: JsonRecord[]) {
@@ -3043,7 +3347,6 @@ function StatCard({ label, value, detail }: { label: string; value: string; deta
 
 function Panel({
   title,
-  description,
   action,
   children,
 }: {
@@ -3057,7 +3360,6 @@ function Panel({
       <div className="panel-head">
         <div>
           <h2>{title}</h2>
-          {description ? <p>{description}</p> : null}
         </div>
         {action ? <div className="panel-action">{action}</div> : null}
       </div>
@@ -3952,7 +4254,6 @@ function DesignPlaceholderPage({
           <div className="design-panel-head">
             <div>
               <h2>{page.tableTitle}</h2>
-              <p>{page.description}</p>
             </div>
             <span>{visibleRows.length} 条</span>
           </div>
@@ -7490,6 +7791,100 @@ function MallCouponCenterSection({
   );
 }
 
+function HomePreviewShell({
+  title,
+  children,
+  onClose,
+}: {
+  title: string;
+  children: ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div className="modal-backdrop">
+      <section className="modal-panel home-preview-modal">
+        <div className="modal-title-row">
+          <div>
+            <h2>{title}</h2>
+          </div>
+          <button className="ghost-button" type="button" onClick={onClose}>
+            <Icon name="x" />
+            关闭
+          </button>
+        </div>
+        <div className="home-phone-preview">
+          {children}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function HomeBannerPreview({ banner }: { banner: HomeBannerForm }) {
+  const imageUrl = resolveImage(banner.imageUrl);
+  return (
+    <div className="home-preview-banner" style={imageUrl ? { backgroundImage: `url(${imageUrl})` } : undefined}>
+      <span>{banner.tag || '叁友甄选'}</span>
+      <strong>{banner.title || '未填写标题'}</strong>
+      <small>{banner.subtitle || '未填写副标题'}</small>
+      <em>{linkTypeLabel(banner.linkType)} · {banner.linkTarget || '无跳转目标'}</em>
+    </div>
+  );
+}
+
+function HomeSectionPreview({
+  section,
+  products,
+}: {
+  section: HomeSectionForm;
+  products: JsonRecord[];
+}) {
+  const productIds = section.productIds
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean);
+  const selectedProducts = productIds
+    .map(productId => products.find(product => stringValue(product, 'id') === productId || stringValue(product, 'sku') === productId))
+    .filter((product): product is JsonRecord => Boolean(product));
+  const previewProducts = (selectedProducts.length ? selectedProducts : products).slice(0, section.sectionType === 'best_seller' ? 4 : 3);
+  const imageUrl = resolveImage(section.imageUrl);
+
+  if (section.sectionType === 'announcement') {
+    return (
+      <div className="home-preview-section">
+        <div className="home-preview-notice">
+          <span>公告</span>
+          <strong>{section.title || '公告栏配置'}</strong>
+          <small>{section.content || section.subtitle || '暂无公告内容'}</small>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`home-preview-section home-preview-${section.sectionType}`}>
+      {imageUrl ? <div className="home-preview-section-image" style={{ backgroundImage: `url(${imageUrl})` }} /> : null}
+      <div className="home-preview-section-head">
+        <div>
+          <strong>{section.title || homeSectionTypeLabel(section.sectionType)}</strong>
+          <small>{section.subtitle || section.content || '-'}</small>
+        </div>
+        <span>{section.content || (section.sectionType === 'flash_sale' ? '限时抢' : '查看')}</span>
+      </div>
+      <div className="home-preview-products">
+        {previewProducts.map((product, index) => (
+          <article key={stringValue(product, 'id', String(index))}>
+            <ProductImage record={product} />
+            <strong>{stringValue(product, 'name', `商品 ${index + 1}`)}</strong>
+            <span>{yuan(numberValue(product, 'priceCents'))}</span>
+          </article>
+        ))}
+        {!previewProducts.length ? <div className="home-preview-empty">暂无商品</div> : null}
+      </div>
+    </div>
+  );
+}
+
 function MallHomeBannersSection({
   banners,
   filters,
@@ -7516,6 +7911,7 @@ function MallHomeBannersSection({
   onUploadImage: (file: File) => Promise<string>;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
+  const [preview, setPreview] = useState<HomeBannerForm | null>(null);
   const openCreate = () => {
     onReset();
     setModalOpen(true);
@@ -7566,6 +7962,10 @@ function MallHomeBannersSection({
                 </div>
                 <span className={badgeClass(status)}>{statusLabel(status)}</span>
                 <div className="actions">
+                  <button className="ghost-button" type="button" onClick={() => setPreview(homeBannerToForm(banner))}>
+                    <Icon name="dashboard" />
+                    预览
+                  </button>
                   <button className="ghost-button" type="button" onClick={() => openEdit(banner)}>
                     <Icon name="save" />
                     编辑
@@ -7659,6 +8059,10 @@ function MallHomeBannersSection({
             </div>
             <div className="modal-actions">
               <button className="ghost-button" type="button" onClick={closeModal}>取消</button>
+              <button className="ghost-button" type="button" onClick={() => setPreview({ ...form })}>
+                <Icon name="dashboard" />
+                预览
+              </button>
               <button className="primary-button" type="submit">
                 <Icon name="save" />
                 {form.id ? '保存配置' : '创建配置'}
@@ -7666,6 +8070,11 @@ function MallHomeBannersSection({
             </div>
           </form>
         </div>
+      ) : null}
+      {preview ? (
+        <HomePreviewShell title="首页轮播预览" onClose={() => setPreview(null)}>
+          <HomeBannerPreview banner={preview} />
+        </HomePreviewShell>
       ) : null}
     </div>
   );
@@ -7701,6 +8110,7 @@ function MallHomeSectionsSection({
   onUploadImage: (file: File) => Promise<string>;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
+  const [preview, setPreview] = useState<HomeSectionForm | null>(null);
   const visibleSections = sections
     .filter(section => stringValue(section, 'sectionType') === sectionType)
     .sort((a, b) => numberValue(a, 'sortOrder') - numberValue(b, 'sortOrder'));
@@ -7753,6 +8163,10 @@ function MallHomeSectionsSection({
                 </div>
                 <span className={badgeClass(status)}>{statusLabel(status)}</span>
                 <div className="actions">
+                  <button className="ghost-button" type="button" onClick={() => setPreview(homeSectionToForm(section))}>
+                    <Icon name="dashboard" />
+                    预览
+                  </button>
                   <button className="ghost-button" type="button" onClick={() => openEdit(section)}>
                     <Icon name="save" />
                     编辑
@@ -7862,6 +8276,10 @@ function MallHomeSectionsSection({
             </div>
             <div className="modal-actions">
               <button className="ghost-button" type="button" onClick={closeModal}>取消</button>
+              <button className="ghost-button" type="button" onClick={() => setPreview({ ...form })}>
+                <Icon name="dashboard" />
+                预览
+              </button>
               <button className="primary-button" type="submit">
                 <Icon name="save" />
                 {form.id ? '保存配置' : '创建配置'}
@@ -7869,6 +8287,11 @@ function MallHomeSectionsSection({
             </div>
           </form>
         </div>
+      ) : null}
+      {preview ? (
+        <HomePreviewShell title={`${title}预览`} onClose={() => setPreview(null)}>
+          <HomeSectionPreview products={products} section={preview} />
+        </HomePreviewShell>
       ) : null}
     </div>
   );
@@ -8292,6 +8715,276 @@ function MallFixedPriceCampaignsSection({
   );
 }
 
+function MallPromotionVenuesSection({
+  campaigns,
+  products,
+  form,
+  onChange,
+  onCampaignStatus,
+  onDelete,
+  onEdit,
+  onReset,
+  onSubmit,
+  onUploadImage,
+}: {
+  campaigns: JsonRecord[];
+  products: JsonRecord[];
+  form: PromotionVenueForm;
+  onChange: (patch: Partial<PromotionVenueForm>) => void;
+  onCampaignStatus: (id: string, status: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+  onEdit: (campaign: JsonRecord) => void;
+  onReset: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onUploadImage: (file: File) => Promise<string>;
+}) {
+  const showMessage = useAdminMessage();
+  const [modalOpen, setModalOpen] = useState(false);
+  const [productKeyword, setProductKeyword] = useState('');
+  const selectedItems = new Map(form.items.map(item => [item.productId, item]));
+  const visibleProducts = products
+    .filter(product => {
+      const keyword = productKeyword.trim().toLowerCase();
+      if (!keyword) return true;
+      return [
+        stringValue(product, 'name'),
+        stringValue(product, 'sku'),
+        stringValue(product, 'categoryName'),
+        stringValue(product, 'categoryCode'),
+      ].some(value => value.toLowerCase().includes(keyword));
+    })
+    .slice(0, 160);
+
+  const openCreate = () => {
+    onReset();
+    setProductKeyword('');
+    setModalOpen(true);
+  };
+  const openEdit = (campaign: JsonRecord) => {
+    onEdit(campaign);
+    setProductKeyword('');
+    setModalOpen(true);
+  };
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    await onSubmit(event);
+    setModalOpen(false);
+  };
+  const toggleProduct = (product: JsonRecord, checked: boolean) => {
+    const productId = stringValue(product, 'id');
+    if (!productId) return;
+    const nextItems = checked ? [...form.items, { productId }] : form.items.filter(item => item.productId !== productId);
+    onChange({ items: Array.from(new Map(nextItems.map(item => [item.productId, item])).values()) });
+  };
+  const uploadField = async (files: FileList | null | undefined, key: 'iconUrl' | 'backgroundImageUrl') => {
+    const file = files?.[0];
+    if (!file) return;
+    try {
+      const imageUrl = await onUploadImage(file);
+      onChange({ [key]: imageUrl });
+    } catch {
+      showMessage('error', key === 'iconUrl' ? '会场 icon 上传失败' : '会场背景上传失败');
+    }
+  };
+
+  return (
+    <div className="page-grid">
+      <div className="mall-admin-toolbar">
+        <button className="mall-admin-submit" type="button" onClick={openCreate}>创建大促会场</button>
+      </div>
+
+      <Panel title="大促会场" description="管理会场入口、展示样式和参与商品">
+        <div className="list-stack">
+          {campaigns.map(campaign => {
+            const id = stringValue(campaign, 'id');
+            const status = stringValue(campaign, 'status');
+            const rules = recordValue(campaign, 'rules');
+            const items = arrayValue(rules, 'items');
+            const iconUrl = stringValue(rules, 'iconUrl');
+            return (
+              <article className="list-row promotion-venue-row" key={id}>
+                <div>
+                  <strong>{stringValue(rules, 'title', stringValue(campaign, 'name', '大促会场'))}</strong>
+                  <small>{promotionVenueEntryPositionLabel(stringValue(rules, 'entryPosition', 'home_after_banner'))} · {items.length} 个商品 · {stringValue(rules, 'copy', stringValue(rules, 'subtitle'))}</small>
+                </div>
+                <span
+                  className="promotion-venue-preview"
+                  style={{
+                    background: stringValue(rules, 'backgroundColor', '#F4FBF5'),
+                    color: stringValue(rules, 'textColor', '#153A24'),
+                  }}
+                >
+                  {iconUrl ? <img alt="" src={resolveImage(iconUrl)} /> : <i>{stringValue(rules, 'iconText', '促')}</i>}
+                  {stringValue(rules, 'buttonText', '进入会场')}
+                </span>
+                <span className={badgeClass(status)}>{statusLabel(status)}</span>
+                <div className="actions">
+                  <button className="ghost-button" type="button" onClick={() => openEdit(campaign)}>
+                    <Icon name="save" />
+                    编辑
+                  </button>
+                  <button className="ghost-button" type="button" onClick={() => void onCampaignStatus(id, status === 'active' ? 'inactive' : 'active')}>
+                    <Icon name={status === 'active' ? 'x' : 'check'} />
+                    {status === 'active' ? '停用' : '启用'}
+                  </button>
+                  <button className="ghost-button danger" type="button" onClick={() => void onDelete(id)}>
+                    <Icon name="x" />
+                    删除
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+          {!campaigns.length ? <EmptyState text="暂无大促会场" /> : null}
+        </div>
+      </Panel>
+
+      {modalOpen ? (
+        <div className="modal-backdrop">
+          <form className="modal-panel promotion-venue-modal" onSubmit={submit}>
+            <div className="modal-title-row">
+              <div>
+                <h2>{form.id ? '编辑大促会场' : '创建大促会场'}</h2>
+              </div>
+              <button className="ghost-button" type="button" onClick={() => setModalOpen(false)}>
+                <Icon name="x" />
+                关闭
+              </button>
+            </div>
+
+            <div className="form-grid">
+              <label>
+                会场名称
+                <input required value={form.name} onChange={event => onChange({ name: event.target.value })} />
+              </label>
+              <label>
+                状态
+                <select value={form.status} onChange={event => onChange({ status: event.target.value })}>
+                  <option value="active">启用</option>
+                  <option value="draft">草稿</option>
+                  <option value="inactive">停用</option>
+                </select>
+              </label>
+              <label>
+                入口位置
+                <select value={form.entryPosition} onChange={event => onChange({ entryPosition: event.target.value })}>
+                  {promotionVenueEntryPositionOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                排序
+                <input value={form.sortOrder} type="number" step="1" onChange={event => onChange({ sortOrder: event.target.value })} />
+              </label>
+              <label>
+                会场标题
+                <input required value={form.title} onChange={event => onChange({ title: event.target.value })} />
+              </label>
+              <label>
+                副标题
+                <input value={form.subtitle} onChange={event => onChange({ subtitle: event.target.value })} />
+              </label>
+              <label>
+                按钮文字
+                <input value={form.buttonText} onChange={event => onChange({ buttonText: event.target.value })} />
+              </label>
+              <label>
+                icon 文本
+                <input value={form.iconText} onChange={event => onChange({ iconText: event.target.value })} placeholder="促 / 惠 / 鲜" />
+              </label>
+              <label>
+                背景色
+                <input type="color" value={form.backgroundColor} onChange={event => onChange({ backgroundColor: event.target.value })} />
+              </label>
+              <label>
+                文字颜色
+                <input type="color" value={form.textColor} onChange={event => onChange({ textColor: event.target.value })} />
+              </label>
+              <label className="wide">
+                文案
+                <textarea value={form.copy} onChange={event => onChange({ copy: event.target.value })} />
+              </label>
+              <label className="wide">
+                会场 icon
+                <input accept="image/*" type="file" onChange={event => void uploadField(event.currentTarget.files, 'iconUrl')} />
+                <input value={form.iconUrl} onChange={event => onChange({ iconUrl: event.target.value })} placeholder="icon 图片地址，可不填" />
+              </label>
+              <label className="wide">
+                背景图
+                <input accept="image/*" type="file" onChange={event => void uploadField(event.currentTarget.files, 'backgroundImageUrl')} />
+                <input value={form.backgroundImageUrl} onChange={event => onChange({ backgroundImageUrl: event.target.value })} placeholder="背景图地址，可不填" />
+              </label>
+              <div className="wide promotion-venue-card-preview">
+                <span
+                  style={{
+                    background: form.backgroundImageUrl
+                      ? `${form.backgroundColor} url(${resolveImage(form.backgroundImageUrl)}) center/cover no-repeat`
+                      : form.backgroundColor,
+                    color: form.textColor,
+                  }}
+                >
+                  <strong>{form.iconUrl ? <img alt="" src={resolveImage(form.iconUrl)} /> : <i>{form.iconText || '促'}</i>}</strong>
+                  <b>{form.title || form.name}</b>
+                  <em>{form.copy || form.subtitle}</em>
+                  <small>{form.buttonText || '进入会场'}</small>
+                </span>
+              </div>
+            </div>
+
+            <div className="fixed-price-product-tools">
+              <input value={productKeyword} onChange={event => setProductKeyword(event.target.value)} placeholder="搜索商品名、SKU、类目" />
+              <span>已选 {form.items.length} 个商品</span>
+            </div>
+            <div className="table-wrap fixed-price-product-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>选择</th>
+                    <th>商品</th>
+                    <th>售价</th>
+                    <th>库存</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleProducts.map(product => {
+                    const productId = stringValue(product, 'id');
+                    return (
+                      <tr key={productId}>
+                        <td>
+                          <input checked={selectedItems.has(productId)} type="checkbox" onChange={event => toggleProduct(product, event.target.checked)} />
+                        </td>
+                        <td>
+                          <strong>{stringValue(product, 'name', '未命名商品')}</strong>
+                          <small>{stringValue(product, 'sku') || shortId(productId)} · {stringValue(product, 'categoryName', stringValue(product, 'categoryCode'))}</small>
+                        </td>
+                        <td>{yuan(numberValue(product, 'priceCents'))}</td>
+                        <td>{numberValue(product, 'stock')}</td>
+                      </tr>
+                    );
+                  })}
+                  {!visibleProducts.length ? (
+                    <tr>
+                      <td colSpan={4}>暂无商品</td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="modal-actions">
+              <button className="ghost-button" type="button" onClick={() => setModalOpen(false)}>取消</button>
+              <button className="primary-button" type="submit">
+                <Icon name="save" />
+                保存会场
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function MallPermissionsSection({
   permissions,
   filters,
@@ -8511,54 +9204,143 @@ function MallSettingsSection({
 
 function MallDeliveryRulesSection({
   settingsForm,
-  onSettingsChange,
-  onSettingsSubmit,
+  onSettingsSave,
 }: {
   settingsForm: SettingsForm;
-  onSettingsChange: (patch: Partial<SettingsForm>) => void;
-  onSettingsSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onSettingsSave: (form: SettingsForm) => Promise<void>;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState<SettingsForm>(settingsForm);
+
+  useEffect(() => {
+    if (!isEditing) {
+      setDraft(settingsForm);
+    }
+  }, [isEditing, settingsForm]);
+
+  const summaryItems = [
+    { label: '配送时间', value: `${settingsForm.pickupWindowStart || '-'} - ${settingsForm.pickupWindowEnd || '-'}`, note: '用户下单后的配送服务时间' },
+    { label: '配送批次', value: settingsForm.deliveryBatchTimes || '-', note: '后台生成配送任务时使用' },
+    { label: '免配送费门槛', value: `${settingsForm.freeDeliveryThresholdYuan || '0.00'} 元`, note: '订单商品金额满足后免配送费' },
+    { label: '默认配送费', value: `${settingsForm.defaultDeliveryFeeYuan || '0.00'} 元`, note: '未满足免配送费门槛时收取' },
+    { label: '配送范围', value: settingsForm.deliveryRangeEnabled ? '启用' : '停用', note: settingsForm.deliveryRangeEnabled ? '超范围地址不可下单' : '不校验配送距离' },
+    { label: '服务半径', value: settingsForm.deliveryRangeEnabled ? `${settingsForm.deliveryRangeRadiusKm || '0'} 公里` : '-', note: settingsForm.deliveryOriginAddress || `${settingsForm.deliveryOriginLatitude || '-'}, ${settingsForm.deliveryOriginLongitude || '-'}` },
+    { label: '阶梯运费', value: `${deliveryFeeTierCount(settingsForm.deliveryFeeTiersText)} 档`, note: deliveryFeeTierSummary(settingsForm.deliveryFeeTiersText) },
+    { label: '履约承诺', value: `${settingsForm.deliveryPromiseMinutes || '0'} 分钟`, note: '用于订单履约时效展示' },
+    { label: '退款审核', value: `${settingsForm.refundReviewMinutes || '0'} 分钟`, note: '售后进入人工审核的时限' },
+    { label: '冷链配送', value: settingsForm.coldChainEnabled ? '启用' : '停用', note: '影响冷链商品履约配置' },
+  ];
+
+  const updateDraft = (patch: Partial<SettingsForm>) => {
+    setDraft(current => ({ ...current, ...patch }));
+  };
+
+  const submitDraft = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await onSettingsSave(draft);
+    setIsEditing(false);
+  };
+
+  const cancelEditing = () => {
+    setDraft(settingsForm);
+    setIsEditing(false);
+  };
+
   return (
     <div className="page-grid">
       <Panel title="配送规则" description="维护用户结算、自提窗口、配送批次、冷链和退款审核规则">
-        <form className="form-grid settings-form" onSubmit={onSettingsSubmit}>
-          <label>
-            自提开始时间
-            <input value={settingsForm.pickupWindowStart} type="time" onChange={event => onSettingsChange({ pickupWindowStart: event.target.value })} />
-          </label>
-          <label>
-            自提结束时间
-            <input value={settingsForm.pickupWindowEnd} type="time" onChange={event => onSettingsChange({ pickupWindowEnd: event.target.value })} />
-          </label>
-          <label>
-            配送批次
-            <input value={settingsForm.deliveryBatchTimes} placeholder="10:00,14:00,18:00" onChange={event => onSettingsChange({ deliveryBatchTimes: event.target.value })} />
-          </label>
-          <label>
-            免配送费门槛
-            <input value={settingsForm.freeDeliveryThresholdYuan} type="number" min="0" step="0.01" onChange={event => onSettingsChange({ freeDeliveryThresholdYuan: event.target.value })} />
-          </label>
-          <label>
-            默认配送费
-            <input value={settingsForm.defaultDeliveryFeeYuan} type="number" min="0" step="0.01" onChange={event => onSettingsChange({ defaultDeliveryFeeYuan: event.target.value })} />
-          </label>
-          <label>
-            承诺分钟
-            <input value={settingsForm.deliveryPromiseMinutes} type="number" min="1" onChange={event => onSettingsChange({ deliveryPromiseMinutes: event.target.value })} />
-          </label>
-          <label>
-            退款审核分钟
-            <input value={settingsForm.refundReviewMinutes} type="number" min="1" onChange={event => onSettingsChange({ refundReviewMinutes: event.target.value })} />
-          </label>
-          <label className="toggle-line">
-            <input checked={settingsForm.coldChainEnabled} type="checkbox" onChange={event => onSettingsChange({ coldChainEnabled: event.target.checked })} />
-            启用冷链配送
-          </label>
-          <button className="primary-button" type="submit">
-            <Icon name="save" />
-            保存配送规则
-          </button>
-        </form>
+        {isEditing ? (
+          <form className="form-grid settings-form" onSubmit={submitDraft}>
+            <label>
+              配送开始时间
+              <input value={draft.pickupWindowStart} type="time" onChange={event => updateDraft({ pickupWindowStart: event.target.value })} />
+            </label>
+            <label>
+              配送结束时间
+              <input value={draft.pickupWindowEnd} type="time" onChange={event => updateDraft({ pickupWindowEnd: event.target.value })} />
+            </label>
+            <label>
+              配送批次
+              <input value={draft.deliveryBatchTimes} placeholder="10:00,14:00,18:00" onChange={event => updateDraft({ deliveryBatchTimes: event.target.value })} />
+            </label>
+            <label>
+              免配送费门槛
+              <input value={draft.freeDeliveryThresholdYuan} type="number" min="0" step="0.01" onChange={event => updateDraft({ freeDeliveryThresholdYuan: event.target.value })} />
+            </label>
+            <label>
+              默认配送费
+              <input value={draft.defaultDeliveryFeeYuan} type="number" min="0" step="0.01" onChange={event => updateDraft({ defaultDeliveryFeeYuan: event.target.value })} />
+            </label>
+            <label className="toggle-line">
+              <input checked={draft.deliveryRangeEnabled} type="checkbox" onChange={event => updateDraft({ deliveryRangeEnabled: event.target.checked })} />
+              启用配送范围拦截
+            </label>
+            <label>
+              配送起点名称
+              <input value={draft.deliveryOriginAddress} placeholder="仓库、门店或分拣中心" onChange={event => updateDraft({ deliveryOriginAddress: event.target.value })} />
+            </label>
+            <label>
+              起点纬度
+              <input value={draft.deliveryOriginLatitude} type="number" step="0.000001" placeholder="31.230400" onChange={event => updateDraft({ deliveryOriginLatitude: event.target.value })} />
+            </label>
+            <label>
+              起点经度
+              <input value={draft.deliveryOriginLongitude} type="number" step="0.000001" placeholder="121.473700" onChange={event => updateDraft({ deliveryOriginLongitude: event.target.value })} />
+            </label>
+            <label>
+              服务半径（公里）
+              <input value={draft.deliveryRangeRadiusKm} type="number" min="0" step="0.1" onChange={event => updateDraft({ deliveryRangeRadiusKm: event.target.value })} />
+            </label>
+            <label className="wide">
+              阶梯运费
+              <textarea value={draft.deliveryFeeTiersText} placeholder={'0-2=0\n2-3=3\n3-5=4'} onChange={event => updateDraft({ deliveryFeeTiersText: event.target.value })} />
+            </label>
+            <label className="wide">
+              配送范围坐标（可选）
+              <textarea value={draft.deliveryRangePolygon} placeholder={'31.2304,121.4737\n31.2404,121.4737\n31.2404,121.4837'} onChange={event => updateDraft({ deliveryRangePolygon: event.target.value })} />
+            </label>
+            <label>
+              承诺分钟
+              <input value={draft.deliveryPromiseMinutes} type="number" min="1" onChange={event => updateDraft({ deliveryPromiseMinutes: event.target.value })} />
+            </label>
+            <label>
+              退款审核分钟
+              <input value={draft.refundReviewMinutes} type="number" min="1" onChange={event => updateDraft({ refundReviewMinutes: event.target.value })} />
+            </label>
+            <label className="toggle-line">
+              <input checked={draft.coldChainEnabled} type="checkbox" onChange={event => updateDraft({ coldChainEnabled: event.target.checked })} />
+              启用冷链配送
+            </label>
+            <div className="settings-actions wide">
+              <button className="ghost-button" type="button" onClick={cancelEditing}>
+                <Icon name="x" />
+                取消
+              </button>
+              <button className="primary-button" type="submit">
+                <Icon name="save" />
+                保存配送规则
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="settings-summary">
+            <div className="settings-summary-grid">
+              {summaryItems.map(item => (
+                <div className="settings-summary-card" key={item.label}>
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                  <small>{item.note}</small>
+                </div>
+              ))}
+            </div>
+            <div className="settings-actions">
+              <button className="primary-button" type="button" onClick={() => setIsEditing(true)}>
+                <Icon name="save" />
+                编辑配送规则
+              </button>
+            </div>
+          </div>
+        )}
       </Panel>
     </div>
   );
@@ -8603,6 +9385,11 @@ function MallPaymentSplitRulesSection({
     setIsEditing(false);
   };
 
+  const cancelEditing = () => {
+    setDraft(settingsForm);
+    setIsEditing(false);
+  };
+
   return (
     <div className="page-grid">
       <Panel title="分账规则" description="维护商城订单的团长佣金、平台服务费、供应商结算周期和提现门槛">
@@ -8633,10 +9420,16 @@ function MallPaymentSplitRulesSection({
               <strong>当前口径</strong>
               <span>团长佣金按自提点订单实付金额计算；平台服务费从商家结算金额中扣减；供应商结算周期用于账单和提现审核提示。</span>
             </div>
-            <button className="primary-button" type="submit">
-              <Icon name="save" />
-              保存分账规则
-            </button>
+            <div className="settings-actions wide">
+              <button className="ghost-button" type="button" onClick={cancelEditing}>
+                <Icon name="x" />
+                取消
+              </button>
+              <button className="primary-button" type="submit">
+                <Icon name="save" />
+                保存分账规则
+              </button>
+            </div>
           </form>
         ) : (
           <div className="settings-summary">
@@ -8902,11 +9695,11 @@ function AfterSalesSection({
   onFiltersChange: (patch: Partial<SupportFilterState>) => void;
   onClearFilters: () => void;
   onViewAfterSaleOrder: (id: string) => Promise<void>;
-  onUpdateAfterSale: (id: string, status: string, handlingMethod: string, resolution: string) => Promise<void>;
+  onUpdateAfterSale: (id: string, status: string, handlingMethod: string, resolution: string, extra?: JsonRecord) => Promise<void>;
 }) {
   return (
     <div className="page-grid support-workbench">
-      <Panel title="售后申请筛选" description="处理坏果包赔、少件、退款和补偿申请">
+      <Panel title="售后申请筛选">
         <div className="support-filterbar">
           <label>
             关键词
@@ -8918,9 +9711,13 @@ function AfterSalesSection({
               <option value="open">待处理</option>
               <option value="">全部</option>
               <option value="submitted">已提交</option>
+              <option value="negotiating">协商中</option>
               <option value="approved">已通过</option>
+              <option value="returning">退货中</option>
+              <option value="exchange_processing">换货中</option>
               <option value="refunding">退款中</option>
               <option value="refunded">已退款</option>
+              <option value="resolved">已完成</option>
               <option value="rejected">已驳回</option>
               <option value="closed">已关闭</option>
             </select>
@@ -8932,21 +9729,25 @@ function AfterSalesSection({
         </div>
       </Panel>
 
-      <Panel title="售后申请列表" description="按订单售后记录处理退款、补偿和驳回">
+      <Panel title="售后申请列表">
         <div className="support-after-sales">
           {afterSales.map(item => {
             const id = stringValue(item, 'id');
             const orderId = stringValue(item, 'orderId');
             const status = stringValue(item, 'status');
+            const type = stringValue(item, 'afterSaleType', stringValue(item, 'solutionType', 'refund_only'));
             const evidenceImages = arrayValue(item, 'evidenceImages');
+            const requestedAmount = numberValue(item, 'requestedAmountCents', numberValue(item, 'amountCents'));
+            const approvedAmount = numberValue(item, 'approvedAmountCents');
             return (
               <article className="support-after-sale-row" key={id}>
                 <div>
                   <strong>{stringValue(item, 'orderNo', shortId(orderId))}</strong>
-                  <span>{stringValue(item, 'reason', '售后申请')} · {stringValue(item, 'productName', '订单商品')}</span>
+                  <span>售后类型：{afterSaleTypeLabel(type)} · {stringValue(item, 'reason', '售后申请')}</span>
                   <small>{stringValue(item, 'recipientName', stringValue(item, 'userPhone', '用户'))} · {stringValue(item, 'recipientPhone')} · {formatDate(stringValue(item, 'createdAt'))}</small>
                   <p>{stringValue(item, 'description', '暂无说明')}</p>
-                  <small>{yuan(numberValue(item, 'amountCents'))} · {stringValue(item, 'handlingMethod', '极速退款')} · 证据 {evidenceImages.length} 张</small>
+                  <small>{afterSaleSelectedItemsText(item)}</small>
+                  <small>申请 {yuan(requestedAmount)}{approvedAmount ? ` · 审核 ${yuan(approvedAmount)}` : ''} · {statusLabel(stringValue(item, 'negotiationStatus', 'pending'))} · 证据 {evidenceImages.length} 张</small>
                 </div>
                 <span className={badgeClass(status)}>{statusLabel(status)}</span>
                 <div className="support-row-actions">
@@ -8954,13 +9755,79 @@ function AfterSalesSection({
                     <Icon name="orders" />
                     查看订单
                   </button>
-                  <button className="ghost-button small" type="button" onClick={() => onUpdateAfterSale(id, 'approved', '极速退款', '审核通过，进入退款处理')}>
+                  <button
+                    className="ghost-button small"
+                    type="button"
+                    onClick={() => onUpdateAfterSale(id, 'negotiating', '客服协商', '客服已介入协商', {
+                      negotiationStatus: 'negotiating',
+                    })}
+                  >
+                    <Icon name="support" />
+                    协商中
+                  </button>
+                  <button
+                    className="ghost-button small"
+                    type="button"
+                    onClick={() => onUpdateAfterSale(id, 'approved', afterSaleTypeLabel(type), '审核通过，等待执行处理方案', {
+                      solutionType: type,
+                      negotiationStatus: 'agreed',
+                      approvedAmountCents: requestedAmount,
+                    })}
+                  >
                     <Icon name="check" />
                     通过
                   </button>
-                  <button className="ghost-button small" type="button" onClick={() => onUpdateAfterSale(id, 'refunded', '原路退款', '退款已完成')}>
+                  {type === 'return_refund' ? (
+                    <button
+                      className="ghost-button small"
+                      type="button"
+                      onClick={() => onUpdateAfterSale(id, 'returning', '退货退款', '等待用户寄回或配送员取回商品', {
+                        solutionType: 'return_refund',
+                        negotiationStatus: 'agreed',
+                      })}
+                    >
+                      <Icon name="truck" />
+                      退货中
+                    </button>
+                  ) : null}
+                  {type === 'exchange' ? (
+                    <button
+                      className="ghost-button small"
+                      type="button"
+                      onClick={() => onUpdateAfterSale(id, 'exchange_processing', '换货', '已安排换货配送', {
+                        solutionType: 'exchange',
+                        negotiationStatus: 'agreed',
+                      })}
+                    >
+                      <Icon name="refresh" />
+                      换货中
+                    </button>
+                  ) : null}
+                  {type !== 'exchange' ? (
+                    <button
+                      className="ghost-button small"
+                      type="button"
+                      onClick={() => onUpdateAfterSale(id, 'refunding', '原路退款', '退款处理中', {
+                        solutionType: type,
+                        negotiationStatus: 'agreed',
+                        approvedAmountCents: approvedAmount || requestedAmount,
+                      })}
+                    >
+                      <Icon name="refund" />
+                      退款中
+                    </button>
+                  ) : null}
+                  <button
+                    className="ghost-button small"
+                    type="button"
+                    onClick={() => onUpdateAfterSale(id, type === 'exchange' ? 'resolved' : 'refunded', type === 'exchange' ? '换货完成' : '原路退款', type === 'exchange' ? '换货已完成' : '退款已完成', {
+                      solutionType: type,
+                      negotiationStatus: 'agreed',
+                      approvedAmountCents: type === 'exchange' ? approvedAmount : approvedAmount || requestedAmount,
+                    })}
+                  >
                     <Icon name="refund" />
-                    已退款
+                    完成
                   </button>
                   <button className="ghost-button small danger" type="button" onClick={() => onUpdateAfterSale(id, 'rejected', '人工驳回', '证据不足或不符合售后规则')}>
                     <Icon name="x" />
@@ -9306,6 +10173,45 @@ function AdminMessageHost({
   );
 }
 
+function AdminMessageBox({
+  messages,
+  open,
+  onClear,
+  onToggle,
+}: {
+  messages: AdminMessageItem[];
+  open: boolean;
+  onClear: () => void;
+  onToggle: () => void;
+}) {
+  const recentMessages = messages.slice(0, 20);
+  return (
+    <div className="admin-message-box">
+      <button className="message-box-button" type="button" onClick={onToggle}>
+        消息
+        {messages.length ? <span>{messages.length > 99 ? '99+' : messages.length}</span> : null}
+      </button>
+      {open ? (
+        <div className="message-box-popover">
+          <div className="message-box-head">
+            <strong>消息盒子</strong>
+            <button type="button" onClick={onClear}>清空</button>
+          </div>
+          <div className="message-box-list">
+            {recentMessages.map(message => (
+              <article className={`message-box-item message-box-item-${message.type}`} key={message.id}>
+                <span>{message.content}</span>
+                <small>{formatMessageTime(message.createdAt)}</small>
+              </article>
+            ))}
+            {!recentMessages.length ? <div className="message-box-empty">暂无消息</div> : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function App() {
   const initialAdminRoute = getInitialAdminRouteState();
   const [session, setSession] = useState<AdminSession | null>(() => getStoredAdminSession());
@@ -9315,8 +10221,10 @@ function App() {
   const [errors, setErrors] = useState<LoadErrors>({});
   const [loading, setLoading] = useState(() => Boolean(getStoredAdminSession()));
   const [busy, setBusy] = useState('');
-  const [notice, setNotice] = useState('正在加载管理数据');
+  const [, setNotice] = useState('正在加载管理数据');
   const [messages, setMessages] = useState<AdminMessageItem[]>([]);
+  const [messageHistory, setMessageHistory] = useState<AdminMessageItem[]>([]);
+  const [messageBoxOpen, setMessageBoxOpen] = useState(false);
   const messageTimers = useRef<Record<string, number>>({});
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [moduleSwitcherCollapsed, setModuleSwitcherCollapsed] = useState(false);
@@ -9327,6 +10235,7 @@ function App() {
   const [productForm, setProductForm] = useState<ProductForm>(initialProductForm);
   const [campaignForm, setCampaignForm] = useState<CampaignForm>(initialCampaignForm);
   const [fixedPriceCampaignForm, setFixedPriceCampaignForm] = useState<FixedPriceCampaignForm>(initialFixedPriceCampaignForm);
+  const [promotionVenueForm, setPromotionVenueForm] = useState<PromotionVenueForm>(initialPromotionVenueForm);
   const [couponForm, setCouponForm] = useState<CouponForm>(initialCouponForm);
   const [homeBannerForm, setHomeBannerForm] = useState<HomeBannerForm>(initialHomeBannerForm);
   const [homeSectionForm, setHomeSectionForm] = useState<HomeSectionForm>(initialHomeSectionForm);
@@ -9400,7 +10309,9 @@ function App() {
 
   const showMessage = useCallback<AdminMessageHandler>((type, content) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    setMessages(current => [...current.slice(-3), { id, type, content }]);
+    const message = { id, type, content, createdAt: Date.now() };
+    setMessages(current => [...current.slice(-3), message]);
+    setMessageHistory(current => [message, ...current].slice(0, 80));
     messageTimers.current[id] = window.setTimeout(() => dismissMessage(id), 3000);
   }, [dismissMessage]);
 
@@ -9444,6 +10355,7 @@ function App() {
     setInventoryFilters(initialInventoryFilters);
     setCampaignForm(initialCampaignForm);
     setFixedPriceCampaignForm(initialFixedPriceCampaignForm);
+    setPromotionVenueForm(initialPromotionVenueForm);
     setCouponForm(initialCouponForm);
     setHomeBannerForm(initialHomeBannerForm);
     setHomeSectionForm(initialHomeSectionForm);
@@ -9535,6 +10447,13 @@ function App() {
       deliveryPromiseMinutes: String(numberValue(data.mallSettings, 'deliveryPromiseMinutes', 18)),
       refundReviewMinutes: String(numberValue(deliveryRules, 'refundReviewMinutes', numberValue(data.mallSettings, 'refundReviewMinutes', 10))),
       coldChainEnabled: boolValue(deliveryRules, 'coldChainRequired', boolValue(data.mallSettings, 'coldChainEnabled', true)),
+      deliveryRangeEnabled: boolValue(deliveryRules, 'rangeEnabled', false),
+      deliveryOriginLatitude: numberTextValue(deliveryRules, 'originLatitude'),
+      deliveryOriginLongitude: numberTextValue(deliveryRules, 'originLongitude'),
+      deliveryOriginAddress: stringValue(deliveryRules, 'originAddress'),
+      deliveryRangeRadiusKm: numberTextValue(deliveryRules, 'rangeRadiusKm', '5'),
+      deliveryRangePolygon: formatDeliveryRangePolygon(deliveryRules.rangePolygon),
+      deliveryFeeTiersText: formatDeliveryFeeTiers(deliveryRules.feeTiers),
       pickupWindowStart: stringValue(deliveryRules, 'pickupWindowStart', '16:00'),
       pickupWindowEnd: stringValue(deliveryRules, 'pickupWindowEnd', '20:00'),
       deliveryBatchTimes: stringValue(deliveryRules, 'deliveryBatchTimes', '10:00,14:00,18:00'),
@@ -10271,6 +11190,10 @@ function App() {
     setFixedPriceCampaignForm(initialFixedPriceCampaignForm);
   };
 
+  const resetPromotionVenueForm = () => {
+    setPromotionVenueForm(initialPromotionVenueForm);
+  };
+
   const saveCampaign = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const isEditing = Boolean(campaignForm.id);
@@ -10342,6 +11265,44 @@ function App() {
     setFixedPriceCampaignForm(fixedPriceCampaignToForm(campaign));
   };
 
+  const savePromotionVenue = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const isEditing = Boolean(promotionVenueForm.id);
+    await runAction(isEditing ? '大促会场更新' : '大促会场创建', async () => {
+      if (!promotionVenueForm.name.trim()) {
+        throw new Error('会场名称不能为空');
+      }
+      if (!promotionVenueForm.title.trim()) {
+        throw new Error('会场标题不能为空');
+      }
+      if (!promotionVenueForm.items.length) {
+        throw new Error('请至少选择一个商品');
+      }
+      const payload = {
+        name: promotionVenueForm.name,
+        campaignType: 'promotion_venue',
+        budgetCents: 0,
+        rules: promotionVenueRules(promotionVenueForm, data.mallProducts),
+        status: promotionVenueForm.status,
+      };
+      const campaign = isEditing
+        ? await apiPut<JsonRecord>(`/api/admin/mall/campaigns/${promotionVenueForm.id}`, payload)
+        : await apiPost<JsonRecord>('/api/admin/mall/campaigns', payload);
+
+      setData(current => ({
+        ...current,
+        campaigns: upsertRecordList(current.campaigns, campaign),
+        promotionVenues: upsertRecordList(current.promotionVenues, campaign),
+      }));
+      setPromotionVenueForm(initialPromotionVenueForm);
+      await reload();
+    });
+  };
+
+  const editPromotionVenue = (campaign: JsonRecord) => {
+    setPromotionVenueForm(promotionVenueToForm(campaign));
+  };
+
   const updateCampaignStatus = async (id: string, status: string) => {
     await runAction('活动状态更新', async () => {
       await apiPut(`/api/admin/mall/campaigns/${id}`, { status });
@@ -10349,6 +11310,7 @@ function App() {
         ...current,
         campaigns: updateRecordList(current.campaigns, id, { status }),
         fixedPriceCampaigns: updateRecordList(current.fixedPriceCampaigns, id, { status }),
+        promotionVenues: updateRecordList(current.promotionVenues, id, { status }),
       }));
     });
   };
@@ -10360,9 +11322,11 @@ function App() {
         ...current,
         campaigns: current.campaigns.filter(campaign => stringValue(campaign, 'id') !== id),
         fixedPriceCampaigns: current.fixedPriceCampaigns.filter(campaign => stringValue(campaign, 'id') !== id),
+        promotionVenues: current.promotionVenues.filter(campaign => stringValue(campaign, 'id') !== id),
       }));
       setCampaignForm(current => (current.id === id ? initialCampaignForm : current));
       setFixedPriceCampaignForm(current => (current.id === id ? initialFixedPriceCampaignForm : current));
+      setPromotionVenueForm(current => (current.id === id ? initialPromotionVenueForm : current));
       await reload();
     });
   };
@@ -10543,6 +11507,19 @@ function App() {
       const freeDeliveryThresholdCents = moneyFromYuan(form.freeDeliveryThresholdYuan);
       const defaultDeliveryFeeCents = moneyFromYuan(form.defaultDeliveryFeeYuan);
       const refundReviewMinutes = Number(form.refundReviewMinutes) || 10;
+      const deliveryOriginLatitude = optionalNumber(form.deliveryOriginLatitude);
+      const deliveryOriginLongitude = optionalNumber(form.deliveryOriginLongitude);
+      const deliveryRangeRadiusKm = optionalNumber(form.deliveryRangeRadiusKm);
+      const deliveryFeeTiers = parseDeliveryFeeTiers(form.deliveryFeeTiersText);
+      const deliveryRangePolygon = parseDeliveryRangePolygon(form.deliveryRangePolygon);
+      if (form.deliveryRangeEnabled) {
+        if (deliveryOriginLatitude === undefined || deliveryOriginLongitude === undefined) {
+          throw new Error('启用配送范围时必须填写配送起点经纬度');
+        }
+        if (deliveryRangeRadiusKm === undefined || deliveryRangeRadiusKm <= 0) {
+          throw new Error('启用配送范围时必须填写有效服务半径');
+        }
+      }
       await apiPut('/api/admin/mall/settings', {
         freeDeliveryThresholdCents,
         defaultDeliveryFeeCents,
@@ -10557,6 +11534,14 @@ function App() {
           freeDeliveryThresholdCents,
           coldChainRequired: form.coldChainEnabled,
           refundReviewMinutes,
+          rangeEnabled: form.deliveryRangeEnabled,
+          originLatitude: deliveryOriginLatitude,
+          originLongitude: deliveryOriginLongitude,
+          originAddress: form.deliveryOriginAddress.trim(),
+          rangeRadiusKm: deliveryRangeRadiusKm,
+          rangePolygon: deliveryRangePolygon,
+          feeTiers: deliveryFeeTiers,
+          outOfRangeBlocked: form.deliveryRangeEnabled,
         },
         paymentSplitRules: {
           leaderCommissionRate: Number(form.leaderCommissionRate) || 0,
@@ -10570,11 +11555,6 @@ function App() {
       setSettingsForm(form);
       await reload();
     });
-  };
-
-  const saveSettings = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    await saveSettingsForm(settingsForm);
   };
 
   const resetPermissionForm = () => {
@@ -10711,12 +11691,13 @@ function App() {
     });
   };
 
-  const updateAfterSaleStatus = async (id: string, status: string, handlingMethod: string, resolution: string) => {
+  const updateAfterSaleStatus = async (id: string, status: string, handlingMethod: string, resolution: string, extra: JsonRecord = {}) => {
     await runAction('售后申请处理', async () => {
       const afterSale = await apiPut<JsonRecord>(`/api/admin/mall/after-sales/${id}`, {
         status,
         handlingMethod,
         resolution,
+        ...extra,
       });
       setData(current => ({
         ...current,
@@ -11116,6 +12097,22 @@ function App() {
         />
       );
     }
+    if (activePageKey === 'mall.promotionVenues') {
+      return (
+        <MallPromotionVenuesSection
+          campaigns={data.promotionVenues}
+          form={promotionVenueForm}
+          products={data.mallProducts}
+          onCampaignStatus={updateCampaignStatus}
+          onChange={patch => setPromotionVenueForm(current => ({ ...current, ...patch }))}
+          onDelete={deleteCampaign}
+          onEdit={editPromotionVenue}
+          onReset={resetPromotionVenueForm}
+          onSubmit={savePromotionVenue}
+          onUploadImage={uploadProductImage}
+        />
+      );
+    }
     if (activePageKey === 'mall.settings') {
       return (
         <MallSettingsSection
@@ -11128,8 +12125,7 @@ function App() {
       return (
         <MallDeliveryRulesSection
           settingsForm={settingsForm}
-          onSettingsChange={patch => setSettingsForm(current => ({ ...current, ...patch }))}
-          onSettingsSubmit={saveSettings}
+          onSettingsSave={saveSettingsForm}
         />
       );
     }
@@ -11375,10 +12371,14 @@ function App() {
           <div>
             <span className="design-breadcrumb">{currentModule.moduleLabel} / {currentPage.group}</span>
             <h1>{currentPage.label}</h1>
-            {currentPage.description ? <p>{currentPage.description}</p> : null}
           </div>
           <div className="topbar-actions">
-            <span className={Object.keys(errors).length ? 'status-dot warning' : 'status-dot'}>{notice}</span>
+            <AdminMessageBox
+              messages={messageHistory}
+              open={messageBoxOpen}
+              onClear={() => setMessageHistory([])}
+              onToggle={() => setMessageBoxOpen(current => !current)}
+            />
           </div>
         </header>
 

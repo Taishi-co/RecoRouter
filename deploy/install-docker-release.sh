@@ -62,6 +62,9 @@ rm -rf "$RELEASE_DIR"
 mkdir -p "$RELEASE_DIR"
 tar -xzf "$RELEASE_TAR" -C "$RELEASE_DIR"
 for web_dir in dist-web dist-web-vehicle dist-web-mall; do
+  if [[ ! -d "$RELEASE_DIR/$web_dir" && -d "$APP_ROOT/current/$web_dir" ]]; then
+    cp -a "$APP_ROOT/current/$web_dir" "$RELEASE_DIR/$web_dir"
+  fi
   if [[ -d "$RELEASE_DIR/$web_dir" ]]; then
     chmod -R a+rX "$RELEASE_DIR/$web_dir"
   fi

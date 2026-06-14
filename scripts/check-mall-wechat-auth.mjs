@@ -8,11 +8,12 @@ const migration = readFileSync(resolve('server/migrations/0018_mall_wechat_auth.
 
 const assertions = [
   {
-    ok: /\.route\(\s*["']\/api\/auth\/wechat-login["'][\s\S]*post\(wechat_login/.test(authModule),
-    message: 'Auth router must expose POST /api/auth/wechat-login',
+    ok: /\.route\(\s*["']\/api\/mall\/auth\/wechat-login["'][\s\S]*post\(wechat_login/.test(authModule),
+    message: 'Mall auth router must expose POST /api/mall/auth/wechat-login',
   },
   {
-    ok: /WechatMiniappConfig::from_env\(\)/.test(authModule) && !/wechat_login[\s\S]{0,900}WechatPayMerchantConfig::from_env\(\)/.test(authModule),
+    ok: /WechatMiniappConfig::from_env(?:_for_service)?\(/.test(authModule)
+      && !/wechat_login[\s\S]{0,900}WechatPayMerchantConfig::from_env(?:_for_service)?\(/.test(authModule),
     message: 'Wechat auth login must only require miniapp appid/secret, not full payment merchant config',
   },
   {
@@ -33,11 +34,37 @@ const assertions = [
     message: 'Wechat helper must expose miniapp-only config and unionid-aware login session',
   },
   {
-    ok: /Taro\.login\(\)/.test(authPage) && /\/api\/auth\/wechat-login/.test(authPage),
-    message: 'Mall auth page must call Taro.login and POST /api/auth/wechat-login',
+    ok: /pub struct MiniappPhoneNumber/.test(wechatPayModule)
+      && /WECHAT_ACCESS_TOKEN_URL/.test(wechatPayModule)
+      && /WECHAT_GET_PHONE_NUMBER_URL/.test(wechatPayModule)
+      && /exchange_miniapp_phone_number/.test(wechatPayModule),
+    message: 'Wechat helper must exchange getPhoneNumber phone code into a verified phone number',
   },
   {
-    ok: /微信快捷登录/.test(authPage) && /role:\s*registerRole/.test(authPage),
+    ok: /phone_code:\s*Option<String>/.test(authModule)
+      && /exchange_miniapp_phone_number/.test(authModule)
+      && /请授权手机号完成快捷登录/.test(authModule)
+      && /validate_phone\(&phone/.test(authModule),
+    message: 'Mall WeChat login must require phone authorization and validate the returned phone number',
+  },
+  {
+    ok: /default_wechat_display_name/.test(authModule)
+      && /微信用户/.test(authModule)
+      && /微信团长/.test(authModule)
+      && /take\(6\)/.test(authModule),
+    message: 'Mall WeChat login must generate a non-duplicated default nickname suffix',
+  },
+  {
+    ok: !/\/api\/auth\/wechat-login/.test(authPage)
+      && /Taro\.login\(\)/.test(authPage)
+      && /openType=["']getPhoneNumber["']/.test(authPage)
+      && /phoneCode/.test(authPage)
+      && /mallAuthApiBase\s*=\s*['"]\/api\/mall\/auth['"]/.test(authPage)
+      && /\$\{mallAuthApiBase\}\/wechat-login/.test(authPage),
+    message: 'Mall auth page must use WeChat phone authorization, call Taro.login, and POST /api/mall/auth/wechat-login',
+  },
+  {
+    ok: /微信手机号快捷登录/.test(authPage) && /role:\s*registerRole/.test(authPage),
     message: 'Mall auth page must show WeChat quick login and pass the selected mall role',
   },
 ]

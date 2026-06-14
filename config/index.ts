@@ -12,6 +12,36 @@ import pkg from '../package.json';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
 
+const resolveWeappAppId = (appProfile: string) => {
+  if (appProfile === 'mall') {
+    return process.env.TARO_APP_WEAPP_MALL_APPID || process.env.TARO_APP_WEAPP_APPID || '';
+  }
+  if (appProfile === 'vehicle') {
+    return process.env.TARO_APP_WEAPP_VEHICLE_APPID || process.env.TARO_APP_WEAPP_APPID || '';
+  }
+  return process.env.TARO_APP_WEAPP_APPID || '';
+};
+
+const generateWeappProjectConfig = (outputRoot: string, appid: string) => {
+  const rootConfigPath = path.resolve(__dirname, '../project.config.json');
+  const rootConfig = fs.existsSync(rootConfigPath)
+    ? JSON.parse(fs.readFileSync(rootConfigPath, 'utf8'))
+    : {};
+  const config = {
+    ...rootConfig,
+    miniprogramRoot: './',
+    appid,
+  };
+  const outputDir = path.resolve(__dirname, '..', outputRoot);
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+  fs.writeFileSync(
+    path.resolve(outputDir, 'project.config.json'),
+    JSON.stringify(config, null, 2),
+  );
+};
+
 const generateTTProjectConfig = (outputRoot: string) => {
   const config = {
     miniprogramRoot: './',
@@ -57,12 +87,7 @@ export default defineConfig<'vite'>(async (merge, _env) => {
   const shouldCopyMallAssets = appProfile === 'mall' || appProfile === 'all';
 
   const buildMiniCIPluginConfig = () => {
-    const weappAppId =
-      appProfile === 'mall'
-        ? process.env.TARO_APP_WEAPP_MALL_APPID || process.env.TARO_APP_WEAPP_APPID
-        : appProfile === 'vehicle'
-          ? process.env.TARO_APP_WEAPP_VEHICLE_APPID || process.env.TARO_APP_WEAPP_APPID
-          : process.env.TARO_APP_WEAPP_APPID;
+    const weappAppId = resolveWeappAppId(appProfile);
     const hasWeappConfig = !!weappAppId;
     const hasTTConfig = !!process.env.TARO_APP_TT_EMAIL;
     if (!hasWeappConfig && !hasTTConfig) {
@@ -173,6 +198,16 @@ export default defineConfig<'vite'>(async (merge, _env) => {
                 cssEntries: [path.resolve(__dirname, '../src/app.css')],
               }),
             ]),
+        ...(process.env.TARO_ENV === 'weapp' && resolveWeappAppId(appProfile)
+          ? [
+              {
+                name: 'generate-weapp-project-config',
+                closeBundle() {
+                  generateWeappProjectConfig(outputRoot, resolveWeappAppId(appProfile));
+                },
+              },
+            ]
+          : []),
         ...(process.env.TARO_ENV === 'tt'
           ? [
               {

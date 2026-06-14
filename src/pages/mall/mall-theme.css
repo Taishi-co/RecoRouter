@@ -11,6 +11,11 @@
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
 }
 
+.mall-shell-home {
+  padding-left: 18PX;
+  padding-right: 18PX;
+}
+
 body.reco-mall-h5 .taro_router,
 body.reco-mall-h5 .taro_page,
 body.reco-mall-h5 .taro-tabbar__panel {
@@ -315,6 +320,34 @@ body.reco-mall-h5 .taro_page {
   color: #63bf54;
 }
 
+.mall-wechat-login-button {
+  width: 100%;
+  height: 44PX;
+  padding: 0 16PX;
+  border: 1PX solid #cce7c7;
+  border-radius: 10PX;
+  background: #ffffff;
+  color: #2f7e43;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8PX;
+  box-sizing: border-box;
+  font-size: 13PX;
+  font-weight: 900;
+  line-height: 44PX;
+}
+
+.mall-wechat-login-button::after {
+  border: 0;
+}
+
+.mall-wechat-login-button[disabled] {
+  opacity: 0.72;
+  color: #2f7e43;
+  background: #ffffff;
+}
+
 .mall-form-field {
   margin-bottom: 14PX;
 }
@@ -323,6 +356,41 @@ body.reco-mall-h5 .taro_page {
   display: grid;
   gap: 10PX;
   margin-top: 12PX;
+}
+
+.mall-address-location-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9PX;
+  margin-top: 10PX;
+}
+
+.mall-address-location-button {
+  height: 42PX;
+  border: 1PX solid #cce7c7;
+  border-radius: 9PX;
+  background: #f1fbef;
+  color: #2f7e43;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6PX;
+  font-size: 13PX;
+  font-weight: 900;
+}
+
+.mall-address-location-hint,
+.mall-address-location-ok {
+  display: block;
+  margin-top: 8PX;
+  color: #657160;
+  font-size: 12PX;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.mall-address-location-ok {
+  color: #2f7e43;
 }
 
 .mall-form-label {
@@ -1671,6 +1739,82 @@ body.reco-mall-h5 .taro_page {
   border-color: #63bf54;
 }
 
+.mall-after-sale-type-grid {
+  margin-top: 12PX;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8PX;
+}
+
+.mall-after-sale-type {
+  min-height: 96PX;
+  padding: 10PX 8PX;
+  border: 1PX solid #cce7c7;
+  border-radius: 10PX;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 5PX;
+  box-sizing: border-box;
+}
+
+.mall-after-sale-type-active {
+  border-color: #63bf54;
+  background: #eefbea;
+}
+
+.mall-after-sale-item {
+  margin-top: 10PX;
+  min-height: 62PX;
+  padding: 10PX;
+  border: 1PX solid #cce7c7;
+  border-radius: 10PX;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 10PX;
+  box-sizing: border-box;
+}
+
+.mall-after-sale-item-active {
+  border-color: #63bf54;
+  background: #f4fbf1;
+}
+
+.mall-after-sale-check {
+  width: 22PX;
+  height: 22PX;
+  border-radius: 50%;
+  border: 1PX solid #b9e3b0;
+  background: #ffffff;
+  color: #63bf54;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 22PX;
+  font-size: 13PX;
+  font-weight: 900;
+}
+
+.mall-after-sale-step {
+  margin-top: 12PX;
+  display: grid;
+  grid-template-columns: 12PX 1fr;
+  gap: 9PX;
+  align-items: flex-start;
+}
+
+.mall-after-sale-dot {
+  width: 10PX;
+  height: 10PX;
+  margin-top: 4PX;
+  border-radius: 50%;
+  background: #63bf54;
+  box-shadow: 0 0 0 4PX #eefbea;
+}
+
 .mall-textarea {
   width: 100%;
   min-height: 112PX;
@@ -1952,7 +2096,7 @@ body.reco-mall-h5 .taro_page {
 
 .mall-v7-home-fixed {
   position: sticky;
-  top: 0;
+  top: var(--mall-sticky-top, 0PX);
   z-index: 5;
   margin: -22PX -18PX 14PX;
   padding: 12PX 18PX 10PX;
@@ -2132,6 +2276,95 @@ body.reco-mall-h5 .taro_page {
 
 .mall-v7-section {
   margin-top: 14PX;
+}
+
+.mall-v7-promotion-venues {
+  margin-top: 12PX;
+}
+
+.mall-v7-promotion-venue-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10PX;
+}
+
+.mall-v7-promotion-venue-card {
+  min-height: 76PX;
+  padding: 12PX;
+  box-sizing: border-box;
+  border: 1PX solid rgba(47, 126, 67, 0.18);
+  border-radius: 10PX;
+  box-shadow: 0 6PX 18PX rgba(21, 58, 36, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10PX;
+  overflow: hidden;
+}
+
+.mall-v7-promotion-venue-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10PX;
+}
+
+.mall-v7-promotion-venue-icon {
+  width: 42PX;
+  height: 42PX;
+  border-radius: 8PX;
+  background: rgba(255, 255, 255, 0.76);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  overflow: hidden;
+  color: #bd9552;
+  font-size: 18PX;
+  font-weight: 900;
+}
+
+.mall-v7-promotion-venue-icon image,
+.mall-v7-promotion-venue-icon img {
+  width: 100%;
+  height: 100%;
+}
+
+.mall-v7-promotion-venue-title,
+.mall-v7-promotion-venue-copy {
+  display: block;
+  max-width: 210PX;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mall-v7-promotion-venue-title {
+  font-size: 17PX;
+  line-height: 1.15;
+  font-weight: 900;
+}
+
+.mall-v7-promotion-venue-copy {
+  margin-top: 5PX;
+  font-size: 12PX;
+  font-weight: 800;
+  opacity: 0.78;
+}
+
+.mall-v7-promotion-venue-action {
+  height: 30PX;
+  padding: 0 10PX;
+  border-radius: 8PX;
+  background: rgba(255, 255, 255, 0.84);
+  color: #2f7e43;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  font-size: 12PX;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .mall-v7-flash-sale {
@@ -2673,6 +2906,7 @@ body.reco-mall-h5 .taro_page {
 
 .mall-v7-cart-shop {
   padding-top: 11PX;
+  overflow: hidden;
 }
 
 .mall-v7-shop-head {
@@ -2689,13 +2923,46 @@ body.reco-mall-h5 .taro_page {
   font-size: 11PX;
 }
 
+.mall-v7-cart-swipe {
+  position: relative;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.mall-v7-cart-delete-action {
+  position: absolute;
+  top: 1PX;
+  right: 0;
+  bottom: 0;
+  width: 76PX;
+  border-radius: 0 8PX 8PX 0;
+  background: #d14343;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4PX;
+  font-size: 13PX;
+  font-weight: 900;
+  z-index: 1;
+}
+
 .mall-v7-cart-item {
+  position: relative;
+  z-index: 2;
   display: grid;
   grid-template-columns: 22PX 76PX 1fr 66PX;
   gap: 9PX;
   align-items: center;
   padding: 12PX 0;
   border-top: 1PX solid #edf3e9;
+  background: #ffffff;
+  transition: transform 0.18s ease;
+  will-change: transform;
+}
+
+.mall-v7-cart-item-swiped {
+  transform: translateX(-76PX);
 }
 
 .mall-v7-cart-check {

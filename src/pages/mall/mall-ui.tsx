@@ -1,4 +1,4 @@
-import { useLayoutEffect, type PropsWithChildren, type ReactNode } from 'react'
+import { useLayoutEffect, type CSSProperties, type PropsWithChildren, type ReactNode } from 'react'
 import { Image, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import {
@@ -16,6 +16,12 @@ import {
 import sanyouLogo from '@/assets/brand/sanyou.png'
 import { resolveMallImageUrl, type MallProduct, yuan } from '@/services/mall'
 import { Input } from '@/components/ui/input'
+import {
+  getHomePageBodyPaddingTop,
+  getHomeStickyHeaderTop,
+  getPageBodyPaddingTop,
+  getStickyHeaderTop,
+} from '@/lib/safe-area'
 import './mall-theme.css'
 
 type MallTabKey = 'home' | 'category' | 'cart' | 'mine'
@@ -23,6 +29,7 @@ type MallTabKey = 'home' | 'category' | 'cart' | 'mine'
 type MallIcon = typeof House
 
 export const SANYOU_LOGO = sanyouLogo
+export const MALL_SELECTED_ADDRESS_STORAGE_KEY = 'mallSelectedAddressId'
 
 const MALL_H5_BODY_CLASS = 'reco-mall-h5'
 let mallH5PageCount = 0
@@ -70,11 +77,16 @@ export function MallPage({
   active,
   children,
   noTab,
-}: PropsWithChildren<{ active?: MallTabKey; noTab?: boolean }>) {
+  homeTightTop,
+}: PropsWithChildren<{ active?: MallTabKey; noTab?: boolean; homeTightTop?: boolean }>) {
   useMallH5BodyClass()
+  const shellStyle = {
+    paddingTop: `${homeTightTop ? getHomePageBodyPaddingTop() : getPageBodyPaddingTop()}px`,
+    '--mall-sticky-top': `${homeTightTop ? getHomeStickyHeaderTop() : getStickyHeaderTop()}px`,
+  } as CSSProperties
 
   return (
-    <View className="mall-shell">
+    <View className={homeTightTop ? 'mall-shell mall-shell-home' : 'mall-shell'} style={shellStyle}>
       {children}
       {!noTab && <MallBottomNav active={active || 'home'} />}
     </View>
@@ -201,6 +213,28 @@ export function MallProductThumb({ product, large }: { product?: MallProduct | n
 export function primaryMallProductImageUrl(product?: MallProduct | null) {
   const firstImage = product?.images?.find((image) => Boolean(image?.trim()))
   return resolveMallImageUrl(firstImage || product?.imageUrl)
+}
+
+export function mallProductSaleVariants(product?: MallProduct | null) {
+  return (product?.variants || [])
+    .filter((variant) => variant && variant.id && variant.status !== 'draft')
+    .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+}
+
+export function mallProductDefaultSaleVariant(product?: MallProduct | null) {
+  const variants = mallProductSaleVariants(product)
+  if (!variants.length) return null
+  return variants.find((variant) => variant.id === product?.defaultVariantId) || variants[0]
+}
+
+export function mallProductRequiresVariantSelection(product?: MallProduct | null) {
+  return mallProductSaleVariants(product)
+    .filter((variant) => variant.status === 'on_sale' && variant.stock > 0)
+    .length > 1
+}
+
+export function mallProductMinimumOrderQuantity(product?: MallProduct | null, variant = mallProductDefaultSaleVariant(product)) {
+  return Math.max(Number(variant?.minimumOrderQuantity || product?.minimumOrderQuantity || 1), 1)
 }
 
 export function MallDealProductCard({

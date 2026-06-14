@@ -20,12 +20,15 @@ use serde::{de::DeserializeOwned, Deserialize};
 use sha2::Sha256;
 
 use crate::{
-    config::read_trimmed,
+    config::{read_trimmed, ApiService},
     error::{ApiError, ApiResult},
 };
 
 pub const DEFAULT_WECHAT_MCH_ID: &str = "1746295681";
 pub const WECHAT_CODE2SESSION_URL: &str = "https://api.weixin.qq.com/sns/jscode2session";
+pub const WECHAT_ACCESS_TOKEN_URL: &str = "https://api.weixin.qq.com/cgi-bin/token";
+pub const WECHAT_GET_PHONE_NUMBER_URL: &str =
+    "https://api.weixin.qq.com/wxa/business/getuserphonenumber";
 pub const WECHAT_USER_AGENT: &str = "RecoRouter/1.0";
 
 #[derive(Clone)]
@@ -49,6 +52,11 @@ pub struct MiniappLoginSession {
     pub unionid: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct MiniappPhoneNumber {
+    pub phone_number: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct WechatNotifyBody {
     pub resource: WechatNotifyResource,
@@ -64,7 +72,13 @@ pub struct WechatNotifyResource {
 
 impl WechatPayMerchantConfig {
     pub fn from_env() -> ApiResult<Self> {
-        let app_id = read_trimmed("WECHAT_PAY_APPID")
+        Self::from_env_for_service(ApiService::Legacy)
+    }
+
+    pub fn from_env_for_service(service: ApiService) -> ApiResult<Self> {
+        let app_id = read_service_trimmed(service, "WECHAT_PAY_APPID")
+            .or_else(|| read_service_trimmed(service, "WECHAT_MINIAPP_APPID"))
+            .or_else(|| read_trimmed("WECHAT_PAY_APPID"))
             .or_else(|| read_trimmed("WECHAT_MINIAPP_APPID"))
             .ok_or_else(|| ApiError::BadRequest("缺少 WECHAT_PAY_APPID 配置".to_string()))?;
         let mch_id =
@@ -79,17 +93,25 @@ impl WechatPayMerchantConfig {
             mch_id,
             mch_serial_no,
             private_key,
-            miniapp_secret: read_trimmed("WECHAT_MINIAPP_SECRET"),
+            miniapp_secret: read_service_trimmed(service, "WECHAT_MINIAPP_SECRET")
+                .or_else(|| read_trimmed("WECHAT_MINIAPP_SECRET")),
         })
     }
 }
 
 impl WechatMiniappConfig {
     pub fn from_env() -> ApiResult<Self> {
-        let app_id = read_trimmed("WECHAT_MINIAPP_APPID")
+        Self::from_env_for_service(ApiService::Legacy)
+    }
+
+    pub fn from_env_for_service(service: ApiService) -> ApiResult<Self> {
+        let app_id = read_service_trimmed(service, "WECHAT_MINIAPP_APPID")
+            .or_else(|| read_service_trimmed(service, "WECHAT_PAY_APPID"))
+            .or_else(|| read_trimmed("WECHAT_MINIAPP_APPID"))
             .or_else(|| read_trimmed("WECHAT_PAY_APPID"))
             .ok_or_else(|| ApiError::BadRequest("缺少 WECHAT_MINIAPP_APPID 配置".to_string()))?;
-        let miniapp_secret = read_trimmed("WECHAT_MINIAPP_SECRET")
+        let miniapp_secret = read_service_trimmed(service, "WECHAT_MINIAPP_SECRET")
+            .or_else(|| read_trimmed("WECHAT_MINIAPP_SECRET"))
             .ok_or_else(|| ApiError::BadRequest("缺少 WECHAT_MINIAPP_SECRET 配置".to_string()))?;
 
         Ok(Self {
@@ -109,6 +131,16 @@ impl WechatMiniappConfig {
             miniapp_secret,
         })
     }
+}
+
+fn read_service_trimmed(service: ApiService, key: &'static str) -> Option<String> {
+    let prefix = match service {
+        ApiService::Legacy => return None,
+        ApiService::Vehicle => "VEHICLE",
+        ApiService::Mall => "MALL",
+        ApiService::Platform => "PLATFORM",
+    };
+    read_trimmed(&format!("{prefix}_{key}"))
 }
 
 pub async fn exchange_miniapp_login_code(
@@ -155,6 +187,81 @@ pub async fn exchange_miniapp_login_session(
         openid,
         unionid: response.unionid,
     })
+}
+
+pub async fn exchange_miniapp_phone_number(
+    config: &WechatMiniappConfig,
+    phone_code: &str,
+) -> ApiResult<MiniappPhoneNumber> {
+    let phone_code = phone_code.trim();
+    if phone_code.is_empty() {
+        return Err(ApiError::BadRequest("缺少微信手机号授权凭证".to_string()));
+    }
+
+    let access_token = miniapp_access_token(config).await?;
+    let url = format!("{WECHAT_GET_PHONE_NUMBER_URL}?access_token={access_token}");
+    let request_body = serde_json::json!({ "code": phone_code }).to_string();
+    let text = reqwest::Client::new()
+        .post(url)
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .header("User-Agent", WECHAT_USER_AGENT)
+        .body(request_body)
+        .send()
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("微信手机号换取失败: {err}")))?
+        .text()
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("微信手机号响应读取失败: {err}")))?;
+    let response: PhoneNumberResponse = serde_json::from_str(&text)
+        .map_err(|err| ApiError::BadRequest(format!("微信手机号响应解析失败: {err}")))?;
+    if response.errcode.unwrap_or_default() != 0 {
+        return Err(ApiError::BadRequest(format!(
+            "微信手机号授权失败: {}",
+            response
+                .errmsg
+                .unwrap_or_else(|| response.errcode.unwrap_or_default().to_string())
+        )));
+    }
+
+    let phone_info = response
+        .phone_info
+        .ok_or_else(|| ApiError::BadRequest("微信手机号响应缺少手机号".to_string()))?;
+    let phone_number = phone_info
+        .pure_phone_number
+        .or(phone_info.phone_number)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| ApiError::BadRequest("微信手机号响应缺少手机号".to_string()))?;
+
+    Ok(MiniappPhoneNumber { phone_number })
+}
+
+pub async fn miniapp_access_token(config: &WechatMiniappConfig) -> ApiResult<String> {
+    let url = format!(
+        "{WECHAT_ACCESS_TOKEN_URL}?grant_type=client_credential&appid={}&secret={}",
+        config.app_id, config.miniapp_secret
+    );
+    let text = reqwest::get(url)
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("微信 access_token 获取失败: {err}")))?
+        .text()
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("微信 access_token 响应读取失败: {err}")))?;
+    let response: AccessTokenResponse = serde_json::from_str(&text)
+        .map_err(|err| ApiError::BadRequest(format!("微信 access_token 响应解析失败: {err}")))?;
+    response
+        .access_token
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!(
+                "微信 access_token 获取失败: {}",
+                response
+                    .errmsg
+                    .unwrap_or_else(|| response.errcode.unwrap_or_default().to_string())
+            ))
+        })
 }
 
 pub fn wechat_authorization(
@@ -290,6 +397,28 @@ struct Code2SessionResponse {
     unionid: Option<String>,
     errcode: Option<i64>,
     errmsg: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AccessTokenResponse {
+    access_token: Option<String>,
+    errcode: Option<i64>,
+    errmsg: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PhoneNumberResponse {
+    errcode: Option<i64>,
+    errmsg: Option<String>,
+    phone_info: Option<PhoneInfoResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PhoneInfoResponse {
+    #[serde(rename = "phoneNumber", alias = "phone_number")]
+    phone_number: Option<String>,
+    #[serde(rename = "purePhoneNumber", alias = "pure_phone_number")]
+    pure_phone_number: Option<String>,
 }
 
 #[cfg(test)]

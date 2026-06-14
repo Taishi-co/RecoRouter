@@ -100,14 +100,21 @@ export default function MallOrderDetailPage() {
         title="支付明细"
         subtitle={`微信支付 · ${order.paymentStatus === 'paid' ? '已支付' : '待支付'} ${mallYuan(order.payableCents)}`}
       />
+      {order.afterSales?.length ? (
+        <DetailRow
+          icon={<Headphones size={21} color="#63BF54" />}
+          title="售后进度"
+          subtitle={`${afterSaleTypeText(order.afterSales[0].afterSaleType)} · ${afterSaleStatusText(order.afterSales[0].status)} · ${order.afterSales[0].resolution || order.afterSales[0].description || '客服处理中'}`}
+        />
+      ) : null}
 
       <MallPrimaryButton onClick={() => contactDelivery(order)}>
         <Headphones size={18} color="#FFFFFF" />
         <Text style={{ marginLeft: 6 }}>联系配送客服</Text>
       </MallPrimaryButton>
       <View style={{ marginTop: 10 }}>
-        <MallPrimaryButton subtle onClick={() => Taro.navigateTo({ url: `/pages/mall/after-sale/index?orderId=${order.id}` })}>
-          <Text>申请售后</Text>
+        <MallPrimaryButton subtle onClick={() => Taro.navigateTo({ url: afterSaleUrl(order) })}>
+          <Text>{order.afterSales?.length ? '查看售后' : '申请售后'}</Text>
         </MallPrimaryButton>
       </View>
     </MallPage>
@@ -161,4 +168,35 @@ function contactDelivery(order: MallOrder) {
     return
   }
   Taro.navigateTo({ url: `/pages/mall/support/index?orderId=${order.id}` })
+}
+
+function afterSaleUrl(order: MallOrder) {
+  const afterSale = order.afterSales?.[0]
+  const sessionQuery = afterSale?.supportSessionId ? `&sessionId=${afterSale.supportSessionId}&afterSaleId=${afterSale.id}` : ''
+  return `/pages/mall/after-sale/index?orderId=${order.id}${sessionQuery}`
+}
+
+function afterSaleTypeText(value?: string | null) {
+  if (value === 'return_refund') return '退货退款'
+  if (value === 'exchange') return '换货'
+  if (value === 'refund_only') return '仅退款'
+  return '售后'
+}
+
+function afterSaleStatusText(value?: string | null) {
+  const labels: Record<string, string> = {
+    submitted: '已提交',
+    negotiating: '协商中',
+    approved: '已通过',
+    return_pending: '待退货',
+    returning: '退货中',
+    exchange_processing: '换货中',
+    replacement_sent: '补发中',
+    refunding: '退款中',
+    refunded: '已退款',
+    resolved: '已完成',
+    rejected: '已驳回',
+    closed: '已关闭',
+  }
+  return value ? labels[value] || value : '处理中'
 }

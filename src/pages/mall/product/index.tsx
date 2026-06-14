@@ -16,6 +16,8 @@ import {
   MallLocationStrip,
   MallPage,
   MallPrimaryButton,
+  mallProductMinimumOrderQuantity,
+  mallProductSaleVariants,
   mallYuan,
 } from '../mall-ui'
 import { redirectToMallAuth } from '../auth-route'
@@ -95,7 +97,7 @@ export default function MallProductDetail() {
         Taro.showToast({ title: '请选择规格', icon: 'none' })
         return
       }
-      await addMallCartItem(user.id, product.id, minimumOrderQuantity(product, selectedVariant), selectedVariant.id)
+      await addMallCartItem(user.id, product.id, mallProductMinimumOrderQuantity(product, selectedVariant), selectedVariant.id)
       Taro.showToast({ title: '已加入购物车', icon: 'success' })
     } catch (error) {
       Taro.showToast({
@@ -115,7 +117,7 @@ export default function MallProductDetail() {
         source: 'buy_now',
         productId: product.id,
         variantId: selectedVariant?.id || undefined,
-        quantity: minimumOrderQuantity(product, selectedVariant),
+        quantity: mallProductMinimumOrderQuantity(product, selectedVariant),
       })
       Taro.navigateTo({ url: `/pages/mall/confirm/index?checkoutId=${checkout.id}` })
     } catch (error) {
@@ -155,7 +157,7 @@ export default function MallProductDetail() {
             <View style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <Text className="mall-price-large">{mallYuan(productPriceCents(product, selectedVariant))}</Text>
               <View className="mall-hero-badge" style={{ marginTop: 0, background: '#FFF1E5', color: '#FF9238' }}>
-                起订 {minimumOrderQuantity(product, selectedVariant)}
+                起订 {mallProductMinimumOrderQuantity(product, selectedVariant)}
               </View>
             </View>
             {product.qualityGuaranteed ? (
@@ -174,21 +176,6 @@ export default function MallProductDetail() {
             selectedVariant={selectedVariant}
             onSelect={setSelectedVariantId}
           />
-
-          <View className="mall-chip-row">
-            <View className="mall-chip">
-              <Text className="mall-chip-title">新鲜</Text>
-              <Text className="mall-chip-copy">今日采摘</Text>
-            </View>
-            <View className="mall-chip">
-              <Text className="mall-chip-title">安心</Text>
-              <Text className="mall-chip-copy">配送前质检</Text>
-            </View>
-            <View className="mall-chip">
-              <Text className="mall-chip-title">品质</Text>
-              <Text className="mall-chip-copy">坏果包退</Text>
-            </View>
-          </View>
 
           <View style={{ marginTop: 14 }}>
             <MallLocationStrip />
@@ -309,7 +296,7 @@ function VariantSelector({
           <Text>库存 {variant?.stock ?? product.stock}</Text>
         </View>
         {variant?.pricingMode === 'weighed' ? (
-          <Text className="mall-variant-weigh-note">{weighedVariantRangeText(variant, minimumOrderQuantity(product, variant))}</Text>
+          <Text className="mall-variant-weigh-note">{weighedVariantRangeText(variant, mallProductMinimumOrderQuantity(product, variant))}</Text>
         ) : null}
       </View>
     )
@@ -343,7 +330,7 @@ function VariantSelector({
               </Text>
               <Text className="mall-variant-option-stock">库存 {variant.stock}</Text>
               {variant.pricingMode === 'weighed' ? (
-                <Text className="mall-variant-option-stock">{weighedVariantRangeText(variant, minimumOrderQuantity(product, variant))}</Text>
+                <Text className="mall-variant-option-stock">{weighedVariantRangeText(variant, mallProductMinimumOrderQuantity(product, variant))}</Text>
               ) : null}
             </View>
           )
@@ -388,10 +375,10 @@ function ProductDetailSections({
       <View className="mall-product-detail-section">
         <Text className="mall-product-detail-title">起订信息</Text>
         <View className="mall-product-order-box">
-          <Text>最小起订量 {minimumOrderQuantity(product, selectedVariant)} 件</Text>
+          <Text>最小起订量 {mallProductMinimumOrderQuantity(product, selectedVariant)} 件</Text>
           <Text>库存 {selectedVariant?.stock ?? product.stock} 件，下单数量不足起订量时将按起订量加入购物车</Text>
           {selectedVariant?.pricingMode === 'weighed' ? (
-            <Text>{weighedVariantRangeText(selectedVariant, minimumOrderQuantity(product, selectedVariant))}，实际金额由客服称重后确认。</Text>
+            <Text>{weighedVariantRangeText(selectedVariant, mallProductMinimumOrderQuantity(product, selectedVariant))}，实际金额由客服称重后确认。</Text>
           ) : null}
         </View>
       </View>
@@ -424,7 +411,6 @@ function buildPublicSpecs(product: MallProduct, selectedVariant?: MallProductVar
     { label: '类目', value: product.categoryName || product.categoryCode || '-' },
     { label: '配送时效', value: `${product.deliveryMinutes || 18} 分钟内送达` },
     { label: '库存', value: `${selectedVariant?.stock ?? product.stock} 件` },
-    { label: 'SKU', value: selectedVariant?.sku || product.sku || '-' },
   ]
 }
 
@@ -451,10 +437,6 @@ function openQualificationReport(report: MallQualificationReport) {
   Taro.showToast({ title: '请在浏览器中查看资质文件', icon: 'none' })
 }
 
-function minimumOrderQuantity(product: MallProduct, selectedVariant?: MallProductVariant | null) {
-  return Math.max(Number(selectedVariant?.minimumOrderQuantity || product.minimumOrderQuantity || 1), 1)
-}
-
 function productPriceCents(product: MallProduct, selectedVariant?: MallProductVariant | null) {
   return Number(selectedVariant?.priceCents ?? product.discountedPriceCents ?? product.priceCents ?? 0)
 }
@@ -476,10 +458,7 @@ function formatWeightQuantity(value: number) {
 
 function productVariants(product?: MallProduct | null): MallProductVariant[] {
   if (!product) return []
-  const variants = (product.variants || [])
-    .filter((variant) => variant && variant.id)
-    .filter((variant) => variant.status !== 'draft')
-    .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+  const variants = mallProductSaleVariants(product)
   if (variants.length) return variants
   return [{
     id: product.defaultVariantId || 'default',

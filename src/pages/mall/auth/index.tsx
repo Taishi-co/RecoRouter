@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Image, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { ChevronLeft, MessageCircle, RefreshCw, ShieldCheck } from 'lucide-react-taro'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Network } from '@/network'
 import { MallBrandMark, MallPage, MallPrimaryButton } from '../mall-ui'
@@ -28,8 +29,16 @@ interface ApiEnvelope<T> {
   data?: T
 }
 
+type WechatPhoneEvent = {
+  detail?: {
+    errMsg?: string
+    code?: string
+  }
+}
+
 const mallHomeUrl = '/pages/mall/index/index'
 const defaultReturnUrl = mallHomeUrl
+const mallAuthApiBase = '/api/mall/auth'
 
 export default function MallAuthPage() {
   const params = Taro.getCurrentInstance().router?.params || {}
@@ -71,7 +80,7 @@ export default function MallAuthPage() {
   const loadCaptcha = async () => {
     setCaptchaLoading(true)
     try {
-      const captcha = await requestApi<CaptchaInfo>('/api/auth/captcha', 'GET')
+      const captcha = await requestApi<CaptchaInfo>(`${mallAuthApiBase}/captcha`, 'GET')
       setCaptchaId(captcha.captchaId)
       setCaptchaImage(captcha.image)
       setCaptchaCode('')
@@ -112,8 +121,8 @@ export default function MallAuthPage() {
     setLoading(true)
     try {
       const authUser = mode === 'login'
-        ? await requestApi<AuthUserInfo>('/api/auth/login', 'POST', { phone, password })
-        : await requestApi<AuthUserInfo>('/api/auth/register', 'POST', {
+        ? await requestApi<AuthUserInfo>(`${mallAuthApiBase}/login`, 'POST', { phone, password })
+        : await requestApi<AuthUserInfo>(`${mallAuthApiBase}/register`, 'POST', {
           phone,
           password,
           confirmPassword,
@@ -138,7 +147,17 @@ export default function MallAuthPage() {
     }
   }
 
-  const wechatLogin = async () => {
+  const wechatLogin = async (event: WechatPhoneEvent) => {
+    if (wechatLoading) return
+
+    const detail = event.detail || {}
+    const phoneCode = typeof detail.code === 'string' ? detail.code.trim() : ''
+    const errMsg = typeof detail.errMsg === 'string' ? detail.errMsg : ''
+    if (!errMsg.includes(':ok') || !phoneCode) {
+      Taro.showToast({ title: '请授权手机号完成快捷登录', icon: 'none' })
+      return
+    }
+
     setWechatLoading(true)
     try {
       const loginResult = await Taro.login()
@@ -147,8 +166,9 @@ export default function MallAuthPage() {
         throw new Error('微信登录凭证获取失败')
       }
 
-      const authUser = await requestApi<AuthUserInfo>('/api/auth/wechat-login', 'POST', {
+      const authUser = await requestApi<AuthUserInfo>(`${mallAuthApiBase}/wechat-login`, 'POST', {
         loginCode,
+        phoneCode,
         role: registerRole,
       })
       persistAuth(authUser)
@@ -186,10 +206,15 @@ export default function MallAuthPage() {
       </View>
 
       <View className="mall-card">
-        <MallPrimaryButton subtle onClick={wechatLogin}>
+        <Button
+          className="mall-wechat-login-button"
+          openType="getPhoneNumber"
+          onGetPhoneNumber={wechatLogin}
+          disabled={wechatLoading}
+        >
           <MessageCircle size={18} color="#63BF54" />
-          <Text>{wechatLoading ? '微信登录中' : '微信快捷登录'}</Text>
-        </MallPrimaryButton>
+          <Text>{wechatLoading ? '微信登录中' : '微信手机号快捷登录'}</Text>
+        </Button>
         <View className="mall-auth-divider">
           <Text>或使用手机号</Text>
         </View>

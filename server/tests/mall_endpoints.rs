@@ -725,13 +725,37 @@ async fn mall_member_group_leader_community_and_after_sale_flows_are_backed_by_a
         &format!("/api/mall/orders/{order_id}/after-sales"),
         json!({
             "userId": user_id,
+            "afterSaleType": "return_refund",
             "reason": "包装破损",
-            "description": "瓶身有裂纹",
+            "description": "瓶身有裂纹，需要退货退款",
+            "selectedItems": [{
+                "orderItemId": order_body["data"]["items"][0]["id"],
+                "quantity": 1
+            }],
+            "requestedAmountCents": order_body["data"]["payableCents"],
             "evidenceImages": ["mall-after-sales/broken-1.jpeg", "mall-after-sales/broken-2.jpeg"]
         }),
     )
     .await;
     assert_eq!(after_sale_status, StatusCode::OK);
+    assert_eq!(after_sale_body["data"]["afterSaleType"], "return_refund");
+    assert_eq!(after_sale_body["data"]["status"], "submitted");
+    assert_eq!(after_sale_body["data"]["solutionType"], "return_refund");
+    assert_eq!(after_sale_body["data"]["negotiationStatus"], "pending");
+    assert!(
+        after_sale_body["data"]["supportSessionId"]
+            .as_str()
+            .expect("after-sale should create a support session")
+            .len()
+            > 0
+    );
+    assert_eq!(
+        after_sale_body["data"]["selectedItems"]
+            .as_array()
+            .expect("selectedItems should be an array")
+            .len(),
+        1
+    );
     assert_eq!(
         after_sale_body["data"]["evidenceImages"]
             .as_array()
@@ -739,6 +763,43 @@ async fn mall_member_group_leader_community_and_after_sale_flows_are_backed_by_a
             .len(),
         2
     );
+    let after_sale_id = after_sale_body["data"]["id"]
+        .as_str()
+        .expect("after-sale id should exist");
+    let after_sale_admin_id = insert_user(&context.pool, "13950004003", "admin", "售后客服").await;
+    let after_sale_admin_token =
+        insert_session(&context.pool, &after_sale_admin_id, "mall-after-sale-admin").await;
+
+    let (admin_status, admin_body) = get_json_with_auth(
+        &context.app,
+        "/api/admin/mall/after-sales",
+        &after_sale_admin_token,
+    )
+    .await;
+    assert_eq!(admin_status, StatusCode::OK);
+    assert!(admin_body["data"]
+        .as_array()
+        .expect("admin after-sales should be an array")
+        .iter()
+        .any(|sale| sale["afterSaleType"] == "return_refund"));
+
+    let (progress_status, progress_body) = put_json_with_auth(
+        &context.app,
+        &format!("/api/admin/mall/after-sales/{after_sale_id}"),
+        &after_sale_admin_token,
+        json!({
+            "status": "returning",
+            "handlingMethod": "退货退款",
+            "solutionType": "return_refund",
+            "negotiationStatus": "agreed",
+            "approvedAmountCents": order_body["data"]["payableCents"],
+            "resolution": "双方协商一致，等待用户退货"
+        }),
+    )
+    .await;
+    assert_eq!(progress_status, StatusCode::OK);
+    assert_eq!(progress_body["data"]["status"], "returning");
+    assert_eq!(progress_body["data"]["negotiationStatus"], "agreed");
 
     context.cleanup().await;
 }

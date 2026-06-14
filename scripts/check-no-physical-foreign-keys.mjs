@@ -17,14 +17,39 @@ const sqlFiles = [
 ]
 
 const violations = []
+const historicalPhysicalFkMigrationExceptions = new Set([
+  // Already applied in production; 0036 drops these constraints without
+  // mutating the SQLx migration history.
+  'server/migrations/0026_vehicle_trips.sql',
+])
 
 for (const file of sqlFiles.filter((file) => !file.endsWith('0001_init.sql'))) {
+  if (historicalPhysicalFkMigrationExceptions.has(file)) {
+    continue
+  }
+
   const source = stripSqlComments(read(file))
   if (/\bREFERENCES\b/i.test(source)) {
     violations.push(`${file} contains SQL REFERENCES physical FK definitions`)
   }
   if (/\bFOREIGN\s+KEY\b/i.test(source)) {
     violations.push(`${file} contains SQL FOREIGN KEY physical FK definitions`)
+  }
+}
+
+const vehicleTripsFkCleanup = 'server/migrations/0036_drop_vehicle_trips_physical_fks.sql'
+if (!sqlFiles.includes(vehicleTripsFkCleanup)) {
+  violations.push(`${vehicleTripsFkCleanup} must remove the historical vehicle trip physical FK constraints`)
+} else {
+  const cleanupSource = stripSqlComments(read(vehicleTripsFkCleanup))
+  for (const constraintName of [
+    'trip_stops_trip_id_fkey',
+    'trip_stops_mall_order_id_fkey',
+    'mall_orders_trip_id_fkey',
+  ]) {
+    if (!new RegExp(`DROP\\s+CONSTRAINT\\s+IF\\s+EXISTS\\s+${constraintName}`, 'i').test(cleanupSource)) {
+      violations.push(`${vehicleTripsFkCleanup} must drop ${constraintName}`)
+    }
   }
 }
 

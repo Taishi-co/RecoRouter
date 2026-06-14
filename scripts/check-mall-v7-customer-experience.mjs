@@ -7,6 +7,7 @@ const root = process.cwd()
 const files = {
   service: read('src/services/mall.ts'),
   ui: read('src/pages/mall/mall-ui.tsx'),
+  safeArea: read('src/lib/safe-area.ts'),
   theme: read('src/pages/mall/mall-theme.css'),
   home: read('src/pages/mall/index/index.tsx'),
   category: read('src/pages/mall/category/index.tsx'),
@@ -100,6 +101,27 @@ const checks = [
       && /售后说明/.test(files.product)
       && /minimumOrderQuantity/.test(files.product)
       && /mall-product-detail-section/.test(files.theme),
+  },
+  {
+    name: '商品卡一键加购按最小起订量执行，多规格商品进入详情选择规格',
+    pass: /mallProductMinimumOrderQuantity/.test(files.ui)
+      && /mallProductRequiresVariantSelection/.test(files.ui)
+      && /mallProductDefaultSaleVariant/.test(files.ui)
+      && /mallProductRequiresVariantSelection\(product\)/.test(files.home)
+      && /mallProductRequiresVariantSelection\(product\)/.test(files.category)
+      && /请选择规格/.test(files.home)
+      && /请选择规格/.test(files.category)
+      && /addMallCartItem\(user\.id,\s*product\.id,\s*quantity,\s*variant\?\.id\)/.test(files.home)
+      && /addMallCartItem\(user\.id,\s*product\.id,\s*quantity,\s*variant\?\.id\)/.test(files.category)
+      && /MAX_MALL_PURCHASE_QUANTITY/.test(files.serverMall)
+      && !/购买数量需在 1-99 之间/.test(files.serverMall),
+  },
+  {
+    name: '商品详情页不展示无业务动作的三块卖点卡，规格参数不对用户展示 SKU',
+    pass: !/mall-chip-title">\s*新鲜/.test(files.product)
+      && !/mall-chip-title">\s*安心/.test(files.product)
+      && !/mall-chip-title">\s*品质/.test(files.product)
+      && !/\{\s*label:\s*['"]SKU['"]/.test(files.product),
   },
   {
     name: '商品最小起订量贯通后端商品 JSON、管理端录入和服务类型',
@@ -210,6 +232,16 @@ const checks = [
       && /mall-v7-cart-summary/.test(files.theme)
       && /mall-address-form/.test(files.theme)
       && /transition:\s*none\s*!important/.test(files.theme),
+  },
+  {
+    name: '小程序首页顶部按状态栏贴近左侧内容，不用右上角胶囊高度整体下压',
+    pass: /getHomePageBodyPaddingTop/.test(files.safeArea)
+      && /getHomeStickyHeaderTop/.test(files.safeArea)
+      && !/getHomePageBodyPaddingTop[\s\S]{0,220}menuBottom/.test(files.safeArea)
+      && /paddingTop:\s*`\$\{homeTightTop\s*\?\s*getHomePageBodyPaddingTop\(\)\s*:\s*getPageBodyPaddingTop\(\)\}px`/.test(files.ui)
+      && /--mall-sticky-top['"]:\s*`\$\{homeTightTop\s*\?\s*getHomeStickyHeaderTop\(\)\s*:\s*getStickyHeaderTop\(\)\}px`/.test(files.ui)
+      && /homeTightTop/.test(files.ui)
+      && /mall-shell-home/.test(files.theme),
   },
   {
     name: '商城品牌图标使用叁友甄选新 icon，覆盖商城底部导航、商城入口和 Web 管理端商城模块',

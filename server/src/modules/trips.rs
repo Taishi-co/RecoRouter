@@ -715,7 +715,10 @@ where
               AND status IN ('paid', 'ready_for_pickup', 'dispatching')
             RETURNING jsonb_build_object('id', id, 'status', status,
                 'addressText', address_text, 'latitude', latitude, 'longitude', longitude,
-                'recipientName', recipient_name, 'recipientPhone', recipient_phone)
+                'recipientName', recipient_name, 'recipientPhone', recipient_phone,
+                'waypoints', COALESCE(waypoints, '[]'::jsonb),
+                'originLatitude', origin_latitude, 'originLongitude', origin_longitude,
+                'originAddress', origin_address)
             "#,
         )
         .bind(order_id)
@@ -725,9 +728,49 @@ where
 
         let Some(order) = order else { continue };
 
-        let seq = max_seq.unwrap_or(0) + idx as i32 + 1;
+        let seq = max_seq.unwrap_or(0) + (idx as i32 * 10) + 1;
+        let mut current_seq = seq;
 
-        // Create delivery stop for this order
+        // If there are waypoints, create stops for each waypoint first
+        if let Some(waypoints) = order.get("waypoints").and_then(Value::as_array) {
+            for (_wp_idx, wp) in waypoints.iter().enumerate() {
+                let wp_lat = wp
+                    .get("latitude")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<f64>().ok());
+                let wp_lng = wp
+                    .get("longitude")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<f64>().ok());
+                let wp_address = wp.get("address").and_then(Value::as_str);
+                let wp_name = wp.get("name").and_then(Value::as_str);
+
+                if wp_lat.is_some() && wp_lng.is_some() {
+                    sqlx::query(
+                        r#"
+                        INSERT INTO trip_stops (trip_id, mall_order_id, stop_type, stop_sequence,
+                            address, latitude, longitude, contact_name, contact_phone, cargo_info, status)
+                        VALUES ($1, $2, 'waypoint', $3, $4, $5, $6, $7, $8, $9, 'pending')
+                        "#,
+                    )
+                    .bind(&trip_id)
+                    .bind(order_id)
+                    .bind(current_seq)
+                    .bind(wp_address)
+                    .bind(wp_lat)
+                    .bind(wp_lng)
+                    .bind(wp_name)
+                    .bind(None::<&str>)
+                    .bind(order.get("id").and_then(Value::as_str))
+                    .execute(&mut *tx)
+                    .await?;
+
+                    current_seq += 1;
+                }
+            }
+        }
+
+        // Create delivery stop for this order (final destination)
         sqlx::query(
             r#"
             INSERT INTO trip_stops (trip_id, mall_order_id, stop_type, stop_sequence,
@@ -737,7 +780,7 @@ where
         )
         .bind(&trip_id)
         .bind(order_id)
-        .bind(seq)
+        .bind(current_seq)
         .bind(order.get("addressText").and_then(Value::as_str))
         .bind(order.get("latitude").and_then(|v| v.as_f64()))
         .bind(order.get("longitude").and_then(|v| v.as_f64()))
@@ -1676,7 +1719,10 @@ where
     };
 
     if pending_orders.is_empty() {
-        return Ok(ok("没有待分配的订单", json!({"assigned": 0, "details": []})));
+        return Ok(ok(
+            "没有待分配的订单",
+            json!({"assigned": 0, "details": []}),
+        ));
     }
 
     // 2. 获取可用车辆
@@ -1720,8 +1766,10 @@ where
     }
 
     // 4. 按时间段分组订单
-    let mut orders_by_slot: std::collections::HashMap<Option<String>, Vec<(String, Option<String>)>> =
-        std::collections::HashMap::new();
+    let mut orders_by_slot: std::collections::HashMap<
+        Option<String>,
+        Vec<(String, Option<String>)>,
+    > = std::collections::HashMap::new();
     for (order_id, time_slot, _delivery_date) in pending_orders {
         orders_by_slot
             .entry(time_slot.clone())
@@ -1736,13 +1784,11 @@ where
 
     // 按时间段排序处理（有时间的优先，无时间的放最后）
     let mut slots: Vec<_> = orders_by_slot.iter().collect();
-    slots.sort_by(|a, b| {
-        match (a.0, b.0) {
-            (Some(a), Some(b)) => a.cmp(b),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => std::cmp::Ordering::Equal,
-        }
+    slots.sort_by(|a, b| match (a.0, b.0) {
+        (Some(a), Some(b)) => a.cmp(b),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
     });
 
     for (time_slot, orders) in slots {
@@ -1753,14 +1799,20 @@ where
                 used_vehicles
                     .iter()
                     .filter_map(|vid| {
-                        available_vehicles.iter().find(|(id, _)| id == vid).and_then(|(id, code)| {
-                            let current_load = load_map.get(&(id.clone(), time_slot.clone())).copied().unwrap_or(0);
-                            if current_load < max_per_slot as i64 {
-                                Some((id.clone(), code.clone(), current_load))
-                            } else {
-                                None
-                            }
-                        })
+                        available_vehicles
+                            .iter()
+                            .find(|(id, _)| id == vid)
+                            .and_then(|(id, code)| {
+                                let current_load = load_map
+                                    .get(&(id.clone(), time_slot.clone()))
+                                    .copied()
+                                    .unwrap_or(0);
+                                if current_load < max_per_slot as i64 {
+                                    Some((id.clone(), code.clone(), current_load))
+                                } else {
+                                    None
+                                }
+                            })
                     })
                     .min_by_key(|(_, _, load)| *load)
                     .map(|(id, code, _)| (id, code))
@@ -1773,12 +1825,18 @@ where
                 available_vehicles
                     .iter()
                     .filter(|(vid, _)| {
-                        let current_load = load_map.get(&(vid.clone(), time_slot.clone())).copied().unwrap_or(0);
+                        let current_load = load_map
+                            .get(&(vid.clone(), time_slot.clone()))
+                            .copied()
+                            .unwrap_or(0);
                         current_load < max_per_slot as i64
                     })
                     .min_by_key(|(vid, _)| {
                         // 选择总体负载最少的车辆
-                        load_map.get(&(vid.clone(), time_slot.clone())).copied().unwrap_or(0)
+                        load_map
+                            .get(&(vid.clone(), time_slot.clone()))
+                            .copied()
+                            .unwrap_or(0)
                     })
                     .map(|(id, code)| (id.clone(), code.clone()))
             });
@@ -1802,7 +1860,11 @@ where
     let mut assignments: Vec<Value> = Vec::new();
     if dry_run {
         // 统计使用的车辆数
-        let vehicle_count = planned_assignments.iter().map(|(_, vid, _, _)| vid).collect::<std::collections::HashSet<_>>().len();
+        let vehicle_count = planned_assignments
+            .iter()
+            .map(|(_, vid, _, _)| vid)
+            .collect::<std::collections::HashSet<_>>()
+            .len();
         assignments = planned_assignments
             .into_iter()
             .map(|(order_id, vehicle_id, vehicle_code, time_slot)| {

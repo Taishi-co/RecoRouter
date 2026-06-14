@@ -26,12 +26,18 @@ expect(mainSource.includes('aria-expanded={!groupCollapsed}'), 'page group butto
 expect(mainSource.includes('page-menu-state'), 'page group buttons must show a visible expand/collapse state.');
 expect(mainSource.includes('module-pages-collapsed'), 'collapsed modules must hide their page list.');
 expect(mainSource.includes('page-menu-items-collapsed'), 'collapsed page groups must hide their function list.');
+expect(!mainSource.includes('currentPage.description ? <p'), 'page descriptions must not be rendered as guidance copy in the topbar.');
+expect(!mainSource.includes('<p>{page.description}</p>'), 'fallback design pages must not render page descriptions as guidance copy.');
+expect(!mainSource.includes('<p>{description}</p>'), 'panels must not render description paragraphs as guidance copy.');
 expect(mainSource.includes('getInitialAdminRouteState'), 'web admin must restore the active module/page from the current URL.');
 expect(mainSource.includes('writeAdminRouteToLocation'), 'web admin must sync module/page changes into the URL.');
 expect(mainSource.includes("window.addEventListener('hashchange'"), 'web admin must respond to hash navigation.');
 expect(mainSource.includes('normalizeLoadedValue'), 'dashboard loading must normalize malformed API payloads.');
 expect(mainSource.includes('Array.isArray(fallback)'), 'dashboard loading must guard list payloads before rendering.');
 expect(mainSource.includes('AdminMessageHost'), 'web admin must render a global top message host for operation feedback.');
+expect(mainSource.includes('AdminMessageBox'), 'web admin topbar must expose a message history box.');
+expect(mainSource.includes('messageHistory'), 'web admin must keep operation message history.');
+expect(mainSource.includes('setMessageHistory'), 'web admin operation messages must be written to history.');
 expect(mainSource.includes("showMessage('success'"), 'web admin write operations must show success messages.');
 expect(mainSource.includes("showMessage('error'"), 'web admin write operations must show failure messages.');
 expect(mainSource.includes('window.setTimeout(() => dismissMessage(id), 3000)'), 'web admin messages must auto-dismiss after 3 seconds.');
@@ -41,10 +47,20 @@ expect(cssSource.includes('.sidebar-collapsed .design-sidebar'), 'collapsed side
 expect(cssSource.includes('.sidebar-bottom'), 'sidebar bottom area must be styled for account actions.');
 expect(cssSource.includes('.module-pages-collapsed'), 'sidebar module collapse must be styled.');
 expect(cssSource.includes('.page-menu-items-collapsed'), 'sidebar page group collapse must be styled.');
+expect(cssSource.includes('.page-menu-items.page-menu-items-collapsed'), 'page group collapsed style must override page-menu display.');
 expect(cssSource.includes('.page-menu-state'), 'page group expand/collapse state must be styled.');
 expect(cssSource.includes('.admin-message-stack'), 'global operation messages must be fixed at the top of the viewport.');
 expect(cssSource.includes('.admin-message-success'), 'global operation messages must include a success style.');
 expect(cssSource.includes('.admin-message-error'), 'global operation messages must include an error style.');
+expect(cssSource.includes('.message-box-popover'), 'message history box must be styled as a topbar popover.');
+expect(mainSource.includes('HomePreviewShell'), 'home configuration must provide preview modals.');
+expect(mainSource.includes('HomeBannerPreview'), 'home banner configuration must support preview.');
+expect(mainSource.includes('HomeSectionPreview'), 'home section configuration must support preview.');
+expect(mainSource.includes('编辑配送规则'), 'delivery rules must start in read-only mode and expose an edit action.');
+expect(mainSource.includes('保存配送规则'), 'delivery rules edit mode must expose save.');
+expect(mainSource.includes('编辑分账规则'), 'payment split rules must start in read-only mode and expose an edit action.');
+expect(mainSource.includes('保存分账规则'), 'payment split rules edit mode must expose save.');
+expect(mainSource.includes('const cancelEditing = () =>'), 'rule setting edit modes must expose cancel handlers.');
 
 const topbarMatch = mainSource.match(/<header className="topbar design-topbar">[\s\S]*?<\/header>/);
 expect(Boolean(topbarMatch), 'web admin shell must keep a topbar header.');
@@ -56,6 +72,8 @@ if (topbarMatch) {
   expect(!topbar.includes('handleLogout'), 'topbar must not provide a logout button.');
   expect(!topbar.includes('刷新'), 'topbar must not show refresh copy.');
   expect(!topbar.includes('退出'), 'topbar must not show logout copy.');
+  expect(!topbar.includes('status-dot'), 'topbar must not show transient operation status text.');
+  expect(topbar.includes('AdminMessageBox'), 'topbar must show the message history box.');
 }
 
 expect(

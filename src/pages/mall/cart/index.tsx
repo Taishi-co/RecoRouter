@@ -14,6 +14,7 @@ import {
 } from '@/services/mall'
 import {
   MallBrandMark,
+  MALL_SELECTED_ADDRESS_STORAGE_KEY,
   MallLocationStrip,
   MallPage,
   MallPrimaryButton,
@@ -27,10 +28,23 @@ interface StoredUser {
   id?: string
 }
 
+interface CartTouchPoint {
+  clientX: number
+  clientY: number
+}
+
+interface CartSwipeStart {
+  itemId: string
+  x: number
+  y: number
+}
+
 export default function MallCartPage() {
   const [cart, setCart] = useState<MallCart>({ items: [], subtotalCents: 0, selectedCount: 0 })
   const [addresses, setAddresses] = useState<MallAddress[]>([])
   const [selectedAddressId, setSelectedAddressId] = useState('')
+  const [swipedCartItemId, setSwipedCartItemId] = useState('')
+  const [cartSwipeStart, setCartSwipeStart] = useState<CartSwipeStart | null>(null)
   const [loading, setLoading] = useState(false)
   const userId = (Taro.getStorageSync('userInfo') as StoredUser | undefined)?.id || ''
 
@@ -67,11 +81,9 @@ export default function MallCartPage() {
         listMallAddresses(userId),
       ])
       setCart(nextCart)
+      setSwipedCartItemId((current) => nextCart.items.some((item) => item.id === current) ? current : '')
       setAddresses(nextAddresses)
-      const defaultAddress = nextAddresses.find((item) => item.isDefault || item.is_default) || nextAddresses[0]
-      if (defaultAddress) {
-        setSelectedAddressId(defaultAddress.id)
-      }
+      setSelectedAddressId(resolveSelectedAddressId(nextAddresses, selectedAddressId))
     } catch (error) {
       showError(error, '加载失败')
     } finally {
@@ -113,9 +125,70 @@ export default function MallCartPage() {
   const clearMallCart = async () => {
     try {
       await Promise.all(cart.items.map((item) => deleteMallCartItem(item.id)))
+      setSwipedCartItemId('')
       loadData()
     } catch (error) {
       showError(error, '清空失败')
+    }
+  }
+
+  const handleCartItemTouchStart = (itemId: string, event: unknown) => {
+    const touch = getCartTouchPoint(event, 'touches')
+    if (!touch) return
+    if (swipedCartItemId && swipedCartItemId !== itemId) {
+      setSwipedCartItemId('')
+    }
+    setCartSwipeStart({ itemId, x: touch.clientX, y: touch.clientY })
+  }
+
+  const handleCartItemTouchMove = (itemId: string, event: unknown) => {
+    if (!cartSwipeStart || cartSwipeStart.itemId !== itemId) return
+    const touch = getCartTouchPoint(event, 'touches')
+    if (!touch) return
+    const deltaX = touch.clientX - cartSwipeStart.x
+    const deltaY = touch.clientY - cartSwipeStart.y
+    if (Math.abs(deltaY) > Math.abs(deltaX)) return
+    if (deltaX < -32) {
+      setSwipedCartItemId(itemId)
+    }
+    if (deltaX > 24) {
+      setSwipedCartItemId((current) => current === itemId ? '' : current)
+    }
+  }
+
+  const handleCartItemTouchEnd = (itemId: string, event: unknown) => {
+    if (!cartSwipeStart || cartSwipeStart.itemId !== itemId) return
+    const touch = getCartTouchPoint(event, 'changedTouches')
+    if (touch) {
+      const deltaX = touch.clientX - cartSwipeStart.x
+      const deltaY = touch.clientY - cartSwipeStart.y
+      if (Math.abs(deltaX) > Math.abs(deltaY) && deltaX < -48) {
+        setSwipedCartItemId(itemId)
+      }
+      if (deltaX > 24) {
+        setSwipedCartItemId((current) => current === itemId ? '' : current)
+      }
+    }
+    setCartSwipeStart(null)
+  }
+
+  const confirmDeleteCartItem = async (item: MallCartItem) => {
+    const productName = item.product?.name || '该商品'
+    const result = await Taro.showModal({
+      title: '确认删除吗',
+      content: `确定从购物车删除「${productName}」吗？`,
+      confirmText: '删除',
+      cancelText: '取消',
+      confirmColor: '#D14343',
+    })
+    if (!result.confirm) return
+    try {
+      await deleteMallCartItem(item.id)
+      setSwipedCartItemId('')
+      await loadData()
+      Taro.showToast({ title: '已删除', icon: 'success' })
+    } catch (error) {
+      showError(error, '删除失败')
     }
   }
 
@@ -124,7 +197,18 @@ export default function MallCartPage() {
       Taro.showToast({ title: '请选择商品', icon: 'none' })
       return
     }
+    if (!selectedAddress) {
+      Taro.showToast({ title: '请选择送货地址', icon: 'none' })
+      Taro.navigateTo({ url: '/pages/mall/address/index?select=1' })
+      return
+    }
+    if (!hasAddressLocation(selectedAddress)) {
+      Taro.showToast({ title: '请用地图补充地址定位', icon: 'none' })
+      Taro.navigateTo({ url: '/pages/mall/address/index?select=1' })
+      return
+    }
     try {
+      Taro.setStorageSync(MALL_SELECTED_ADDRESS_STORAGE_KEY, selectedAddress.id)
       const checkout = await createMallCheckout({
         userId,
         source: 'cart',
@@ -177,7 +261,7 @@ export default function MallCartPage() {
         <MallLocationStrip
           title={selectedAddress?.addressLabel || selectedAddress?.address_name || '请选择送货地址'}
           subtitle={selectedAddress?.addressText || selectedAddress?.address || '下单前需要填写收货地址'}
-          onClick={() => Taro.navigateTo({ url: '/pages/mall/address/index' })}
+          onClick={() => Taro.navigateTo({ url: '/pages/mall/address/index?select=1' })}
         />
       </View>
 
@@ -210,36 +294,48 @@ export default function MallCartPage() {
             <Text>次日达</Text>
           </View>
           {cart.items.map((item) => (
-            <View key={item.id} className="mall-v7-cart-item">
-              <View className="mall-v7-cart-check" onClick={() => toggleItem(item)}>
-                {item.selected ? <Check size={16} color="#FFFFFF" /> : null}
+            <View
+              key={item.id}
+              className="mall-v7-cart-swipe"
+              onTouchStart={(event) => handleCartItemTouchStart(item.id, event)}
+              onTouchMove={(event) => handleCartItemTouchMove(item.id, event)}
+              onTouchEnd={(event) => handleCartItemTouchEnd(item.id, event)}
+            >
+              <View className="mall-v7-cart-delete-action" onClick={() => confirmDeleteCartItem(item)}>
+                <Trash2 size={18} color="#FFFFFF" />
+                <Text>删除</Text>
               </View>
-              <View className="mall-v7-cart-thumb">
-                <MallProductThumb product={item.product} />
-              </View>
-              <View className="mall-v7-cart-copy">
-                <Text className="mall-v7-product-name">{item.product?.name || '商品'}</Text>
-                <Text className="mall-v7-product-subtitle">
-                  {item.variantName || item.product?.specification || item.product?.subtitle || '基地直采 · 今日锁鲜'}
-                </Text>
-                {item.pricingMode === 'weighed' ? (
+              <View className={swipedCartItemId === item.id ? 'mall-v7-cart-item mall-v7-cart-item-swiped' : 'mall-v7-cart-item'}>
+                <View className="mall-v7-cart-check" onClick={() => toggleItem(item)}>
+                  {item.selected ? <Check size={16} color="#FFFFFF" /> : null}
+                </View>
+                <View className="mall-v7-cart-thumb">
+                  <MallProductThumb product={item.product} />
+                </View>
+                <View className="mall-v7-cart-copy">
+                  <Text className="mall-v7-product-name">{item.product?.name || '商品'}</Text>
                   <Text className="mall-v7-product-subtitle">
-                    预估 {mallWeightText(item.estimatedWeightGrams, item.weightUnitGrams || 500, item.weightUnitLabel || '斤')}，称重后确认金额
+                    {item.variantName || item.product?.specification || item.product?.subtitle || '基地直采 · 今日锁鲜'}
                   </Text>
-                ) : null}
-                <View className="mall-v7-unit-row">
-                  <Text>满减前 {mallYuan(item.originalUnitPriceCents ?? item.product?.priceCents ?? 0)}</Text>
-                  <Text>满减后 {mallYuan(item.discountedUnitPriceCents ?? item.product?.priceCents ?? 0)}</Text>
+                  {item.pricingMode === 'weighed' ? (
+                    <Text className="mall-v7-product-subtitle">
+                      预估 {mallWeightText(item.estimatedWeightGrams, item.weightUnitGrams || 500, item.weightUnitLabel || '斤')}，称重后确认金额
+                    </Text>
+                  ) : null}
+                  <View className="mall-v7-unit-row">
+                    <Text>满减前 {mallYuan(item.originalUnitPriceCents ?? item.product?.priceCents ?? 0)}</Text>
+                    <Text>满减后 {mallYuan(item.discountedUnitPriceCents ?? item.product?.priceCents ?? 0)}</Text>
+                  </View>
+                  <View className="mall-v7-unit-row mall-v7-unit-row-warm">
+                    <Text>优惠 {mallYuan(item.lineDiscountCents || 0)}</Text>
+                    <Text>积分最高抵 {mallYuan(item.pointsDeductibleCents || 0)}</Text>
+                  </View>
                 </View>
-                <View className="mall-v7-unit-row mall-v7-unit-row-warm">
-                  <Text>优惠 {mallYuan(item.lineDiscountCents || 0)}</Text>
-                  <Text>积分最高抵 {mallYuan(item.pointsDeductibleCents || 0)}</Text>
+                <View className="mall-stepper">
+                  <Text className="mall-stepper-action mall-stepper-action-muted" onClick={() => changeQuantity(item.id, item.quantity - 1)}>−</Text>
+                  <Text className="mall-stepper-value">{item.quantity}</Text>
+                  <Text className="mall-stepper-action" onClick={() => changeQuantity(item.id, item.quantity + 1)}>＋</Text>
                 </View>
-              </View>
-              <View className="mall-stepper">
-                <Text className="mall-stepper-action mall-stepper-action-muted" onClick={() => changeQuantity(item.id, item.quantity - 1)}>−</Text>
-                <Text className="mall-stepper-value">{item.quantity}</Text>
-                <Text className="mall-stepper-action" onClick={() => changeQuantity(item.id, item.quantity + 1)}>＋</Text>
               </View>
             </View>
           ))}
@@ -273,4 +369,29 @@ function showError(error: unknown, fallback: string) {
     title: error instanceof Error ? error.message : fallback,
     icon: 'none',
   })
+}
+
+function resolveSelectedAddressId(addresses: MallAddress[], currentAddressId: string) {
+  const storedAddressId = String(Taro.getStorageSync(MALL_SELECTED_ADDRESS_STORAGE_KEY) || '')
+  const matchedAddress = addresses.find((item) => item.id === currentAddressId)
+    || addresses.find((item) => item.id === storedAddressId)
+    || addresses.find((item) => item.isDefault || item.is_default)
+    || addresses[0]
+  return matchedAddress?.id || ''
+}
+
+function hasAddressLocation(address: MallAddress) {
+  return Number.isFinite(Number(address.latitude)) && Number.isFinite(Number(address.longitude))
+}
+
+function getCartTouchPoint(event: unknown, key: 'touches' | 'changedTouches') {
+  const touchEvent = event as {
+    touches?: CartTouchPoint[]
+    changedTouches?: CartTouchPoint[]
+    detail?: {
+      touches?: CartTouchPoint[]
+      changedTouches?: CartTouchPoint[]
+    }
+  }
+  return touchEvent[key]?.[0] || touchEvent.detail?.[key]?.[0]
 }

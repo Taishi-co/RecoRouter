@@ -18,12 +18,20 @@ if (!/['"]pages\/mall\/auth\/index['"]/.test(appConfigSource)) {
   throw new Error('Mall auth page must be registered in src/app.config.ts')
 }
 
-if (!/\/api\/auth\/login/.test(authPageSource) || !/\/api\/auth\/register/.test(authPageSource)) {
-  throw new Error('Mall auth page must call the existing backend login and register APIs')
+if (/\/api\/auth\/(?:login|register|captcha|wechat-login)/.test(authPageSource)) {
+  throw new Error('Mall auth page must not call the vehicle-side /api/auth APIs')
 }
 
-if (!/\/api\/auth\/captcha/.test(authPageSource)) {
-  throw new Error('Mall registration must use the existing graphical captcha API')
+if (!/mallAuthApiBase\s*=\s*['"]\/api\/mall\/auth['"]/.test(authPageSource)) {
+  throw new Error('Mall auth page must define the mall auth API base path')
+}
+
+if (!/\$\{mallAuthApiBase\}\/login/.test(authPageSource) || !/\$\{mallAuthApiBase\}\/register/.test(authPageSource)) {
+  throw new Error('Mall auth page must call the mall login and register APIs')
+}
+
+if (!/\$\{mallAuthApiBase\}\/captcha/.test(authPageSource)) {
+  throw new Error('Mall registration must use the mall graphical captcha API')
 }
 
 if (!/role:\s*registerRole/.test(authPageSource) || !/['"]customer['"]/.test(authPageSource) || !/['"]group_leader['"]/.test(authPageSource)) {

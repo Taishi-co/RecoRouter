@@ -18,6 +18,7 @@ pub struct AppState<S>
 where
     S: Storage,
 {
+    pub service: ApiService,
     pub config: Config,
     pub db: PgPool,
     pub storage: S,
@@ -65,6 +66,7 @@ where
 {
     let upload_dir = config.local_upload_dir.clone();
     let state = AppState {
+        service,
         config,
         db,
         storage,
@@ -156,6 +158,7 @@ where
     S: Storage + Send + Sync + 'static,
 {
     router
+        .merge(auth::mall_router::<S>())
         .merge(mall::router::<S>())
         .merge(payments::router::<S>())
         // trips 路由已在 vehicle_routes 中添加，避免重复注册

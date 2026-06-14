@@ -252,7 +252,7 @@ where
 
     let client_payload = match provider {
         PaymentProvider::Wechat => {
-            let config = WechatPayConfig::from_env()?;
+            let config = WechatPayConfig::from_env_for_service(state.service)?;
             let openid = resolve_wechat_openid(&config, &body).await?;
             let prepay_id = wechat_create_jsapi_prepay(
                 &config,
@@ -322,7 +322,7 @@ where
 
     match provider {
         PaymentProvider::Wechat => {
-            let config = WechatPayConfig::from_env()?;
+            let config = WechatPayConfig::from_env_for_service(state.service)?;
             let state_result = wechat_query_order(&config, &payment.out_trade_no).await?;
             if state_result.trade_state == "SUCCESS" {
                 mark_payment_success(
@@ -744,8 +744,8 @@ fn new_out_trade_no() -> String {
 }
 
 impl WechatPayConfig {
-    fn from_env() -> ApiResult<Self> {
-        let merchant = WechatPayMerchantConfig::from_env()?;
+    fn from_env_for_service(service: crate::config::ApiService) -> ApiResult<Self> {
+        let merchant = WechatPayMerchantConfig::from_env_for_service(service)?;
         let notify_url = read_trimmed("WECHAT_PAY_NOTIFY_URL")
             .or_else(|| {
                 read_trimmed("PUBLIC_BASE_URL").map(|base| {
