@@ -10101,8 +10101,8 @@ function App() {
     await runAction('智能调度', async () => {
       const res = await apiPost('/api/admin/dispatch/auto-assign', { orderIds: orderIds.length > 0 ? orderIds : undefined, maxOrdersPerSlot, dryRun });
       if (res && typeof res === 'object' && 'assigned' in res) {
-        const data = res as { assigned: number; details?: Array<{ orderId: string; vehicleCode: string; timeSlot: string }> };
-        showMessage('success', `已分配 ${data.assigned} 个订单${dryRun ? '（预览模式）' : ''}`);
+        const assignResult = res as { assigned: number; details?: Array<{ orderId: string; vehicleCode: string; timeSlot: string }> };
+        showMessage('success', `已分配 ${assignResult.assigned} 个订单${dryRun ? '（预览模式）' : ''}`);
       }
       await reload();
     });
