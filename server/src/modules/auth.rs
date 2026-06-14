@@ -351,7 +351,7 @@ where
     S: Storage,
 {
     let role = normalize_mall_auth_role(body.role.as_deref())?;
-    let miniapp_config = WechatMiniappConfig::from_env()?;
+    let miniapp_config = WechatMiniappConfig::from_env_for_service(state.service)?;
     let session = exchange_miniapp_login_session(&miniapp_config, &body.login_code).await?;
     let display_name = body
         .name

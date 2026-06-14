@@ -18,6 +18,7 @@ pub struct AppState<S>
 where
     S: Storage,
 {
+    pub service: ApiService,
     pub config: Config,
     pub db: PgPool,
     pub storage: S,
@@ -65,6 +66,7 @@ where
 {
     let upload_dir = config.local_upload_dir.clone();
     let state = AppState {
+        service,
         config,
         db,
         storage,

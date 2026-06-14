@@ -12,7 +12,8 @@ const assertions = [
     message: 'Auth router must expose POST /api/auth/wechat-login',
   },
   {
-    ok: /WechatMiniappConfig::from_env\(\)/.test(authModule) && !/wechat_login[\s\S]{0,900}WechatPayMerchantConfig::from_env\(\)/.test(authModule),
+    ok: /WechatMiniappConfig::from_env(?:_for_service)?\(/.test(authModule)
+      && !/wechat_login[\s\S]{0,900}WechatPayMerchantConfig::from_env(?:_for_service)?\(/.test(authModule),
     message: 'Wechat auth login must only require miniapp appid/secret, not full payment merchant config',
   },
   {

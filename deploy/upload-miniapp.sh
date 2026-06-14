@@ -3,6 +3,7 @@ set -euo pipefail
 
 PLATFORM="${MINIAPP_PLATFORM:-weapp}"
 DOMAIN="${PROJECT_DOMAIN:-https://car.shcxyz.site}"
+APP_PROFILE="${RECO_APP_PROFILE:-${TARO_APP_PROFILE:-all}}"
 APP_ROOT="${APP_ROOT:-/opt/recorouter-miniapp}"
 RELEASE_TAR="${1:-/tmp/recorouter-miniapp-source.tar.gz}"
 RELEASE_ID="${RELEASE_ID:-$(date +%Y%m%d%H%M%S)}"
@@ -45,6 +46,8 @@ case "$PLATFORM" in
     cat >.env.local <<EOF
 PROJECT_DOMAIN=$DOMAIN
 TARO_APP_WEAPP_APPID=$TARO_APP_WEAPP_APPID
+TARO_APP_WEAPP_MALL_APPID=${TARO_APP_WEAPP_MALL_APPID:-$TARO_APP_WEAPP_APPID}
+RECO_APP_PROFILE=$APP_PROFILE
 EOF
 
     pnpm install --frozen-lockfile
@@ -58,7 +61,7 @@ NODE
     export MINIAPP_UPLOAD_VERSION="${MINIAPP_UPLOAD_VERSION:-$DEFAULT_VERSION}"
     export MINIAPP_UPLOAD_DESC="${MINIAPP_UPLOAD_DESC:-RecoRouter weapp ${MINIAPP_UPLOAD_VERSION}}"
 
-    pnpm exec taro build --type weapp
+    RECO_APP_PROFILE="$APP_PROFILE" pnpm exec taro build --type weapp
 
     if command -v rg >/dev/null 2>&1; then
       rg -q "$DOMAIN" dist
@@ -68,7 +71,7 @@ NODE
       ! grep -R 'car\.recolink\.cn' dist >/dev/null
     fi
 
-    pnpm exec taro upload --type weapp
+    RECO_APP_PROFILE="$APP_PROFILE" pnpm exec taro upload --type weapp
     ;;
   tt)
     echo "tt upload is not configured yet. Add TARO_APP_TT_EMAIL/TARO_APP_TT_PASSWORD and extend this script when Douyin is ready." >&2

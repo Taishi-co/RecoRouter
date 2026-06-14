@@ -178,8 +178,8 @@ pub fn service_from_env_key(
     }
 }
 
-pub fn read_trimmed(key: &'static str) -> Option<String> {
-    env::var(key).ok().and_then(|value| {
+pub fn read_trimmed(key: impl AsRef<str>) -> Option<String> {
+    env::var(key.as_ref()).ok().and_then(|value| {
         let trimmed = value.trim();
         if trimmed.is_empty() {
             None

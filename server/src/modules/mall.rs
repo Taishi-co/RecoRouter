@@ -769,7 +769,11 @@ struct ProductMutationRequest {
     image_url: Option<String>,
     images: Option<Vec<String>>,
     variants: Option<Vec<ProductVariantMutation>>,
-    #[serde(alias = "procurement_buyer_ids", alias = "buyer_ids", alias = "supplier_ids")]
+    #[serde(
+        alias = "procurement_buyer_ids",
+        alias = "buyer_ids",
+        alias = "supplier_ids"
+    )]
     procurement_buyer_ids: Option<Vec<String>>,
     #[serde(alias = "qualification_reports", alias = "quality_reports")]
     qualification_reports: Option<Vec<ProductQualificationReportMutation>>,
@@ -1839,7 +1843,10 @@ where
     }
     builder.push(" ORDER BY updated_at DESC, created_at DESC LIMIT 200");
 
-    let mut buyers = builder.build_query_scalar::<Value>().fetch_all(&state.db).await?;
+    let mut buyers = builder
+        .build_query_scalar::<Value>()
+        .fetch_all(&state.db)
+        .await?;
     resolve_mall_image_urls_in_list(&state.storage, &mut buyers).await?;
     Ok(ok("查询成功", buyers))
 }
@@ -3071,10 +3078,11 @@ where
         }
     });
 
-    let waypoints_json = body.waypoints.as_ref().map(|waypoints| {
-        serde_json::to_value(waypoints).unwrap_or(json!([]))
-    });
-    
+    let waypoints_json = body
+        .waypoints
+        .as_ref()
+        .map(|waypoints| serde_json::to_value(waypoints).unwrap_or(json!([])));
+
     let order_id: String = sqlx::query_scalar(
         r#"
         INSERT INTO mall_orders (
@@ -6712,7 +6720,10 @@ fn normalize_qualification_reports(
             .ok_or_else(|| ApiError::BadRequest("资质报告名称不能为空".to_string()))?;
         let report_url = normalize_product_image_value(report.report_url.as_deref())
             .ok_or_else(|| ApiError::BadRequest("资质报告文件不能为空".to_string()))?;
-        let status = report.status.clone().unwrap_or_else(|| "active".to_string());
+        let status = report
+            .status
+            .clone()
+            .unwrap_or_else(|| "active".to_string());
         validate_qualification_report_status(&status)?;
 
         normalized.push(NormalizedQualificationReport {
@@ -8662,9 +8673,8 @@ fn calculate_delivery_distance_km(
         .range_radius_km
         .map(|radius_km| radius_km > 0.0 && distance_km > radius_km)
         .unwrap_or(false);
-    let outside_polygon =
-        !range_rule.range_polygon.is_empty()
-            && !point_in_delivery_polygon(latitude, longitude, &range_rule.range_polygon);
+    let outside_polygon = !range_rule.range_polygon.is_empty()
+        && !point_in_delivery_polygon(latitude, longitude, &range_rule.range_polygon);
     if range_rule.out_of_range_blocked && (outside_radius || outside_polygon) {
         return Err(ApiError::BadRequest(format!(
             "超出配送范围，当前距离约{:.1}公里",

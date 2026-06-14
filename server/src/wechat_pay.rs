@@ -20,7 +20,7 @@ use serde::{de::DeserializeOwned, Deserialize};
 use sha2::Sha256;
 
 use crate::{
-    config::read_trimmed,
+    config::{read_trimmed, ApiService},
     error::{ApiError, ApiResult},
 };
 
@@ -64,7 +64,13 @@ pub struct WechatNotifyResource {
 
 impl WechatPayMerchantConfig {
     pub fn from_env() -> ApiResult<Self> {
-        let app_id = read_trimmed("WECHAT_PAY_APPID")
+        Self::from_env_for_service(ApiService::Legacy)
+    }
+
+    pub fn from_env_for_service(service: ApiService) -> ApiResult<Self> {
+        let app_id = read_service_trimmed(service, "WECHAT_PAY_APPID")
+            .or_else(|| read_service_trimmed(service, "WECHAT_MINIAPP_APPID"))
+            .or_else(|| read_trimmed("WECHAT_PAY_APPID"))
             .or_else(|| read_trimmed("WECHAT_MINIAPP_APPID"))
             .ok_or_else(|| ApiError::BadRequest("缺少 WECHAT_PAY_APPID 配置".to_string()))?;
         let mch_id =
@@ -79,17 +85,25 @@ impl WechatPayMerchantConfig {
             mch_id,
             mch_serial_no,
             private_key,
-            miniapp_secret: read_trimmed("WECHAT_MINIAPP_SECRET"),
+            miniapp_secret: read_service_trimmed(service, "WECHAT_MINIAPP_SECRET")
+                .or_else(|| read_trimmed("WECHAT_MINIAPP_SECRET")),
         })
     }
 }
 
 impl WechatMiniappConfig {
     pub fn from_env() -> ApiResult<Self> {
-        let app_id = read_trimmed("WECHAT_MINIAPP_APPID")
+        Self::from_env_for_service(ApiService::Legacy)
+    }
+
+    pub fn from_env_for_service(service: ApiService) -> ApiResult<Self> {
+        let app_id = read_service_trimmed(service, "WECHAT_MINIAPP_APPID")
+            .or_else(|| read_service_trimmed(service, "WECHAT_PAY_APPID"))
+            .or_else(|| read_trimmed("WECHAT_MINIAPP_APPID"))
             .or_else(|| read_trimmed("WECHAT_PAY_APPID"))
             .ok_or_else(|| ApiError::BadRequest("缺少 WECHAT_MINIAPP_APPID 配置".to_string()))?;
-        let miniapp_secret = read_trimmed("WECHAT_MINIAPP_SECRET")
+        let miniapp_secret = read_service_trimmed(service, "WECHAT_MINIAPP_SECRET")
+            .or_else(|| read_trimmed("WECHAT_MINIAPP_SECRET"))
             .ok_or_else(|| ApiError::BadRequest("缺少 WECHAT_MINIAPP_SECRET 配置".to_string()))?;
 
         Ok(Self {
@@ -109,6 +123,16 @@ impl WechatMiniappConfig {
             miniapp_secret,
         })
     }
+}
+
+fn read_service_trimmed(service: ApiService, key: &'static str) -> Option<String> {
+    let prefix = match service {
+        ApiService::Legacy => return None,
+        ApiService::Vehicle => "VEHICLE",
+        ApiService::Mall => "MALL",
+        ApiService::Platform => "PLATFORM",
+    };
+    read_trimmed(&format!("{prefix}_{key}"))
 }
 
 pub async fn exchange_miniapp_login_code(

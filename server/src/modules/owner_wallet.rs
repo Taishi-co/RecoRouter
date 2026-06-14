@@ -243,7 +243,7 @@ async fn bind_wechat<S>(
 where
     S: Storage,
 {
-    let merchant = WechatPayMerchantConfig::from_env()?;
+    let merchant = WechatPayMerchantConfig::from_env_for_service(state.service)?;
     let openid = exchange_miniapp_login_code(&merchant, &body.login_code).await?;
 
     sqlx::query(

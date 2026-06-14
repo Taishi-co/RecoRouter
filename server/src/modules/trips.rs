@@ -702,8 +702,14 @@ where
         // If there are waypoints, create stops for each waypoint first
         if let Some(waypoints) = order.get("waypoints").and_then(Value::as_array) {
             for (_wp_idx, wp) in waypoints.iter().enumerate() {
-                let wp_lat = wp.get("latitude").and_then(|v| v.as_str()).and_then(|s| s.parse::<f64>().ok());
-                let wp_lng = wp.get("longitude").and_then(|v| v.as_str()).and_then(|s| s.parse::<f64>().ok());
+                let wp_lat = wp
+                    .get("latitude")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<f64>().ok());
+                let wp_lng = wp
+                    .get("longitude")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<f64>().ok());
                 let wp_address = wp.get("address").and_then(Value::as_str);
                 let wp_name = wp.get("name").and_then(Value::as_str);
 
