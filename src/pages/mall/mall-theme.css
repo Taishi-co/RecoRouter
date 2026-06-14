@@ -354,13 +354,13 @@ body.reco-mall-h5 .taro_page {
 
 .mall-address-form {
   display: grid;
-  gap: 10PX;
+  gap: 8PX;
   margin-top: 12PX;
 }
 
 .mall-address-location-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 9PX;
   margin-top: 10PX;
 }
@@ -399,6 +399,19 @@ body.reco-mall-h5 .taro_page {
   color: #263225;
   font-size: 12PX;
   font-weight: 900;
+}
+
+.mall-field-label-row {
+  display: flex;
+  align-items: center;
+  gap: 4PX;
+  color: #263225;
+  font-size: 12PX;
+  font-weight: 900;
+}
+
+.mall-required {
+  color: #ff8a1f;
 }
 
 .mall-form-input {
@@ -2065,6 +2078,9 @@ body.reco-mall-h5 .taro_page {
 .mall-v7-page-head {
   justify-content: space-between;
   gap: 12PX;
+  min-height: 44PX;
+  padding-right: 92PX;
+  box-sizing: border-box;
 }
 
 .mall-v7-page-head > .mall-v7-head-brand {
@@ -2098,10 +2114,45 @@ body.reco-mall-h5 .taro_page {
   position: sticky;
   top: var(--mall-sticky-top, 0PX);
   z-index: 5;
-  margin: -22PX -18PX 14PX;
-  padding: 12PX 18PX 10PX;
+  margin: -6PX -18PX 14PX;
+  padding: 0 18PX 10PX;
   background: #fbfaf6;
   box-sizing: border-box;
+}
+
+.mall-v7-home-topbar {
+  min-height: 42PX;
+  padding-right: 92PX;
+  display: flex;
+  align-items: center;
+  gap: 10PX;
+  box-sizing: border-box;
+}
+
+.mall-v7-home-brand {
+  color: #1f2d1f;
+  font-size: 23PX;
+  line-height: 1.1;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+.mall-v7-home-location {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4PX;
+  color: #1f2d1f;
+  font-size: 13PX;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.mall-v7-home-location text,
+.mall-v7-home-location span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mall-v7-banner-swiper {
@@ -3143,6 +3194,7 @@ body.reco-mall-h5 .taro_page {
   align-items: center;
   gap: 13PX;
   box-sizing: border-box;
+  position: relative;
 }
 
 .mall-v7-profile-hero .mall-profile-avatar {
@@ -3183,6 +3235,73 @@ body.reco-mall-h5 .taro_page {
   color: #ffffff;
   font-size: 11PX;
   font-weight: 900;
+}
+
+.mall-profile-edit-button {
+  position: absolute;
+  top: 12PX;
+  right: 12PX;
+  height: 28PX;
+  padding: 0 8PX;
+  border-radius: 7PX;
+  background: #ff9f43;
+  color: #1d2f21;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4PX;
+  font-size: 11PX;
+  font-weight: 900;
+}
+
+.mall-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(20, 31, 22, 0.34);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16PX;
+  box-sizing: border-box;
+}
+
+.mall-profile-editor {
+  width: 100%;
+  max-width: 430PX;
+  padding: 16PX;
+  border-radius: 14PX 14PX 10PX 10PX;
+  background: #ffffff;
+  box-sizing: border-box;
+  box-shadow: 0 -10PX 30PX rgba(31, 45, 31, 0.16);
+}
+
+.mall-profile-editor-actions {
+  margin-top: 16PX;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10PX;
+}
+
+.mall-profile-editor-cancel,
+.mall-profile-editor-save {
+  height: 42PX;
+  border-radius: 8PX;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14PX;
+  font-weight: 900;
+}
+
+.mall-profile-editor-cancel {
+  background: #f4f7f1;
+  color: #657160;
+}
+
+.mall-profile-editor-save {
+  background: #2f7e43;
+  color: #ffffff;
 }
 
 .mall-v7-order-entry-grid {

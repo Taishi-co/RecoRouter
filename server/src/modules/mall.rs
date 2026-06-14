@@ -51,7 +51,10 @@ where
         )
         .route("/api/mall/checkouts", post(create_mall_checkout::<S>))
         .route("/api/mall/checkouts/:id", get(get_mall_checkout::<S>))
-        .route("/api/mall/me/profile", get(get_mall_profile::<S>))
+        .route(
+            "/api/mall/me/profile",
+            get(get_mall_profile::<S>).put(update_mall_profile::<S>),
+        )
         .route(
             "/api/mall/group-leader/workbench",
             get(get_group_leader_workbench::<S>),
@@ -371,6 +374,16 @@ struct UserQuery {
     #[serde(alias = "user_id")]
     user_id: Option<String>,
     status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateMallProfileRequest {
+    #[serde(alias = "user_id")]
+    user_id: Option<String>,
+    name: Option<String>,
+    nickname: Option<String>,
+    phone: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -2794,6 +2807,53 @@ where
     ))
 }
 
+async fn update_mall_profile<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<UpdateMallProfileRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let user_id = require_non_empty(body.user_id, "用户ID不能为空")?;
+    let nickname = non_empty(body.nickname).or_else(|| non_empty(body.name));
+    let phone = non_empty(body.phone);
+
+    if nickname.is_none() && phone.is_none() {
+        return Err(ApiError::BadRequest("请填写要保存的资料".to_string()));
+    }
+    if let Some(phone) = phone.as_deref() {
+        validate_mainland_phone(phone)?;
+    }
+
+    let result = sqlx::query(
+        r#"
+        UPDATE users
+        SET phone = COALESCE($2, phone),
+            nickname = COALESCE($3, nickname),
+            name = COALESCE($4, name),
+            updated_at = now()
+        WHERE id = $1
+        "#,
+    )
+    .bind(&user_id)
+    .bind(phone.as_deref())
+    .bind(nickname.as_deref())
+    .bind(nickname.as_deref())
+    .execute(&state.db)
+    .await;
+
+    match result {
+        Ok(result) if result.rows_affected() > 0 => {}
+        Ok(_) => return Err(ApiError::NotFound("用户不存在".to_string())),
+        Err(sqlx::Error::Database(err)) if err.constraint() == Some("users_phone_key") => {
+            return Err(ApiError::BadRequest("手机号已被其他账号绑定".to_string()));
+        }
+        Err(err) => return Err(err.into()),
+    }
+
+    Ok(ok("保存成功", fetch_member_profile(&state.db, &user_id).await?))
+}
+
 async fn get_group_leader_workbench<S>(
     State(state): State<AppState<S>>,
     Query(query): Query<UserQuery>,
@@ -3151,7 +3211,7 @@ where
               pricing_mode, estimated_weight_grams, weight_unit, weight_unit_label, weight_unit_grams,
               weight_tolerance_bps, weight_adjustment_status
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
             "#,
         )
         .bind(&order_id)
@@ -10166,6 +10226,19 @@ fn validate_required(value: &str, message: &str) -> ApiResult<()> {
         return Err(ApiError::BadRequest(message.to_string()));
     }
     Ok(())
+}
+
+fn validate_mainland_phone(phone: &str) -> ApiResult<()> {
+    let bytes = phone.as_bytes();
+    let valid = bytes.len() == 11
+        && bytes[0] == b'1'
+        && (b'3'..=b'9').contains(&bytes[1])
+        && bytes.iter().all(u8::is_ascii_digit);
+    if valid {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest("手机号格式不正确".to_string()))
+    }
 }
 
 fn require_non_empty(value: Option<String>, message: &str) -> ApiResult<String> {

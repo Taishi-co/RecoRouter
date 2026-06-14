@@ -533,6 +533,7 @@ export interface MallProfile {
   member?: {
     id?: string
     name?: string
+    nickname?: string
     username?: string
     phone?: string
     role?: string
@@ -566,6 +567,13 @@ export interface MallProfile {
     nearestExpiry?: string | null
   }
   groupLeader?: Record<string, unknown> | null
+}
+
+export interface UpdateMallProfileInput {
+  userId: string
+  nickname?: string
+  name?: string
+  phone?: string
 }
 
 export interface MallGroupLeaderCenter {
@@ -1131,6 +1139,10 @@ export async function listMallCommunityPosts(params: {
 
 export async function getMallProfile(userId: string): Promise<MallProfile> {
   return apiGet('/api/mall/me/profile', { userId })
+}
+
+export async function updateMallProfile(data: UpdateMallProfileInput): Promise<MallProfile['member']> {
+  return apiPut('/api/mall/me/profile', data)
 }
 
 export async function getMallProfileSafe(userId: string): Promise<MallProfile> {

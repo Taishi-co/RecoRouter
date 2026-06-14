@@ -88,19 +88,6 @@ export default function MallCategoryPage() {
     loadProducts({ nextPage: 1, append: false })
   }, [activeCode, activityType, sort])
 
-  const activeCategory = useMemo(
-    () => categoryOptions.find((category) => category.code === activeCode) || categoryOptions[0],
-    [activeCode, categoryOptions],
-  )
-  const activeActivity = useMemo(
-    () => activityFilters.find((activity) => activity.value === activityType) || activityFilters[0],
-    [activityType],
-  )
-  const activeFilterLabel = useMemo(() => {
-    const labels = [activeCategory.label]
-    if (activeActivity.value) labels.push(activeActivity.label)
-    return labels.join(' · ')
-  }, [activeActivity, activeCategory])
   const sortIndex = useMemo(() => {
     const index = sortOptions.findIndex((option) => option.value === sort)
     return index >= 0 ? index : 0
@@ -230,9 +217,6 @@ export default function MallCategoryPage() {
             <Text className="mall-v7-kicker">叁友甄选</Text>
             <Text className="mall-page-title">商品列表</Text>
           </View>
-        </View>
-        <View className="mall-v7-head-pill">
-          <Text>{activeFilterLabel}</Text>
         </View>
       </View>
 

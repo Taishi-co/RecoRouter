@@ -207,6 +207,10 @@ async fn post_json(app: &Router, uri: &str, body: Value) -> (StatusCode, Value) 
     request_json(app, "POST", uri, Some(body)).await
 }
 
+async fn put_json(app: &Router, uri: &str, body: Value) -> (StatusCode, Value) {
+    request_json(app, "PUT", uri, Some(body)).await
+}
+
 async fn delete_json(app: &Router, uri: &str) -> (StatusCode, Value) {
     request_json(app, "DELETE", uri, None).await
 }
@@ -279,6 +283,67 @@ async fn insert_session(pool: &PgPool, user_id: &str, token: &str) -> String {
     .expect("session should be inserted");
 
     token.to_string()
+}
+
+#[tokio::test]
+async fn mall_profile_update_saves_nickname_and_validates_phone() {
+    let Some(context) = TestContext::new().await else {
+        return;
+    };
+
+    let user_id = insert_user(&context.pool, "13950004101", "customer", "微信用户旧名").await;
+    let other_id = insert_user(&context.pool, "13950004102", "customer", "其他用户").await;
+
+    let (status, body) = put_json(
+        &context.app,
+        "/api/mall/me/profile",
+        json!({
+            "userId": user_id,
+            "nickname": "叁友会员A",
+            "phone": "13950004103"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["data"]["id"], user_id);
+    assert_eq!(body["data"]["nickname"], "叁友会员A");
+    assert_eq!(body["data"]["name"], "叁友会员A");
+    assert_eq!(body["data"]["phone"], "13950004103");
+
+    let (profile_status, profile_body) = get_json(
+        &context.app,
+        &format!("/api/mall/me/profile?userId={user_id}"),
+    )
+    .await;
+    assert_eq!(profile_status, StatusCode::OK);
+    assert_eq!(profile_body["data"]["member"]["nickname"], "叁友会员A");
+    assert_eq!(profile_body["data"]["member"]["phone"], "13950004103");
+
+    let (duplicate_status, duplicate_body) = put_json(
+        &context.app,
+        "/api/mall/me/profile",
+        json!({
+            "userId": other_id,
+            "phone": "13950004103"
+        }),
+    )
+    .await;
+    assert_eq!(duplicate_status, StatusCode::BAD_REQUEST);
+    assert_eq!(duplicate_body["message"], "手机号已被其他账号绑定");
+
+    let (invalid_status, invalid_body) = put_json(
+        &context.app,
+        "/api/mall/me/profile",
+        json!({
+            "userId": user_id,
+            "phone": "12345"
+        }),
+    )
+    .await;
+    assert_eq!(invalid_status, StatusCode::BAD_REQUEST);
+    assert_eq!(invalid_body["message"], "手机号格式不正确");
+
+    context.cleanup().await;
 }
 
 #[tokio::test]

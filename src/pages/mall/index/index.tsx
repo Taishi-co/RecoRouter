@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Image, Swiper, SwiperItem, Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { Bell, Clock3, Flame, Sparkles } from 'lucide-react-taro'
+import { Bell, Clock3, Flame, MapPin, Sparkles } from 'lucide-react-taro'
 import {
   addMallCartItem,
   listMallCategories,
@@ -216,7 +216,13 @@ export default function MallHome() {
 
   return (
     <MallPage active="home" homeTightTop>
-      <MallHomeFixedHeader banners={banners} announcements={announcements} primaryImageUrl={primaryBannerImageUrl} onBannerTap={openBanner} />
+      <MallHomeFixedHeader
+        banners={banners}
+        announcements={announcements}
+        primaryImageUrl={primaryBannerImageUrl}
+        onBannerTap={openBanner}
+        onLocationTap={() => Taro.navigateTo({ url: '/pages/mall/address/index?select=1' })}
+      />
 
       {homePromotionVenues.length ? (
         <View className="mall-v7-section mall-v7-promotion-venues">
@@ -353,14 +359,23 @@ function MallHomeFixedHeader({
   announcements,
   primaryImageUrl,
   onBannerTap,
+  onLocationTap,
 }: {
   banners: MallHomeBanner[]
   announcements: string[]
   primaryImageUrl: string
   onBannerTap: (banner: MallHomeBanner) => void
+  onLocationTap: () => void
 }) {
   return (
     <View className="mall-v7-home-fixed">
+      <View className="mall-v7-home-topbar">
+        <Text className="mall-v7-home-brand">叁友甄选</Text>
+        <View className="mall-v7-home-location" onClick={onLocationTap}>
+          <MapPin size={16} color="#1F2D1F" />
+          <Text>选择送货位置</Text>
+        </View>
+      </View>
       <Swiper className="mall-v7-banner-swiper" circular autoplay interval={3600}>
         {banners.map((banner, index) => {
           const bannerImageUrl = index === 0 ? primaryImageUrl : resolveMallImageUrl(banner.imageUrl)
