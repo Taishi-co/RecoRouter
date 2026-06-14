@@ -1618,23 +1618,21 @@ where
 struct AutoAssignRequest {
     /// 要分配的订单ID列表（可选，不传则分配所有待分配订单）
     order_ids: Option<Vec<String>>,
-    /// 每辆车每个时间段最大订单数（默认 5）
+    /// 每辆车每个时间段最大订单数（默认 1，即同一时段一辆车只接一单）
     max_orders_per_slot: Option<i32>,
     /// 是否只预览不执行（默认 false）
     dry_run: Option<bool>,
 }
 
-/// 自动调度 - 硬编码策略：避免同一时间段订单拥挤在一辆车
+/// 自动调度 - 最少车辆策略
 ///
-/// 使用场景：
-/// 1. 调度员在调度中心选择一批订单
-/// 2. 点击"智能调度"按钮
-/// 3. 系统自动分配到合适的车辆
+/// 目标：尽可能少用车，同时避免同一辆车在同一时段承载多个订单
 ///
-/// 策略规则：
-/// 1. 每辆车每个时间段最多 N 个订单（默认 5 个）
-/// 2. 优先分配负载最少的车辆
-/// 3. 按时间段分组订单
+/// 策略逻辑：
+/// 1. 按时间段分组订单
+/// 2. 对于每个时间段，优先分配给已使用的车辆（如果该车在该时段空闲）
+/// 3. 如果所有已使用车辆在该时段都有订单，才启用新车辆
+/// 4. 这样可以最大化车辆利用率，减少使用的车辆数量
 async fn dispatch_auto_assign<S>(
     State(state): State<AppState<S>>,
     Json(body): Json<AutoAssignRequest>,
@@ -1642,12 +1640,12 @@ async fn dispatch_auto_assign<S>(
 where
     S: Storage,
 {
-    let max_per_slot = body.max_orders_per_slot.unwrap_or(5);
+    // 默认每车每时段 1 单，避免拥挤
+    let max_per_slot = body.max_orders_per_slot.unwrap_or(1);
     let dry_run = body.dry_run.unwrap_or(false);
 
     // 1. 获取待分配订单（指定订单或全部）
     let pending_orders = if let Some(ref order_ids) = body.order_ids {
-        // 用户指定了订单列表
         if order_ids.is_empty() {
             return Ok(ok("未选择订单", json!({"assigned": 0, "details": []})));
         }
@@ -1656,7 +1654,7 @@ where
             SELECT id, delivery_time_slot, delivery_date
             FROM mall_orders
             WHERE id = ANY($1) AND trip_id IS NULL AND status IN ('paid', 'ready_for_pickup', 'dispatching')
-            ORDER BY created_at ASC
+            ORDER BY delivery_time_slot NULLS LAST, created_at ASC
             "#,
         )
         .bind(order_ids)
@@ -1664,13 +1662,12 @@ where
         .await
         .map_err(|err| ApiError::BadRequest(format!("查询指定订单失败: {err}")))?
     } else {
-        // 未指定，获取所有待分配订单
         sqlx::query_as::<_, (String, Option<String>, Option<String>)>(
             r#"
             SELECT id, delivery_time_slot, delivery_date
             FROM mall_orders
             WHERE trip_id IS NULL AND status IN ('paid', 'ready_for_pickup', 'dispatching')
-            ORDER BY created_at ASC
+            ORDER BY delivery_time_slot NULLS LAST, created_at ASC
             "#,
         )
         .fetch_all(&state.db)
@@ -1679,10 +1676,7 @@ where
     };
 
     if pending_orders.is_empty() {
-        return Ok(ok(
-            "没有待分配的订单",
-            json!({"assigned": 0, "details": []}),
-        ));
+        return Ok(ok("没有待分配的订单", json!({"assigned": 0, "details": []})));
     }
 
     // 2. 获取可用车辆
@@ -1702,12 +1696,12 @@ where
         return Ok(ok("没有可用车辆", json!({"assigned": 0, "details": []})));
     }
 
-    // 3. 获取每辆车今天各时间段的订单数
+    // 3. 获取每辆车今天各时间段的订单数（包括已分配和待分配的）
     let vehicle_loads = sqlx::query_as::<_, (String, Option<String>, i64)>(
         r#"
         SELECT v.id as vehicle_id, o.delivery_time_slot, count(*) as order_count
         FROM vehicles v
-        LEFT JOIN vehicle_trips t ON t.vehicle_id = v.id AND date(t.created_at) = current_date
+        LEFT JOIN vehicle_trips t ON t.vehicle_id = v.id AND date(t.created_at) = current_date AND t.status != 'cancelled'
         LEFT JOIN trip_stops ts ON ts.trip_id = t.id
         LEFT JOIN mall_orders o ON o.id = ts.mall_order_id
         WHERE v.status = 'active'
@@ -1725,45 +1719,90 @@ where
         load_map.insert((vid, slot), count);
     }
 
-    // 4. 分配订单
+    // 4. 按时间段分组订单
+    let mut orders_by_slot: std::collections::HashMap<Option<String>, Vec<(String, Option<String>)>> =
+        std::collections::HashMap::new();
+    for (order_id, time_slot, _delivery_date) in pending_orders {
+        orders_by_slot
+            .entry(time_slot.clone())
+            .or_default()
+            .push((order_id, time_slot));
+    }
+
+    // 5. 分配订单 - 最少车辆策略
+    // 跟踪已使用的车辆集合
+    let mut used_vehicles: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut planned_assignments: Vec<(String, String, String, Option<String>)> = Vec::new();
 
-    for (order_id, time_slot, _delivery_date) in pending_orders {
-        // 找到负载最少的车辆
-        let best_vehicle = available_vehicles
-            .iter()
-            .filter(|(vid, _)| {
-                // 检查该车辆在该时间段的负载是否已满
-                let current_load = load_map
-                    .get(&(vid.clone(), time_slot.clone()))
-                    .copied()
-                    .unwrap_or(0);
-                current_load < max_per_slot as i64
-            })
-            .min_by_key(|(vid, _)| {
-                // 选择负载最少的车辆
-                load_map
-                    .get(&(vid.clone(), time_slot.clone()))
-                    .copied()
-                    .unwrap_or(0)
+    // 按时间段排序处理（有时间的优先，无时间的放最后）
+    let mut slots: Vec<_> = orders_by_slot.iter().collect();
+    slots.sort_by(|a, b| {
+        match (a.0, b.0) {
+            (Some(a), Some(b)) => a.cmp(b),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        }
+    });
+
+    for (time_slot, orders) in slots {
+        for (order_id, _) in orders {
+            // 策略：优先使用已使用的车辆（如果在该时段空闲）
+            let best_vehicle = if !used_vehicles.is_empty() {
+                // 先尝试从已使用的车辆中找
+                used_vehicles
+                    .iter()
+                    .filter_map(|vid| {
+                        available_vehicles.iter().find(|(id, _)| id == vid).and_then(|(id, code)| {
+                            let current_load = load_map.get(&(id.clone(), time_slot.clone())).copied().unwrap_or(0);
+                            if current_load < max_per_slot as i64 {
+                                Some((id.clone(), code.clone(), current_load))
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                    .min_by_key(|(_, _, load)| *load)
+                    .map(|(id, code, _)| (id, code))
+            } else {
+                None
+            };
+
+            // 如果已使用的车辆都在该时段有订单，则启用新车辆
+            let best_vehicle = best_vehicle.or_else(|| {
+                available_vehicles
+                    .iter()
+                    .filter(|(vid, _)| {
+                        let current_load = load_map.get(&(vid.clone(), time_slot.clone())).copied().unwrap_or(0);
+                        current_load < max_per_slot as i64
+                    })
+                    .min_by_key(|(vid, _)| {
+                        // 选择总体负载最少的车辆
+                        load_map.get(&(vid.clone(), time_slot.clone())).copied().unwrap_or(0)
+                    })
+                    .map(|(id, code)| (id.clone(), code.clone()))
             });
 
-        if let Some((vehicle_id, vehicle_code)) = best_vehicle {
-            // 更新负载映射
-            let key = (vehicle_id.clone(), time_slot.clone());
-            *load_map.entry(key).or_insert(0) += 1;
+            if let Some((vehicle_id, vehicle_code)) = best_vehicle {
+                // 更新负载映射
+                let key = (vehicle_id.clone(), time_slot.clone());
+                *load_map.entry(key).or_insert(0) += 1;
+                used_vehicles.insert(vehicle_id.clone());
 
-            planned_assignments.push((
-                order_id,
-                vehicle_id.clone(),
-                vehicle_code.clone(),
-                time_slot,
-            ));
+                planned_assignments.push((
+                    order_id.clone(),
+                    vehicle_id,
+                    vehicle_code,
+                    time_slot.clone(),
+                ));
+            }
         }
     }
 
     let mut assignments: Vec<Value> = Vec::new();
     if dry_run {
+        // 统计使用的车辆数
+        let vehicle_count = planned_assignments.iter().map(|(_, vid, _, _)| vid).collect::<std::collections::HashSet<_>>().len();
         assignments = planned_assignments
             .into_iter()
             .map(|(order_id, vehicle_id, vehicle_code, time_slot)| {
@@ -1775,110 +1814,120 @@ where
                 })
             })
             .collect();
-    } else {
-        let mut tx = state.db.begin().await?;
-        let mut trip_ids = std::collections::HashMap::<String, String>::new();
-
-        for (order_id, vehicle_id, vehicle_code, time_slot) in planned_assignments {
-            let trip_id = if let Some(trip_id) = trip_ids.get(&vehicle_id) {
-                trip_id.clone()
-            } else {
-                let trip_id: String = sqlx::query_scalar(
-                    r#"
-                    INSERT INTO vehicle_trips (vehicle_id, vehicle_code, status)
-                    VALUES ($1, $2, 'planned')
-                    RETURNING id
-                    "#,
-                )
-                .bind(&vehicle_id)
-                .bind(&vehicle_code)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|err| ApiError::BadRequest(format!("创建行程失败: {err}")))?;
-                trip_ids.insert(vehicle_id.clone(), trip_id.clone());
-                trip_id
-            };
-
-            let order: Option<Value> = sqlx::query_scalar(
-                r#"
-                UPDATE mall_orders
-                SET trip_id = $1,
-                    status = 'dispatching',
-                    dispatched_at = COALESCE(dispatched_at, now()),
-                    updated_at = now()
-                WHERE id = $2
-                  AND trip_id IS NULL
-                  AND status IN ('paid', 'ready_for_pickup', 'dispatching')
-                RETURNING jsonb_build_object(
-                    'address', address_text, 'latitude', latitude, 'longitude', longitude,
-                    'contactName', recipient_name, 'contactPhone', recipient_phone
-                )
-                "#,
-            )
-            .bind(&trip_id)
-            .bind(&order_id)
-            .fetch_optional(&mut *tx)
-            .await?;
-
-            let Some(order) = order else { continue };
-            let sequence: i32 = sqlx::query_scalar(
-                "SELECT COALESCE(MAX(stop_sequence), 0) + 1 FROM trip_stops WHERE trip_id = $1",
-            )
-            .bind(&trip_id)
-            .fetch_one(&mut *tx)
-            .await?;
-            sqlx::query(
-                r#"
-                INSERT INTO trip_stops (
-                    trip_id, mall_order_id, stop_type, stop_sequence, address, latitude,
-                    longitude, contact_name, contact_phone, cargo_info, status
-                )
-                VALUES ($1, $2, 'delivery', $3, $4, $5, $6, $7, $8, $2, 'pending')
-                "#,
-            )
-            .bind(&trip_id)
-            .bind(&order_id)
-            .bind(sequence)
-            .bind(order.get("address").and_then(Value::as_str))
-            .bind(order.get("latitude").and_then(Value::as_f64))
-            .bind(order.get("longitude").and_then(Value::as_f64))
-            .bind(order.get("contactName").and_then(Value::as_str))
-            .bind(order.get("contactPhone").and_then(Value::as_str))
-            .execute(&mut *tx)
-            .await?;
-
-            assignments.push(json!({
-                "orderId": order_id,
-                "vehicleId": vehicle_id,
-                "vehicleCode": vehicle_code,
-                "tripId": trip_id,
-                "timeSlot": time_slot
-            }));
-        }
-
-        for trip_id in trip_ids.values() {
-            sync_trip_counts(&mut tx, trip_id).await?;
-        }
-        sqlx::query(
-            "DELETE FROM vehicle_trips WHERE id = ANY($1) AND NOT EXISTS (SELECT 1 FROM trip_stops WHERE trip_id = vehicle_trips.id)",
-        )
-        .bind(trip_ids.values().cloned().collect::<Vec<_>>())
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
+        return Ok(ok(
+            "预览完成",
+            json!({
+                "assigned": assignments.len(),
+                "vehiclesUsed": vehicle_count,
+                "maxOrdersPerSlot": max_per_slot,
+                "dryRun": true,
+                "details": assignments
+            }),
+        ));
     }
 
+    // 6. 执行分配
+    let mut tx = state.db.begin().await?;
+    let mut trip_ids = std::collections::HashMap::<String, String>::new();
+
+    for (order_id, vehicle_id, vehicle_code, time_slot) in planned_assignments {
+        let trip_id = if let Some(trip_id) = trip_ids.get(&vehicle_id) {
+            trip_id.clone()
+        } else {
+            let trip_id: String = sqlx::query_scalar(
+                r#"
+                INSERT INTO vehicle_trips (vehicle_id, vehicle_code, status)
+                VALUES ($1, $2, 'planned')
+                RETURNING id
+                "#,
+            )
+            .bind(&vehicle_id)
+            .bind(&vehicle_code)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|err| ApiError::BadRequest(format!("创建行程失败: {err}")))?;
+            trip_ids.insert(vehicle_id.clone(), trip_id.clone());
+            trip_id
+        };
+
+        let order: Option<Value> = sqlx::query_scalar(
+            r#"
+            UPDATE mall_orders
+            SET trip_id = $1,
+                status = 'dispatching',
+                dispatched_at = COALESCE(dispatched_at, now()),
+                updated_at = now()
+            WHERE id = $2
+              AND trip_id IS NULL
+              AND status IN ('paid', 'ready_for_pickup', 'dispatching')
+            RETURNING jsonb_build_object(
+                'address', address_text, 'latitude', latitude, 'longitude', longitude,
+                'contactName', recipient_name, 'contactPhone', recipient_phone
+            )
+            "#,
+        )
+        .bind(&trip_id)
+        .bind(&order_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        let Some(order) = order else { continue };
+        let sequence: i32 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(stop_sequence), 0) + 1 FROM trip_stops WHERE trip_id = $1",
+        )
+        .bind(&trip_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        sqlx::query(
+            r#"
+            INSERT INTO trip_stops (
+                trip_id, mall_order_id, stop_type, stop_sequence, address, latitude,
+                longitude, contact_name, contact_phone, cargo_info, status
+            )
+            VALUES ($1, $2, 'delivery', $3, $4, $5, $6, $7, $8, $2, 'pending')
+            "#,
+        )
+        .bind(&trip_id)
+        .bind(&order_id)
+        .bind(sequence)
+        .bind(order.get("address").and_then(Value::as_str))
+        .bind(order.get("latitude").and_then(Value::as_f64))
+        .bind(order.get("longitude").and_then(Value::as_f64))
+        .bind(order.get("contactName").and_then(Value::as_str))
+        .bind(order.get("contactPhone").and_then(Value::as_str))
+        .execute(&mut *tx)
+        .await?;
+
+        assignments.push(json!({
+            "orderId": order_id,
+            "vehicleId": vehicle_id,
+            "vehicleCode": vehicle_code,
+            "tripId": trip_id,
+            "timeSlot": time_slot
+        }));
+    }
+
+    for trip_id in trip_ids.values() {
+        sync_trip_counts(&mut tx, trip_id).await?;
+    }
+    // 清理空行程
+    sqlx::query(
+        "DELETE FROM vehicle_trips WHERE id = ANY($1) AND NOT EXISTS (SELECT 1 FROM trip_stops WHERE trip_id = vehicle_trips.id)",
+    )
+    .bind(trip_ids.values().cloned().collect::<Vec<_>>())
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    let vehicle_count = trip_ids.len();
     let assigned_count = assignments.len();
     Ok(ok(
-        if dry_run {
-            "预览完成"
-        } else {
-            "分配完成"
-        },
+        "分配完成",
         json!({
             "assigned": assigned_count,
+            "vehiclesUsed": vehicle_count,
             "maxOrdersPerSlot": max_per_slot,
-            "dryRun": dry_run,
+            "dryRun": false,
             "details": assignments
         }),
     ))

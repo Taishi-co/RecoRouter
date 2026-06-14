@@ -3476,6 +3476,7 @@ function DispatchSection({
   onStartTrip,
   onCompleteTrip,
   onReorderStops: _onReorderStops,
+  onAutoAssign,
 }: {
   trips: JsonRecord[];
   undispatchedOrders: JsonRecord[];
@@ -3488,6 +3489,7 @@ function DispatchSection({
   onStartTrip: (tripId: string) => Promise<void>;
   onCompleteTrip: (tripId: string) => Promise<void>;
   onReorderStops: (_tripId: string, _stopIds: string[]) => Promise<void>;
+  onAutoAssign: (orderIds: string[], maxOrdersPerSlot: number, dryRun: boolean) => Promise<void>;
 }) {
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
   const [selectedVehicle, setSelectedVehicle] = useState('');
@@ -3496,6 +3498,7 @@ function DispatchSection({
   const [assigningTripId, setAssigningTripId] = useState('');
   const [assignOrderIds, setAssignOrderIds] = useState<Set<string>>(new Set());
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+  const [maxOrdersPerSlot, setMaxOrdersPerSlot] = useState(5);
 
   const toggleOrder = (id: string) => {
     setSelectedOrders(prev => {
@@ -3574,6 +3577,43 @@ function DispatchSection({
           >
             <Icon name="route" /> 创建行程
           </button>
+        </div>
+
+        {/* 智能调度 */}
+        <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', alignItems: 'center', flexWrap: 'wrap', padding: '12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '14px', fontWeight: 600, color: '#166534' }}>✨ 智能调度</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <label style={{ fontSize: '12px', color: '#6b7280' }}>每车每时段最多</label>
+            <input
+              type="number"
+              value={maxOrdersPerSlot}
+              onChange={e => setMaxOrdersPerSlot(Math.max(1, parseInt(e.target.value, 10) || 5))}
+              style={{ width: '60px', padding: '4px 8px', borderRadius: '4px', border: '1px solid #d1d5db', textAlign: 'center' }}
+              min={1}
+              max={20}
+            />
+            <span style={{ fontSize: '12px', color: '#6b7280' }}>单</span>
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #22c55e', background: '#fff', color: '#22c55e', cursor: 'pointer', fontSize: '13px' }}
+              onClick={() => onAutoAssign(Array.from(selectedOrders), maxOrdersPerSlot, true)}
+              disabled={undispatchedOrders.length === 0}
+            >
+              预览分配
+            </button>
+            <button
+              type="button"
+              style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', background: '#22c55e', color: '#fff', cursor: 'pointer', fontSize: '13px', fontWeight: 500 }}
+              onClick={() => onAutoAssign(Array.from(selectedOrders), maxOrdersPerSlot, false)}
+              disabled={undispatchedOrders.length === 0}
+            >
+              {selectedOrders.size > 0 ? `分配选中 ${selectedOrders.size} 单` : '一键分配全部'}
+            </button>
+          </div>
         </div>
 
         {/* 待分配订单列表 - 带详情展开 */}
@@ -10057,6 +10097,17 @@ function App() {
     });
   };
 
+  const autoAssignOrders = async (orderIds: string[], maxOrdersPerSlot: number, dryRun: boolean) => {
+    await runAction('智能调度', async () => {
+      const res = await apiPost('/api/admin/dispatch/auto-assign', { orderIds: orderIds.length > 0 ? orderIds : undefined, maxOrdersPerSlot, dryRun });
+      if (res && typeof res === 'object' && 'assigned' in res) {
+        const data = res as { assigned: number; details?: Array<{ orderId: string; vehicleCode: string; timeSlot: string }> };
+        showMessage('success', `已分配 ${data.assigned} 个订单${dryRun ? '（预览模式）' : ''}`);
+      }
+      await reload();
+    });
+  };
+
   const updateMallOrderStatus = async (id: string, status: string) => {
     await runAction('商城订单状态更新', async () => {
       await apiPut(`/api/admin/mall/orders/${id}/status`, { status, description: statusLabel(status) });
@@ -10752,6 +10803,7 @@ function App() {
           onStartTrip={startTrip}
           onCompleteTrip={completeTrip}
           onReorderStops={reorderStops}
+          onAutoAssign={autoAssignOrders}
         />
       );
     }
