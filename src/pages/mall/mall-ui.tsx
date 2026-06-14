@@ -214,6 +214,28 @@ export function primaryMallProductImageUrl(product?: MallProduct | null) {
   return resolveMallImageUrl(firstImage || product?.imageUrl)
 }
 
+export function mallProductSaleVariants(product?: MallProduct | null) {
+  return (product?.variants || [])
+    .filter((variant) => variant && variant.id && variant.status !== 'draft')
+    .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+}
+
+export function mallProductDefaultSaleVariant(product?: MallProduct | null) {
+  const variants = mallProductSaleVariants(product)
+  if (!variants.length) return null
+  return variants.find((variant) => variant.id === product?.defaultVariantId) || variants[0]
+}
+
+export function mallProductRequiresVariantSelection(product?: MallProduct | null) {
+  return mallProductSaleVariants(product)
+    .filter((variant) => variant.status === 'on_sale' && variant.stock > 0)
+    .length > 1
+}
+
+export function mallProductMinimumOrderQuantity(product?: MallProduct | null, variant = mallProductDefaultSaleVariant(product)) {
+  return Math.max(Number(variant?.minimumOrderQuantity || product?.minimumOrderQuantity || 1), 1)
+}
+
 export function MallDealProductCard({
   product,
   onAdd,

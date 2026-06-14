@@ -13,6 +13,9 @@ import {
   MallDealProductCard,
   MallPage,
   MallSearchBox,
+  mallProductDefaultSaleVariant,
+  mallProductMinimumOrderQuantity,
+  mallProductRequiresVariantSelection,
 } from '../mall-ui'
 import { redirectToMallAuth } from '../auth-route'
 import { mallCategoryOptionsFromCategories } from '../category-options'
@@ -200,8 +203,15 @@ export default function MallCategoryPage() {
       redirectToMallAuth('/pages/mall/category/index')
       return
     }
+    if (mallProductRequiresVariantSelection(product)) {
+      Taro.showToast({ title: '请选择规格', icon: 'none' })
+      Taro.navigateTo({ url: `/pages/mall/product/index?id=${product.id}` })
+      return
+    }
+    const variant = mallProductDefaultSaleVariant(product)
+    const quantity = mallProductMinimumOrderQuantity(product, variant)
     try {
-      await addMallCartItem(user.id, product.id, 1)
+      await addMallCartItem(user.id, product.id, quantity, variant?.id)
       Taro.showToast({ title: '已加入购物车', icon: 'success' })
     } catch (error) {
       Taro.showToast({

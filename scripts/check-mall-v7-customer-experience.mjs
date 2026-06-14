@@ -103,6 +103,27 @@ const checks = [
       && /mall-product-detail-section/.test(files.theme),
   },
   {
+    name: '商品卡一键加购按最小起订量执行，多规格商品进入详情选择规格',
+    pass: /mallProductMinimumOrderQuantity/.test(files.ui)
+      && /mallProductRequiresVariantSelection/.test(files.ui)
+      && /mallProductDefaultSaleVariant/.test(files.ui)
+      && /mallProductRequiresVariantSelection\(product\)/.test(files.home)
+      && /mallProductRequiresVariantSelection\(product\)/.test(files.category)
+      && /请选择规格/.test(files.home)
+      && /请选择规格/.test(files.category)
+      && /addMallCartItem\(user\.id,\s*product\.id,\s*quantity,\s*variant\?\.id\)/.test(files.home)
+      && /addMallCartItem\(user\.id,\s*product\.id,\s*quantity,\s*variant\?\.id\)/.test(files.category)
+      && /MAX_MALL_PURCHASE_QUANTITY/.test(files.serverMall)
+      && !/购买数量需在 1-99 之间/.test(files.serverMall),
+  },
+  {
+    name: '商品详情页不展示无业务动作的三块卖点卡，规格参数不对用户展示 SKU',
+    pass: !/mall-chip-title">\s*新鲜/.test(files.product)
+      && !/mall-chip-title">\s*安心/.test(files.product)
+      && !/mall-chip-title">\s*品质/.test(files.product)
+      && !/\{\s*label:\s*['"]SKU['"]/.test(files.product),
+  },
+  {
     name: '商品最小起订量贯通后端商品 JSON、管理端录入和服务类型',
     pass: /minimum_order_quantity/.test(files.serverMall)
       && /minimumOrderQuantity/.test(files.serverMall)

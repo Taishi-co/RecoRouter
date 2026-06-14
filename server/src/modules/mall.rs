@@ -18,6 +18,7 @@ const MAX_MALL_PRODUCT_IMAGE_BYTES: usize = 5 * 1024 * 1024;
 const MAX_MALL_QUALIFICATION_FILE_BYTES: usize = 10 * 1024 * 1024;
 const MAX_PRODUCT_IMAGES: usize = 20;
 const MAX_PRODUCT_VARIANTS: usize = 50;
+const MAX_MALL_PURCHASE_QUANTITY: i32 = 9999;
 const ALLOWED_MALL_PRODUCT_IMAGE_TYPES: &[&str] =
     &["image/jpeg", "image/png", "image/webp", "image/gif"];
 const ALLOWED_MALL_QUALIFICATION_FILE_TYPES: &[&str] = &[
@@ -7861,6 +7862,12 @@ mod product_listing_query_tests {
         assert_eq!(normalized[0].weight_tolerance_bps, 800);
         assert_eq!(weighed_line_total_cents(1000, 15_050, 500), 30_100);
     }
+
+    #[test]
+    fn purchase_quantity_allows_large_minimum_orders() {
+        assert!(validate_quantity(100).is_ok());
+        assert!(validate_quantity(0).is_err());
+    }
 }
 
 async fn enrich_product_pricing(pool: &PgPool, product: &mut Value) -> ApiResult<()> {
@@ -10771,8 +10778,11 @@ fn validate_optional_non_negative_f64(value: Option<f64>, message: &str) -> ApiR
 }
 
 fn validate_quantity(quantity: i32) -> ApiResult<()> {
-    if !(1..=99).contains(&quantity) {
-        return Err(ApiError::BadRequest("购买数量需在 1-99 之间".to_string()));
+    if !(1..=MAX_MALL_PURCHASE_QUANTITY).contains(&quantity) {
+        return Err(ApiError::BadRequest(format!(
+            "购买数量需在 1-{} 之间",
+            MAX_MALL_PURCHASE_QUANTITY
+        )));
     }
     Ok(())
 }
