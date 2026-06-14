@@ -14,10 +14,21 @@ function assertIncludes(path, expected, message) {
   }
 }
 
-const migration = 'server/migrations/0033_mall_after_sales_workflow.sql';
-if (!existsSync(join(root, migration))) {
+function assertSourceIncludes(source, label, expected, message) {
+  if (!source.includes(expected)) {
+    throw new Error(`${message}: ${label} missing ${expected}`);
+  }
+}
+
+const migrationCandidates = [
+  'server/migrations/0035_mall_after_sales_workflow.sql',
+  'server/migrations/0033_mall_after_sales_workflow.sql',
+];
+const migration = migrationCandidates.find((path) => existsSync(join(root, path)) && read(path).includes('after_sale_type'));
+if (!migration) {
   throw new Error(`${migration} is required for the mall after-sales workflow`);
 }
+const migrationSource = read(migration);
 
 [
   'after_sale_type',
@@ -28,7 +39,7 @@ if (!existsSync(join(root, migration))) {
   'negotiation_status',
   'support_session_id',
   'timeline',
-].forEach((field) => assertIncludes(migration, field, 'after-sales migration should add workflow field'));
+].forEach((field) => assertSourceIncludes(migrationSource, migration, field, 'after-sales migration should add workflow field'));
 
 [
   'validate_after_sale_type',
