@@ -16,7 +16,12 @@ import {
 import sanyouLogo from '@/assets/brand/sanyou.png'
 import { resolveMallImageUrl, type MallProduct, yuan } from '@/services/mall'
 import { Input } from '@/components/ui/input'
-import { getPageBodyPaddingTop, getStickyHeaderTop } from '@/lib/safe-area'
+import {
+  getHomePageBodyPaddingTop,
+  getHomeStickyHeaderTop,
+  getPageBodyPaddingTop,
+  getStickyHeaderTop,
+} from '@/lib/safe-area'
 import './mall-theme.css'
 
 type MallTabKey = 'home' | 'category' | 'cart' | 'mine'
@@ -71,15 +76,16 @@ export function MallPage({
   active,
   children,
   noTab,
-}: PropsWithChildren<{ active?: MallTabKey; noTab?: boolean }>) {
+  homeTightTop,
+}: PropsWithChildren<{ active?: MallTabKey; noTab?: boolean; homeTightTop?: boolean }>) {
   useMallH5BodyClass()
   const shellStyle = {
-    paddingTop: `${getPageBodyPaddingTop()}px`,
-    '--mall-sticky-top': `${getStickyHeaderTop()}px`,
+    paddingTop: `${homeTightTop ? getHomePageBodyPaddingTop() : getPageBodyPaddingTop()}px`,
+    '--mall-sticky-top': `${homeTightTop ? getHomeStickyHeaderTop() : getStickyHeaderTop()}px`,
   } as CSSProperties
 
   return (
-    <View className="mall-shell" style={shellStyle}>
+    <View className={homeTightTop ? 'mall-shell mall-shell-home' : 'mall-shell'} style={shellStyle}>
       {children}
       {!noTab && <MallBottomNav active={active || 'home'} />}
     </View>

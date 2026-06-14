@@ -7,6 +7,7 @@ const root = process.cwd()
 const files = {
   service: read('src/services/mall.ts'),
   ui: read('src/pages/mall/mall-ui.tsx'),
+  safeArea: read('src/lib/safe-area.ts'),
   theme: read('src/pages/mall/mall-theme.css'),
   home: read('src/pages/mall/index/index.tsx'),
   category: read('src/pages/mall/category/index.tsx'),
@@ -210,6 +211,16 @@ const checks = [
       && /mall-v7-cart-summary/.test(files.theme)
       && /mall-address-form/.test(files.theme)
       && /transition:\s*none\s*!important/.test(files.theme),
+  },
+  {
+    name: '小程序首页顶部按状态栏贴近左侧内容，不用右上角胶囊高度整体下压',
+    pass: /getHomePageBodyPaddingTop/.test(files.safeArea)
+      && /getHomeStickyHeaderTop/.test(files.safeArea)
+      && !/getHomePageBodyPaddingTop[\s\S]{0,220}menuBottom/.test(files.safeArea)
+      && /paddingTop:\s*`\$\{homeTightTop\s*\?\s*getHomePageBodyPaddingTop\(\)\s*:\s*getPageBodyPaddingTop\(\)\}px`/.test(files.ui)
+      && /--mall-sticky-top['"]:\s*`\$\{homeTightTop\s*\?\s*getHomeStickyHeaderTop\(\)\s*:\s*getStickyHeaderTop\(\)\}px`/.test(files.ui)
+      && /homeTightTop/.test(files.ui)
+      && /mall-shell-home/.test(files.theme),
   },
   {
     name: '商城品牌图标使用叁友甄选新 icon，覆盖商城底部导航、商城入口和 Web 管理端商城模块',

@@ -50,12 +50,26 @@ export const getPageBodyPaddingTop = () => {
   return Math.max(22, top + 22, menuBottom + 20)
 }
 
+export const getHomePageBodyPaddingTop = () => {
+  if (isH5()) return 22
+
+  const { top } = getMiniProgramSafeAreaInsets()
+  return Math.max(14, top + 6)
+}
+
 export const getStickyHeaderTop = () => {
   if (isH5()) return 0
 
   const { top } = getMiniProgramSafeAreaInsets()
   const menuBottom = getMenuButtonBottom()
   return Math.max(0, top + 12, menuBottom + 8)
+}
+
+export const getHomeStickyHeaderTop = () => {
+  if (isH5()) return 0
+
+  const { top } = getMiniProgramSafeAreaInsets()
+  return Math.max(0, top + 2)
 }
 
 export const getPageHeaderPaddingTop = () => {

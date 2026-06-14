@@ -26,7 +26,9 @@ use crate::{
     error::{ApiError, ApiResult},
     response::{empty_message, ok, ApiEnvelope, EmptyMessage},
     storage::Storage,
-    wechat_pay::{exchange_miniapp_login_session, WechatMiniappConfig},
+    wechat_pay::{
+        exchange_miniapp_login_session, exchange_miniapp_phone_number, WechatMiniappConfig,
+    },
 };
 
 const BCRYPT_COST: u32 = 10;
@@ -150,6 +152,8 @@ struct LoginRequest {
 struct WechatLoginRequest {
     #[serde(rename = "loginCode", alias = "login_code")]
     login_code: String,
+    #[serde(rename = "phoneCode", alias = "phone_code")]
+    phone_code: Option<String>,
     role: Option<String>,
     name: Option<String>,
     avatar: Option<String>,
@@ -205,6 +209,14 @@ struct AuthUserRow {
     name: Option<String>,
     role: Option<String>,
     status: Option<String>,
+}
+
+#[derive(Debug, FromRow)]
+struct WechatBindingUserRow {
+    id: String,
+    name: Option<String>,
+    wechat_openid: Option<String>,
+    wechat_appid: Option<String>,
 }
 
 #[derive(Debug, FromRow)]
@@ -364,54 +376,122 @@ where
     S: Storage,
 {
     let role = normalize_mall_auth_role(body.role.as_deref())?;
-    let miniapp_config = WechatMiniappConfig::from_env_for_service(state.service)?;
-    let session = exchange_miniapp_login_session(&miniapp_config, &body.login_code).await?;
-    let display_name = body
-        .name
+    let phone_code = body
+        .phone_code
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| value.chars().take(32).collect::<String>())
-        .unwrap_or_else(|| {
-            if role == "group_leader" {
-                "微信团长".to_string()
-            } else {
-                "微信用户".to_string()
-            }
-        });
+        .ok_or_else(|| ApiError::BadRequest("请授权手机号完成快捷登录".to_string()))?;
+    let miniapp_config = WechatMiniappConfig::from_env_for_service(state.service)?;
+    let session = exchange_miniapp_login_session(&miniapp_config, &body.login_code).await?;
+    let phone = exchange_miniapp_phone_number(&miniapp_config, phone_code)
+        .await?
+        .phone_number;
+    validate_phone(&phone)?;
     let avatar = body
         .avatar
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(|value| value.chars().take(512).collect::<String>());
-    let user_id = Uuid::new_v4().to_string();
 
-    let row = sqlx::query_as::<_, AuthUserRow>(
+    let existing_wechat_user = sqlx::query_as::<_, WechatBindingUserRow>(
         r#"
-        INSERT INTO users (
-          id, phone, password, role, name, avatar, status,
-          wechat_openid, wechat_unionid, wechat_appid, wechat_bound_at, updated_at
-        )
-        VALUES ($1, NULL, NULL, $2, $3, $4, 'active', $5, $6, $7, now(), now())
-        ON CONFLICT (wechat_appid, wechat_openid)
-          WHERE wechat_appid IS NOT NULL AND wechat_openid IS NOT NULL
-        DO UPDATE SET
-          wechat_unionid = COALESCE(users.wechat_unionid, EXCLUDED.wechat_unionid),
-          wechat_bound_at = COALESCE(users.wechat_bound_at, now()),
-          updated_at = now()
-        RETURNING id, phone, password, name, role, status
+        SELECT id, name, wechat_openid, wechat_appid
+        FROM users
+        WHERE wechat_appid = $1
+          AND wechat_openid = $2
         "#,
     )
-    .bind(&user_id)
-    .bind(&role)
-    .bind(&display_name)
-    .bind(avatar)
-    .bind(&session.openid)
-    .bind(&session.unionid)
     .bind(&miniapp_config.app_id)
-    .fetch_one(&state.db)
+    .bind(&session.openid)
+    .fetch_optional(&state.db)
     .await?;
+    let phone_user = sqlx::query_as::<_, WechatBindingUserRow>(
+        r#"
+        SELECT id, name, wechat_openid, wechat_appid
+        FROM users
+        WHERE phone = $1
+        "#,
+    )
+    .bind(&phone)
+    .fetch_optional(&state.db)
+    .await?;
+
+    let row = if let Some(target) = resolve_wechat_binding_target(
+        existing_wechat_user.as_ref(),
+        phone_user.as_ref(),
+        &miniapp_config.app_id,
+        &session.openid,
+    )? {
+        let display_name =
+            resolve_wechat_display_name(&body, &role, &target.id, target.name.as_deref());
+        sqlx::query_as::<_, AuthUserRow>(
+            r#"
+            UPDATE users
+            SET phone = COALESCE(users.phone, $1),
+                role = COALESCE(users.role, $2),
+                name = CASE
+                  WHEN $3 THEN $4
+                  ELSE users.name
+                END,
+                avatar = COALESCE($5, users.avatar),
+                wechat_openid = COALESCE(users.wechat_openid, $6),
+                wechat_unionid = COALESCE(users.wechat_unionid, $7),
+                wechat_appid = COALESCE(users.wechat_appid, $8),
+                wechat_bound_at = COALESCE(users.wechat_bound_at, now()),
+                status = COALESCE(users.status, 'active'),
+                updated_at = now()
+            WHERE id = $9
+            RETURNING id, phone, password, name, role, status
+            "#,
+        )
+        .bind(&phone)
+        .bind(&role)
+        .bind(should_replace_wechat_name(target.name.as_deref()))
+        .bind(display_name)
+        .bind(avatar)
+        .bind(&session.openid)
+        .bind(&session.unionid)
+        .bind(&miniapp_config.app_id)
+        .bind(&target.id)
+        .fetch_one(&state.db)
+        .await?
+    } else {
+        let user_id = Uuid::new_v4().to_string();
+        let display_name = resolve_wechat_display_name(&body, &role, &user_id, None);
+        let insert_result = sqlx::query_as::<_, AuthUserRow>(
+            r#"
+            INSERT INTO users (
+              id, phone, password, role, name, avatar, status,
+              wechat_openid, wechat_unionid, wechat_appid, wechat_bound_at, updated_at
+            )
+            VALUES ($1, $2, NULL, $3, $4, $5, 'active', $6, $7, $8, now(), now())
+            RETURNING id, phone, password, name, role, status
+            "#,
+        )
+        .bind(&user_id)
+        .bind(&phone)
+        .bind(&role)
+        .bind(display_name)
+        .bind(avatar)
+        .bind(&session.openid)
+        .bind(&session.unionid)
+        .bind(&miniapp_config.app_id)
+        .fetch_one(&state.db)
+        .await;
+
+        match insert_result {
+            Ok(row) => row,
+            Err(sqlx::Error::Database(err))
+                if err.constraint() == Some("users_phone_key")
+                    || err.constraint() == Some("users_wechat_appid_openid_uidx") =>
+            {
+                return Err(ApiError::Conflict("该手机号已绑定其他账号".to_string()));
+            }
+            Err(err) => return Err(err.into()),
+        }
+    };
 
     if row.status.as_deref() == Some("disabled") {
         return Err(ApiError::Unauthorized("账号已被禁用".to_string()));
@@ -617,6 +697,76 @@ fn normalize_mall_auth_role(role: Option<&str>) -> ApiResult<String> {
             "商城微信身份必须为 customer 或 group_leader".to_string(),
         )),
     }
+}
+
+fn resolve_wechat_binding_target<'a>(
+    wechat_user: Option<&'a WechatBindingUserRow>,
+    phone_user: Option<&'a WechatBindingUserRow>,
+    app_id: &str,
+    openid: &str,
+) -> ApiResult<Option<&'a WechatBindingUserRow>> {
+    match (wechat_user, phone_user) {
+        (Some(wechat), Some(phone)) if wechat.id != phone.id => {
+            Err(ApiError::Conflict("该手机号已绑定其他账号".to_string()))
+        }
+        (Some(wechat), _) => Ok(Some(wechat)),
+        (None, Some(phone)) => {
+            let phone_wechat_openid = phone.wechat_openid.as_deref().unwrap_or_default();
+            let phone_wechat_appid = phone.wechat_appid.as_deref().unwrap_or_default();
+            if !phone_wechat_openid.is_empty()
+                && (phone_wechat_openid != openid || phone_wechat_appid != app_id)
+            {
+                return Err(ApiError::Conflict("该手机号已绑定其他微信账号".to_string()));
+            }
+            Ok(Some(phone))
+        }
+        (None, None) => Ok(None),
+    }
+}
+
+fn resolve_wechat_display_name(
+    body: &WechatLoginRequest,
+    role: &str,
+    user_id: &str,
+    current_name: Option<&str>,
+) -> String {
+    if !should_replace_wechat_name(current_name) {
+        return current_name.unwrap_or_default().to_string();
+    }
+
+    body.name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.chars().take(32).collect::<String>())
+        .unwrap_or_else(|| default_wechat_display_name(role, user_id))
+}
+
+fn should_replace_wechat_name(name: Option<&str>) -> bool {
+    match name.map(str::trim).filter(|value| !value.is_empty()) {
+        None => true,
+        Some("微信用户") | Some("微信团长") => true,
+        Some(_) => false,
+    }
+}
+
+fn default_wechat_display_name(role: &str, user_id: &str) -> String {
+    let suffix = user_id
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .rev()
+        .take(6)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<String>()
+        .to_ascii_lowercase();
+    let prefix = if role == "group_leader" {
+        "微信团长"
+    } else {
+        "微信用户"
+    };
+    format!("{prefix}{suffix}")
 }
 
 fn validate_phone(phone: &str) -> ApiResult<()> {

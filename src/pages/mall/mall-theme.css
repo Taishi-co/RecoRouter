@@ -11,6 +11,11 @@
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
 }
 
+.mall-shell-home {
+  padding-left: 18PX;
+  padding-right: 18PX;
+}
+
 body.reco-mall-h5 .taro_router,
 body.reco-mall-h5 .taro_page,
 body.reco-mall-h5 .taro-tabbar__panel {
@@ -313,6 +318,34 @@ body.reco-mall-h5 .taro_page {
 .mall-auth-tab-active {
   background: #eefbea;
   color: #63bf54;
+}
+
+.mall-wechat-login-button {
+  width: 100%;
+  height: 44PX;
+  padding: 0 16PX;
+  border: 1PX solid #cce7c7;
+  border-radius: 10PX;
+  background: #ffffff;
+  color: #2f7e43;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8PX;
+  box-sizing: border-box;
+  font-size: 13PX;
+  font-weight: 900;
+  line-height: 44PX;
+}
+
+.mall-wechat-login-button::after {
+  border: 0;
+}
+
+.mall-wechat-login-button[disabled] {
+  opacity: 0.72;
+  color: #2f7e43;
+  background: #ffffff;
 }
 
 .mall-form-field {

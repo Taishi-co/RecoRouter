@@ -205,7 +205,7 @@ export default function MallHome() {
   }
 
   return (
-    <MallPage active="home">
+    <MallPage active="home" homeTightTop>
       <MallHomeFixedHeader banners={banners} announcements={announcements} primaryImageUrl={primaryBannerImageUrl} onBannerTap={openBanner} />
 
       {homePromotionVenues.length ? (
