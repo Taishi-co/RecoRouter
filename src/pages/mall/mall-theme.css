@@ -2906,6 +2906,7 @@ body.reco-mall-h5 .taro_page {
 
 .mall-v7-cart-shop {
   padding-top: 11PX;
+  overflow: hidden;
 }
 
 .mall-v7-shop-head {
@@ -2922,13 +2923,46 @@ body.reco-mall-h5 .taro_page {
   font-size: 11PX;
 }
 
+.mall-v7-cart-swipe {
+  position: relative;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.mall-v7-cart-delete-action {
+  position: absolute;
+  top: 1PX;
+  right: 0;
+  bottom: 0;
+  width: 76PX;
+  border-radius: 0 8PX 8PX 0;
+  background: #d14343;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4PX;
+  font-size: 13PX;
+  font-weight: 900;
+  z-index: 1;
+}
+
 .mall-v7-cart-item {
+  position: relative;
+  z-index: 2;
   display: grid;
   grid-template-columns: 22PX 76PX 1fr 66PX;
   gap: 9PX;
   align-items: center;
   padding: 12PX 0;
   border-top: 1PX solid #edf3e9;
+  background: #ffffff;
+  transition: transform 0.18s ease;
+  will-change: transform;
+}
+
+.mall-v7-cart-item-swiped {
+  transform: translateX(-76PX);
 }
 
 .mall-v7-cart-check {

@@ -28,10 +28,23 @@ interface StoredUser {
   id?: string
 }
 
+interface CartTouchPoint {
+  clientX: number
+  clientY: number
+}
+
+interface CartSwipeStart {
+  itemId: string
+  x: number
+  y: number
+}
+
 export default function MallCartPage() {
   const [cart, setCart] = useState<MallCart>({ items: [], subtotalCents: 0, selectedCount: 0 })
   const [addresses, setAddresses] = useState<MallAddress[]>([])
   const [selectedAddressId, setSelectedAddressId] = useState('')
+  const [swipedCartItemId, setSwipedCartItemId] = useState('')
+  const [cartSwipeStart, setCartSwipeStart] = useState<CartSwipeStart | null>(null)
   const [loading, setLoading] = useState(false)
   const userId = (Taro.getStorageSync('userInfo') as StoredUser | undefined)?.id || ''
 
@@ -68,6 +81,7 @@ export default function MallCartPage() {
         listMallAddresses(userId),
       ])
       setCart(nextCart)
+      setSwipedCartItemId((current) => nextCart.items.some((item) => item.id === current) ? current : '')
       setAddresses(nextAddresses)
       setSelectedAddressId(resolveSelectedAddressId(nextAddresses, selectedAddressId))
     } catch (error) {
@@ -111,9 +125,70 @@ export default function MallCartPage() {
   const clearMallCart = async () => {
     try {
       await Promise.all(cart.items.map((item) => deleteMallCartItem(item.id)))
+      setSwipedCartItemId('')
       loadData()
     } catch (error) {
       showError(error, '清空失败')
+    }
+  }
+
+  const handleCartItemTouchStart = (itemId: string, event: unknown) => {
+    const touch = getCartTouchPoint(event, 'touches')
+    if (!touch) return
+    if (swipedCartItemId && swipedCartItemId !== itemId) {
+      setSwipedCartItemId('')
+    }
+    setCartSwipeStart({ itemId, x: touch.clientX, y: touch.clientY })
+  }
+
+  const handleCartItemTouchMove = (itemId: string, event: unknown) => {
+    if (!cartSwipeStart || cartSwipeStart.itemId !== itemId) return
+    const touch = getCartTouchPoint(event, 'touches')
+    if (!touch) return
+    const deltaX = touch.clientX - cartSwipeStart.x
+    const deltaY = touch.clientY - cartSwipeStart.y
+    if (Math.abs(deltaY) > Math.abs(deltaX)) return
+    if (deltaX < -32) {
+      setSwipedCartItemId(itemId)
+    }
+    if (deltaX > 24) {
+      setSwipedCartItemId((current) => current === itemId ? '' : current)
+    }
+  }
+
+  const handleCartItemTouchEnd = (itemId: string, event: unknown) => {
+    if (!cartSwipeStart || cartSwipeStart.itemId !== itemId) return
+    const touch = getCartTouchPoint(event, 'changedTouches')
+    if (touch) {
+      const deltaX = touch.clientX - cartSwipeStart.x
+      const deltaY = touch.clientY - cartSwipeStart.y
+      if (Math.abs(deltaX) > Math.abs(deltaY) && deltaX < -48) {
+        setSwipedCartItemId(itemId)
+      }
+      if (deltaX > 24) {
+        setSwipedCartItemId((current) => current === itemId ? '' : current)
+      }
+    }
+    setCartSwipeStart(null)
+  }
+
+  const confirmDeleteCartItem = async (item: MallCartItem) => {
+    const productName = item.product?.name || '该商品'
+    const result = await Taro.showModal({
+      title: '确认删除吗',
+      content: `确定从购物车删除「${productName}」吗？`,
+      confirmText: '删除',
+      cancelText: '取消',
+      confirmColor: '#D14343',
+    })
+    if (!result.confirm) return
+    try {
+      await deleteMallCartItem(item.id)
+      setSwipedCartItemId('')
+      await loadData()
+      Taro.showToast({ title: '已删除', icon: 'success' })
+    } catch (error) {
+      showError(error, '删除失败')
     }
   }
 
@@ -219,36 +294,48 @@ export default function MallCartPage() {
             <Text>次日达</Text>
           </View>
           {cart.items.map((item) => (
-            <View key={item.id} className="mall-v7-cart-item">
-              <View className="mall-v7-cart-check" onClick={() => toggleItem(item)}>
-                {item.selected ? <Check size={16} color="#FFFFFF" /> : null}
+            <View
+              key={item.id}
+              className="mall-v7-cart-swipe"
+              onTouchStart={(event) => handleCartItemTouchStart(item.id, event)}
+              onTouchMove={(event) => handleCartItemTouchMove(item.id, event)}
+              onTouchEnd={(event) => handleCartItemTouchEnd(item.id, event)}
+            >
+              <View className="mall-v7-cart-delete-action" onClick={() => confirmDeleteCartItem(item)}>
+                <Trash2 size={18} color="#FFFFFF" />
+                <Text>删除</Text>
               </View>
-              <View className="mall-v7-cart-thumb">
-                <MallProductThumb product={item.product} />
-              </View>
-              <View className="mall-v7-cart-copy">
-                <Text className="mall-v7-product-name">{item.product?.name || '商品'}</Text>
-                <Text className="mall-v7-product-subtitle">
-                  {item.variantName || item.product?.specification || item.product?.subtitle || '基地直采 · 今日锁鲜'}
-                </Text>
-                {item.pricingMode === 'weighed' ? (
+              <View className={swipedCartItemId === item.id ? 'mall-v7-cart-item mall-v7-cart-item-swiped' : 'mall-v7-cart-item'}>
+                <View className="mall-v7-cart-check" onClick={() => toggleItem(item)}>
+                  {item.selected ? <Check size={16} color="#FFFFFF" /> : null}
+                </View>
+                <View className="mall-v7-cart-thumb">
+                  <MallProductThumb product={item.product} />
+                </View>
+                <View className="mall-v7-cart-copy">
+                  <Text className="mall-v7-product-name">{item.product?.name || '商品'}</Text>
                   <Text className="mall-v7-product-subtitle">
-                    预估 {mallWeightText(item.estimatedWeightGrams, item.weightUnitGrams || 500, item.weightUnitLabel || '斤')}，称重后确认金额
+                    {item.variantName || item.product?.specification || item.product?.subtitle || '基地直采 · 今日锁鲜'}
                   </Text>
-                ) : null}
-                <View className="mall-v7-unit-row">
-                  <Text>满减前 {mallYuan(item.originalUnitPriceCents ?? item.product?.priceCents ?? 0)}</Text>
-                  <Text>满减后 {mallYuan(item.discountedUnitPriceCents ?? item.product?.priceCents ?? 0)}</Text>
+                  {item.pricingMode === 'weighed' ? (
+                    <Text className="mall-v7-product-subtitle">
+                      预估 {mallWeightText(item.estimatedWeightGrams, item.weightUnitGrams || 500, item.weightUnitLabel || '斤')}，称重后确认金额
+                    </Text>
+                  ) : null}
+                  <View className="mall-v7-unit-row">
+                    <Text>满减前 {mallYuan(item.originalUnitPriceCents ?? item.product?.priceCents ?? 0)}</Text>
+                    <Text>满减后 {mallYuan(item.discountedUnitPriceCents ?? item.product?.priceCents ?? 0)}</Text>
+                  </View>
+                  <View className="mall-v7-unit-row mall-v7-unit-row-warm">
+                    <Text>优惠 {mallYuan(item.lineDiscountCents || 0)}</Text>
+                    <Text>积分最高抵 {mallYuan(item.pointsDeductibleCents || 0)}</Text>
+                  </View>
                 </View>
-                <View className="mall-v7-unit-row mall-v7-unit-row-warm">
-                  <Text>优惠 {mallYuan(item.lineDiscountCents || 0)}</Text>
-                  <Text>积分最高抵 {mallYuan(item.pointsDeductibleCents || 0)}</Text>
+                <View className="mall-stepper">
+                  <Text className="mall-stepper-action mall-stepper-action-muted" onClick={() => changeQuantity(item.id, item.quantity - 1)}>−</Text>
+                  <Text className="mall-stepper-value">{item.quantity}</Text>
+                  <Text className="mall-stepper-action" onClick={() => changeQuantity(item.id, item.quantity + 1)}>＋</Text>
                 </View>
-              </View>
-              <View className="mall-stepper">
-                <Text className="mall-stepper-action mall-stepper-action-muted" onClick={() => changeQuantity(item.id, item.quantity - 1)}>−</Text>
-                <Text className="mall-stepper-value">{item.quantity}</Text>
-                <Text className="mall-stepper-action" onClick={() => changeQuantity(item.id, item.quantity + 1)}>＋</Text>
               </View>
             </View>
           ))}
@@ -295,4 +382,16 @@ function resolveSelectedAddressId(addresses: MallAddress[], currentAddressId: st
 
 function hasAddressLocation(address: MallAddress) {
   return Number.isFinite(Number(address.latitude)) && Number.isFinite(Number(address.longitude))
+}
+
+function getCartTouchPoint(event: unknown, key: 'touches' | 'changedTouches') {
+  const touchEvent = event as {
+    touches?: CartTouchPoint[]
+    changedTouches?: CartTouchPoint[]
+    detail?: {
+      touches?: CartTouchPoint[]
+      changedTouches?: CartTouchPoint[]
+    }
+  }
+  return touchEvent[key]?.[0] || touchEvent.detail?.[key]?.[0]
 }
