@@ -1047,10 +1047,26 @@ async fn do_create_trip(pool: &sqlx::PgPool, body: &CreateTripRequest) -> ApiRes
         }
 
         if !order_ids.is_empty() && assigned_count == 0 {
+            // 没有订单被分配，删除空行程
+            sqlx::query("DELETE FROM vehicle_trips WHERE id = $1")
+                .bind(trip_id)
+                .execute(&mut *tx)
+                .await?;
+            tx.commit().await?;
             return Err(ApiError::BadRequest(
                 "所选订单已被分配或当前状态不可分配".to_string(),
             ));
         }
+    }
+
+    // 如果没有订单需要分配，删除空行程
+    if assigned_count == 0 {
+        sqlx::query("DELETE FROM vehicle_trips WHERE id = $1")
+            .bind(trip_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        return Err(ApiError::BadRequest("请选择要分配的订单".to_string()));
     }
 
     sync_trip_counts(&mut tx, trip_id).await?;
