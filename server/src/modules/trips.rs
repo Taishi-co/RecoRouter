@@ -1680,7 +1680,7 @@ where
     }
 
     // 2. 获取可用车辆
-    let available_vehicles = sqlx::query_as::<_, (String, String)>(
+    let available_vehicles = sqlx::query_as::<_, (String, Option<String>)>(
         r#"
         SELECT id, vehicle_code
         FROM vehicles
@@ -1756,7 +1756,7 @@ where
                         available_vehicles.iter().find(|(id, _)| id == vid).and_then(|(id, code)| {
                             let current_load = load_map.get(&(id.clone(), time_slot.clone())).copied().unwrap_or(0);
                             if current_load < max_per_slot as i64 {
-                                Some((id.clone(), code.clone(), current_load))
+                                Some((id.clone(), code.clone().unwrap_or_default(), current_load))
                             } else {
                                 None
                             }
@@ -1780,7 +1780,7 @@ where
                         // 选择总体负载最少的车辆
                         load_map.get(&(vid.clone(), time_slot.clone())).copied().unwrap_or(0)
                     })
-                    .map(|(id, code)| (id.clone(), code.clone()))
+                    .map(|(id, code)| (id.clone(), code.clone().unwrap_or_default()))
             });
 
             if let Some((vehicle_id, vehicle_code)) = best_vehicle {
