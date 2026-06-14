@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Text, View } from '@tarojs/components'
-import Taro from '@tarojs/taro'
+import Taro, { useDidShow } from '@tarojs/taro'
 import { ChevronLeft, CreditCard, ShieldCheck, Store } from 'lucide-react-taro'
 import {
   createMallCheckout,
@@ -12,7 +12,7 @@ import {
   type MallDiscountBreakdown,
 } from '@/services/mall'
 import { startOrderPayment } from '@/services/payment'
-import { MallLocationStrip, MallPage, MallProductThumb, mallWeightText, mallYuan } from '../mall-ui'
+import { MALL_SELECTED_ADDRESS_STORAGE_KEY, MallLocationStrip, MallPage, MallProductThumb, mallWeightText, mallYuan } from '../mall-ui'
 import { redirectToMallAuth } from '../auth-route'
 
 interface StoredUser {
@@ -30,9 +30,9 @@ export default function MallConfirmPage() {
   const pointsRedeemedCents = checkout?.pointsRedeemedCents || 0
   const memberDiscountCents = checkout?.memberDiscountCents || 0
 
-  useEffect(() => {
+  useDidShow(() => {
     loadData()
-  }, [])
+  })
 
   const loadData = async () => {
     if (!userId) {
@@ -46,7 +46,8 @@ export default function MallConfirmPage() {
         listMallAddresses(userId),
       ])
       setCheckout(nextCheckout)
-      const addressId = String(Taro.getCurrentInstance().router?.params?.addressId || nextCheckout.addressId || '')
+      const storedAddressId = String(Taro.getStorageSync(MALL_SELECTED_ADDRESS_STORAGE_KEY) || '')
+      const addressId = String(Taro.getCurrentInstance().router?.params?.addressId || storedAddressId || nextCheckout.addressId || '')
       setAddress(addresses.find((item) => item.id === addressId) || addresses.find((item) => item.isDefault || item.is_default) || addresses[0] || null)
     } catch (error) {
       Taro.showToast({
@@ -61,12 +62,23 @@ export default function MallConfirmPage() {
       Taro.showToast({ title: '请选择商品', icon: 'none' })
       return
     }
+    if (!address) {
+      Taro.showToast({ title: '请选择送货地址', icon: 'none' })
+      Taro.navigateTo({ url: '/pages/mall/address/index?select=1' })
+      return
+    }
+    if (!hasAddressLocation(address)) {
+      Taro.showToast({ title: '请用地图补充地址定位', icon: 'none' })
+      Taro.navigateTo({ url: '/pages/mall/address/index?select=1' })
+      return
+    }
     setSubmitting(true)
     try {
+      Taro.setStorageSync(MALL_SELECTED_ADDRESS_STORAGE_KEY, address.id)
       const order = await createMallOrder({
         userId,
         checkoutId: checkout.id,
-        addressId: address?.id,
+        addressId: address.id,
         expectedDeliveryWindow: '明日 17:00-20:00',
         deliveryMethod: '送货到家',
       })
@@ -101,7 +113,7 @@ export default function MallConfirmPage() {
         active
         title={address?.addressLabel || address?.address_name || '请选择送货地址'}
         subtitle={address?.addressText || address?.address || '下单前需要填写真实收货地址'}
-        onClick={() => Taro.navigateTo({ url: '/pages/mall/address/index' })}
+        onClick={() => Taro.navigateTo({ url: '/pages/mall/address/index?select=1' })}
       />
 
       <View className="mall-card">
@@ -163,6 +175,10 @@ export default function MallConfirmPage() {
       </View>
     </MallPage>
   )
+}
+
+function hasAddressLocation(address: MallAddress) {
+  return Number.isFinite(Number(address.latitude)) && Number.isFinite(Number(address.longitude))
 }
 
 function DiscountSummary({ item }: { item: MallDiscountBreakdown }) {

@@ -358,6 +358,41 @@ body.reco-mall-h5 .taro_page {
   margin-top: 12PX;
 }
 
+.mall-address-location-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9PX;
+  margin-top: 10PX;
+}
+
+.mall-address-location-button {
+  height: 42PX;
+  border: 1PX solid #cce7c7;
+  border-radius: 9PX;
+  background: #f1fbef;
+  color: #2f7e43;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6PX;
+  font-size: 13PX;
+  font-weight: 900;
+}
+
+.mall-address-location-hint,
+.mall-address-location-ok {
+  display: block;
+  margin-top: 8PX;
+  color: #657160;
+  font-size: 12PX;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.mall-address-location-ok {
+  color: #2f7e43;
+}
+
 .mall-form-label {
   display: block;
   margin-bottom: 7PX;

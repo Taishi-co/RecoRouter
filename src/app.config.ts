@@ -190,6 +190,12 @@ const appConfig = {
     navigationBarTitleText: navigationTitleByProfile[appProfile],
     navigationBarTextStyle: 'black' as const,
   },
+  permission: {
+    'scope.userLocation': {
+      desc: '用于选择送货地址并计算配送范围',
+    },
+  },
+  requiredPrivateInfos: ['getLocation', 'chooseLocation'] as Array<'getLocation' | 'chooseLocation'>,
 }
 
 export default typeof defineAppConfig === 'function'

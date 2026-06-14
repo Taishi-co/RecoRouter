@@ -14,6 +14,7 @@ import {
 } from '@/services/mall'
 import {
   MallBrandMark,
+  MALL_SELECTED_ADDRESS_STORAGE_KEY,
   MallLocationStrip,
   MallPage,
   MallPrimaryButton,
@@ -68,10 +69,7 @@ export default function MallCartPage() {
       ])
       setCart(nextCart)
       setAddresses(nextAddresses)
-      const defaultAddress = nextAddresses.find((item) => item.isDefault || item.is_default) || nextAddresses[0]
-      if (defaultAddress) {
-        setSelectedAddressId(defaultAddress.id)
-      }
+      setSelectedAddressId(resolveSelectedAddressId(nextAddresses, selectedAddressId))
     } catch (error) {
       showError(error, '加载失败')
     } finally {
@@ -124,7 +122,18 @@ export default function MallCartPage() {
       Taro.showToast({ title: '请选择商品', icon: 'none' })
       return
     }
+    if (!selectedAddress) {
+      Taro.showToast({ title: '请选择送货地址', icon: 'none' })
+      Taro.navigateTo({ url: '/pages/mall/address/index?select=1' })
+      return
+    }
+    if (!hasAddressLocation(selectedAddress)) {
+      Taro.showToast({ title: '请用地图补充地址定位', icon: 'none' })
+      Taro.navigateTo({ url: '/pages/mall/address/index?select=1' })
+      return
+    }
     try {
+      Taro.setStorageSync(MALL_SELECTED_ADDRESS_STORAGE_KEY, selectedAddress.id)
       const checkout = await createMallCheckout({
         userId,
         source: 'cart',
@@ -177,7 +186,7 @@ export default function MallCartPage() {
         <MallLocationStrip
           title={selectedAddress?.addressLabel || selectedAddress?.address_name || '请选择送货地址'}
           subtitle={selectedAddress?.addressText || selectedAddress?.address || '下单前需要填写收货地址'}
-          onClick={() => Taro.navigateTo({ url: '/pages/mall/address/index' })}
+          onClick={() => Taro.navigateTo({ url: '/pages/mall/address/index?select=1' })}
         />
       </View>
 
@@ -273,4 +282,17 @@ function showError(error: unknown, fallback: string) {
     title: error instanceof Error ? error.message : fallback,
     icon: 'none',
   })
+}
+
+function resolveSelectedAddressId(addresses: MallAddress[], currentAddressId: string) {
+  const storedAddressId = String(Taro.getStorageSync(MALL_SELECTED_ADDRESS_STORAGE_KEY) || '')
+  const matchedAddress = addresses.find((item) => item.id === currentAddressId)
+    || addresses.find((item) => item.id === storedAddressId)
+    || addresses.find((item) => item.isDefault || item.is_default)
+    || addresses[0]
+  return matchedAddress?.id || ''
+}
+
+function hasAddressLocation(address: MallAddress) {
+  return Number.isFinite(Number(address.latitude)) && Number.isFinite(Number(address.longitude))
 }

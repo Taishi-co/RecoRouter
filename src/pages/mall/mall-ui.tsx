@@ -29,6 +29,7 @@ type MallTabKey = 'home' | 'category' | 'cart' | 'mine'
 type MallIcon = typeof House
 
 export const SANYOU_LOGO = sanyouLogo
+export const MALL_SELECTED_ADDRESS_STORAGE_KEY = 'mallSelectedAddressId'
 
 const MALL_H5_BODY_CLASS = 'reco-mall-h5'
 let mallH5PageCount = 0
