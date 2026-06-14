@@ -8,8 +8,8 @@ const migration = readFileSync(resolve('server/migrations/0018_mall_wechat_auth.
 
 const assertions = [
   {
-    ok: /\.route\(\s*["']\/api\/auth\/wechat-login["'][\s\S]*post\(wechat_login/.test(authModule),
-    message: 'Auth router must expose POST /api/auth/wechat-login',
+    ok: /\.route\(\s*["']\/api\/mall\/auth\/wechat-login["'][\s\S]*post\(wechat_login/.test(authModule),
+    message: 'Mall auth router must expose POST /api/mall/auth/wechat-login',
   },
   {
     ok: /WechatMiniappConfig::from_env(?:_for_service)?\(/.test(authModule)
@@ -34,8 +34,11 @@ const assertions = [
     message: 'Wechat helper must expose miniapp-only config and unionid-aware login session',
   },
   {
-    ok: /Taro\.login\(\)/.test(authPage) && /\/api\/auth\/wechat-login/.test(authPage),
-    message: 'Mall auth page must call Taro.login and POST /api/auth/wechat-login',
+    ok: !/\/api\/auth\/wechat-login/.test(authPage)
+      && /Taro\.login\(\)/.test(authPage)
+      && /mallAuthApiBase\s*=\s*['"]\/api\/mall\/auth['"]/.test(authPage)
+      && /\$\{mallAuthApiBase\}\/wechat-login/.test(authPage),
+    message: 'Mall auth page must call Taro.login and POST /api/mall/auth/wechat-login',
   },
   {
     ok: /微信快捷登录/.test(authPage) && /role:\s*registerRole/.test(authPage),

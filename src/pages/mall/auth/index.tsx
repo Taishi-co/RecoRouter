@@ -30,6 +30,7 @@ interface ApiEnvelope<T> {
 
 const mallHomeUrl = '/pages/mall/index/index'
 const defaultReturnUrl = mallHomeUrl
+const mallAuthApiBase = '/api/mall/auth'
 
 export default function MallAuthPage() {
   const params = Taro.getCurrentInstance().router?.params || {}
@@ -71,7 +72,7 @@ export default function MallAuthPage() {
   const loadCaptcha = async () => {
     setCaptchaLoading(true)
     try {
-      const captcha = await requestApi<CaptchaInfo>('/api/auth/captcha', 'GET')
+      const captcha = await requestApi<CaptchaInfo>(`${mallAuthApiBase}/captcha`, 'GET')
       setCaptchaId(captcha.captchaId)
       setCaptchaImage(captcha.image)
       setCaptchaCode('')
@@ -112,8 +113,8 @@ export default function MallAuthPage() {
     setLoading(true)
     try {
       const authUser = mode === 'login'
-        ? await requestApi<AuthUserInfo>('/api/auth/login', 'POST', { phone, password })
-        : await requestApi<AuthUserInfo>('/api/auth/register', 'POST', {
+        ? await requestApi<AuthUserInfo>(`${mallAuthApiBase}/login`, 'POST', { phone, password })
+        : await requestApi<AuthUserInfo>(`${mallAuthApiBase}/register`, 'POST', {
           phone,
           password,
           confirmPassword,
@@ -147,7 +148,7 @@ export default function MallAuthPage() {
         throw new Error('微信登录凭证获取失败')
       }
 
-      const authUser = await requestApi<AuthUserInfo>('/api/auth/wechat-login', 'POST', {
+      const authUser = await requestApi<AuthUserInfo>(`${mallAuthApiBase}/wechat-login`, 'POST', {
         loginCode,
         role: registerRole,
       })

@@ -99,6 +99,19 @@ where
         .merge(payment_qr_router)
 }
 
+pub fn mall_router<S>() -> Router<AppState<S>>
+where
+    S: Storage,
+{
+    Router::new()
+        .route("/api/mall/auth/captcha", get(captcha::<S>))
+        .route("/api/mall/auth/register", post(register::<S>))
+        .route("/api/mall/auth/login", post(login::<S>))
+        .route("/api/mall/auth/wechat-login", post(wechat_login::<S>))
+        .route("/api/mall/auth/logout", post(logout::<S>))
+        .route("/api/mall/auth/user-info", get(user_info::<S>))
+}
+
 #[derive(Debug, Deserialize)]
 struct RegisterRequest {
     phone: String,

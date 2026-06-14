@@ -2028,7 +2028,7 @@ body.reco-mall-h5 .taro_page {
 
 .mall-v7-home-fixed {
   position: sticky;
-  top: 0;
+  top: var(--mall-sticky-top, 0PX);
   z-index: 5;
   margin: -22PX -18PX 14PX;
   padding: 12PX 18PX 10PX;

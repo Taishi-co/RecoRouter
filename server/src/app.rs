@@ -158,6 +158,7 @@ where
     S: Storage + Send + Sync + 'static,
 {
     router
+        .merge(auth::mall_router::<S>())
         .merge(mall::router::<S>())
         .merge(payments::router::<S>())
         // trips 路由已在 vehicle_routes 中添加，避免重复注册

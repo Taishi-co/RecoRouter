@@ -1,4 +1,4 @@
-import { useLayoutEffect, type PropsWithChildren, type ReactNode } from 'react'
+import { useLayoutEffect, type CSSProperties, type PropsWithChildren, type ReactNode } from 'react'
 import { Image, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import {
@@ -16,6 +16,7 @@ import {
 import sanyouLogo from '@/assets/brand/sanyou.png'
 import { resolveMallImageUrl, type MallProduct, yuan } from '@/services/mall'
 import { Input } from '@/components/ui/input'
+import { getPageBodyPaddingTop, getStickyHeaderTop } from '@/lib/safe-area'
 import './mall-theme.css'
 
 type MallTabKey = 'home' | 'category' | 'cart' | 'mine'
@@ -72,9 +73,13 @@ export function MallPage({
   noTab,
 }: PropsWithChildren<{ active?: MallTabKey; noTab?: boolean }>) {
   useMallH5BodyClass()
+  const shellStyle = {
+    paddingTop: `${getPageBodyPaddingTop()}px`,
+    '--mall-sticky-top': `${getStickyHeaderTop()}px`,
+  } as CSSProperties
 
   return (
-    <View className="mall-shell">
+    <View className="mall-shell" style={shellStyle}>
       {children}
       {!noTab && <MallBottomNav active={active || 'home'} />}
     </View>

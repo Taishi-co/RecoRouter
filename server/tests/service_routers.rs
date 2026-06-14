@@ -86,6 +86,10 @@ async fn vehicle_router_exposes_vehicle_routes_without_mall_or_platform_business
 
     assert_eq!(get_status(app.clone(), "/api/health").await, StatusCode::OK);
     assert_ne!(
+        options_status(app.clone(), "/api/auth/login").await,
+        StatusCode::NOT_FOUND
+    );
+    assert_ne!(
         options_status(app.clone(), "/api/orders").await,
         StatusCode::NOT_FOUND
     );
@@ -104,6 +108,18 @@ async fn mall_router_exposes_mall_routes_without_vehicle_or_platform_business_ro
     let app = router_with_config(ServiceRouterKind::Mall);
 
     assert_eq!(get_status(app.clone(), "/api/health").await, StatusCode::OK);
+    assert_ne!(
+        options_status(app.clone(), "/api/mall/auth/login").await,
+        StatusCode::NOT_FOUND
+    );
+    assert_ne!(
+        options_status(app.clone(), "/api/mall/auth/wechat-login").await,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        options_status(app.clone(), "/api/auth/login").await,
+        StatusCode::NOT_FOUND
+    );
     assert_ne!(
         options_status(app.clone(), "/api/mall/products").await,
         StatusCode::NOT_FOUND
