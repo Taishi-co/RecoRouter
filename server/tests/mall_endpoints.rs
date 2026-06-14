@@ -207,6 +207,10 @@ async fn post_json(app: &Router, uri: &str, body: Value) -> (StatusCode, Value) 
     request_json(app, "POST", uri, Some(body)).await
 }
 
+async fn delete_json(app: &Router, uri: &str) -> (StatusCode, Value) {
+    request_json(app, "DELETE", uri, None).await
+}
+
 async fn post_json_with_auth(
     app: &Router,
     uri: &str,
@@ -275,6 +279,129 @@ async fn insert_session(pool: &PgPool, user_id: &str, token: &str) -> String {
     .expect("session should be inserted");
 
     token.to_string()
+}
+
+#[tokio::test]
+async fn undispatched_orders_returns_mall_orders_without_demand_linkage() {
+    let Some(context) = TestContext::new().await else {
+        return;
+    };
+
+    sqlx::query(
+        r#"
+        INSERT INTO mall_orders (id, order_no, user_id, address_text, status, payable_cents)
+        VALUES ('undispatched-order-1', 'MALL-UNDISPATCHED-1', 'mall-user-1', '测试配送地址', 'paid', 1990)
+        "#,
+    )
+    .execute(&context.pool)
+    .await
+    .expect("undispatched mall order should be inserted");
+    sqlx::query(
+        r#"
+        INSERT INTO mall_order_items (
+            id, order_id, product_id, sku, product_name, unit_price_cents, quantity, line_total_cents
+        )
+        VALUES (
+            'undispatched-item-1', 'undispatched-order-1', 'product-1', 'SKU-1', '测试商品', 1990, 1, 1990
+        )
+        "#,
+    )
+    .execute(&context.pool)
+    .await
+    .expect("undispatched mall order item should be inserted");
+
+    let (status, body) = get_json(&context.app, "/api/trips/undispatched-orders").await;
+    assert_eq!(status, StatusCode::OK);
+    let orders = body["data"]
+        .as_array()
+        .expect("undispatched order data should be an array");
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0]["id"], "undispatched-order-1");
+    assert_eq!(orders[0]["items"][0]["productName"], "测试商品");
+
+    sqlx::query(
+        "INSERT INTO vehicle_trips (id, vehicle_id, total_orders) VALUES ('trip-with-order-1', 'vehicle-1', 1)",
+    )
+    .execute(&context.pool)
+    .await
+    .expect("trip should be inserted");
+    sqlx::query(
+        "UPDATE mall_orders SET trip_id = 'trip-with-order-1', status = 'dispatching', dispatched_at = now() WHERE id = 'undispatched-order-1'",
+    )
+    .execute(&context.pool)
+    .await
+    .expect("mall order should be assigned to a trip");
+    sqlx::query(
+        "INSERT INTO trip_stops (id, trip_id, mall_order_id, stop_sequence) VALUES ('trip-stop-1', 'trip-with-order-1', 'undispatched-order-1', 1)",
+    )
+    .execute(&context.pool)
+    .await
+    .expect("trip stop should be inserted");
+
+    let (assigned_status, assigned_body) =
+        get_json(&context.app, "/api/trips/undispatched-orders").await;
+    assert_eq!(assigned_status, StatusCode::OK);
+    assert_eq!(assigned_body["data"].as_array().unwrap().len(), 0);
+
+    sqlx::query("INSERT INTO vehicle_trips (id, vehicle_id) VALUES ('other-trip-1', 'vehicle-2')")
+        .execute(&context.pool)
+        .await
+        .expect("other trip should be inserted");
+    let (wrong_trip_status, _) =
+        delete_json(&context.app, "/api/trips/other-trip-1/stops/trip-stop-1").await;
+    assert_eq!(wrong_trip_status, StatusCode::NOT_FOUND);
+
+    sqlx::query("UPDATE vehicle_trips SET status = 'in_progress' WHERE id = 'trip-with-order-1'")
+        .execute(&context.pool)
+        .await
+        .expect("trip should become in progress");
+    let (in_progress_status, _) = delete_json(
+        &context.app,
+        "/api/admin/trips/trip-with-order-1/remove-order/undispatched-order-1",
+    )
+    .await;
+    assert_eq!(in_progress_status, StatusCode::BAD_REQUEST);
+    sqlx::query("UPDATE vehicle_trips SET status = 'planned' WHERE id = 'trip-with-order-1'")
+        .execute(&context.pool)
+        .await
+        .expect("trip should become editable again");
+
+    let (remove_status, remove_body) = delete_json(
+        &context.app,
+        "/api/admin/trips/trip-with-order-1/remove-order/undispatched-order-1",
+    )
+    .await;
+    assert_eq!(remove_status, StatusCode::OK);
+    assert_eq!(remove_body["message"], "订单已移除");
+
+    let (returned_status, returned_body) =
+        get_json(&context.app, "/api/trips/undispatched-orders").await;
+    assert_eq!(returned_status, StatusCode::OK);
+    let returned_orders = returned_body["data"].as_array().unwrap();
+    assert_eq!(returned_orders.len(), 1);
+    assert_eq!(returned_orders[0]["id"], "undispatched-order-1");
+
+    let order_trip_id: Option<String> =
+        sqlx::query_scalar("SELECT trip_id FROM mall_orders WHERE id = 'undispatched-order-1'")
+            .fetch_one(&context.pool)
+            .await
+            .expect("mall order should still exist");
+    assert!(order_trip_id.is_none());
+    let stop_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM trip_stops WHERE mall_order_id = 'undispatched-order-1'",
+    )
+    .fetch_one(&context.pool)
+    .await
+    .expect("trip stop count should load");
+    assert_eq!(stop_count, 0);
+    let trip_order_count: i32 =
+        sqlx::query_scalar("SELECT total_orders FROM vehicle_trips WHERE id = 'trip-with-order-1'")
+            .fetch_one(&context.pool)
+            .await
+            .expect("trip order count should load");
+    assert_eq!(trip_order_count, 0);
+
+    context.cleanup().await;
 }
 
 #[tokio::test]

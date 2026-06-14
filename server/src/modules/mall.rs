@@ -66,6 +66,10 @@ where
         .route("/api/mall/addresses/:id", put(update_mall_address::<S>))
         .route("/api/mall/pickup-points", get(list_pickup_points::<S>))
         .route(
+            "/api/mall/delivery-time-slots",
+            get(get_delivery_time_slots::<S>),
+        )
+        .route(
             "/api/mall/community-posts",
             get(list_community_posts::<S>).post(create_community_post::<S>),
         )
@@ -638,6 +642,10 @@ struct CreateMallOrderRequest {
     recipient_phone: Option<String>,
     #[serde(alias = "expected_delivery_window")]
     expected_delivery_window: Option<String>,
+    #[serde(alias = "delivery_date")]
+    delivery_date: Option<String>,
+    #[serde(alias = "delivery_time_slot")]
+    delivery_time_slot: Option<String>,
     #[serde(alias = "delivery_method")]
     delivery_method: Option<String>,
     #[serde(alias = "pickup_method")]
@@ -3088,11 +3096,12 @@ where
         INSERT INTO mall_orders (
           order_no, user_id, address_id, pickup_point_id, recipient_name, recipient_phone, address_text,
           latitude, longitude, delivery_method, pickup_method, expected_delivery_window,
+          delivery_date, delivery_time_slot,
           subtotal_cents, delivery_fee_cents, coupon_cents, payable_cents,
           cabin_code, remark, waypoints, origin_latitude, origin_longitude, origin_address,
           estimated_payable_cents, weight_adjustment_status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::numeric, $9::numeric, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20::numeric, $21::numeric, $22, $23, $24)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::numeric, $9::numeric, $10, $11, $12, $13::date, $14, $15, $16, $17, $18, $19, $20, $21, $22::numeric, $23::numeric, $24, $25, $26)
         RETURNING id
         "#,
     )
@@ -3108,6 +3117,8 @@ where
     .bind(delivery_method)
     .bind(pickup_method)
     .bind(body.expected_delivery_window)
+    .bind(&body.delivery_date)
+    .bind(&body.delivery_time_slot)
     .bind(subtotal_cents)
     .bind(delivery_fee_cents)
     .bind(coupon_cents)
@@ -10993,6 +11004,40 @@ fn extension_for_qualification_file(content_type: Option<&str>) -> Option<&'stat
         Some("application/pdf") => Some("pdf"),
         value => extension_for_product_image(value),
     }
+}
+
+/// 获取可用的配送时间段列表
+/// 时间段按一小时划分，从 08:00 到 21:00
+async fn get_delivery_time_slots<S>(
+    _state: State<AppState<S>>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    // 硬编码的时间段列表（08:00-21:00，每小时一个时间段）
+    let slots = vec![
+        json!({"slot": "08:00-09:00", "label": "08:00-09:00"}),
+        json!({"slot": "09:00-10:00", "label": "09:00-10:00"}),
+        json!({"slot": "10:00-11:00", "label": "10:00-11:00"}),
+        json!({"slot": "11:00-12:00", "label": "11:00-12:00"}),
+        json!({"slot": "12:00-13:00", "label": "12:00-13:00"}),
+        json!({"slot": "13:00-14:00", "label": "13:00-14:00"}),
+        json!({"slot": "14:00-15:00", "label": "14:00-15:00"}),
+        json!({"slot": "15:00-16:00", "label": "15:00-16:00"}),
+        json!({"slot": "16:00-17:00", "label": "16:00-17:00"}),
+        json!({"slot": "17:00-18:00", "label": "17:00-18:00"}),
+        json!({"slot": "18:00-19:00", "label": "18:00-19:00"}),
+        json!({"slot": "19:00-20:00", "label": "19:00-20:00"}),
+        json!({"slot": "20:00-21:00", "label": "20:00-21:00"}),
+    ];
+
+    Ok(ok(
+        "获取成功",
+        json!({
+            "slots": slots,
+            "description": "配送时间段按一小时划分，请在下单时选择期望的配送时间段"
+        }),
+    ))
 }
 
 #[cfg(test)]

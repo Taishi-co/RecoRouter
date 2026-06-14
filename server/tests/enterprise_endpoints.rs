@@ -207,6 +207,15 @@ async fn enterprise_station_and_enterprise_vehicle_routes_match_legacy_shapes() 
     assert_eq!(create_body["message"], "success");
     let enterprise_id = create_body["data"]["id"].as_str().unwrap().to_string();
 
+    let (list_status, list_body) = get_json(&context.app, "/api/enterprise?limit=100").await;
+    assert_eq!(list_status, StatusCode::OK);
+    let enterprises = list_body["data"]
+        .as_array()
+        .expect("enterprise list data should be an array");
+    assert_eq!(enterprises.len(), 1);
+    assert_eq!(enterprises[0]["id"], enterprise_id);
+    assert_eq!(enterprises[0]["admin_name"], "企业管理员");
+
     let (admin_status, admin_body) =
         get_json(&context.app, &format!("/api/enterprise/admin/{admin_id}")).await;
     assert_eq!(admin_status, StatusCode::OK);
