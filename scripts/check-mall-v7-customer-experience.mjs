@@ -157,10 +157,18 @@ const checks = [
       && !/COALESCE\(array_to_string\(p\.tags/.test(files.serverMall),
   },
   {
-    name: '购物车展示满减前合计、满减后实付、省钱、单品折后价和凑单提示',
-    pass: /cart-subtotal-before/.test(files.cart)
-      && /cart-payable-after/.test(files.cart)
-      && /cart-saved-cents/.test(files.cart)
+    name: '购物车把优惠汇总收进底部结算栏明细抽屉',
+    pass: !/mall-v7-cart-summary|cart-subtotal-before|cart-payable-after|cart-saved-cents/.test(files.cart)
+      && /discountDetailOpen/.test(files.cart)
+      && /mall-v7-cart-discount-toggle/.test(files.cart)
+      && /mall-v7-cart-discount-drawer/.test(files.cart)
+      && /商品总计/.test(files.cart)
+      && /优惠券/.test(files.cart)
+      && /活动/.test(files.cart)
+      && /运费/.test(files.cart)
+      && /免运费/.test(files.cart)
+      && /已省/.test(files.cart)
+      && /实付/.test(files.cart)
       && /discountedUnitPriceCents/.test(files.cart)
       && /lineDiscountCents/.test(files.cart)
       && /addOnPrompt/.test(files.cart)
@@ -225,11 +233,13 @@ const checks = [
       && /enrich_product_pricing/.test(files.serverMall),
   },
   {
-    name: 'V7 样式包含固定首页、秒杀、商品卡、购物车摘要、地址表单，并禁用切换动画',
+    name: 'V7 样式包含固定首页、秒杀、商品卡、购物车底部明细、地址表单，并禁用切换动画',
     pass: /mall-v7-home-fixed/.test(files.theme)
       && /mall-v7-flash-sale/.test(files.theme)
       && /mall-v7-product-card/.test(files.theme)
-      && /mall-v7-cart-summary/.test(files.theme)
+      && !/\.mall-v7-cart-summary/.test(files.theme)
+      && /mall-v7-cart-discount-drawer/.test(files.theme)
+      && /mall-v7-cart-discount-toggle/.test(files.theme)
       && /mall-address-form/.test(files.theme)
       && /transition:\s*none\s*!important/.test(files.theme),
   },

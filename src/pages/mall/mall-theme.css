@@ -3199,17 +3199,6 @@ body.reco-mall-h5 .taro_page {
   color: #7a8476;
 }
 
-.mall-v7-cart-summary {
-  margin-top: 14PX;
-  padding: 14PX 12PX;
-  border-radius: 10PX;
-  background: #1d2f21;
-  color: #ffffff;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8PX;
-}
-
 .mall-loading-overlay {
   position: fixed;
   left: 0;
@@ -3258,22 +3247,6 @@ body.reco-mall-h5 .taro_page {
   to {
     transform: rotate(360deg);
   }
-}
-
-.mall-v7-summary-label {
-  display: block;
-  color: #dcebd7;
-  font-size: 11PX;
-  font-weight: 800;
-}
-
-.mall-v7-summary-value {
-  display: block;
-  margin-top: 5PX;
-  color: #ffffff;
-  font-size: 17PX;
-  line-height: 1.1;
-  font-weight: 900;
 }
 
 .mall-v7-addon {
@@ -3420,6 +3393,97 @@ body.reco-mall-h5 .taro_page {
   bottom: 80PX;
   z-index: 21;
   box-shadow: 0 8PX 18PX rgba(31, 45, 31, 0.16);
+}
+
+.mall-v7-cart-checkout-panel {
+  padding: 10PX 12PX;
+  border-radius: 12PX;
+  background: #17361d;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 9PX;
+}
+
+.mall-v7-cart-pay-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12PX;
+}
+
+.mall-v7-cart-pay-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.mall-v7-cart-pay-value-row {
+  margin-top: 2PX;
+  display: flex;
+  align-items: center;
+  gap: 6PX;
+}
+
+.mall-v7-cart-discount-toggle {
+  width: 22PX;
+  height: 22PX;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.mall-v7-cart-pay-saved {
+  display: block;
+  margin-top: 3PX;
+  color: #ffcf9d;
+  font-size: 11PX;
+  line-height: 1.15;
+  font-weight: 900;
+}
+
+.mall-v7-cart-discount-drawer {
+  width: 100%;
+  padding: 3PX 0 9PX;
+  border-bottom: 1PX solid rgba(255, 255, 255, 0.12);
+  box-sizing: border-box;
+}
+
+.mall-v7-cart-discount-row {
+  min-height: 24PX;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12PX;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12PX;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.mall-v7-cart-discount-row text:last-child,
+.mall-v7-cart-discount-row span:last-child {
+  color: #ffffff;
+  text-align: right;
+}
+
+.mall-v7-cart-discount-row-warm text:last-child,
+.mall-v7-cart-discount-row-warm span:last-child {
+  color: #ffcf9d;
+}
+
+.mall-v7-cart-discount-row-strong {
+  color: #ffffff;
+  font-size: 13PX;
+  font-weight: 900;
+}
+
+.mall-v7-cart-discount-divider {
+  height: 1PX;
+  margin: 5PX 0;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .mall-v7-checkout-note {
