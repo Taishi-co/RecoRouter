@@ -51,7 +51,7 @@ export const getStickyHeaderTop = () => {
 }
 
 export const getHomeStickyHeaderTop = () => {
-  return getStickyHeaderTop()
+  return 0
 }
 
 export const getPageHeaderPaddingTop = () => {
