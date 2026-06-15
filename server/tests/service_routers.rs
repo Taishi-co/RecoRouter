@@ -128,7 +128,7 @@ async fn mall_router_exposes_mall_routes_without_vehicle_or_platform_business_ro
         options_status(app.clone(), "/api/orders").await,
         StatusCode::NOT_FOUND
     );
-    assert_ne!(
+    assert_eq!(
         options_status(app.clone(), "/api/payments/prepay").await,
         StatusCode::NOT_FOUND
     );
@@ -165,6 +165,10 @@ async fn platform_router_exposes_platform_routes_without_business_routes() {
     );
     assert_ne!(
         options_status(app.clone(), "/api/platform/audit-logs").await,
+        StatusCode::NOT_FOUND
+    );
+    assert_ne!(
+        options_status(app.clone(), "/api/payments/prepay").await,
         StatusCode::NOT_FOUND
     );
     assert_eq!(

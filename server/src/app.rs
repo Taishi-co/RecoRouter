@@ -160,7 +160,6 @@ where
     router
         .merge(auth::mall_router::<S>())
         .merge(mall::router::<S>())
-        .merge(payments::router::<S>())
         // trips 路由已在 vehicle_routes 中添加，避免重复注册
         .merge(
             mall::admin_router::<S>().route_layer(middleware::from_fn_with_state(
@@ -174,5 +173,7 @@ fn platform_routes<S>(router: Router<AppState<S>>, _state: &AppState<S>) -> Rout
 where
     S: Storage + Send + Sync + 'static,
 {
-    router.merge(platform::router::<S>())
+    router
+        .merge(platform::router::<S>())
+        .merge(payments::router::<S>())
 }

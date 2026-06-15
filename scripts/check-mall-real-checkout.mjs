@@ -19,6 +19,9 @@ const files = {
   app: read('server/src/app.rs'),
 };
 
+const mallRoutesBlock = files.app.match(/fn mall_routes[\s\S]*?\nfn platform_routes/)?.[0] || '';
+const platformRoutesBlock = files.app.match(/fn platform_routes[\s\S]*$/)?.[0] || '';
+
 const checks = [
   {
     name: '商品详情使用小程序分享卡片 contract',
@@ -86,8 +89,9 @@ const checks = [
       && !/let coupon_cents = body\s*\n\s*\.coupon_cents/.test(files.serverMall),
   },
   {
-    name: '独立 mall 服务暴露公共支付路由',
-    pass: /fn mall_routes[\s\S]*\.merge\(payments::router::<S>\(\)\)/.test(files.app),
+    name: '公共 platform 服务暴露支付路由',
+    pass: /\.merge\(payments::router::<S>\(\)\)/.test(platformRoutesBlock)
+      && !/\.merge\(payments::router::<S>\(\)\)/.test(mallRoutesBlock),
   },
   {
     name: '服务层 exposes checkout API 和真实优惠字段',
