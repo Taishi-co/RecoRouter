@@ -96,6 +96,7 @@ where
             get(list_mall_orders::<S>).post(create_mall_order::<S>),
         )
         .route("/api/mall/orders/:id", get(get_mall_order::<S>))
+        .route("/api/mall/orders/:id/cancel", post(cancel_mall_order::<S>))
         .route(
             "/api/mall/orders/:id/tracking",
             get(get_mall_order_tracking::<S>),
@@ -679,6 +680,14 @@ struct CreateMallOrderRequest {
     origin_longitude: Option<String>,
     #[serde(alias = "origin_address")]
     origin_address: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CancelMallOrderRequest {
+    #[serde(alias = "user_id")]
+    user_id: String,
+    reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3266,6 +3275,26 @@ where
         if checkout.user_id != body.user_id {
             return Err(ApiError::Forbidden("结算单不属于当前用户".to_string()));
         }
+        if let Some(existing_order_id) = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT id
+            FROM mall_orders
+            WHERE checkout_id = $1
+              AND user_id = $2
+              AND status <> 'cancelled'
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(&checkout.id)
+        .bind(&body.user_id)
+        .fetch_optional(&state.db)
+        .await?
+        {
+            let mut order = fetch_order_detail(&state.db, &existing_order_id).await?;
+            resolve_mall_image_urls(&state.storage, &mut order).await?;
+            return Ok(ok("订单已存在", order));
+        }
     }
     let address_id = non_empty(body.address_id).or_else(|| {
         checkout
@@ -3325,8 +3354,36 @@ where
     };
 
     let mut tx = state.db.begin().await?;
+    if let Some(checkout) = &checkout {
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
+            .bind(&checkout.id)
+            .execute(&mut *tx)
+            .await?;
+        if let Some(existing_order_id) = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT id
+            FROM mall_orders
+            WHERE checkout_id = $1
+              AND user_id = $2
+              AND status <> 'cancelled'
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(&checkout.id)
+        .bind(&body.user_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        {
+            tx.commit().await?;
+            let mut order = fetch_order_detail(&state.db, &existing_order_id).await?;
+            resolve_mall_image_urls(&state.storage, &mut order).await?;
+            return Ok(ok("订单已存在", order));
+        }
+    }
     let order_no = new_mall_order_no();
     let cabin_code = random_cabin_code();
+    let checkout_id_for_order = checkout.as_ref().map(|checkout| checkout.id.clone());
     let recipient_name = non_empty(body.recipient_name).or_else(|| address.contact_name.clone());
     let recipient_phone = non_empty(body.recipient_phone).or_else(|| address.contact_phone.clone());
     let delivery_method = non_empty(body.delivery_method).unwrap_or_else(|| {
@@ -3352,19 +3409,20 @@ where
     let order_id: String = sqlx::query_scalar(
         r#"
         INSERT INTO mall_orders (
-          order_no, user_id, address_id, pickup_point_id, recipient_name, recipient_phone, address_text,
+          order_no, user_id, checkout_id, address_id, pickup_point_id, recipient_name, recipient_phone, address_text,
           latitude, longitude, delivery_method, pickup_method, expected_delivery_window,
-          delivery_date, delivery_time_slot,
+          payment_expires_at, delivery_date, delivery_time_slot,
           subtotal_cents, delivery_fee_cents, coupon_cents, payable_cents,
           cabin_code, remark, waypoints, origin_latitude, origin_longitude, origin_address,
           estimated_payable_cents, weight_adjustment_status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::numeric, $9::numeric, $10, $11, $12, $13::date, $14, $15, $16, $17, $18, $19, $20, $21, $22::numeric, $23::numeric, $24, $25, $26)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::numeric, $10::numeric, $11, $12, $13, now() + interval '10 minutes', $14::date, $15, $16, $17, $18, $19, $20, $21, $22, $23::numeric, $24::numeric, $25, $26, $27)
         RETURNING id
         "#,
     )
     .bind(&order_no)
     .bind(&body.user_id)
+    .bind(&checkout_id_for_order)
     .bind(&address.address_id)
     .bind(&address.pickup_point_id)
     .bind(recipient_name)
@@ -3494,13 +3552,6 @@ where
             .await?;
     }
 
-    if let Some(checkout) = &checkout {
-        sqlx::query("DELETE FROM mall_checkouts WHERE id = $1")
-            .bind(&checkout.id)
-            .execute(&mut *tx)
-            .await?;
-    }
-
     insert_order_event_tx(
         &mut tx,
         &order_id,
@@ -3526,6 +3577,7 @@ where
     S: Storage,
 {
     let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
+    expire_unpaid_mall_orders(&state.db).await?;
     let order_query = OrderQuery {
         status: query.status,
         ..OrderQuery::default()
@@ -3542,6 +3594,7 @@ async fn admin_list_orders<S>(
 where
     S: Storage,
 {
+    expire_unpaid_mall_orders(&state.db).await?;
     let mut orders = fetch_orders(&state.db, None, &query, true).await?;
     resolve_mall_image_urls_in_list(&state.storage, &mut orders).await?;
     Ok(ok("查询成功", orders))
@@ -3554,6 +3607,7 @@ async fn get_mall_order<S>(
 where
     S: Storage,
 {
+    expire_unpaid_mall_orders(&state.db).await?;
     let mut order = fetch_order_detail(&state.db, &id).await?;
     resolve_mall_image_urls(&state.storage, &mut order).await?;
     Ok(ok("查询成功", order))
@@ -3566,6 +3620,7 @@ async fn admin_get_order<S>(
 where
     S: Storage,
 {
+    expire_unpaid_mall_orders(&state.db).await?;
     let mut order = fetch_order_detail(&state.db, &id).await?;
     resolve_mall_image_urls(&state.storage, &mut order).await?;
     Ok(ok("查询成功", order))
@@ -3578,6 +3633,7 @@ async fn get_mall_order_tracking<S>(
 where
     S: Storage,
 {
+    expire_unpaid_mall_orders(&state.db).await?;
     let mut order = fetch_order_detail(&state.db, &id).await?;
     resolve_mall_image_urls(&state.storage, &mut order).await?;
     let events = fetch_order_events(&state.db, &id).await?;
@@ -3588,6 +3644,32 @@ where
             "events": events,
         }),
     ))
+}
+
+async fn cancel_mall_order<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<CancelMallOrderRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    validate_required(&body.user_id, "用户ID不能为空")?;
+    expire_unpaid_mall_orders(&state.db).await?;
+    let reason = non_empty(body.reason).unwrap_or_else(|| "用户取消订单".to_string());
+    let cancelled_order_id = cancel_pending_mall_order(
+        &state.db,
+        &id,
+        Some(&body.user_id),
+        "user_cancelled",
+        "订单已取消",
+        &reason,
+    )
+    .await?
+    .ok_or_else(|| ApiError::BadRequest("只能取消自己的待支付订单".to_string()))?;
+    let mut order = fetch_order_detail(&state.db, &cancelled_order_id).await?;
+    resolve_mall_image_urls(&state.storage, &mut order).await?;
+    Ok(ok("订单已取消", order))
 }
 
 async fn create_after_sale<S>(
@@ -6589,6 +6671,167 @@ where
     .fetch_one(&state.db)
     .await?;
     Ok(ok("查询成功", metrics))
+}
+
+pub async fn expire_unpaid_mall_orders(pool: &PgPool) -> ApiResult<()> {
+    let expired_order_ids = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT id
+        FROM mall_orders
+        WHERE status = 'pending_payment'
+          AND payment_status <> 'paid'
+          AND COALESCE(payment_expires_at, created_at + interval '10 minutes') <= now()
+        ORDER BY created_at ASC
+        LIMIT 100
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for order_id in expired_order_ids {
+        let _ = cancel_pending_mall_order(
+            pool,
+            &order_id,
+            None,
+            "payment_timeout",
+            "订单已自动取消",
+            "10分钟未支付，系统自动取消订单",
+        )
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn cancel_pending_mall_order(
+    pool: &PgPool,
+    order_id: &str,
+    user_id: Option<&str>,
+    stage: &str,
+    title: &str,
+    description: &str,
+) -> ApiResult<Option<String>> {
+    let mut tx = pool.begin().await?;
+    let cancelled_order_id = sqlx::query_scalar::<_, String>(
+        r#"
+        UPDATE mall_orders
+        SET status = 'cancelled',
+            payment_status = 'cancelled',
+            cancelled_at = COALESCE(cancelled_at, now()),
+            updated_at = now()
+        WHERE id = $1
+          AND status = 'pending_payment'
+          AND payment_status <> 'paid'
+          AND ($2::text IS NULL OR user_id = $2)
+        RETURNING id
+        "#,
+    )
+    .bind(order_id)
+    .bind(user_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let Some(cancelled_order_id) = cancelled_order_id else {
+        tx.commit().await?;
+        return Ok(None);
+    };
+
+    restore_mall_order_inventory_tx(&mut tx, &cancelled_order_id).await?;
+    release_mall_order_promotions_tx(&mut tx, &cancelled_order_id).await?;
+    insert_order_event_tx(
+        &mut tx,
+        &cancelled_order_id,
+        stage,
+        title,
+        description,
+        "done",
+    )
+    .await?;
+    tx.commit().await?;
+
+    Ok(Some(cancelled_order_id))
+}
+
+async fn restore_mall_order_inventory_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    order_id: &str,
+) -> ApiResult<()> {
+    sqlx::query(
+        r#"
+        UPDATE mall_products product
+        SET stock = product.stock + item.quantity,
+            sold_count = GREATEST(product.sold_count - item.quantity, 0),
+            variants = CASE
+              WHEN item.variant_id IS NULL THEN product.variants
+              ELSE (
+                SELECT COALESCE(jsonb_agg(
+                  CASE WHEN variant.value->>'id' = item.variant_id THEN
+                    jsonb_set(
+                      variant.value,
+                      '{stock}',
+                      to_jsonb(COALESCE((variant.value->>'stock')::integer, 0) + item.quantity)
+                    )
+                  ELSE variant.value END
+                  ORDER BY variant.ordinality
+                ), product.variants)
+                FROM jsonb_array_elements(product.variants) WITH ORDINALITY AS variant(value, ordinality)
+              )
+            END,
+            updated_at = now()
+        FROM mall_order_items item
+        WHERE item.order_id = $1
+          AND product.id = item.product_id
+        "#,
+    )
+    .bind(order_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn release_mall_order_promotions_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    order_id: &str,
+) -> ApiResult<()> {
+    sqlx::query(
+        r#"
+        WITH released AS (
+          UPDATE mall_user_coupons
+          SET status = 'claimed',
+              used_at = NULL,
+              order_id = NULL,
+              updated_at = now()
+          WHERE order_id = $1
+            AND status = 'used'
+          RETURNING coupon_id
+        ),
+        release_counts AS (
+          SELECT coupon_id, count(*)::integer AS released_count
+          FROM released
+          GROUP BY coupon_id
+        )
+        UPDATE mall_coupons coupon
+        SET used_count = GREATEST(coupon.used_count - release_counts.released_count, 0),
+            updated_at = now()
+        FROM release_counts
+        WHERE coupon.id = release_counts.coupon_id
+        "#,
+    )
+    .bind(order_id)
+    .execute(&mut **tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        DELETE FROM mall_points_ledger
+        WHERE order_id = $1
+          AND entry_type = 'redeem'
+        "#,
+    )
+    .bind(order_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 pub async fn settle_mall_order_payment_success(pool: &PgPool, order_id: &str) -> ApiResult<()> {

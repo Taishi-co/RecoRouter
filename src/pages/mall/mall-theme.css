@@ -2035,6 +2035,233 @@ body.reco-mall-h5 .taro_page {
   box-sizing: border-box;
 }
 
+.mall-orders-topbar {
+  display: grid;
+  grid-template-columns: 30PX 1fr 64PX;
+  align-items: center;
+  gap: 10PX;
+  min-height: 44PX;
+}
+
+.mall-orders-search {
+  height: 40PX;
+  padding: 0 12PX;
+  border-radius: 20PX;
+  background: #f2f3f2;
+  display: flex;
+  align-items: center;
+  gap: 8PX;
+  box-sizing: border-box;
+}
+
+.mall-orders-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.mall-orders-search input,
+.mall-orders-search-input input {
+  flex: 1;
+  min-width: 0;
+  color: #1f2d1f;
+  font-size: 14PX;
+  font-weight: 700;
+}
+
+.mall-orders-invoice {
+  color: #1f2d1f;
+  text-align: right;
+  font-size: 16PX;
+  line-height: 1;
+  font-weight: 800;
+}
+
+.mall-orders-tabs {
+  margin-top: 16PX;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: end;
+  gap: 8PX;
+}
+
+.mall-orders-tab {
+  position: relative;
+  height: 34PX;
+  color: #1f2d1f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15PX;
+  font-weight: 800;
+}
+
+.mall-orders-tab-active {
+  color: #18be4f;
+}
+
+.mall-orders-tab-active::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 24PX;
+  height: 4PX;
+  border-radius: 999PX;
+  background: #18be4f;
+  transform: translateX(-50%);
+}
+
+.mall-orders-notice {
+  margin: 12PX -14PX 0;
+  min-height: 52PX;
+  padding: 0 14PX;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #1f2d1f;
+  font-size: 14PX;
+  font-weight: 700;
+  box-sizing: border-box;
+}
+
+.mall-orders-notice text:last-child,
+.mall-orders-notice span:last-child {
+  min-width: 76PX;
+  height: 34PX;
+  border-radius: 17PX;
+  background: #18be4f;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+}
+
+.mall-orders-list {
+  margin-top: 12PX;
+  display: flex;
+  flex-direction: column;
+  gap: 12PX;
+}
+
+.mall-orders-card {
+  padding: 15PX;
+  border-radius: 12PX;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+.mall-orders-card-head {
+  min-height: 40PX;
+  display: flex;
+  justify-content: space-between;
+  gap: 12PX;
+  color: #1f2d1f;
+  font-size: 16PX;
+  line-height: 1.25;
+  font-weight: 800;
+}
+
+.mall-orders-card-head > view,
+.mall-orders-card-head > div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4PX;
+  text-align: right;
+}
+
+.mall-orders-status {
+  color: #1f2d1f;
+  font-size: 15PX;
+  font-weight: 900;
+}
+
+.mall-orders-substatus {
+  color: #8a9388;
+  font-size: 11PX;
+  font-weight: 700;
+}
+
+.mall-orders-images {
+  margin: 13PX -2PX 0;
+  min-height: 72PX;
+  display: flex;
+  align-items: center;
+  gap: 12PX;
+  overflow: hidden;
+}
+
+.mall-orders-thumb {
+  width: 64PX;
+  height: 64PX;
+  border-radius: 8PX;
+  flex: 0 0 auto;
+  background: #f4fbf1;
+}
+
+.mall-orders-thumb-empty {
+  border: 1PX solid #dcebd7;
+  box-sizing: border-box;
+}
+
+.mall-orders-summary {
+  margin-top: 12PX;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 8PX;
+  color: #1f2d1f;
+  font-size: 16PX;
+  font-weight: 800;
+}
+
+.mall-orders-summary text:last-child,
+.mall-orders-summary span:last-child {
+  font-size: 20PX;
+  font-weight: 950;
+}
+
+.mall-orders-actions {
+  margin-top: 14PX;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8PX;
+}
+
+.mall-orders-actions text,
+.mall-orders-actions span {
+  min-width: 74PX;
+  height: 34PX;
+  padding: 0 12PX;
+  border: 1PX solid #e1e5df;
+  border-radius: 17PX;
+  color: #1f2d1f;
+  background: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4PX;
+  font-size: 13PX;
+  font-weight: 800;
+  box-sizing: border-box;
+}
+
+.mall-orders-actions text:nth-child(2),
+.mall-orders-actions span:nth-child(2) {
+  border-color: #2f7e43;
+  color: #2f7e43;
+}
+
 .mall-detail-hero {
   display: grid;
   grid-template-columns: 72PX 1fr;

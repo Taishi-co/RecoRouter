@@ -28,7 +28,7 @@ const files = {
 }
 
 const homeCampaigns = ['开业大促', '满减活动', '新品首发', '节日福利']
-const orderTabs = ['待支付', '待配送', '待收货', '售后']
+const orderTabs = ['全部', '待支付', '进行中', '售后']
 
 const checks = [
   {
@@ -189,12 +189,17 @@ const checks = [
       && !/支付宝|余额支付|货到付款/.test(files.confirm),
   },
   {
-    name: '订单中心为待支付、待配送、待收货、售后四状态，待收货展示配送状态和收货地址',
+    name: '订单中心按小象超市式卡片展示，包含全部、待支付、进行中、售后和待支付操作',
     pass: orderTabs.every((text) => files.orders.includes(text))
-      && /pending_delivery/.test(files.orders)
-      && /pending_receipt/.test(files.orders)
-      && /deliveryStatusText/.test(files.orders)
-      && /收货地址待确认/.test(files.orders)
+      && /mall-orders-card/.test(files.orders)
+      && /<Image/.test(files.orders)
+      && /共\{itemCount/.test(files.orders)
+      && /实付：/.test(files.orders)
+      && /paymentCountdownText/.test(files.orders)
+      && /查看订单/.test(files.orders)
+      && /立刻支付/.test(files.orders)
+      && /取消订单/.test(files.orders)
+      && /联系客服/.test(files.orders)
       && !/fallbackOrders/.test(files.orders),
   },
   {

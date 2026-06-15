@@ -58,6 +58,7 @@ export default function MallConfirmPage() {
   }
 
   const submit = async () => {
+    if (submitting) return
     if (!checkout || checkout.items.length === 0) {
       Taro.showToast({ title: '请选择商品', icon: 'none' })
       return
