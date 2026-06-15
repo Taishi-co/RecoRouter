@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { Check, Circle, Store, Trash2 } from 'lucide-react-taro'
+import { Check, ChevronDown, ChevronUp, Circle, Store, Trash2 } from 'lucide-react-taro'
 import {
   createMallCheckout,
   deleteMallCartItem,
@@ -45,6 +45,7 @@ export default function MallCartPage() {
   const [selectedAddressId, setSelectedAddressId] = useState('')
   const [swipedCartItemId, setSwipedCartItemId] = useState('')
   const [cartSwipeStart, setCartSwipeStart] = useState<CartSwipeStart | null>(null)
+  const [discountDetailOpen, setDiscountDetailOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const userId = (Taro.getStorageSync('userInfo') as StoredUser | undefined)?.id || ''
 
@@ -53,6 +54,7 @@ export default function MallCartPage() {
     [cart.deliveryFeeCents, cart.payableCents, cart.subtotalCents, cart.couponCents],
   )
   const savedCents = Math.max(cart.totalDiscountCents ?? cart.couponCents ?? 0, 0)
+  const discountDetail = useMemo(() => buildCartDiscountDetail(cart, payableCents, savedCents), [cart, payableCents, savedCents])
   const selectedAddress = addresses.find((item) => item.id === selectedAddressId)
   const allSelected = cart.items.length > 0 && cart.items.every((item) => item.selected)
   const addOnPrompt = buildAddOnPrompt(cart)
@@ -235,21 +237,6 @@ export default function MallCartPage() {
         </View>
       </View>
 
-      <View className="mall-v7-cart-summary">
-        <View>
-          <Text className="mall-v7-summary-label">当前合计</Text>
-          <Text className="mall-v7-summary-value cart-subtotal-before">{mallYuan(cart.subtotalCents)}</Text>
-        </View>
-        <View>
-          <Text className="mall-v7-summary-label">满减后实付</Text>
-          <Text className="mall-v7-summary-value cart-payable-after">{mallYuan(payableCents)}</Text>
-        </View>
-        <View>
-          <Text className="mall-v7-summary-label">已省</Text>
-          <Text className="mall-v7-summary-value cart-saved-cents">{mallYuan(savedCents)}</Text>
-        </View>
-      </View>
-
       {addOnPrompt ? (
         <View className="mall-v7-addon" onClick={() => Taro.navigateTo({ url: '/pages/mall/category/index?keyword=凑单' })}>
           <Text>{addOnPrompt}</Text>
@@ -343,18 +330,115 @@ export default function MallCartPage() {
       )}
 
       {cart.items.length > 0 ? (
-        <View className="mall-total-bar mall-v7-fixed-checkout">
-          <View>
-            <Text className="mall-total-label">满减后实付</Text>
-            <Text className="mall-total-value">{mallYuan(payableCents)}</Text>
-          </View>
-          <View className="mall-total-button" onClick={submitOrder}>
-            <Text>去结算</Text>
+        <View className="mall-total-bar mall-v7-fixed-checkout mall-v7-cart-checkout-panel">
+          {discountDetailOpen ? (
+            <View className="mall-v7-cart-discount-drawer">
+              <DiscountDetailRow label="商品总计" value={mallYuan(discountDetail.subtotalCents)} />
+              <DiscountDetailRow label="优惠券" value={`-${mallYuan(discountDetail.couponDiscountCents)}`} warm={discountDetail.couponDiscountCents > 0} />
+              <DiscountDetailRow label="活动" value={`-${mallYuan(discountDetail.activityDiscountCents)}`} warm={discountDetail.activityDiscountCents > 0} />
+              {discountDetail.memberDiscountCents > 0 ? (
+                <DiscountDetailRow label="会员折扣" value={`-${mallYuan(discountDetail.memberDiscountCents)}`} warm />
+              ) : null}
+              {discountDetail.pointsRedeemedCents > 0 ? (
+                <DiscountDetailRow label="积分抵扣" value={`-${mallYuan(discountDetail.pointsRedeemedCents)}`} warm />
+              ) : null}
+              <View className="mall-v7-cart-discount-divider" />
+              <DiscountDetailRow label="运费" value={mallYuan(discountDetail.originalDeliveryFeeCents)} />
+              <DiscountDetailRow label="免运费" value={`-${mallYuan(discountDetail.freeDeliveryDiscountCents)}`} warm={discountDetail.freeDeliveryDiscountCents > 0} />
+              <View className="mall-v7-cart-discount-divider" />
+              <DiscountDetailRow label="已省" value={mallYuan(discountDetail.savedCents)} strong warm={discountDetail.savedCents > 0} />
+              <DiscountDetailRow label="实付" value={mallYuan(discountDetail.payableCents)} strong />
+            </View>
+          ) : null}
+          <View className="mall-v7-cart-pay-row">
+            <View className="mall-v7-cart-pay-copy" onClick={() => setDiscountDetailOpen((value) => !value)}>
+              <Text className="mall-total-label">实付</Text>
+              <View className="mall-v7-cart-pay-value-row">
+                <Text className="mall-total-value">{mallYuan(payableCents)}</Text>
+                <View className="mall-v7-cart-discount-toggle">
+                  {discountDetailOpen ? <ChevronDown size={16} color="#FFFFFF" /> : <ChevronUp size={16} color="#FFFFFF" />}
+                </View>
+              </View>
+              {discountDetail.savedCents > 0 ? <Text className="mall-v7-cart-pay-saved">已省 {mallYuan(discountDetail.savedCents)}</Text> : null}
+            </View>
+            <View className="mall-total-button" onClick={submitOrder}>
+              <Text>去结算</Text>
+            </View>
           </View>
         </View>
       ) : null}
     </MallPage>
   )
+}
+
+function DiscountDetailRow({
+  label,
+  value,
+  warm = false,
+  strong = false,
+}: {
+  label: string
+  value: string
+  warm?: boolean
+  strong?: boolean
+}) {
+  const className = [
+    'mall-v7-cart-discount-row',
+    warm ? 'mall-v7-cart-discount-row-warm' : '',
+    strong ? 'mall-v7-cart-discount-row-strong' : '',
+  ].filter(Boolean).join(' ')
+
+  return (
+    <View className={className}>
+      <Text>{label}</Text>
+      <Text>{value}</Text>
+    </View>
+  )
+}
+
+function buildCartDiscountDetail(cart: MallCart, payableCents: number, savedCents: number) {
+  const fullReductionCents = Math.max(
+    cart.fullReductionCents ?? sumCartDiscountBreakdown(cart, 'full_reduction'),
+    0,
+  )
+  const couponDiscountCents = Math.max(
+    cart.couponDiscountCents ?? sumCartDiscountBreakdown(cart, 'coupon'),
+    0,
+  )
+  const memberDiscountCents = Math.max(cart.memberDiscountCents ?? sumCartDiscountBreakdown(cart, 'member'), 0)
+  const pointsRedeemedCents = Math.max(cart.pointsRedeemedCents ?? sumCartDiscountBreakdown(cart, 'points'), 0)
+  const deliveryFeeCents = Math.max(cart.deliveryFeeCents || 0, 0)
+  const cartWithDeliveryDiscount = cart as MallCart & {
+    originalDeliveryFeeCents?: number
+    freeDeliveryDiscountCents?: number
+  }
+  const freeDeliveryDiscountCents = Math.max(
+    cartWithDeliveryDiscount.freeDeliveryDiscountCents
+      ?? (deliveryFeeCents === 0 && cart.subtotalCents > 0 ? 600 : 0),
+    0,
+  )
+  const originalDeliveryFeeCents = Math.max(
+    cartWithDeliveryDiscount.originalDeliveryFeeCents ?? deliveryFeeCents + freeDeliveryDiscountCents,
+    0,
+  )
+
+  return {
+    subtotalCents: Math.max(cart.subtotalCents || 0, 0),
+    couponDiscountCents,
+    activityDiscountCents: fullReductionCents,
+    memberDiscountCents,
+    pointsRedeemedCents,
+    originalDeliveryFeeCents,
+    freeDeliveryDiscountCents,
+    savedCents: Math.max(savedCents + freeDeliveryDiscountCents, 0),
+    payableCents,
+  }
+}
+
+function sumCartDiscountBreakdown(cart: MallCart, type: string) {
+  return (cart.discountBreakdown || [])
+    .filter((item) => item.type === type)
+    .reduce((total, item) => total + Math.max(item.amountCents || 0, 0), 0)
 }
 
 function buildAddOnPrompt(cart: MallCart) {

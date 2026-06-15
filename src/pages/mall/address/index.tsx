@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
-import { ChevronLeft, LocateFixed, MapPin, Plus } from 'lucide-react-taro'
+import { ChevronLeft, MapPin, Plus } from 'lucide-react-taro'
 import { Input } from '@/components/ui/input'
 import {
   createMallAddress,
@@ -120,37 +120,24 @@ export default function MallAddressPage() {
     }
   }
 
-  const getUserLocation = async () => {
-    if (!isMiniApp()) {
-      Taro.showToast({ title: '请在小程序中使用定位', icon: 'none' })
-      return
-    }
-    try {
-      const location = await Taro.getLocation({ type: 'gcj02' })
-      setForm((current) => ({
-        ...current,
-        latitude: location.latitude,
-        longitude: location.longitude,
-      }))
-      Taro.showToast({ title: '定位已获取', icon: 'success' })
-    } catch (error) {
-      const errMsg = getTaroErrMsg(error)
-      Taro.showToast({
-        title: errMsg.includes('auth') || errMsg.includes('deny') ? '请允许获取位置' : '定位失败',
-        icon: 'none',
-      })
-    }
-  }
-
-  const chooseMapLocation = async () => {
+  const chooseDeliveryLocation = async () => {
     if (!isMiniApp()) {
       Taro.showToast({ title: '请在小程序中打开地图选点', icon: 'none' })
       return
     }
+    let latitude = form.latitude || 39.63
+    let longitude = form.longitude || 118.18
+    try {
+      const location = await Taro.getLocation({ type: 'gcj02' })
+      latitude = location.latitude
+      longitude = location.longitude
+    } catch {
+      // 用户拒绝定位时仍允许手动地图选点。
+    }
     try {
       const location = await Taro.chooseLocation({
-        latitude: form.latitude || 39.63,
-        longitude: form.longitude || 118.18,
+        latitude,
+        longitude,
       })
       const addressText = location.address || location.name || form.addressText
       setForm((current) => ({
@@ -160,7 +147,7 @@ export default function MallAddressPage() {
         latitude: location.latitude,
         longitude: location.longitude,
       }))
-      Taro.showToast({ title: '位置已选择', icon: 'success' })
+      Taro.showToast({ title: '已选择送货位置', icon: 'success' })
     } catch (error) {
       if (getTaroErrMsg(error).includes('cancel')) return
       Taro.showToast({ title: '选点失败', icon: 'none' })
@@ -196,25 +183,25 @@ export default function MallAddressPage() {
       <View className="mall-card">
         <Text className="mall-list-title">新增送货地址</Text>
         <View className="mall-address-form">
+          <FieldLabel label="收货人" required />
           <Input className="mall-form-input" value={form.contactName} placeholder="收货人" onInput={(event) => setForm((current) => ({ ...current, contactName: String(event.detail.value) }))} />
+          <FieldLabel label="手机号" required />
           <Input className="mall-form-input" value={form.contactPhone} placeholder="手机号" type="number" onInput={(event) => setForm((current) => ({ ...current, contactPhone: String(event.detail.value) }))} />
+          <FieldLabel label="地址标签" />
           <Input className="mall-form-input" value={form.addressLabel} placeholder="地址标签，例如家、公司" onInput={(event) => setForm((current) => ({ ...current, addressLabel: String(event.detail.value) }))} />
+          <FieldLabel label="详细地址" required />
           <Input className="mall-form-input" value={form.addressText} placeholder="详细送货地址，楼栋门牌越完整越好" onInput={(event) => setForm((current) => ({ ...current, addressText: String(event.detail.value) }))} />
         </View>
         <View className="mall-address-location-actions">
-          <View className="mall-address-location-button" onClick={getUserLocation}>
-            <LocateFixed size={16} color="#2F7E43" />
-            <Text>获取定位</Text>
-          </View>
-          <View className="mall-address-location-button" onClick={chooseMapLocation}>
+          <View className="mall-address-location-button" onClick={chooseDeliveryLocation}>
             <MapPin size={16} color="#2F7E43" />
-            <Text>地图选点</Text>
+            <Text>定位并选择送货位置</Text>
           </View>
         </View>
         <Text className={hasAddressLocation(form) ? 'mall-address-location-ok' : 'mall-address-location-hint'}>
           {hasAddressLocation(form)
-            ? `已记录定位 ${form.latitude?.toFixed(5)}, ${form.longitude?.toFixed(5)}`
-            : '送货地址需要定位，用于判断配送范围和运费'}
+            ? '送货位置已选择'
+            : '送货位置用于判断配送范围和运费'}
         </Text>
         <View style={{ marginTop: 14 }}>
           <MallPrimaryButton onClick={saveAddress}>
@@ -242,6 +229,15 @@ export default function MallAddressPage() {
         </View>
       ) : null}
     </MallPage>
+  )
+}
+
+function FieldLabel({ label, required }: { label: string; required?: boolean }) {
+  return (
+    <View className="mall-field-label-row">
+      {required ? <Text className="mall-required">*</Text> : null}
+      <Text>{label}</Text>
+    </View>
   )
 }
 

@@ -207,6 +207,10 @@ async fn post_json(app: &Router, uri: &str, body: Value) -> (StatusCode, Value) 
     request_json(app, "POST", uri, Some(body)).await
 }
 
+async fn put_json(app: &Router, uri: &str, body: Value) -> (StatusCode, Value) {
+    request_json(app, "PUT", uri, Some(body)).await
+}
+
 async fn delete_json(app: &Router, uri: &str) -> (StatusCode, Value) {
     request_json(app, "DELETE", uri, None).await
 }
@@ -279,6 +283,164 @@ async fn insert_session(pool: &PgPool, user_id: &str, token: &str) -> String {
     .expect("session should be inserted");
 
     token.to_string()
+}
+
+#[tokio::test]
+async fn mall_profile_update_saves_nickname_and_validates_phone() {
+    let Some(context) = TestContext::new().await else {
+        return;
+    };
+
+    let user_id = insert_user(&context.pool, "13950004101", "customer", "微信用户旧名").await;
+    let other_id = insert_user(&context.pool, "13950004102", "customer", "其他用户").await;
+
+    let (status, body) = put_json(
+        &context.app,
+        "/api/mall/me/profile",
+        json!({
+            "userId": user_id,
+            "nickname": "叁友会员A",
+            "phone": "13950004103"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["data"]["id"], user_id);
+    assert_eq!(body["data"]["nickname"], "叁友会员A");
+    assert_eq!(body["data"]["name"], "叁友会员A");
+    assert_eq!(body["data"]["phone"], "13950004103");
+
+    let (profile_status, profile_body) = get_json(
+        &context.app,
+        &format!("/api/mall/me/profile?userId={user_id}"),
+    )
+    .await;
+    assert_eq!(profile_status, StatusCode::OK);
+    assert_eq!(profile_body["data"]["member"]["nickname"], "叁友会员A");
+    assert_eq!(profile_body["data"]["member"]["phone"], "13950004103");
+
+    let (duplicate_status, duplicate_body) = put_json(
+        &context.app,
+        "/api/mall/me/profile",
+        json!({
+            "userId": other_id,
+            "phone": "13950004103"
+        }),
+    )
+    .await;
+    assert_eq!(duplicate_status, StatusCode::BAD_REQUEST);
+    assert_eq!(duplicate_body["message"], "手机号已被其他账号绑定");
+
+    let (invalid_status, invalid_body) = put_json(
+        &context.app,
+        "/api/mall/me/profile",
+        json!({
+            "userId": user_id,
+            "phone": "12345"
+        }),
+    )
+    .await;
+    assert_eq!(invalid_status, StatusCode::BAD_REQUEST);
+    assert_eq!(invalid_body["message"], "手机号格式不正确");
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
+async fn mall_coupon_wallet_and_points_mall_are_customer_endpoints() {
+    let Some(context) = TestContext::new().await else {
+        return;
+    };
+
+    let user_id = insert_user(&context.pool, "13950004201", "customer", "券包用户").await;
+
+    let active_coupon_id: String = sqlx::query_scalar(
+        r#"
+        INSERT INTO mall_coupons (
+          name, code, coupon_type, threshold_cents, discount_cents,
+          total_quantity, per_user_limit, description, rules, status, starts_at, ends_at
+        )
+        VALUES (
+          '测试待领取满49减6', 'TEST-WALLET-49-6', 'full_reduction', 4900, 600,
+          100, 2, '测试待领取优惠券', jsonb_build_object('pointsCost', 120), 'active',
+          now() - interval '1 day', now() + interval '3 days'
+        )
+        RETURNING id
+        "#,
+    )
+    .fetch_one(&context.pool)
+    .await
+    .expect("active coupon should be inserted");
+
+    let (wallet_status, wallet_body) =
+        get_json(&context.app, &format!("/api/mall/coupons?userId={user_id}")).await;
+    assert_eq!(wallet_status, StatusCode::OK);
+    assert_eq!(wallet_body["data"]["summary"]["claimableCount"], 1);
+    assert_eq!(wallet_body["data"]["claimable"][0]["id"], active_coupon_id);
+    assert_eq!(wallet_body["data"]["claimable"][0]["walletStatus"], "claimable");
+    assert_eq!(wallet_body["data"]["expiring"][0]["id"], active_coupon_id);
+
+    let (claim_status, claim_body) = post_json(
+        &context.app,
+        &format!("/api/mall/coupons/{active_coupon_id}/claim"),
+        json!({ "userId": user_id }),
+    )
+    .await;
+    assert_eq!(claim_status, StatusCode::OK);
+    assert_eq!(claim_body["data"]["walletStatus"], "claimed");
+
+    let (claimed_status, claimed_body) =
+        get_json(&context.app, &format!("/api/mall/coupons?userId={user_id}")).await;
+    assert_eq!(claimed_status, StatusCode::OK);
+    assert_eq!(claimed_body["data"]["summary"]["claimedCount"], 1);
+    assert_eq!(claimed_body["data"]["claimed"][0]["id"], active_coupon_id);
+
+    sqlx::query(
+        r#"
+        UPDATE mall_user_coupons
+        SET status = 'used', used_at = now()
+        WHERE user_id = $1 AND coupon_id = $2
+        "#,
+    )
+    .bind(&user_id)
+    .bind(&active_coupon_id)
+    .execute(&context.pool)
+    .await
+    .expect("claimed coupon should be markable as used");
+
+    let (used_status, used_body) =
+        get_json(&context.app, &format!("/api/mall/coupons?userId={user_id}")).await;
+    assert_eq!(used_status, StatusCode::OK);
+    assert_eq!(used_body["data"]["summary"]["usedCount"], 1);
+    assert_eq!(used_body["data"]["used"][0]["id"], active_coupon_id);
+
+    sqlx::query(
+        r#"
+        INSERT INTO mall_points_ledger (user_id, entry_type, points, description)
+        VALUES ($1, 'adjust', 300, '测试积分')
+        "#,
+    )
+    .bind(&user_id)
+    .execute(&context.pool)
+    .await
+    .expect("points should be inserted");
+
+    let (points_status, points_body) =
+        get_json(&context.app, &format!("/api/mall/points-mall?userId={user_id}")).await;
+    assert_eq!(points_status, StatusCode::OK);
+    assert_eq!(points_body["data"]["member"]["points"], 300);
+    assert_eq!(points_body["data"]["rules"]["pointsPerYuan"], 1);
+    assert_eq!(points_body["data"]["rules"]["redeemRatePoints"], 100);
+    assert!(
+        points_body["data"]["couponRewards"]
+            .as_array()
+            .expect("coupon rewards should be an array")
+            .iter()
+            .any(|coupon| coupon["id"] == active_coupon_id),
+        "points mall should include redeemable coupons"
+    );
+
+    context.cleanup().await;
 }
 
 #[tokio::test]

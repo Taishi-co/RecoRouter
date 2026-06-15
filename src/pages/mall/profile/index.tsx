@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { Gift, Headphones, LogOut, MapPin, PackageCheck, Settings } from 'lucide-react-taro'
+import { Gift, Headphones, LogOut, MapPin, PackageCheck, Pencil, Phone, Settings } from 'lucide-react-taro'
+import { Input } from '@/components/ui/input'
 import {
   getMallProfile,
   listMallOrders,
+  updateMallProfile,
   type MallOrder,
   type MallProfile,
 } from '@/services/mall'
@@ -18,12 +20,20 @@ interface StoredUser {
   phone?: string
 }
 
+interface ProfileForm {
+  nickname: string
+  phone: string
+}
+
 export default function MallProfilePage() {
   const [profile, setProfile] = useState<MallProfile | null>(null)
   const [orders, setOrders] = useState<MallOrder[]>([])
   const [user, setUser] = useState<StoredUser>({})
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
+  const [editProfile, setEditProfile] = useState(false)
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [profileForm, setProfileForm] = useState<ProfileForm>({ nickname: '', phone: '' })
 
   useDidShow(() => {
     loadProfile()
@@ -68,12 +78,64 @@ export default function MallProfilePage() {
     Taro.showToast({ title: '已退出登录', icon: 'success' })
   }
 
+  const openEditProfile = () => {
+    const member = profile?.member
+    setProfileForm({
+      nickname: member?.nickname || member?.name || user.nickname || user.name || '',
+      phone: member?.phone || user.phone || '',
+    })
+    setEditProfile(true)
+  }
+
+  const saveProfile = async () => {
+    if (!user.id) return
+    const nickname = profileForm.nickname.trim()
+    const phone = profileForm.phone.trim()
+    if (!nickname) {
+      Taro.showToast({ title: '请填写昵称', icon: 'none' })
+      return
+    }
+    if (phone && !/^1[3-9]\d{9}$/.test(phone)) {
+      Taro.showToast({ title: '手机号格式不正确', icon: 'none' })
+      return
+    }
+    setSavingProfile(true)
+    try {
+      const member = await updateMallProfile({
+        userId: user.id,
+        nickname,
+        phone: phone || undefined,
+      })
+      const nextUser = {
+        ...user,
+        name: member?.name || nickname,
+        nickname: member?.nickname || nickname,
+        phone: member?.phone || phone || user.phone,
+      }
+      Taro.setStorageSync('userInfo', nextUser)
+      setUser(nextUser)
+      setProfile((current) => current
+        ? { ...current, member: { ...(current.member || {}), ...(member || {}) } }
+        : current)
+      setEditProfile(false)
+      Taro.showToast({ title: '资料已保存', icon: 'success' })
+    } catch (error) {
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '保存失败',
+        icon: 'none',
+      })
+    } finally {
+      setSavingProfile(false)
+    }
+  }
+
   if (!user.id) {
     return <MallProfileLoginState />
   }
 
   const member = profile?.member
-  const displayName = member?.name || member?.username || user.name || user.nickname || maskPhone(member?.phone || user.phone) || '商城用户'
+  const displayName = member?.nickname || member?.name || member?.username || user.nickname || user.name || maskPhone(member?.phone || user.phone) || '商城用户'
+  const displayPhone = member?.phone || user.phone || ''
   const memberLevel = member?.level?.name || profile?.memberLevel || '普通会员'
   const points = Number(member?.points || 0)
   const totalSpendCents = Number(member?.totalSpendCents || 0)
@@ -99,10 +161,22 @@ export default function MallProfilePage() {
           <Text className="mall-v7-profile-meta">{memberLevel} · 当前积分 {points}</Text>
           <View className="mall-v7-profile-stats">
             <Text>累计消费 {mallYuan(totalSpendCents)}</Text>
-            <Text>100 积分抵 1 元</Text>
+            <Text>{displayPhone ? maskPhone(displayPhone) : '未绑定手机号'}</Text>
           </View>
         </View>
+        <View className="mall-profile-edit-button" onClick={openEditProfile}>
+          <Pencil size={14} color="#1D2F21" />
+          <Text>编辑资料</Text>
+        </View>
       </View>
+
+      <ProfileLink
+        icon={<Phone size={20} color="#2F7E43" />}
+        title="账号资料"
+        subtitle={displayPhone ? `${maskPhone(displayPhone)} · 可修改昵称和换绑手机号` : '可修改昵称并绑定手机号'}
+        action={displayPhone ? '换绑手机号' : '绑定手机号'}
+        onClick={openEditProfile}
+      />
 
       {loadError ? (
         <View className="mall-empty">
@@ -134,7 +208,7 @@ export default function MallProfilePage() {
         title="卡包优惠券"
         subtitle={`可用 ${availableCouponCount} 张${expiringCouponCount > 0 ? ` · ${expiringCouponCount} 张即将过期` : ''}`}
         action="查看"
-        onClick={() => Taro.navigateTo({ url: '/pages/mall/category/index?keyword=优惠券' })}
+        onClick={() => Taro.navigateTo({ url: '/pages/mall/coupons/index' })}
       />
       <ProfileLink
         icon={<MapPin size={20} color="#2F7E43" />}
@@ -155,7 +229,7 @@ export default function MallProfilePage() {
         title="积分商城"
         subtitle={`当前 ${points} 积分，可兑换商品 / 优惠券`}
         action="兑换"
-        onClick={() => Taro.navigateTo({ url: '/pages/mall/category/index?keyword=积分兑换' })}
+        onClick={() => Taro.navigateTo({ url: '/pages/mall/points/index' })}
       />
       <ProfileLink
         icon={<Headphones size={20} color="#2F7E43" />}
@@ -171,6 +245,39 @@ export default function MallProfilePage() {
         action="退出"
         onClick={logout}
       />
+
+      {editProfile ? (
+        <View className="mall-modal-mask">
+          <View className="mall-profile-editor">
+            <Text className="mall-list-title">编辑账号资料</Text>
+            <View className="mall-address-form">
+              <Text className="mall-form-label">昵称</Text>
+              <Input
+                className="mall-form-input"
+                value={profileForm.nickname}
+                placeholder="填写昵称"
+                onInput={(event) => setProfileForm((current) => ({ ...current, nickname: String(event.detail.value) }))}
+              />
+              <Text className="mall-form-label">{displayPhone ? '换绑手机号' : '绑定手机号'}</Text>
+              <Input
+                className="mall-form-input"
+                value={profileForm.phone}
+                placeholder="填写手机号"
+                type="number"
+                onInput={(event) => setProfileForm((current) => ({ ...current, phone: String(event.detail.value) }))}
+              />
+            </View>
+            <View className="mall-profile-editor-actions">
+              <View className="mall-profile-editor-cancel" onClick={() => setEditProfile(false)}>
+                <Text>取消</Text>
+              </View>
+              <View className="mall-profile-editor-save" onClick={saveProfile}>
+                <Text>{savingProfile ? '保存中' : '保存资料'}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      ) : null}
     </MallPage>
   )
 }

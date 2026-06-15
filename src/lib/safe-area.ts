@@ -11,16 +11,6 @@ const toNumber = (value: unknown) => {
   return 0
 }
 
-const getMenuButtonBottom = () => {
-  if (isH5()) return 0
-
-  try {
-    return toNumber(Taro.getMenuButtonBoundingClientRect().bottom)
-  } catch {
-    return 0
-  }
-}
-
 export const getMiniProgramSafeAreaInsets = () => {
   if (isH5()) {
     return { top: 0, bottom: 0 }
@@ -46,30 +36,22 @@ export const getPageBodyPaddingTop = () => {
   if (isH5()) return 22
 
   const { top } = getMiniProgramSafeAreaInsets()
-  const menuBottom = getMenuButtonBottom()
-  return Math.max(22, top + 22, menuBottom + 20)
+  return Math.max(18, top + 14)
 }
 
 export const getHomePageBodyPaddingTop = () => {
-  if (isH5()) return 22
-
-  const { top } = getMiniProgramSafeAreaInsets()
-  return Math.max(14, top + 6)
+  return getPageBodyPaddingTop()
 }
 
 export const getStickyHeaderTop = () => {
   if (isH5()) return 0
 
   const { top } = getMiniProgramSafeAreaInsets()
-  const menuBottom = getMenuButtonBottom()
-  return Math.max(0, top + 12, menuBottom + 8)
+  return Math.max(0, top + 6)
 }
 
 export const getHomeStickyHeaderTop = () => {
-  if (isH5()) return 0
-
-  const { top } = getMiniProgramSafeAreaInsets()
-  return Math.max(0, top + 2)
+  return getStickyHeaderTop()
 }
 
 export const getPageHeaderPaddingTop = () => {

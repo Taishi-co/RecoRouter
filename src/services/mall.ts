@@ -533,6 +533,7 @@ export interface MallProfile {
   member?: {
     id?: string
     name?: string
+    nickname?: string
     username?: string
     phone?: string
     role?: string
@@ -566,6 +567,75 @@ export interface MallProfile {
     nearestExpiry?: string | null
   }
   groupLeader?: Record<string, unknown> | null
+}
+
+export interface UpdateMallProfileInput {
+  userId: string
+  nickname?: string
+  name?: string
+  phone?: string
+}
+
+export type MallCouponWalletStatus = 'claimable' | 'claimed' | 'used' | 'expired' | 'unavailable'
+
+export interface MallCoupon {
+  id: string
+  name: string
+  code: string
+  couponType: string
+  thresholdCents: number
+  discountCents: number
+  totalQuantity?: number
+  claimedCount?: number
+  usedCount?: number
+  perUserLimit?: number
+  description?: string | null
+  rules?: Record<string, unknown>
+  status: string
+  startsAt?: string | null
+  endsAt?: string | null
+  walletId?: string | null
+  walletStatus?: MallCouponWalletStatus
+  canClaim?: boolean
+  isExpiringSoon?: boolean
+  expiresAt?: string | null
+  claimedAt?: string | null
+  usedAt?: string | null
+  orderId?: string | null
+  pointsCost?: number
+}
+
+export interface MallCouponWallet {
+  summary: {
+    availableCount?: number
+    claimableCount?: number
+    claimedCount?: number
+    expiringCount?: number
+    usedCount?: number
+    expiredCount?: number
+    nearestExpiry?: string | null
+  }
+  claimable: MallCoupon[]
+  claimed: MallCoupon[]
+  expiring: MallCoupon[]
+  used: MallCoupon[]
+  expired: MallCoupon[]
+  all: MallCoupon[]
+}
+
+export interface MallPointsMall {
+  member?: MallProfile['member']
+  rules?: {
+    pointsPerYuan?: number
+    redeemRatePoints?: number
+    redeemRateCents?: number
+    memberLevels?: Array<{
+      name: string
+      discountBps: number
+    }>
+  }
+  couponRewards: MallCoupon[]
+  productRewards: MallProduct[]
 }
 
 export interface MallGroupLeaderCenter {
@@ -1131,6 +1201,25 @@ export async function listMallCommunityPosts(params: {
 
 export async function getMallProfile(userId: string): Promise<MallProfile> {
   return apiGet('/api/mall/me/profile', { userId })
+}
+
+export async function updateMallProfile(data: UpdateMallProfileInput): Promise<MallProfile['member']> {
+  return apiPut('/api/mall/me/profile', data)
+}
+
+export async function listMallCoupons(userId: string, params: {
+  status?: MallCouponWalletStatus | string
+  couponType?: string
+} = {}): Promise<MallCouponWallet> {
+  return apiGet('/api/mall/coupons', { userId, ...params })
+}
+
+export async function claimMallCoupon(userId: string, couponId: string): Promise<MallCoupon> {
+  return apiPost(`/api/mall/coupons/${couponId}/claim`, { userId })
+}
+
+export async function getMallPointsMall(userId: string): Promise<MallPointsMall> {
+  return apiGet('/api/mall/points-mall', { userId })
 }
 
 export async function getMallProfileSafe(userId: string): Promise<MallProfile> {
