@@ -1,8 +1,15 @@
-import { useMemo, useState } from 'react'
-import { Text, View } from '@tarojs/components'
+import { useEffect, useMemo, useState } from 'react'
+import { Image, Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { ClipboardList, Headphones, Truck } from 'lucide-react-taro'
-import { listMallOrders, type MallOrder } from '@/services/mall'
+import { ChevronLeft, Headphones, Search } from 'lucide-react-taro'
+import { Input } from '@/components/ui/input'
+import {
+  cancelMallOrder,
+  listMallOrders,
+  resolveMallImageUrl,
+  type MallOrder,
+} from '@/services/mall'
+import { startOrderPayment } from '@/services/payment'
 import { MallPage, MallPrimaryButton, mallYuan } from '../mall-ui'
 import { redirectToMallAuth } from '../auth-route'
 
@@ -10,24 +17,33 @@ interface StoredUser {
   id?: string
 }
 
-type MallOrderTab = 'pending_payment' | 'pending_delivery' | 'pending_receipt' | 'after_sale'
+type MallOrderTab = 'all' | 'pending_payment' | 'processing' | 'after_sale'
 
 const filters: Array<{ key: MallOrderTab; label: string }> = [
+  { key: 'all', label: '全部' },
   { key: 'pending_payment', label: '待支付' },
-  { key: 'pending_delivery', label: '待配送' },
-  { key: 'pending_receipt', label: '待收货' },
+  { key: 'processing', label: '进行中' },
   { key: 'after_sale', label: '售后' },
 ]
 
 export default function MallOrdersPage() {
   const [orders, setOrders] = useState<MallOrder[]>([])
-  const [activeStatus, setActiveStatus] = useState<MallOrderTab>('pending_payment')
+  const [activeStatus, setActiveStatus] = useState<MallOrderTab>('all')
+  const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [now, setNow] = useState(Date.now())
+  const [payingOrderId, setPayingOrderId] = useState('')
+  const [cancellingOrderId, setCancellingOrderId] = useState('')
   const userId = (Taro.getStorageSync('userInfo') as StoredUser | undefined)?.id || ''
 
   useDidShow(() => {
     loadOrders()
   })
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
 
   const loadOrders = async () => {
     if (!userId) {
@@ -39,13 +55,6 @@ export default function MallOrdersPage() {
     try {
       const nextOrders = await listMallOrders(userId)
       setOrders(nextOrders)
-      const activeHasOrders = nextOrders.some((order) => orderMatchesTab(order, activeStatus))
-      if (!activeHasOrders) {
-        const firstNonEmpty = filters.find((filter) => nextOrders.some((order) => orderMatchesTab(order, filter.key)))
-        if (firstNonEmpty) {
-          setActiveStatus(firstNonEmpty.key)
-        }
-      }
     } catch (error) {
       setOrders([])
       Taro.showToast({
@@ -58,54 +67,95 @@ export default function MallOrdersPage() {
   }
 
   const visibleOrders = useMemo(
-    () => orders.filter((order) => orderMatchesTab(order, activeStatus)),
-    [activeStatus, orders],
+    () => orders.filter((order) => orderMatchesTab(order, activeStatus)).filter((order) => orderMatchesKeyword(order, keyword)),
+    [activeStatus, keyword, orders],
   )
-  const tabCounts = useMemo(
-    () => filters.reduce<Record<MallOrderTab, number>>((acc, filter) => {
-      acc[filter.key] = orders.filter((order) => orderMatchesTab(order, filter.key)).length
-      return acc
-    }, {
-      pending_payment: 0,
-      pending_delivery: 0,
-      pending_receipt: 0,
-      after_sale: 0,
-    }),
-    [orders],
-  )
+
+  const payOrder = async (order: MallOrder) => {
+    if (payingOrderId) return
+    setPayingOrderId(order.id)
+    try {
+      const payment = await startOrderPayment({ orderId: order.id, businessType: 'mall_order' })
+      if (payment.paymentStatus !== 'paid' && payment.status !== 'paid') {
+        throw new Error('支付结果未确认，请稍后在订单中查看')
+      }
+      Taro.redirectTo({ url: `/pages/mall/payment-success/index?orderId=${order.id}` })
+    } catch (error) {
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '支付未完成',
+        icon: 'none',
+      })
+      await loadOrders()
+    } finally {
+      setPayingOrderId('')
+    }
+  }
+
+  const cancelOrder = async (order: MallOrder) => {
+    if (cancellingOrderId) return
+    const result = await Taro.showModal({
+      title: '取消订单',
+      content: '确认取消这个待支付订单吗？',
+      confirmText: '取消订单',
+      cancelText: '再想想',
+      confirmColor: '#2F7E43',
+    })
+    if (!result.confirm) return
+    setCancellingOrderId(order.id)
+    try {
+      await cancelMallOrder(order.id, userId, '用户取消订单')
+      Taro.showToast({ title: '订单已取消', icon: 'success' })
+      await loadOrders()
+    } catch (error) {
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '取消失败',
+        icon: 'none',
+      })
+    } finally {
+      setCancellingOrderId('')
+    }
+  }
 
   return (
     <MallPage active="mine">
-      <Text className="mall-breadcrumb">我的 / 我的订单</Text>
-      <Text className="mall-page-title">订单中心</Text>
-
-      <View className="mall-order-banner">
-        <View className="mall-link-icon">
-          <ClipboardList size={22} color="#2F7E43" />
+      <View className="mall-orders-topbar">
+        <ChevronLeft size={25} color="#1F2D1F" onClick={() => Taro.navigateBack()} />
+        <View className="mall-orders-search">
+          <Search size={17} color="#A2A9A0" />
+          <Input
+            className="mall-orders-search-input"
+            value={keyword}
+            placeholder="搜索我的订单"
+            confirmType="search"
+            onInput={(event) => setKeyword(String(event.detail.value || ''))}
+          />
         </View>
-        <View>
-          <Text className="mall-order-banner-title">待收货 {tabCounts.pending_receipt} 单</Text>
-          <Text className="mall-order-banner-copy">配送员接单后会按收货地址送达</Text>
-        </View>
+        <Text className="mall-orders-invoice" onClick={() => Taro.showToast({ title: '发票功能即将开放', icon: 'none' })}>
+          开发票
+        </Text>
       </View>
 
-      <View className="mall-v7-order-tabs">
+      <View className="mall-orders-tabs">
         {filters.map((filter) => (
           <View
             key={filter.key}
-            className={activeStatus === filter.key ? 'mall-v7-order-tab mall-v7-order-tab-active' : 'mall-v7-order-tab'}
+            className={activeStatus === filter.key ? 'mall-orders-tab mall-orders-tab-active' : 'mall-orders-tab'}
             onClick={() => setActiveStatus(filter.key)}
           >
             <Text>{filter.label}</Text>
-            <Text>{tabCounts[filter.key]}</Text>
           </View>
         ))}
+      </View>
+
+      <View className="mall-orders-notice">
+        <Text>抢先了解优惠信息、订单动态</Text>
+        <Text>提醒我</Text>
       </View>
 
       {visibleOrders.length === 0 ? (
         <View className="mall-empty">
           <Text className="mall-empty-title">{loading ? '加载中...' : '暂无订单'}</Text>
-          <Text className="mall-empty-copy">完成下单后会在这里查看配送进度、售后和积分到账。</Text>
+          <Text className="mall-empty-copy">下单后可在这里查看支付、配送和售后进度。</Text>
           <View style={{ marginTop: 14 }}>
             <MallPrimaryButton onClick={() => Taro.navigateTo({ url: '/pages/mall/index/index' })}>
               <Text>返回首页</Text>
@@ -114,78 +164,109 @@ export default function MallOrdersPage() {
         </View>
       ) : null}
 
-      {visibleOrders.map((order) => (
-        <View key={order.id} className="mall-order-card">
-          <View className="mall-list-row" style={{ marginTop: 0 }}>
-            <Text className="mall-status-pill">{statusText(order)}</Text>
-            <Text
-              className="mall-section-action"
-              onClick={() => Taro.navigateTo({ url: `/pages/mall/order-detail/index?id=${order.id}` })}
-            >
-              订单详情
-            </Text>
-          </View>
-          <View className="mall-v7-order-main">
-            <View className="mall-link-icon">
-              <ClipboardList size={22} color="#2F7E43" />
-            </View>
-            <View>
-              <Text className="mall-v7-product-name">{order.items[0]?.productName || order.orderNo}</Text>
-              <Text className="mall-v7-product-subtitle">
-                {order.items.length || 1} 件商品{order.items[0]?.variantName ? ` · ${order.items[0]?.variantName}` : ''} · {order.addressText || '收货地址待确认'}
-              </Text>
-            </View>
-            <Text className="mall-summary-value">{mallYuan(order.payableCents)}</Text>
-          </View>
-
-          {activeStatus === 'pending_receipt' ? (
-            <View className="mall-v7-pickup-code">
-              <View>
-                <Truck size={18} color="#2F7E43" />
-                <Text>配送状态 {deliveryStatusText(order)}</Text>
-              </View>
-              <View>
-                <ClipboardList size={18} color="#2F7E43" />
-                <Text>预计送达 {order.expectedDeliveryWindow || '时间待确认'}</Text>
-              </View>
-              <View>
-                <Headphones size={18} color="#2F7E43" />
-                <Text>{order.addressText || '收货地址待确认'}</Text>
-              </View>
-            </View>
-          ) : null}
-
-          {isCompleted(order) ? (
-            <View className="mall-v7-order-actions">
-              <Text onClick={() => Taro.navigateTo({ url: `/pages/mall/after-sale/index?orderId=${order.id}` })}>申请售后</Text>
-              <Text onClick={() => Taro.navigateTo({ url: `/pages/mall/support/index?orderId=${order.id}` })}>评价</Text>
-              <Text>积分到账 {Math.floor((order.payableCents || 0) / 100)} 分</Text>
-            </View>
-          ) : (
-            <View className="mall-v7-order-actions">
-              <Text onClick={() => Taro.navigateTo({ url: `/pages/mall/support/index?orderId=${order.id}` })}>
-                <Headphones size={15} color="#2F7E43" />
-                联系配送客服
-              </Text>
-            </View>
-          )}
-        </View>
-      ))}
+      <View className="mall-orders-list">
+        {visibleOrders.map((order) => (
+          <OrderCard
+            key={order.id}
+            order={order}
+            now={now}
+            paying={payingOrderId === order.id}
+            cancelling={cancellingOrderId === order.id}
+            onPay={() => payOrder(order)}
+            onCancel={() => cancelOrder(order)}
+          />
+        ))}
+      </View>
     </MallPage>
   )
 }
 
+function OrderCard({
+  order,
+  now,
+  paying,
+  cancelling,
+  onPay,
+  onCancel,
+}: {
+  order: MallOrder
+  now: number
+  paying: boolean
+  cancelling: boolean
+  onPay: () => void
+  onCancel: () => void
+}) {
+  const pending = isPendingPayment(order)
+  const countdown = pending ? paymentCountdownText(order, now) : ''
+  const itemCount = order.items.reduce((sum, item) => sum + Math.max(Number(item.quantity || 0), 0), 0)
+  const imageItems = order.items.slice(0, 6)
+
+  return (
+    <View className="mall-orders-card">
+      <View className="mall-orders-card-head">
+        <Text>{formatOrderTime(order.createdAt)}</Text>
+        <View>
+          <Text className="mall-orders-status">{statusText(order)}</Text>
+          {countdown ? <Text className="mall-orders-substatus">{countdown}</Text> : null}
+        </View>
+      </View>
+
+      <View className="mall-orders-images">
+        {imageItems.map((item) => {
+          const imageUrl = resolveMallImageUrl(item.imageUrl)
+          return imageUrl ? (
+            <Image key={item.id} className="mall-orders-thumb" mode="aspectFill" src={imageUrl} />
+          ) : (
+            <View key={item.id} className="mall-orders-thumb mall-orders-thumb-empty" />
+          )
+        })}
+      </View>
+
+      <View className="mall-orders-summary">
+        <Text>共{itemCount || order.items.length || 1}件</Text>
+        <Text>实付：</Text>
+        <Text>{mallYuan(order.payableCents)}</Text>
+      </View>
+
+      <View className="mall-orders-actions">
+        <Text onClick={() => Taro.navigateTo({ url: `/pages/mall/order-detail/index?id=${order.id}` })}>查看订单</Text>
+        {pending ? <Text onClick={onPay}>{paying ? '支付中' : '立刻支付'}</Text> : null}
+        {pending ? <Text onClick={onCancel}>{cancelling ? '取消中' : '取消订单'}</Text> : null}
+        <Text onClick={() => Taro.navigateTo({ url: `/pages/mall/support/index?orderId=${order.id}` })}>
+          <Headphones size={14} color="#1F2D1F" />
+          联系客服
+        </Text>
+      </View>
+    </View>
+  )
+}
+
+function orderMatchesKeyword(order: MallOrder, keyword: string) {
+  const value = keyword.trim().toLowerCase()
+  if (!value) return true
+  const haystack = [
+    order.orderNo,
+    order.addressText,
+    ...order.items.map((item) => `${item.productName || ''} ${item.variantName || ''}`),
+  ]
+    .join(' ')
+    .toLowerCase()
+  return haystack.includes(value)
+}
+
 function orderMatchesTab(order: MallOrder, tab: MallOrderTab) {
-  if (tab === 'pending_payment') return order.paymentStatus !== 'paid' || order.status === 'pending_payment'
+  if (tab === 'all') return true
+  if (tab === 'pending_payment') return isPendingPayment(order)
   if (tab === 'after_sale') return Boolean(order.afterSaleStatus || order.refundStatus || order.status.includes('after'))
-  if (tab === 'pending_receipt') {
-    return order.paymentStatus === 'paid'
-      && ['ready_for_pickup', 'pending_pickup', 'delivering', 'dispatched'].some((status) => order.status.includes(status))
-  }
-  return order.paymentStatus === 'paid'
-    && !isCompleted(order)
-    && !orderMatchesTab(order, 'pending_receipt')
-    && !orderMatchesTab(order, 'after_sale')
+  return order.paymentStatus === 'paid' && !isCancelled(order) && !isCompleted(order) && !orderMatchesTab(order, 'after_sale')
+}
+
+function isPendingPayment(order: MallOrder) {
+  return !isCancelled(order) && (order.paymentStatus !== 'paid' || order.status === 'pending_payment')
+}
+
+function isCancelled(order: MallOrder) {
+  return order.status === 'cancelled' || order.paymentStatus === 'cancelled'
 }
 
 function isCompleted(order: MallOrder) {
@@ -193,15 +274,43 @@ function isCompleted(order: MallOrder) {
 }
 
 function statusText(order: MallOrder) {
-  if (order.paymentStatus !== 'paid') return '待支付'
-  if (orderMatchesTab(order, 'after_sale')) return '售后'
-  if (orderMatchesTab(order, 'pending_receipt')) return '待收货'
-  if (isCompleted(order)) return '已完成'
-  return '待配送'
+  if (isCancelled(order)) return '订单已取消'
+  if (isPendingPayment(order)) return '等待支付'
+  if (orderMatchesTab(order, 'after_sale')) return '售后处理中'
+  if (isCompleted(order)) return '商品已送达'
+  if (order.status.includes('deliver') || order.status.includes('dispatch')) return '配送中'
+  return '备货中'
 }
 
-function deliveryStatusText(order: MallOrder) {
-  if (order.status.includes('delivering') || order.status.includes('dispatched')) return '配送中'
-  if (order.status.includes('ready_for_pickup') || order.status.includes('pending_pickup')) return '待配送'
-  return statusText(order)
+function paymentCountdownText(order: MallOrder, now: number) {
+  const deadline = paymentDeadline(order)
+  if (!deadline) return '10分钟未支付自动取消'
+  const diff = deadline - now
+  if (diff <= 0) return '即将自动取消'
+  const minutes = Math.floor(diff / 60000)
+  const seconds = Math.floor((diff % 60000) / 1000)
+  return `${pad(minutes)}:${pad(seconds)} 后自动取消`
+}
+
+function paymentDeadline(order: MallOrder) {
+  const expiresAt = order.paymentExpiresAt ? Date.parse(order.paymentExpiresAt) : NaN
+  if (Number.isFinite(expiresAt)) return expiresAt
+  const createdAt = order.createdAt ? Date.parse(order.createdAt) : NaN
+  if (Number.isFinite(createdAt)) return createdAt + 10 * 60 * 1000
+  return 0
+}
+
+function formatOrderTime(value?: string) {
+  const time = value ? new Date(value) : new Date()
+  if (Number.isNaN(time.getTime())) return value || ''
+  const year = time.getFullYear()
+  const month = pad(time.getMonth() + 1)
+  const day = pad(time.getDate())
+  const hour = pad(time.getHours())
+  const minute = pad(time.getMinutes())
+  return `${year}-${month}-${day} ${hour}:${minute}`
+}
+
+function pad(value: number) {
+  return String(value).padStart(2, '0')
 }

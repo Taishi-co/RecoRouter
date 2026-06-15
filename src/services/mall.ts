@@ -358,6 +358,7 @@ export interface MallOrder {
   id: string
   orderNo: string
   userId: string
+  checkoutId?: string | null
   addressId?: string | null
   pickupPointId?: string | null
   pickupPointName?: string | null
@@ -377,6 +378,7 @@ export interface MallOrder {
   weightAdjustmentStatus?: string | null
   weightAdjustmentCents?: number | null
   paymentStatus: string
+  paymentExpiresAt?: string | null
   status: string
   refundStatus?: string | null
   afterSaleStatus?: string | null
@@ -392,6 +394,7 @@ export interface MallOrder {
     variantName?: string | null
     productName: string
     sku?: string | null
+    imageUrl?: string | null
     unitPriceCents: number
     quantity: number
     lineTotalCents: number
@@ -995,6 +998,10 @@ export async function listMallOrders(userId: string, status?: string): Promise<M
 
 export async function getMallOrder(id: string): Promise<MallOrder> {
   return apiGet(`/api/mall/orders/${id}`)
+}
+
+export async function cancelMallOrder(id: string, userId: string, reason?: string): Promise<MallOrder> {
+  return apiPost(`/api/mall/orders/${id}/cancel`, { userId, reason })
 }
 
 export async function getMallTracking(id: string): Promise<{ order: MallOrder; events: MallOrderEvent[] }> {

@@ -35,6 +35,7 @@
     "check:mall-profile-address-layout": "node scripts/check-mall-profile-address-layout.mjs",
     "check:mall-wallet-points-pages": "node scripts/check-mall-wallet-points-pages.mjs",
     "check:mall-delivery-range-rules": "node scripts/check-mall-delivery-range-rules.mjs",
+    "check:mall-order-payment-lifecycle": "node scripts/check-mall-order-payment-lifecycle.mjs",
     "check:mall-fixed-price-campaign": "node scripts/check-mall-fixed-price-campaign.mjs",
     "check:mall-promotion-venues": "node scripts/check-mall-promotion-venues.mjs",
     "check:mall-after-sales-workflow": "node scripts/check-mall-after-sales-workflow.mjs",
