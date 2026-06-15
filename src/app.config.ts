@@ -55,6 +55,8 @@ const miniAppPages = [
   'pages/mall/support/index',            // 商城-客服中心
   'pages/mall/auth/index',               // 商城-登录注册
   'pages/mall/profile/index',            // 商城-我的
+  'pages/mall/coupons/index',            // 商城-卡包优惠券
+  'pages/mall/points/index',             // 商城-积分商城
   'pages/mall/group-leader/index',       // 商城-我的兼容跳转
   'pages/mall/community/index',          // 商城-社区动态
   'pages/mall/settings/index',           // 商城-消息与设置
@@ -137,6 +139,8 @@ const mallPages = [
   'pages/mall/support/index',            // 商城-客服中心
   'pages/mall/auth/index',               // 商城-登录注册
   'pages/mall/profile/index',            // 商城-我的
+  'pages/mall/coupons/index',            // 商城-卡包优惠券
+  'pages/mall/points/index',             // 商城-积分商城
   'pages/mall/group-leader/index',       // 商城-我的兼容跳转
   'pages/mall/community/index',          // 商城-社区动态
   'pages/mall/settings/index',           // 商城-消息与设置

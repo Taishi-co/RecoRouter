@@ -55,6 +55,12 @@ where
             "/api/mall/me/profile",
             get(get_mall_profile::<S>).put(update_mall_profile::<S>),
         )
+        .route("/api/mall/coupons", get(list_customer_coupons::<S>))
+        .route(
+            "/api/mall/coupons/:id/claim",
+            post(claim_customer_coupon::<S>),
+        )
+        .route("/api/mall/points-mall", get(get_points_mall::<S>))
         .route(
             "/api/mall/group-leader/workbench",
             get(get_group_leader_workbench::<S>),
@@ -991,6 +997,23 @@ struct CouponQuery {
     status: Option<String>,
     #[serde(alias = "coupon_type")]
     coupon_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CustomerCouponQuery {
+    #[serde(alias = "user_id")]
+    user_id: Option<String>,
+    status: Option<String>,
+    #[serde(alias = "coupon_type")]
+    coupon_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClaimCouponRequest {
+    #[serde(alias = "user_id")]
+    user_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2788,7 +2811,7 @@ where
     let default_pickup_point =
         fetch_default_pickup_point(&state.db, &user_id, group_leader.as_ref()).await?;
     let support_counts = fetch_member_support_counts(&state.db, &user_id).await?;
-    let coupon_wallet = fetch_member_coupon_wallet(&state.db).await?;
+    let coupon_wallet = fetch_member_coupon_wallet(&state.db, &user_id).await?;
     let notification_preferences =
         upsert_notification_preferences(&state.db, &user_id, None).await?;
 
@@ -2852,6 +2875,180 @@ where
     }
 
     Ok(ok("保存成功", fetch_member_profile(&state.db, &user_id).await?))
+}
+
+async fn list_customer_coupons<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<CustomerCouponQuery>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
+    let payload = fetch_customer_coupon_payload(
+        &state.db,
+        &user_id,
+        query.status.as_deref(),
+        query.coupon_type.as_deref(),
+    )
+    .await?;
+    Ok(ok("查询成功", payload))
+}
+
+async fn claim_customer_coupon<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<ClaimCouponRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let user_id = require_non_empty(body.user_id, "用户ID不能为空")?;
+    expire_customer_coupons(&state.db, &user_id).await?;
+
+    if let Some(coupon) = fetch_customer_coupon_detail(&state.db, &user_id, &id).await? {
+        if coupon
+            .get("walletStatus")
+            .and_then(Value::as_str)
+            .map(|status| status == "claimed")
+            .unwrap_or(false)
+        {
+            return Ok(ok("已领取", coupon));
+        }
+    }
+
+    let mut tx = state.db.begin().await?;
+    let coupon = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT coupon_json(c)
+        FROM mall_coupons c
+        WHERE c.id = $1
+          AND c.status = 'active'
+          AND (c.starts_at IS NULL OR c.starts_at <= now())
+          AND (c.ends_at IS NULL OR c.ends_at >= now())
+        FOR UPDATE
+        "#,
+    )
+    .bind(&id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::BadRequest("优惠券不可领取".to_string()))?;
+
+    let per_user_limit = coupon
+        .get("perUserLimit")
+        .and_then(Value::as_i64)
+        .unwrap_or(1)
+        .max(1);
+    let user_claim_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT count(*)
+        FROM mall_user_coupons
+        WHERE user_id = $1
+          AND coupon_id = $2
+          AND status IN ('claimed', 'used')
+        "#,
+    )
+    .bind(&user_id)
+    .bind(&id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if user_claim_count >= per_user_limit {
+        return Err(ApiError::BadRequest("已达到每人限领数量".to_string()));
+    }
+
+    let total_quantity = coupon
+        .get("totalQuantity")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    let claimed_count = coupon
+        .get("claimedCount")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    if total_quantity > 0 && claimed_count >= total_quantity {
+        return Err(ApiError::BadRequest("优惠券已领完".to_string()));
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO mall_user_coupons (user_id, coupon_id, status, expires_at)
+        SELECT $1, c.id, 'claimed', c.ends_at
+        FROM mall_coupons c
+        WHERE c.id = $2
+        "#,
+    )
+    .bind(&user_id)
+    .bind(&id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        UPDATE mall_coupons
+        SET claimed_count = claimed_count + 1,
+            updated_at = now()
+        WHERE id = $1
+        "#,
+    )
+    .bind(&id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    let coupon = fetch_customer_coupon_detail(&state.db, &user_id, &id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("优惠券不存在".to_string()))?;
+    Ok(ok("领取成功", coupon))
+}
+
+async fn get_points_mall<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<UserQuery>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
+    let member = fetch_member_profile(&state.db, &user_id).await?;
+    let wallet = fetch_customer_coupon_payload(&state.db, &user_id, None, None).await?;
+    let coupon_rewards = wallet
+        .get("claimable")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|coupon| {
+            coupon
+                .get("pointsCost")
+                .and_then(Value::as_i64)
+                .map(|points| points > 0)
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+    let mut product_rewards = fetch_points_mall_product_rewards(&state.db).await?;
+    enrich_products_pricing(&state.db, &mut product_rewards).await?;
+    for product in &mut product_rewards {
+        strip_public_product_specs(product);
+        resolve_mall_image_urls(&state.storage, product).await?;
+    }
+
+    Ok(ok(
+        "查询成功",
+        json!({
+            "member": member,
+            "rules": {
+                "pointsPerYuan": 1,
+                "redeemRatePoints": 100,
+                "redeemRateCents": 100,
+                "memberLevels": [
+                    { "name": "普通会员", "discountBps": 10000 },
+                    { "name": "银卡", "discountBps": 9800 },
+                    { "name": "金卡", "discountBps": 9500 }
+                ]
+            },
+            "couponRewards": coupon_rewards,
+            "productRewards": product_rewards,
+        }),
+    ))
 }
 
 async fn get_group_leader_workbench<S>(
@@ -3279,6 +3476,11 @@ where
         .bind(summary.points_redeemed_cents as i32)
         .execute(&mut *tx)
         .await?;
+    }
+
+    if summary.coupon_discount_cents > 0 {
+        mark_best_customer_coupon_used_tx(&mut tx, &body.user_id, &order_id, subtotal_cents)
+            .await?;
     }
 
     if checkout
@@ -7528,33 +7730,300 @@ async fn fetch_member_support_counts(pool: &PgPool, user_id: &str) -> ApiResult<
     .await?)
 }
 
-async fn fetch_member_coupon_wallet(pool: &PgPool) -> ApiResult<Value> {
-    Ok(sqlx::query_scalar::<_, Value>(
+async fn fetch_member_coupon_wallet(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
+    let payload = fetch_customer_coupon_payload(pool, user_id, None, None).await?;
+    Ok(payload.get("summary").cloned().unwrap_or_else(|| {
+        json!({
+            "availableCount": 0,
+            "claimableCount": 0,
+            "claimedCount": 0,
+            "expiringCount": 0,
+            "usedCount": 0,
+            "expiredCount": 0,
+            "nearestExpiry": Value::Null,
+        })
+    }))
+}
+
+async fn fetch_customer_coupon_payload(
+    pool: &PgPool,
+    user_id: &str,
+    status_filter: Option<&str>,
+    coupon_type_filter: Option<&str>,
+) -> ApiResult<Value> {
+    let user_id = user_id.trim();
+    expire_customer_coupons(pool, user_id).await?;
+    let mut coupons = fetch_customer_coupons(pool, user_id, coupon_type_filter).await?;
+
+    if let Some(status) = status_filter.map(str::trim).filter(|value| !value.is_empty()) {
+        coupons.retain(|coupon| {
+            coupon
+                .get("walletStatus")
+                .and_then(Value::as_str)
+                .map(|value| value == status)
+                .unwrap_or(false)
+        });
+    }
+
+    let claimable = coupons_by_wallet_status(&coupons, "claimable");
+    let claimed = coupons_by_wallet_status(&coupons, "claimed");
+    let used = coupons_by_wallet_status(&coupons, "used");
+    let expired = coupons_by_wallet_status(&coupons, "expired");
+    let expiring = coupons
+        .iter()
+        .filter(|coupon| {
+            coupon
+                .get("isExpiringSoon")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let nearest_expiry = coupons
+        .iter()
+        .filter_map(|coupon| {
+            coupon
+                .get("expiresAt")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })
+        .min();
+
+    Ok(json!({
+        "summary": {
+            "availableCount": claimable.len() + claimed.len(),
+            "claimableCount": claimable.len(),
+            "claimedCount": claimed.len(),
+            "expiringCount": expiring.len(),
+            "usedCount": used.len(),
+            "expiredCount": expired.len(),
+            "nearestExpiry": nearest_expiry,
+        },
+        "claimable": claimable,
+        "claimed": claimed,
+        "expiring": expiring,
+        "used": used,
+        "expired": expired,
+        "all": coupons,
+    }))
+}
+
+async fn fetch_customer_coupon_detail(
+    pool: &PgPool,
+    user_id: &str,
+    coupon_id: &str,
+) -> ApiResult<Option<Value>> {
+    let coupons = fetch_customer_coupons(pool, user_id, None).await?;
+    Ok(coupons.into_iter().find(|coupon| {
+        coupon
+            .get("id")
+            .and_then(Value::as_str)
+            .map(|id| id == coupon_id)
+            .unwrap_or(false)
+    }))
+}
+
+async fn fetch_customer_coupons(
+    pool: &PgPool,
+    user_id: &str,
+    coupon_type_filter: Option<&str>,
+) -> ApiResult<Vec<Value>> {
+    let mut builder = QueryBuilder::<Postgres>::new(
         r#"
-        SELECT jsonb_build_object(
-          'availableCount', count(*) FILTER (
-            WHERE status = 'active'
-              AND (starts_at IS NULL OR starts_at <= now())
-              AND (ends_at IS NULL OR ends_at >= now())
-              AND (total_quantity <= 0 OR used_count < total_quantity)
-          ),
-          'expiringCount', count(*) FILTER (
-            WHERE status = 'active'
-              AND ends_at IS NOT NULL
-              AND ends_at >= now()
-              AND ends_at <= now() + interval '7 days'
-          ),
-          'nearestExpiry', min(ends_at) FILTER (
-            WHERE status = 'active'
-              AND ends_at IS NOT NULL
-              AND ends_at >= now()
-          )
+        WITH user_coupon AS (
+          SELECT DISTINCT ON (coupon_id)
+            id, coupon_id, status, claimed_at, used_at, expires_at, order_id
+          FROM mall_user_coupons
+          WHERE user_id =
+        "#,
+    );
+    builder.push_bind(user_id);
+    builder.push(
+        r#"
+            AND status <> 'deleted'
+          ORDER BY coupon_id, created_at DESC
+        ),
+        user_claim_counts AS (
+          SELECT coupon_id, count(*)::integer AS user_claim_count
+          FROM mall_user_coupons
+          WHERE user_id =
+        "#,
+    );
+    builder.push_bind(user_id);
+    builder.push(
+        r#"
+            AND status IN ('claimed', 'used')
+          GROUP BY coupon_id
         )
-        FROM mall_coupons
+        SELECT coupon_json(c) || jsonb_build_object(
+          'walletId', uc.id,
+          'walletStatus', CASE
+            WHEN uc.status = 'used' THEN 'used'
+            WHEN uc.status = 'expired'
+              OR (COALESCE(uc.expires_at, c.ends_at) IS NOT NULL AND COALESCE(uc.expires_at, c.ends_at) < now())
+              THEN 'expired'
+            WHEN uc.status = 'claimed' THEN 'claimed'
+            WHEN c.status = 'active'
+              AND (c.starts_at IS NULL OR c.starts_at <= now())
+              AND (c.ends_at IS NULL OR c.ends_at >= now())
+              AND (c.total_quantity <= 0 OR c.claimed_count < c.total_quantity)
+              AND COALESCE(counts.user_claim_count, 0) < c.per_user_limit
+              THEN 'claimable'
+            ELSE 'unavailable'
+          END,
+          'canClaim', CASE
+            WHEN c.status = 'active'
+              AND uc.id IS NULL
+              AND (c.starts_at IS NULL OR c.starts_at <= now())
+              AND (c.ends_at IS NULL OR c.ends_at >= now())
+              AND (c.total_quantity <= 0 OR c.claimed_count < c.total_quantity)
+              AND COALESCE(counts.user_claim_count, 0) < c.per_user_limit
+              THEN true
+            ELSE false
+          END,
+          'isExpiringSoon', CASE
+            WHEN COALESCE(uc.expires_at, c.ends_at) IS NOT NULL
+              AND COALESCE(uc.expires_at, c.ends_at) >= now()
+              AND COALESCE(uc.expires_at, c.ends_at) <= now() + interval '7 days'
+              THEN true
+            ELSE false
+          END,
+          'expiresAt', COALESCE(uc.expires_at, c.ends_at),
+          'claimedAt', uc.claimed_at,
+          'usedAt', uc.used_at,
+          'orderId', uc.order_id,
+          'pointsCost', CASE
+            WHEN (c.rules->>'pointsCost') ~ '^[0-9]+$' THEN (c.rules->>'pointsCost')::integer
+            ELSE GREATEST((c.discount_cents / 5)::integer, 100)
+          END
+        ) AS coupon
+        FROM mall_coupons c
+        LEFT JOIN user_coupon uc ON uc.coupon_id = c.id
+        LEFT JOIN user_claim_counts counts ON counts.coupon_id = c.id
+        WHERE c.status <> 'deleted'
+        "#,
+    );
+
+    if let Some(coupon_type) = coupon_type_filter
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        builder.push(" AND c.coupon_type = ");
+        builder.push_bind(coupon_type);
+    }
+
+    builder.push(" ORDER BY c.ends_at ASC NULLS LAST, c.created_at DESC LIMIT 200");
+    Ok(builder
+        .build_query_scalar::<Value>()
+        .fetch_all(pool)
+        .await?)
+}
+
+fn coupons_by_wallet_status(coupons: &[Value], status: &str) -> Vec<Value> {
+    coupons
+        .iter()
+        .filter(|coupon| {
+            coupon
+                .get("walletStatus")
+                .and_then(Value::as_str)
+                .map(|value| value == status)
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect()
+}
+
+async fn expire_customer_coupons(pool: &PgPool, user_id: &str) -> ApiResult<()> {
+    sqlx::query(
+        r#"
+        UPDATE mall_user_coupons user_coupon
+        SET status = 'expired',
+            updated_at = now()
+        FROM mall_coupons coupon
+        WHERE user_coupon.coupon_id = coupon.id
+          AND user_coupon.user_id = $1
+          AND user_coupon.status = 'claimed'
+          AND COALESCE(user_coupon.expires_at, coupon.ends_at) IS NOT NULL
+          AND COALESCE(user_coupon.expires_at, coupon.ends_at) < now()
         "#,
     )
-    .fetch_one(pool)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+async fn fetch_points_mall_product_rewards(pool: &PgPool) -> ApiResult<Vec<Value>> {
+    Ok(sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT product_json(p, c.name)
+        FROM mall_products p
+        LEFT JOIN mall_categories c ON c.code = p.category_code
+        WHERE p.status = 'on_sale'
+        ORDER BY p.sold_count DESC, p.updated_at DESC
+        LIMIT 30
+        "#,
+    )
+    .fetch_all(pool)
     .await?)
+}
+
+async fn mark_best_customer_coupon_used_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    user_id: &str,
+    order_id: &str,
+    subtotal_cents: i64,
+) -> ApiResult<()> {
+    let coupon_id: Option<String> = sqlx::query_scalar(
+        r#"
+        WITH candidate AS (
+          SELECT user_coupon.id, user_coupon.coupon_id
+          FROM mall_user_coupons user_coupon
+          JOIN mall_coupons coupon ON coupon.id = user_coupon.coupon_id
+          WHERE user_coupon.user_id = $1
+            AND user_coupon.status = 'claimed'
+            AND coupon.status = 'active'
+            AND coupon.threshold_cents <= $2
+            AND (coupon.starts_at IS NULL OR coupon.starts_at <= now())
+            AND (coupon.ends_at IS NULL OR coupon.ends_at >= now())
+            AND (COALESCE(user_coupon.expires_at, coupon.ends_at) IS NULL
+              OR COALESCE(user_coupon.expires_at, coupon.ends_at) >= now())
+          ORDER BY coupon.discount_cents DESC, coupon.ends_at ASC NULLS LAST
+          LIMIT 1
+        ),
+        updated AS (
+          UPDATE mall_user_coupons
+          SET status = 'used',
+              used_at = now(),
+              order_id = $3,
+              updated_at = now()
+          WHERE id = (SELECT id FROM candidate)
+          RETURNING coupon_id
+        )
+        SELECT coupon_id FROM updated
+        "#,
+    )
+    .bind(user_id)
+    .bind(subtotal_cents)
+    .bind(order_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    if let Some(coupon_id) = coupon_id {
+        sqlx::query(
+            r#"
+            UPDATE mall_coupons
+            SET used_count = used_count + 1,
+                updated_at = now()
+            WHERE id = $1
+            "#,
+        )
+        .bind(coupon_id)
+        .execute(&mut **tx)
+        .await?;
+    }
+    Ok(())
 }
 
 async fn fetch_group_leader_context(pool: &PgPool, user_id: &str) -> ApiResult<Option<Value>> {

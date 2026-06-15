@@ -40,10 +40,7 @@ export const getPageBodyPaddingTop = () => {
 }
 
 export const getHomePageBodyPaddingTop = () => {
-  if (isH5()) return 22
-
-  const { top } = getMiniProgramSafeAreaInsets()
-  return Math.max(14, top + 6)
+  return getPageBodyPaddingTop()
 }
 
 export const getStickyHeaderTop = () => {
@@ -54,10 +51,7 @@ export const getStickyHeaderTop = () => {
 }
 
 export const getHomeStickyHeaderTop = () => {
-  if (isH5()) return 0
-
-  const { top } = getMiniProgramSafeAreaInsets()
-  return Math.max(0, top + 2)
+  return getStickyHeaderTop()
 }
 
 export const getPageHeaderPaddingTop = () => {

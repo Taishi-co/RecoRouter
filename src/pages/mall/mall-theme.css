@@ -542,6 +542,362 @@ body.reco-mall-h5 .taro_page {
   font-weight: 900;
 }
 
+.mall-wallet-summary {
+  margin-top: 16PX;
+  padding: 16PX;
+  border: 1PX solid #cce7c7;
+  border-radius: 12PX;
+  background: #ffffff;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10PX;
+}
+
+.mall-wallet-summary-label {
+  display: block;
+  color: #657160;
+  font-size: 11PX;
+  line-height: 1.3;
+  font-weight: 800;
+}
+
+.mall-wallet-summary-value {
+  display: block;
+  margin-top: 5PX;
+  color: #20301f;
+  font-size: 22PX;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.mall-wallet-summary-warn {
+  color: #ff8a1f;
+}
+
+.mall-wallet-tabs {
+  margin-top: 14PX;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7PX;
+}
+
+.mall-wallet-tab {
+  min-height: 48PX;
+  padding: 7PX 4PX;
+  box-sizing: border-box;
+  border: 1PX solid #d8e7d1;
+  border-radius: 9PX;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4PX;
+  color: #657160;
+  font-size: 11PX;
+  font-weight: 900;
+}
+
+.mall-wallet-tab-active {
+  border-color: #63bf54;
+  background: #eefbea;
+  color: #2f7e43;
+}
+
+.mall-points-tabs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mall-wallet-filter-row {
+  margin: 12PX -18PX 4PX 0;
+  display: flex;
+  gap: 8PX;
+  overflow-x: auto;
+  padding-right: 18PX;
+}
+
+.mall-wallet-filter {
+  height: 32PX;
+  padding: 0 12PX;
+  border: 1PX solid #e3d8c8;
+  border-radius: 8PX;
+  background: #ffffff;
+  color: #6a5a45;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  font-size: 12PX;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+.mall-wallet-filter-active {
+  border-color: #ff8a1f;
+  background: #ff9238;
+  color: #ffffff;
+}
+
+.mall-coupon-card {
+  margin-top: 12PX;
+  padding: 12PX;
+  border: 1PX solid #cce7c7;
+  border-radius: 12PX;
+  background: #ffffff;
+  display: grid;
+  grid-template-columns: 92PX 1fr;
+  gap: 12PX;
+  position: relative;
+  overflow: hidden;
+}
+
+.mall-coupon-card::before {
+  content: "";
+  position: absolute;
+  left: 91PX;
+  top: 12PX;
+  bottom: 12PX;
+  width: 1PX;
+  border-left: 1PX dashed #cce7c7;
+}
+
+.mall-coupon-card-muted {
+  opacity: 0.68;
+  background: #f7f7f3;
+}
+
+.mall-coupon-left {
+  min-height: 96PX;
+  padding-right: 9PX;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6PX;
+}
+
+.mall-coupon-price {
+  color: #ff8a1f;
+  font-size: 22PX;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.mall-coupon-threshold {
+  color: #657160;
+  font-size: 11PX;
+  font-weight: 800;
+}
+
+.mall-coupon-main {
+  min-width: 0;
+  padding-right: 74PX;
+}
+
+.mall-coupon-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8PX;
+}
+
+.mall-coupon-title {
+  min-width: 0;
+  color: #20301f;
+  font-size: 15PX;
+  line-height: 1.25;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mall-coupon-type {
+  height: 22PX;
+  padding: 0 7PX;
+  border-radius: 6PX;
+  background: #eefbea;
+  color: #2f7e43;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10PX;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+.mall-coupon-desc {
+  display: block;
+  margin-top: 8PX;
+  color: #657160;
+  font-size: 12PX;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.mall-coupon-meta {
+  margin-top: 10PX;
+  display: flex;
+  align-items: center;
+  gap: 5PX;
+  color: #657160;
+  font-size: 11PX;
+  font-weight: 800;
+}
+
+.mall-coupon-action {
+  position: absolute;
+  right: 12PX;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 62PX;
+  height: 34PX;
+  border-radius: 8PX;
+  background: #2f7e43;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4PX;
+  font-size: 12PX;
+  font-weight: 900;
+}
+
+.mall-coupon-action-disabled {
+  background: #e6ebe1;
+  color: #8b9487;
+}
+
+.mall-points-hero {
+  margin-top: 16PX;
+  padding: 18PX;
+  border-radius: 14PX;
+  background: #15371f;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #ffffff;
+}
+
+.mall-points-label {
+  display: block;
+  color: #d5efd0;
+  font-size: 12PX;
+  font-weight: 800;
+}
+
+.mall-points-value {
+  display: block;
+  margin-top: 6PX;
+  font-size: 34PX;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.mall-points-copy {
+  display: block;
+  margin-top: 8PX;
+  color: #f5fff1;
+  font-size: 12PX;
+  font-weight: 800;
+}
+
+.mall-points-level {
+  min-width: 86PX;
+  height: 42PX;
+  padding: 0 10PX;
+  border-radius: 999PX;
+  background: #eefbea;
+  color: #2f7e43;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6PX;
+  font-size: 12PX;
+  font-weight: 900;
+}
+
+.mall-points-rules {
+  margin-top: 12PX;
+  display: grid;
+  gap: 9PX;
+}
+
+.mall-points-rule {
+  padding: 12PX;
+  border: 1PX solid #cce7c7;
+  border-radius: 10PX;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 10PX;
+}
+
+.mall-points-rule text:first-child {
+  display: block;
+  color: #20301f;
+  font-size: 13PX;
+  font-weight: 900;
+}
+
+.mall-points-rule text:last-child {
+  display: block;
+  margin-top: 3PX;
+  color: #657160;
+  font-size: 12PX;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.mall-points-list {
+  margin-top: 12PX;
+  display: grid;
+  gap: 12PX;
+}
+
+.mall-points-coupon-card,
+.mall-points-product-card {
+  padding: 12PX;
+  border: 1PX solid #cce7c7;
+  border-radius: 12PX;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 10PX;
+}
+
+.mall-points-product-image {
+  width: 76PX;
+  height: 76PX;
+  border-radius: 9PX;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.mall-points-product-image .mall-product-image,
+.mall-points-product-image .mall-product-illustration {
+  width: 76PX;
+  height: 76PX;
+  border-radius: 9PX;
+}
+
+.mall-points-product-price {
+  margin-top: 8PX;
+  display: flex;
+  align-items: center;
+  gap: 8PX;
+}
+
+.mall-points-product-price text:first-child {
+  color: #ff8a1f;
+  font-size: 17PX;
+  font-weight: 900;
+}
+
+.mall-points-product-price text:last-child {
+  color: #2f7e43;
+  font-size: 11PX;
+  font-weight: 900;
+}
+
 .mall-product-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3206,6 +3562,9 @@ body.reco-mall-h5 .taro_page {
 .mall-v7-profile-main {
   min-width: 0;
   flex: 1;
+  padding-right: 78PX;
+  padding-bottom: 28PX;
+  box-sizing: border-box;
 }
 
 .mall-v7-profile-hero .mall-profile-name {
@@ -3239,10 +3598,10 @@ body.reco-mall-h5 .taro_page {
 
 .mall-profile-edit-button {
   position: absolute;
-  top: 12PX;
+  bottom: 12PX;
   right: 12PX;
   height: 28PX;
-  padding: 0 8PX;
+  padding: 0 10PX;
   border-radius: 7PX;
   background: #ff9f43;
   color: #1d2f21;

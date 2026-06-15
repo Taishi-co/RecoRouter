@@ -166,7 +166,7 @@ export default function MallProfilePage() {
         </View>
         <View className="mall-profile-edit-button" onClick={openEditProfile}>
           <Pencil size={14} color="#1D2F21" />
-          <Text>编辑</Text>
+          <Text>编辑资料</Text>
         </View>
       </View>
 
@@ -208,7 +208,7 @@ export default function MallProfilePage() {
         title="卡包优惠券"
         subtitle={`可用 ${availableCouponCount} 张${expiringCouponCount > 0 ? ` · ${expiringCouponCount} 张即将过期` : ''}`}
         action="查看"
-        onClick={() => Taro.navigateTo({ url: '/pages/mall/category/index?keyword=优惠券' })}
+        onClick={() => Taro.navigateTo({ url: '/pages/mall/coupons/index' })}
       />
       <ProfileLink
         icon={<MapPin size={20} color="#2F7E43" />}
@@ -229,7 +229,7 @@ export default function MallProfilePage() {
         title="积分商城"
         subtitle={`当前 ${points} 积分，可兑换商品 / 优惠券`}
         action="兑换"
-        onClick={() => Taro.navigateTo({ url: '/pages/mall/category/index?keyword=积分兑换' })}
+        onClick={() => Taro.navigateTo({ url: '/pages/mall/points/index' })}
       />
       <ProfileLink
         icon={<Headphones size={20} color="#2F7E43" />}
