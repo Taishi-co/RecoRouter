@@ -36,7 +36,14 @@ fi
 case "$PLATFORM" in
   weapp)
     : "${TARO_APP_WEAPP_APPID:?TARO_APP_WEAPP_APPID is required for weapp upload}"
-    WEAPP_PRIVATE_KEY_PATH="${WEAPP_PRIVATE_KEY_PATH:-/etc/recorouter/weapp/private.appid.key}"
+    if [[ -z "${WEAPP_PRIVATE_KEY_PATH:-}" ]]; then
+      APPID_KEY_PATH="/etc/recorouter/weapp/private.${TARO_APP_WEAPP_APPID}.key"
+      if [[ -f "$APPID_KEY_PATH" ]]; then
+        WEAPP_PRIVATE_KEY_PATH="$APPID_KEY_PATH"
+      else
+        WEAPP_PRIVATE_KEY_PATH="/etc/recorouter/weapp/private.appid.key"
+      fi
+    fi
     if [[ ! -f "$WEAPP_PRIVATE_KEY_PATH" ]]; then
       echo "WeChat upload key not found: $WEAPP_PRIVATE_KEY_PATH" >&2
       exit 1

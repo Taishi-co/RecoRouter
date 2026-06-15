@@ -252,7 +252,7 @@ where
 
     let client_payload = match provider {
         PaymentProvider::Wechat => {
-            let config = WechatPayConfig::from_env_for_service(state.service)?;
+            let config = WechatPayConfig::from_env_for_business(state.service, business_type)?;
             let openid = resolve_wechat_openid(&config, &body).await?;
             let prepay_id = wechat_create_jsapi_prepay(
                 &config,
@@ -322,7 +322,7 @@ where
 
     match provider {
         PaymentProvider::Wechat => {
-            let config = WechatPayConfig::from_env_for_service(state.service)?;
+            let config = WechatPayConfig::from_env_for_business(state.service, business_type)?;
             let state_result = wechat_query_order(&config, &payment.out_trade_no).await?;
             if state_result.trade_state == "SUCCESS" {
                 mark_payment_success(
@@ -418,6 +418,10 @@ async fn fetch_payable_order(
     order_id: &str,
     business_type: PaymentBusinessType,
 ) -> ApiResult<PayableOrderRow> {
+    if business_type == PaymentBusinessType::MallOrder {
+        crate::modules::mall::expire_unpaid_mall_orders(pool).await?;
+    }
+
     match business_type {
         PaymentBusinessType::OrderFare | PaymentBusinessType::OrderCommission => {
             sqlx::query_as::<_, PayableOrderRow>(
@@ -744,6 +748,17 @@ fn new_out_trade_no() -> String {
 }
 
 impl WechatPayConfig {
+    fn from_env_for_business(
+        service: crate::config::ApiService,
+        business_type: PaymentBusinessType,
+    ) -> ApiResult<Self> {
+        let config_service = match business_type {
+            PaymentBusinessType::MallOrder => crate::config::ApiService::Mall,
+            PaymentBusinessType::OrderFare | PaymentBusinessType::OrderCommission => service,
+        };
+        Self::from_env_for_service(config_service)
+    }
+
     fn from_env_for_service(service: crate::config::ApiService) -> ApiResult<Self> {
         let merchant = WechatPayMerchantConfig::from_env_for_service(service)?;
         let notify_url = read_trimmed("WECHAT_PAY_NOTIFY_URL")
