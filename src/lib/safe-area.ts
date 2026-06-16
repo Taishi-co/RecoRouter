@@ -40,7 +40,9 @@ export const getPageBodyPaddingTop = () => {
 }
 
 export const getHomePageBodyPaddingTop = () => {
-  return getPageBodyPaddingTop()
+  if (isH5()) return 22
+
+  return 4
 }
 
 export const getStickyHeaderTop = () => {
