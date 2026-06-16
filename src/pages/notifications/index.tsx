@@ -252,12 +252,17 @@ export default function Notifications() {
 
   const displayNotifications = notifications
   const displayUnreadCount = unreadCount
+  const currentRole = Taro.getStorageSync('userInfo')?.role
+  const bottomNav =
+    currentRole === 'merchant'
+      ? <BottomNav type="merchant" active="messages" />
+      : <BottomNav type="common" active="messages" />
 
   return (
     <AppPageShell
       title="通知中心"
       subtitle="RecoRouter 通知消息"
-      bottom={<BottomNav type="common" active="messages" />}
+      bottom={bottomNav}
       scroll={false}
       contentClassName="space-y-3"
       right={displayUnreadCount > 0 ? (
