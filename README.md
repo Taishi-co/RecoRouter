@@ -1,616 +1,299 @@
-# Coze Mini Program
+# RecoRouter
 
-这是一个基于 [Taro 4](https://docs.taro.zone/docs/) + Rust/Axum 的前后端分离项目，由扣子编程 CLI 创建。
+RecoRouter 是面向无人车运力调度、社区团购商城和运营管理的前后端一体化仓库。当前代码已经按业务边界拆成三类前端 profile 和三类后端 API 服务，并保留一个 legacy 聚合服务用于本地开发和兼容部署。
 
-## 技术栈
+## 当前用途
 
-- **整体框架**: Taro 4.1.9
-- **语言**: TypeScript 5.4.5
-- **渲染**: React 18.0.0
-- **样式**: TailwindCSS 4.1.18
-- **Tailwind 适配层**: weapp-tailwindcss 4.9.2
-- **状态管理**: Zustand 5.0.9
-- **图标库**: lucide-react-taro latest
-- **工程化**: Vite 4.2.0
-- **包管理**: pnpm
-- **运行时**: Node.js >= 18
-- **服务端**: Rust 2021 + Axum 0.7
-- **数据库访问**: SQLx 0.8
-- **类型校验**: Serde + Rust 类型系统
+| 业务域 | 面向用户 | 主要能力 |
+| --- | --- | --- |
+| 无人车 / 运力 | 企业端、车主端、需求方端 | 企业调度、车队和奶站管理、需求发布、订单履约、车辆租赁、行程编排、取消处理、车主钱包 |
+| 商城 / 叁友甄选 | C 端商城用户、团长、商城运营 | 商品目录、购物车、结算、订单支付、配送时段、自提点、优惠券、积分、售后、客服、商城运营后台 |
+| 运营管理 | 平台管理员、客服、财务/运营 | 用户审核、车辆审核、运力订单、佣金审核、商城商品/订单/营销/客服/财务、运营数据看板 |
+| 公共服务 | 各业务后端 | 平台配置、支付预下单和回调、退款/转账/分账记录、COS 上传记录、审计日志、事件投递 |
 
-## 项目结构
+## 架构总览
 
+```mermaid
+flowchart LR
+  subgraph Frontend["前端"]
+    VehicleMini["Taro vehicle profile\n锐途运力小程序 / H5"]
+    MallMini["Taro mall profile\n叁友甄选小程序 / H5"]
+    AdminMini["Taro admin profile\n运营端小程序页面"]
+    WebAdmin["Vite Web Admin\nsrc/web-admin/main.tsx"]
+  end
+
+  subgraph Edge["生产入口"]
+    Nginx["Nginx\ncar.shcxyz.site"]
+  end
+
+  subgraph Backend["Rust / Axum API"]
+    VehicleAPI["vehicle-api\n无人车 / 运力"]
+    MallAPI["mall-api\n商城 / 客服"]
+    PlatformAPI["platform-api\n公共服务"]
+    LegacyAPI["recorouter-api\nlegacy 聚合服务"]
+    Migrator["recorouter-migrator\nSQLx migrations"]
+  end
+
+  subgraph Data["数据与外部服务"]
+    Postgres["PostgreSQL"]
+    Storage["Local uploads / Tencent COS"]
+    WeChatPay["WeChat Pay"]
+  end
+
+  VehicleMini --> Nginx
+  MallMini --> Nginx
+  AdminMini --> Nginx
+  WebAdmin --> Nginx
+  Nginx --> VehicleAPI
+  Nginx --> MallAPI
+  Nginx --> PlatformAPI
+  VehicleAPI --> Postgres
+  MallAPI --> Postgres
+  PlatformAPI --> Postgres
+  Migrator --> Postgres
+  VehicleAPI --> Storage
+  MallAPI --> Storage
+  PlatformAPI --> Storage
+  PlatformAPI --> WeChatPay
 ```
-├── .cozeproj/                # Coze 平台配置
-│   └── scripts/              # 构建和运行脚本
-├── config/                   # Taro 构建配置
-│   ├── index.ts              # 主配置文件
-│   ├── dev.ts                # 开发环境配置
-│   └── prod.ts               # 生产环境配置
-├── server/                   # Rust/Axum 后端服务
-│   └── src/
-│       ├── main.rs           # 服务入口
-│       ├── app.rs            # 路由组装
-│       ├── config.rs         # 环境配置
-│       └── modules/          # 业务模块
-├── src/                      # 前端源码
-│   ├── pages/                # 页面组件
-│   ├── presets/              # 框架预置逻辑（无需读取，如无必要不改动）
-│   ├── utils/                # 工具函数
-│   ├── network.ts            # 封装好的网络请求工具
-│   ├── app.ts                # 应用入口
-│   ├── app.config.ts         # 应用配置
-│   └── app.css               # 全局样式
-├── types/                    # TypeScript 类型定义
-├── key/                      # 小程序密钥（CI 上传用）
-├── .env.local                # 环境变量
-└── project.config.json       # 微信小程序项目配置
+
+生产环境按路径把 `/api/` 拆到三个 API：
+
+| 入口路径 | 目标服务 | 说明 |
+| --- | --- | --- |
+| `/api/mall/*`、`/api/admin/mall/*`、`/api/support/*` | `mall-api` | 商城 C 端、商城后台、客服 |
+| `/api/platform/*`、`/api/payments/*` | `platform-api` | 平台配置、支付、退款、转账、分账、审计和事件投递 |
+| 其他 `/api/*` | `vehicle-api` | 用户、角色、企业、车队、需求、订单、车辆、行程、通知、车主钱包 |
+| 本地兼容 | `recorouter-api` | legacy 聚合服务，合并 vehicle、mall、platform 全部路由 |
+
+## 前端
+
+前端基于 Taro 4、React 18、TypeScript、Tailwind CSS 4 和 weapp-tailwindcss。网络请求必须通过 `src/network.ts` 的 `Network.request`、`Network.uploadFile`、`Network.downloadFile`，由它统一拼接 `PROJECT_DOMAIN` 并附加登录 token。
+
+### 应用 profile
+
+`src/app.config.ts` 通过 `RECO_APP_PROFILE` 控制打包页面集：
+
+| Profile | 标题 | 页面范围 | 常用命令 |
+| --- | --- | --- | --- |
+| `vehicle` | 锐途运力 | 企业端、车主端、需求方端、租赁、通知、角色切换 | `pnpm dev:weapp:vehicle`、`pnpm build:weapp:vehicle`、`pnpm build:web:vehicle` |
+| `mall` | 叁友甄选 | 商城首页、分类、商品、购物车、确认订单、地址、支付成功、订单、售后、客服、我的、优惠券、积分、社区 | `pnpm dev:weapp:mall`、`pnpm build:weapp:mall`、`pnpm build:web:mall` |
+| `admin` | Reco Console | 运营控制台、用户、车辆、商城、客服、订单、佣金、统计、设置 | `pnpm dev:weapp:admin`、`pnpm build:weapp:admin`、`pnpm build:web:admin` |
+| `all` | 无人车共享运营平台 | 全部 Taro 页面，用于兼容和全量调试 | `pnpm dev:weapp`、`pnpm build:weapp` |
+
+### Web 管理平台
+
+独立 Web 管理平台由 `web-admin/vite.config.ts` 打包，入口是 `web-admin/main.tsx`，实际业务实现复用 `src/web-admin/main.tsx`。它面向运营和客服，覆盖：
+
+- 平台总览、用户和车辆审核。
+- 运力订单、佣金审核、企业和需求数据。
+- 商城商品、分类、订单、配送、自提点、团长、营销、优惠券、首页配置、权限和设置。
+- 客服会话、工单、知识库和售后联动。
+
+构建产物默认输出到 `dist-web`，生产根路径 `/` 直接服务该 Web 管理平台。
+
+### 前端目录
+
+```text
+src/
+  app.config.ts              # profile 页面集和应用标题
+  app.tsx                    # Taro 应用入口
+  network.ts                 # 统一请求封装
+  components/ui/             # Taro 版 shadcn 风格通用组件
+  components/layout/         # 页面壳、底部导航、固定操作栏
+  pages/enterprise/          # 企业端
+  pages/owner/               # 车主端
+  pages/merchant/            # 需求方端
+  pages/mall/                # 商城 C 端
+  pages/admin/               # Taro 运营端页面
+  services/                  # 商城、支付、车主钱包等前端服务封装
+  web-admin/                 # Web 管理平台 React 入口和样式
+web-admin/
+  index.html
+  main.tsx                   # import ../src/web-admin/main
+  vite.config.ts
 ```
 
-## 快速开始
+## 后端
 
-### 安装依赖
+后端基于 Rust 2021、Axum、SQLx、PostgreSQL、Serde 和 Tokio。服务入口在 `server/src/runtime.rs`，路由组装在 `server/src/app.rs`。
+
+### API 服务
+
+| Binary | 默认端口 | 环境变量 | 路由范围 |
+| --- | --- | --- | --- |
+| `recorouter-api` | `SERVER_PORT`，默认 `34532` | `DATABASE_URL` | legacy 聚合服务，合并全部业务路由 |
+| `vehicle-api` | `VEHICLE_API_PORT`，未设置时回退 `SERVER_PORT` 或默认端口 | `VEHICLE_DATABASE_URL`，未设置时回退 `DATABASE_URL` | 无人车、企业、车主、需求方、订单、行程、钱包、通知、管理员审核 |
+| `mall-api` | `MALL_API_PORT`，未设置时回退 `SERVER_PORT` 或默认端口 | `MALL_DATABASE_URL`，未设置时回退 `DATABASE_URL` | 商城用户、商品、购物车、结算、订单、售后、客服、商城后台 |
+| `platform-api` | `PLATFORM_API_PORT`，未设置时回退 `SERVER_PORT` 或默认端口 | `PLATFORM_DATABASE_URL`，未设置时回退 `DATABASE_URL` | 平台配置、支付、退款、转账、分账、审计、事件投递、COS 上传记录 |
+| `recorouter-migrator` | 不监听端口 | `MIGRATION_SERVICE` + 对应数据库变量 | 单独执行 SQLx migrations，供 split API 部署先迁移后启动 |
+
+本地开发默认使用 `recorouter-api`，生产部署使用 `vehicle-api`、`mall-api`、`platform-api` 三个 split API。split 阶段可以共用一个 `DATABASE_URL`；独立数据库准备好后再配置 `VEHICLE_DATABASE_URL`、`MALL_DATABASE_URL`、`PLATFORM_DATABASE_URL`。
+
+### 后端模块
+
+```text
+server/
+  src/app.rs                 # legacy / vehicle / mall / platform 路由边界
+  src/runtime.rs             # 配置、数据库、迁移、Storage、监听端口
+  src/config.rs              # 服务类型、端口、数据库和 COS 环境变量
+  src/db/mod.rs              # PostgreSQL 连接池与 SQLx migrations
+  src/storage/               # LocalStorage / TencentCosStorage 抽象
+  src/wechat_pay.rs          # 微信支付签名、请求与回调相关能力
+  src/modules/
+    auth.rs                  # 登录、注册、验证码、微信登录、mall auth
+    enterprise*.rs           # 企业、奶站、企业车辆、企业需求
+    demands*.rs              # 需求、模板、定时发布
+    vehicles.rs              # 车辆审核、位置、租赁设置
+    orders.rs                # 运力订单、佣金、支付确认
+    trips.rs                 # 行程、站点、自动分配、调度统计
+    owner_wallet.rs          # 车主钱包、微信提现、后台处理
+    mall.rs                  # 商城 C 端、商城后台、客服和售后
+    platform.rs              # 公共服务数据面
+    payments.rs              # 支付预下单、同步、微信回调
+  migrations/                # SQLx migration，从基础业务表到商城/平台/行程/售后扩展
+```
+
+### 公共服务边界
+
+当前公共服务集中在 `platform-api` 和共享库中：
+
+- `platform-api` 负责可运营的数据面：平台设置、应用配置、支付单、退款单、转账单、分账计划、审计日志、事件投递和 COS 上传记录。
+- `payments.rs` 提供业务支付入口：创建预支付、同步支付状态、处理微信支付回调。
+- `storage/` 把文件能力抽象为 Local uploads 或 Tencent COS；`/api/uploads` 负责本地上传文件的静态访问。
+- `auth.rs`、`response.rs`、`pagination.rs`、`error.rs` 等是共享代码，不单独作为服务边界。
+
+## 数据层
+
+- 数据库使用 PostgreSQL，Rust 侧通过 SQLx 连接池访问。
+- 迁移位于 `server/migrations/`，从 `0001_init.sql` 起覆盖用户、需求、车辆、订单、平台配置、钱包、支付、商城、平台公共服务、行程、售后和优惠券等表。
+- 仓库包含 `check:sqlx-migration-immutability`，已应用的 migration 不应随意改写；需要 schema 变化时新增 migration。
+- 当前代码不依赖物理外键作为跨业务边界，`check:no-physical-fks` 用于防止重新引入不符合拆分方向的物理约束。
+
+## 本地开发
+
+### 环境要求
+
+- Node.js >= 18
+- pnpm >= 9
+- Rust stable
+- PostgreSQL
+
+安装依赖：
 
 ```bash
 pnpm install
 ```
 
-### 本地开发
+最小 `.env.local` 示例：
 
-同时启动 H5 前端和 Rust 后端：
+```dotenv
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/recocar
+SERVER_PORT=34532
+PUBLIC_BASE_URL=http://localhost:34532
+LOCAL_UPLOAD_DIR=uploads
+PROJECT_DOMAIN=
+```
+
+如果需要腾讯 COS：
+
+```dotenv
+COS_SECRET_ID=
+COS_SECRET_KEY=
+COS_BUCKET=
+COS_REGION=
+```
+
+### 启动
 
 ```bash
 pnpm dev
 ```
 
-- 前端地址：http://localhost:5000
-- 后端地址：http://localhost:34532
+`pnpm dev` 会同时启动 Web 管理平台和 legacy 后端：
+
+- Web 管理平台：`http://localhost:5173` 或 Vite 输出的实际端口
+- legacy API：`http://localhost:34532`
 
 单独启动：
 
 ```bash
-pnpm dev:web      # 仅 H5 前端
-pnpm dev:weapp    # 仅微信小程序
-pnpm dev:server   # 仅后端服务
+pnpm dev:web
+pnpm dev:server
+pnpm dev:vehicle-api
+pnpm dev:mall-api
+pnpm dev:platform-api
+pnpm dev:weapp:vehicle
+pnpm dev:weapp:mall
+pnpm dev:weapp:admin
 ```
 
-### 构建
+### 迁移
 
 ```bash
-pnpm build        # 构建所有（H5 + 小程序 + 后端）
-pnpm build:web    # 仅构建 H5，输出到 dist-web
-pnpm build:weapp  # 仅构建微信小程序，输出到 dist
-pnpm build:server # 仅构建后端
+pnpm migrate:server
+pnpm migrate:vehicle-api
+pnpm migrate:mall-api
+pnpm migrate:platform-api
 ```
 
-### 预览小程序
+split API 部署时推荐先运行 `recorouter-migrator`，再以 `RUN_MIGRATIONS=0` 启动三个 API，避免多个服务并发迁移。
+
+## 构建与验证
+
+常用构建：
 
 ```bash
-pnpm preview:weapp # 构建并生成预览小程序二维码
+pnpm build:web
+pnpm build:web:vehicle
+pnpm build:web:mall
+pnpm build:weapp:vehicle
+pnpm build:weapp:mall
+pnpm build:apis
+cargo build --manifest-path server/Cargo.toml --release --locked --bins
 ```
 
-## 前端核心开发规范
-
-### 新建页面流程
-
-1. 在 \`src/pages/\` 下创建页面目录
-2. 创建 \`index.tsx\`（页面组件）
-3. 创建 \`index.config.ts\`（页面配置）
-4. 创建 \`index.css\`（页面样式，可选）
-5. 在 \`src/app.config.ts\` 的 \`pages\` 数组中注册页面路径
-
-或使用 Taro 脚手架命令：
+常用验证：
 
 ```bash
-pnpm new      # 交互式创建页面/组件
+pnpm lint:build
+pnpm tsc
+pnpm test:service-routers
+pnpm validate:split
+pnpm validate
 ```
 
-### 组件库
+`pnpm validate` 是仓库级前端/脚本检查入口，会跑 lint、TypeScript、migration immutability、网络请求规范、商城体验、Web 管理平台权限和运营工作台等脚本。
 
-#### UI 组件
+## 生产部署
 
-UI 组件位于 `@/components/ui`，推荐按需引入：
+生产部署说明在 `deploy/README.md`。当前目标：
 
-```typescript
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-```
+| 项 | 值 |
+| --- | --- |
+| Host | `62.234.29.88` |
+| Domain | `car.shcxyz.site` |
+| App root | `/opt/recorouter` |
+| Web admin | `/opt/recorouter/current/dist-web` |
+| Split API ports | `vehicle-api=34533`、`mall-api=34534`、`platform-api=34535` |
+| H5 demo ports | vehicle `18081`、mall `18082` |
 
-UI 组件列表:
+自动部署 workflow：
 
-Accordion,Alert,AlertDialog,AspectRatio,Avatar,Badge,Breadcrumb,Button,ButtonGroup,Calendar,Card,Carousel,Checkbox,CodeBlock,Collapsible,Command,ContextMenu,Dialog,Drawer,DropdownMenu,Field,HoverCard,Input,InputGroup,InputOTP,Label,Menubar,NavigationMenu,Pagination,Popover,Portal,Progress,RadioGroup,Resizable,ScrollArea,Select,Separator,Sheet,Skeleton,Slider,Sonner,Switch,Table,Tabs,Textarea,Toast,Toggle,ToggleGroup,Tooltip
+- `.github/workflows/deploy-prod.yml`：main 分支相关路径变更后构建 Web 管理平台、vehicle H5、mall H5 和 Rust API，打包并安装到生产服务器，最后验证 `/api/health`。
+- `.github/workflows/publish-miniapp.yml`：手动发布小程序，或在 `WEAPP_UPLOAD_ON_MAIN=true` 时随 main 发布；上传动作在服务器执行，确保微信看到固定上传 IP。
 
-#### Taro 原生组件
-
-可以使用的 Taro 组件（UI 未覆盖）
-
-```typescript
-import { View, Text, Icon, Image } from '@tarojs/components'
-```
-
-Taro 原生组件列表：
-
-Text,Icon,RichText,CheckboxGroup,Editor,Form,Picker,PickerView,PickerViewColumn,Radio,FunctionalPageNavigator,NavigationBar,Navigator,TabItem,Camera,Image,Video,ScrollView,Swiper,SwiperItem,View
-
-### 路径别名
-
-项目配置了 `@/*` 路径别名指向 `src/*`：
-
-```typescript
-import { SomeComponent } from '@/components/some-component'
-import { useUserStore } from '@/stores/user'
-```
-
-### 代码模板
-
-#### 页面组件 (TypeScript + React)
-
-```tsx
-// src/pages/example/index.tsx
-import { View } from '@tarojs/components'
-import { useLoad, useDidShow } from '@tarojs/taro'
-import type { FC } from 'react'
-import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
-import './index.css'
-
-const ExamplePage: FC = () => {
-  useLoad(() => {
-    console.log('Page loaded.')
-  })
-
-  useDidShow(() => {
-    console.log('Page showed.')
-  })
-
-  return (
-    <View className="p-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Hello Taro!</CardTitle>
-          <CardDescription>
-            页面布局用 Taro 基础组件，交互与视觉优先用项目内置 UI 组件。
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <View className="text-sm text-muted-foreground">
-            组件位于 src/components/ui，推荐按需从 @/components/ui/* 引入。
-          </View>
-        </CardContent>
-        <CardFooter className="justify-end">
-          <Button size="sm" onClick={() => console.log('clicked')}>
-            点击
-          </Button>
-        </CardFooter>
-      </Card>
-    </View>
-  )
-}
-
-export default ExamplePage
-```
-
-#### 页面配置
-
-```typescript
-// src/pages/example/index.config.ts
-import { definePageConfig } from '@tarojs/taro'
-
-export default definePageConfig({
-  navigationBarTitleText: '示例页面',
-  enablePullDownRefresh: true,
-  backgroundTextStyle: 'dark',
-})
-```
-
-#### 应用配置
-
-```typescript
-// src/app.config.ts
-import { defineAppConfig } from '@tarojs/taro'
-
-export default defineAppConfig({
-  pages: [
-    'pages/index/index',
-    'pages/example/index',
-  ],
-  window: {
-    backgroundTextStyle: 'light',
-    navigationBarBackgroundColor: '#fff',
-    navigationBarTitleText: 'App',
-    navigationBarTextStyle: 'black',
-  },
-  // TabBar 配置 (可选)
-  // tabBar: {
-  //   list: [
-  //     { pagePath: 'pages/index/index', text: '首页' },
-  //   ],
-  // },
-})
-```
-
-### 发送请求
-
-**IMPORTANT: 禁止直接使用 Taro.request、Taro.uploadFile、Taro.downloadFile，使用 Network.request、Network.uploadFile、Network.downloadFile 替代。**
-
-Network 是对 Taro.request、Taro.uploadFile、Taro.downloadFile 的封装，自动添加项目域名前缀，参数与 Taro 一致。
-
-✅ 正确使用方式
-
-```typescript
-import { Network } from '@/network'
-
-// GET 请求
-const data = await Network.request({
-  url: '/api/hello'
-})
-
-// POST 请求
-const result = await Network.request({
-  url: '/api/user/login',
-  method: 'POST',
-  data: { username, password }
-})
-
-// 文件上传
-await Network.uploadFile({
-  url: '/api/upload',
-  filePath: tempFilePath,
-  name: 'file'
-})
-
-// 文件下载
-await Network.downloadFile({
-  url: '/api/download/file.pdf'
-})
-```
-
-❌ 错误用法
-
-```typescript
-import Taro from '@tarojs/taro'
-
-// ❌ 会导致自动域名拼接无法生效，除非是特殊指定域名
-const data = await Network.request({
-  url: 'http://localhost/api/hello'
-})
-
-// ❌ 不要直接使用 Taro.request
-await Taro.request({ url: '/api/hello' })
-
-// ❌ 不要直接使用 Taro.uploadFile
-await Taro.uploadFile({ url: '/api/upload', filePath, name: 'file' })
-```
-
-### Zustand 状态管理
-
-```typescript
-// src/stores/user.ts
-import { create } from 'zustand'
-
-interface UserState {
-  userInfo: UserInfo | null
-  token: string
-  setUserInfo: (info: UserInfo) => void
-  setToken: (token: string) => void
-  logout: () => void
-}
-
-interface UserInfo {
-  id: string
-  name: string
-  avatar: string
-}
-
-export const useUserStore = create<UserState>((set) => ({
-  userInfo: null,
-  token: '',
-  setUserInfo: (info) => set({ userInfo: info }),
-  setToken: (token) => set({ token }),
-  logout: () => set({ userInfo: null, token: '' }),
-}))
-```
-
-### Taro 生命周期 Hooks
-
-```typescript
-import {
-  useLoad,             // 页面加载 (onLoad)
-  useReady,            // 页面初次渲染完成 (onReady)
-  useDidShow,          // 页面显示 (onShow)
-  useDidHide,          // 页面隐藏 (onHide)
-  usePullDownRefresh,  // 下拉刷新 (onPullDownRefresh)
-  useReachBottom,      // 触底加载 (onReachBottom)
-  useShareAppMessage,  // 分享 (onShareAppMessage)
-  useRouter,           // 获取路由参数
-} from '@tarojs/taro'
-```
-
-### 路由导航
-
-```typescript
-import Taro from '@tarojs/taro'
-
-// 保留当前页面，跳转到新页面
-Taro.navigateTo({ url: '/pages/detail/index?id=1' })
-
-// 关闭当前页面，跳转到新页面
-Taro.redirectTo({ url: '/pages/detail/index' })
-
-// 跳转到 tabBar 页面
-Taro.switchTab({ url: '/pages/index/index' })
-
-// 返回上一页
-Taro.navigateBack({ delta: 1 })
-
-// 获取路由参数
-const router = useRouter()
-const { id } = router.params
-```
-
-### 图标使用 (lucide-react-taro)
-
-**IMPORTANT: 禁止使用 lucide-react，必须使用 lucide-react-taro 替代。**
-
-lucide-react-taro 是 Lucide 图标库的 Taro 适配版本，专为小程序环境优化，API 与 lucide-react 一致：
-
-```tsx
-import { View } from '@tarojs/components'
-import { House, Settings, User, Search, Camera, Zap } from 'lucide-react-taro'
-
-const IconDemo = () => {
-  return (
-    <View className="flex gap-4">
-      {/* 基本用法 */}
-      <House />
-      {/* 自定义尺寸和颜色 */}
-      <Settings size={32} color="#1890ff" />
-      {/* 自定义描边宽度 */}
-      <User size={24} strokeWidth={1.5} />
-      {/* 绝对描边宽度（描边不随 size 缩放） */}
-      <Camera size={48} strokeWidth={2} absoluteStrokeWidth />
-      {/* 组合使用 */}
-      <Zap size={32} color="#ff6b00" strokeWidth={1.5} className="my-icon" />
-    </View>
-  )
-}
-```
-
-常用属性：
-- `size` - 图标大小（默认 24）
-- `color` - 图标颜色（默认 currentColor，小程序中建议显式设置）
-- `strokeWidth` - 线条粗细（默认 2）
-- `absoluteStrokeWidth` - 绝对描边宽度，启用后描边不随 size 缩放
-- `className` / `style` - 自定义样式
-
-更多图标请访问：https://lucide.dev/icons
-
-### TabBar 图标生成 (CLI 工具)
-
-**IMPORTANT: 微信小程序的 TabBar 不支持 base64 或 SVG 图片，必须使用本地 PNG 文件。**
-
-lucide-react-taro 提供了 CLI 工具来生成 TabBar 所需的 PNG 图标：
+本地构建 Docker release 包：
 
 ```bash
-# 生成带选中状态的图标
-npx taro-lucide-tabbar House Settings User -c "#999999" -a "#1890ff"
-
-# 指定输出目录和尺寸
-npx taro-lucide-tabbar House Settings User -c "#999999" -a "#1890ff" -o ./src/assets/tabbar -s 81
+deploy/make-docker-release.sh
 ```
 
-CLI 参数：
-- `--color, -c` (默认 #000000): 图标颜色
-- `--active-color, -a`: 选中状态颜色
-- `--size, -s` (默认 81): 图标尺寸
-- `--output, -o` (默认 ./tabbar-icons): 输出目录
-- `--stroke-width` (默认 2): 描边宽度
+## 开发约束
 
-在 `app.config.ts` 中使用生成的图标：
-
-> IMPORTANT：iconPath 和 selectedIconPath 必须以 `./` 开头，否则图标无法渲染
-
-```typescript
-export default defineAppConfig({
-  tabBar: {
-    color: '#999999',
-    selectedColor: '#1890ff',
-    backgroundColor: '#ffffff',
-    borderStyle: 'black',
-    list: [
-      {
-        pagePath: 'pages/index/index',
-        text: '首页',
-        iconPath: './assets/tabbar/house.png',
-        selectedIconPath: './assets/tabbar/house-active.png',
-      },
-      {
-        pagePath: 'pages/settings/index',
-        text: '设置',
-        iconPath: './assets/tabbar/settings.png',
-        selectedIconPath: './assets/tabbar/settings-active.png',
-      },
-      {
-        pagePath: 'pages/user/index',
-        text: '用户',
-        iconPath: './assets/tabbar/user.png',
-        selectedIconPath: './assets/tabbar/user-active.png',
-      },
-    ],
-  },
-})
-
-### Tailwind CSS 样式开发
-
-IMPORTANT：必须使用 tailwindcss 实现样式，只有在必要情况下才能 fallback 到 css / less
-
-> 项目已集成 Tailwind CSS 4.x + weapp-tailwindcss，支持跨端原子化样式：
-
-```tsx
-import { View, Text } from '@tarojs/components'
-import { Button } from '@/components/ui/button'
-
-<View className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
-  <Text className="text-2xl font-bold text-blue-600 mb-4">标题</Text>
-  <View className="w-full px-4">
-    <Button className="w-full" size="lg">
-      按钮
-    </Button>
-  </View>
-</View>
-```
-
-### 性能优化
-
-#### 图片懒加载
-
-```tsx
-import { Image } from '@tarojs/components'
-
-<Image src={imageUrl} lazyLoad mode="aspectFill" />
-```
-
-#### 虚拟列表
-
-```tsx
-import { VirtualList } from '@tarojs/components'
-
-<VirtualList
-  height={500}
-  itemData={list}
-  itemCount={list.length}
-  itemSize={100}
-  renderItem={({ index, style, data }) => (
-    <View style={style}>{data[index].name}</View>
-  )}
-/>
-```
-
-#### 分包加载
-
-```typescript
-// src/app.config.ts
-export default defineAppConfig({
-  pages: ['pages/index/index'],
-  subPackages: [
-    {
-      root: 'packageA',
-      pages: ['pages/detail/index'],
-    },
-  ],
-})
-```
-
-### 小程序限制
-
-| 限制项   | 说明                                     |
-| -------- | ---------------------------------------- |
-| 主包体积 | ≤ 2MB                                    |
-| 总包体积 | ≤ 20MB                                   |
-| 域名配置 | 生产环境需在小程序后台配置合法域名       |
-| 本地开发 | 需在微信开发者工具开启「不校验合法域名」 |
-
-### 权限配置
-
-```typescript
-// src/app.config.ts
-export default defineAppConfig({
-  // ...其他配置
-  permission: {
-    'scope.userLocation': {
-      desc: '你的位置信息将用于小程序位置接口的效果展示'
-    }
-  },
-  requiredPrivateInfos: ['getLocation', 'chooseAddress']
-})
-```
-
-### 位置服务
-
-```typescript
-// 需先在 app.config.ts 中配置 permission
-async function getLocation(): Promise<Taro.getLocation.SuccessCallbackResult> {
-  return await Taro.getLocation({ type: 'gcj02' })
-}
-```
-
-## 后端核心开发规范
-
-本项目后端基于 Rust + Axum 构建，`server/` 是 canonical 后端目录。
-
-### 项目结构
-
-```sh
-.
-├── server/                   # Rust/Axum 后端服务
-│   └── src/
-│       ├── main.rs           # 服务入口
-│       ├── app.rs            # 路由组装
-│       ├── config.rs         # 环境配置
-│       └── modules/          # 业务模块
-```
-
-### 开发命令
-
-```sh
-pnpm dev:server // 启动开发服务 (默认端口 34532)
-pnpm build:server // 构建生产版本
-```
-
-### 新建模块流程
-
-后端模块按 Rust 文件组织，优先复用 `server/src/modules/` 下的既有模式：
-
-```bash
-cd server
-
-# 新增模块后在 modules/mod.rs 和 app.rs 中挂载路由
-touch src/modules/product.rs
-cargo fmt
-cargo check
-```
-
-### 环境变量配置
-
-在 server/ 根目录创建 .env 文件：
-
-```sh
-## 服务端口
-SERVER_PORT=34532
-
-## 微信小程序配置
-WX_APP_ID=你的AppID
-WX_APP_SECRET=你的AppSecret
-
-## JWT 密钥
-JWT_SECRET=your-super-secret-key
-```
-
-在代码中通过 `server/src/config.rs` 统一读取环境变量。
-
-### 标准响应封装
-
-建议复用 `server/src/response.rs` 中的响应封装，保持 API 返回结构一致。
-
-### 微信登录后端实现
-
-微信登录实现位于 `server/src/modules/auth.rs`，调整登录流程时优先在该模块内保持现有响应结构。
-
-### 异常处理
-
-后端错误处理集中在 `server/src/error.rs`，业务模块返回统一错误类型后由 Axum 响应转换处理。
-
-### 数据库 (SQLx)
-
-后端使用 [SQLx](https://github.com/launchbadge/sqlx)，迁移文件位于 `server/migrations/`。
-
-### 类型校验
-
-请求/响应 DTO 使用 Rust 结构体、`serde` 和明确的业务校验逻辑表达。
+- 包管理器必须使用 pnpm。
+- 前端通用 UI 优先使用 `src/components/ui/*`，不要在页面中临时手搓按钮、表单、弹窗、卡片、表格、Tabs 等通用组件。
+- 业务请求必须走 `Network` 封装，避免绕过域名拼接、鉴权 header 和 GET 参数清洗。
+- 除微信小程序 TabBar 强制本地 PNG 外，图片/视频等静态资源应通过对象存储管理。
+- 样式默认优先 Tailwind；CSS 只用于动画、复杂选择器、第三方覆盖或框架兼容。
+- 提交信息遵守 commitlint，例如 `docs: update architecture readme`。
