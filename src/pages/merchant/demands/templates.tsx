@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Trash2, ArrowRight, FileText, Layers } from 'lucide-react-taro'
 import { AppPageShell } from '@/components/layout/app-page-shell'
-import { BottomNav } from '@/components/layout/bottom-nav'
 import { Network } from '@/network'
 
 interface DemandTemplate {
@@ -186,7 +185,7 @@ export default function DemandTemplates() {
       subtitle={`RecoRouter 商户小程序 · 共 ${visibleTemplates.length} 个模板`}
       icon={Layers}
       contentClassName="space-y-3"
-      bottom={<BottomNav type="merchant" active="profile" />}
+      showBack
     >
       {/* 模板列表 */}
       {loading ? (

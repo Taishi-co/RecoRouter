@@ -7,7 +7,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { MapPin, Plus, Trash2, Building2, Star, House } from 'lucide-react-taro'
 import { AppPageShell } from '@/components/layout/app-page-shell'
-import { BottomNav } from '@/components/layout/bottom-nav'
 
 interface Address {
   id: string
@@ -275,7 +274,7 @@ export default function AddressBooks() {
       subtitle="RecoRouter 商户小程序"
       icon={MapPin}
       contentClassName="space-y-3"
-      bottom={<BottomNav type="merchant" active="profile" />}
+      showBack
     >
       {/* 添加地址表单 */}
       {showAddForm && (

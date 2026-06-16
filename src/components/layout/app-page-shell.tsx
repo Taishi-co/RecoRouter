@@ -1,6 +1,7 @@
 import type { ComponentType, PropsWithChildren, ReactNode } from 'react'
 import { ScrollView, Text, View } from '@tarojs/components'
-import { Bell } from 'lucide-react-taro'
+import Taro from '@tarojs/taro'
+import { ArrowLeft, Bell } from 'lucide-react-taro'
 import { cn } from '@/lib/utils'
 import { getPageHeaderPaddingRight, getPageHeaderPaddingTop } from '@/lib/safe-area'
 
@@ -17,6 +18,8 @@ interface AppPageShellProps extends PropsWithChildren {
   contentClassName?: string
   headerClassName?: string
   scroll?: boolean
+  showBack?: boolean
+  onBack?: () => void
 }
 
 export const AppPageShell = ({
@@ -30,10 +33,24 @@ export const AppPageShell = ({
   contentClassName,
   headerClassName,
   scroll = true,
+  showBack = false,
+  onBack,
   children,
 }: AppPageShellProps) => {
   const headerPaddingTop = getPageHeaderPaddingTop()
   const headerPaddingRight = getPageHeaderPaddingRight()
+  const handleBack = () => {
+    if (onBack) {
+      onBack()
+      return
+    }
+
+    Taro.navigateBack({
+      fail: () => {
+        Taro.redirectTo({ url: '/pages/merchant/profile/index' })
+      },
+    })
+  }
   const content = (
     <View
       className={cn('box-border overflow-x-hidden mx-4 py-3 flex flex-col gap-3', contentClassName)}
@@ -58,6 +75,14 @@ export const AppPageShell = ({
         className={cn('bg-white px-4 pb-3 overflow-hidden', headerClassName)}
         style={{ paddingTop: `${headerPaddingTop}px`, paddingRight: `${headerPaddingRight}px` }}
       >
+        {showBack ? (
+          <View
+            className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-gray-100"
+            onClick={handleBack}
+          >
+            <ArrowLeft size={18} color="#111827" strokeWidth={2.4} />
+          </View>
+        ) : null}
         <View className="flex items-center justify-between gap-3" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
           <View className="min-w-0 flex-1" style={{ flex: '1 1 0', minWidth: 0 }}>
             <Text className="block text-xl font-black text-gray-900 leading-tight">

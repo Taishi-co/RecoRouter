@@ -5,7 +5,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import Taro from '@tarojs/taro'
 import { Network } from '@/network'
-import { Bell, LogOut, FileText, Package, ChartArea, MapPin, Route, Copy, Clock, Car, Users, User } from 'lucide-react-taro'
+import { Bell, LogOut, MapPin, Route, Copy, Users, User } from 'lucide-react-taro'
 import { AppPageShell } from '@/components/layout/app-page-shell'
 import { BottomNav } from '@/components/layout/bottom-nav'
 
@@ -23,86 +23,22 @@ export default function MerchantProfile() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [creditScore, setCreditScore] = useState(100)
 
+  function handleLogout() {
+    Taro.showModal({
+      title: '确认退出',
+      content: '确定要退出登录吗？',
+      success: (res) => {
+        if (res.confirm) {
+          Taro.clearStorageSync()
+          Taro.redirectTo({
+            url: '/pages/index/index'
+          })
+        }
+      }
+    })
+  }
+
   const menuItems = [
-    {
-      id: 'publish',
-      title: '发布需求',
-      icon: <FileText size={20} color="#3b82f6" />,
-      onClick: () => Taro.navigateTo({ url: '/pages/merchant/demands/publish' })
-    },
-    {
-      id: 'rentals',
-      title: '租赁列表',
-      icon: <Car size={20} color="#10b981" />,
-      onClick: () => {
-        console.log('点击租车大厅')
-        Taro.navigateTo({
-          url: '/pages/merchant/rentals/index',
-          success: () => {
-            console.log('导航到租车大厅成功')
-          },
-          fail: (err) => {
-            console.error('导航到租车大厅失败:', err)
-            Taro.showToast({
-              title: '跳转失败，请重试',
-              icon: 'none'
-            })
-          }
-        })
-      }
-    },
-    {
-      id: 'rentals-history',
-      title: '我的租赁',
-      icon: <FileText size={20} color="#f59e0b" />,
-      onClick: () => Taro.navigateTo({ url: '/pages/rentals-history/index' })
-    },
-    {
-      id: 'demands',
-      title: '需求列表',
-      icon: <Package size={20} color="#3b82f6" />,
-      onClick: () => Taro.navigateTo({ url: '/pages/merchant/demands/list' })
-    },
-    {
-      id: 'orders',
-      title: '订单中心',
-      icon: <Package size={20} color="#3b82f6" />,
-      onClick: () => Taro.navigateTo({ url: '/pages/merchant/orders/index' })
-    },
-    {
-      id: 'templates',
-      title: '常用模板',
-      icon: <Copy size={20} color="#3b82f6" />,
-      onClick: () => {
-        console.log('点击常用模板')
-        Taro.navigateTo({
-          url: '/pages/merchant/demands/templates',
-          success: () => {
-            console.log('导航到常用模板成功')
-          },
-          fail: (err) => {
-            console.error('导航到常用模板失败:', err)
-          }
-        })
-      }
-    },
-    {
-      id: 'schedules',
-      title: '排班日历',
-      icon: <Clock size={20} color="#3b82f6" />,
-      onClick: () => {
-        console.log('点击定时计划')
-        Taro.navigateTo({
-          url: '/pages/merchant/demands/schedules',
-          success: () => {
-            console.log('导航到定时计划成功')
-          },
-          fail: (err) => {
-            console.error('导航到定时计划失败:', err)
-          }
-        })
-      }
-    },
     {
       id: 'address-books',
       title: '地址簿',
@@ -111,21 +47,43 @@ export default function MerchantProfile() {
     },
     {
       id: 'favorite-routes',
-      title: '收藏路线',
+      title: '常用路线',
       icon: <Route size={20} color="#3b82f6" />,
       onClick: () => Taro.navigateTo({ url: '/pages/merchant/favorite-routes/index' })
     },
     {
-      id: 'stats',
-      title: '经营统计',
-      icon: <ChartArea size={20} color="#3b82f6" />,
-      onClick: () => Taro.navigateTo({ url: '/pages/merchant/stats/index' })
+      id: 'templates',
+      title: '常用模板',
+      icon: <Copy size={20} color="#3b82f6" />,
+      onClick: () => {
+        Taro.navigateTo({
+          url: '/pages/merchant/demands/templates',
+        })
+      }
+    },
+    {
+      id: 'orders',
+      title: '订单中心',
+      icon: <Bell size={20} color="#3b82f6" />,
+      onClick: () => Taro.navigateTo({ url: '/pages/merchant/orders/index' })
+    },
+    {
+      id: 'messages',
+      title: '消息通知',
+      icon: <Bell size={20} color="#f59e0b" />,
+      onClick: () => Taro.navigateTo({ url: '/pages/notifications/index' })
     },
     {
       id: 'role-switch',
       title: '角色管理',
       icon: <Users size={20} color="#8b5cf6" />,
       onClick: () => Taro.navigateTo({ url: '/pages/role-switch/index' })
+    },
+    {
+      id: 'logout',
+      title: '退出登录',
+      icon: <LogOut size={20} color="#ef4444" />,
+      onClick: handleLogout
     }
   ]
 
@@ -198,21 +156,6 @@ export default function MerchantProfile() {
   const handleGoToNotifications = () => {
     Taro.navigateTo({
       url: '/pages/notifications/index'
-    })
-  }
-
-  const handleLogout = () => {
-    Taro.showModal({
-      title: '确认退出',
-      content: '确定要退出登录吗？',
-      success: (res) => {
-        if (res.confirm) {
-          Taro.clearStorageSync()
-          Taro.redirectTo({
-            url: '/pages/index/index'
-          })
-        }
-      }
     })
   }
 

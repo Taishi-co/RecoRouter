@@ -59,10 +59,26 @@ interface Order {
   }
 }
 
+interface PendingDemand {
+  id: string
+  cargo_name: string
+  cargo_type: string
+  weight: number
+  volume: number
+  pickup_time: string
+  pickup_address: string
+  delivery_address: string
+  remarks: string | null
+  status: string
+  created_at: string
+  estimated_fare?: number | null
+}
+
 export default function MerchantOrders() {
   const [orders, setOrders] = useState<Order[]>([])
+  const [pendingDemands, setPendingDemands] = useState<PendingDemand[]>([])
   const [loading, setLoading] = useState(false)
-  const [filterStatus, setFilterStatus] = useState('accepted')
+  const [filterStatus, setFilterStatus] = useState('')
   const [showCancelDialog, setShowCancelDialog] = useState(false)
   const [showRequestCancelDialog, setShowRequestCancelDialog] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
@@ -107,20 +123,34 @@ export default function MerchantOrders() {
         url += `&status=${filterStatus}`
       }
 
-      const res = await Network.request({
-        url,
-        method: 'GET'
-      })
+      const [orderRes, demandRes] = await Promise.all([
+        Network.request({
+          url,
+          method: 'GET'
+        }),
+        Network.request({
+          url: '/api/demands',
+          method: 'GET',
+          data: { merchant_id: userInfo.id },
+        }),
+      ])
 
-      console.log('订单列表响应:', res.data)
+      console.log('订单列表响应:', orderRes.data)
 
-      if (res.data.code === 200) {
-        setOrders(res.data.data || [])
+      if (orderRes.data.code === 200) {
+        setOrders(orderRes.data.data || [])
       } else {
         Taro.showToast({
-          title: res.data.message || '加载失败',
+          title: orderRes.data.message || '加载失败',
           icon: 'none'
         })
+      }
+
+      if (demandRes.data.code === 200) {
+        const pendingList = ((demandRes.data.data || []) as PendingDemand[]).filter(
+          (demand) => demand.status === 'pending',
+        )
+        setPendingDemands(pendingList)
       }
     } catch (error) {
       console.error('加载订单列表失败:', error)
@@ -143,7 +173,7 @@ export default function MerchantOrders() {
     }
 
     const statuses: Record<string, string> = {
-      pending: '待接单',
+      pending: '正在叫车',
       accepted: '已接单',
       in_transit: '运输中',
       payment_confirmed: '收款已确认',
@@ -173,6 +203,43 @@ export default function MerchantOrders() {
       cancelled: 'bg-red-500'
     }
     return colors[status] || 'bg-gray-500'
+  }
+
+  const handleCancelPendingDemand = async (demand: PendingDemand) => {
+    Taro.showModal({
+      title: '取消叫车',
+      content: '当前订单仍在叫车中，确认取消吗？',
+      success: async (result) => {
+        if (!result.confirm) return
+
+        try {
+          const res = await Network.request({
+            url: `/api/demands/${demand.id}/cancel?id=${demand.id}`,
+            method: 'POST',
+            data: {},
+          })
+
+          if (res.data.code === 200) {
+            Taro.showToast({
+              title: '已取消叫车',
+              icon: 'success',
+            })
+            loadOrders()
+          } else {
+            Taro.showToast({
+              title: res.data.message || '取消失败',
+              icon: 'none',
+            })
+          }
+        } catch (error) {
+          console.error('取消叫车失败:', error)
+          Taro.showToast({
+            title: '网络错误，请重试',
+            icon: 'none',
+          })
+        }
+      },
+    })
   }
 
   const handleConfirmFare = async (orderId: string) => {
@@ -458,7 +525,7 @@ export default function MerchantOrders() {
               <View className="text-center py-8">
                 <Text className="block text-gray-500 text-sm">加载中...</Text>
               </View>
-            ) : orders.length === 0 ? (
+            ) : orders.length === 0 && pendingDemands.length === 0 ? (
               <View className="text-center py-8">
                 <Text className="block text-gray-500 text-sm mb-4">暂无订单</Text>
                 <Button
@@ -470,6 +537,57 @@ export default function MerchantOrders() {
               </View>
             ) : (
               <View className="space-y-3">
+                {(filterStatus === '' || filterStatus === 'pending') &&
+                  pendingDemands.map((demand) => (
+                    <View key={demand.id} className="rounded-lg border border-orange-100 bg-orange-50 p-4">
+                      <View className="mb-3 flex justify-between gap-3">
+                        <View className="flex-1">
+                          <Text className="block text-base font-medium text-gray-900">
+                            {demand.cargo_name || '待调度订单'}
+                          </Text>
+                          <View className="mt-2 flex items-center gap-2">
+                            <Badge className="bg-orange-500">
+                              <Text className="text-xs text-white">正在叫车</Text>
+                            </Badge>
+                            <Text className="text-xs text-orange-600">平台正在为你匹配运力</Text>
+                          </View>
+                        </View>
+                        <Button size="sm" variant="outline" onClick={() => handleCancelPendingDemand(demand)}>
+                          <Text className="text-xs">取消</Text>
+                        </Button>
+                      </View>
+
+                      <View className="space-y-2">
+                        <View className="flex items-start">
+                          <Text className="w-16 flex-shrink-0 text-xs text-gray-500">取货:</Text>
+                          <Text className="flex-1 text-xs text-gray-700">{demand.pickup_address}</Text>
+                        </View>
+                        <View className="flex items-start">
+                          <Text className="w-16 flex-shrink-0 text-xs text-gray-500">送货:</Text>
+                          <Text className="flex-1 text-xs text-gray-700">{demand.delivery_address}</Text>
+                        </View>
+                        <View className="flex items-start">
+                          <Text className="w-16 flex-shrink-0 text-xs text-gray-500">用车:</Text>
+                          <Text className="flex-1 text-xs text-gray-700">
+                            {new Date(demand.pickup_time).toLocaleString()}
+                          </Text>
+                        </View>
+                        {demand.estimated_fare ? (
+                          <View className="flex items-start">
+                            <Text className="w-16 flex-shrink-0 text-xs text-gray-500">预估:</Text>
+                            <Text className="flex-1 text-xs font-semibold text-orange-600">
+                              ¥{demand.estimated_fare.toFixed(2)}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+
+                      <Text className="mt-3 block text-xs text-gray-400">
+                        发起时间: {new Date(demand.created_at).toLocaleString()}
+                      </Text>
+                    </View>
+                  ))}
+
                 {orders.map((order) => (
                   <View key={order.id} className="bg-gray-50 rounded-lg p-4">
                     <View className="flex justify-between items-start mb-3">

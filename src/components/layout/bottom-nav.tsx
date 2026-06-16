@@ -33,10 +33,9 @@ interface BottomNavItem {
 }
 
 const merchantItems: BottomNavItem[] = [
-  { key: 'publish', label: '发布需求', icon: ClipboardList, url: '/pages/merchant/demands/publish' },
-  { key: 'demands', label: '需求', icon: Route, url: '/pages/merchant/demands/list' },
-  { key: 'mall', label: '商城', icon: ShoppingCart, url: '/pages/mall/index/index', brandIcon: 'sanyou' },
+  { key: 'home', label: '首页', icon: House, url: '/pages/merchant/demands/publish' },
   { key: 'orders', label: '订单', icon: ReceiptText, url: '/pages/merchant/orders/index' },
+  { key: 'messages', label: '消息', icon: Bell, url: '/pages/notifications/index' },
   { key: 'profile', label: '我的', icon: User, url: '/pages/merchant/profile/index' },
 ]
 

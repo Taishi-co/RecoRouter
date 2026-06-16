@@ -7,7 +7,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Plus, Trash2, Route, MapPin, Navigation, FilePen, Star } from 'lucide-react-taro'
 import { AppPageShell } from '@/components/layout/app-page-shell'
-import { BottomNav } from '@/components/layout/bottom-nav'
 
 interface Address {
   id: string
@@ -332,7 +331,7 @@ export default function FavoriteRoutes() {
       subtitle="RecoRouter 商户小程序"
       icon={Star}
       contentClassName="space-y-3"
-      bottom={<BottomNav type="merchant" active="demands" />}
+      showBack
     >
       {/* 添加/编辑线路表单 */}
       {showAddForm && (
