@@ -253,6 +253,7 @@ const checks = [
     pass: /getHomePageBodyPaddingTop/.test(files.safeArea)
       && /getHomeStickyHeaderTop/.test(files.safeArea)
       && !/getHomePageBodyPaddingTop[\s\S]{0,220}menuBottom/.test(files.safeArea)
+      && /getHomeStickyHeaderTop[\s\S]{0,80}return 0/.test(files.safeArea)
       && /paddingTop:\s*`\$\{homeTightTop\s*\?\s*getHomePageBodyPaddingTop\(\)\s*:\s*getPageBodyPaddingTop\(\)\}px`/.test(files.ui)
       && /--mall-sticky-top['"]:\s*`\$\{homeTightTop\s*\?\s*getHomeStickyHeaderTop\(\)\s*:\s*getStickyHeaderTop\(\)\}px`/.test(files.ui)
       && /homeTightTop/.test(files.ui)
