@@ -10627,6 +10627,27 @@ function App() {
     setNotice(Object.keys(result.errors).length ? '部分数据暂不可用，已显示可用内容' : '管理数据已更新');
   };
 
+  const refreshDispatchData = async () => {
+    try {
+      const [tripsRes, undispatchedRes, allOrdersRes, vehiclesRes] = await Promise.all([
+        apiGet<JsonRecord[]>('/api/trips', { limit: 100 }).catch(() => ({ error: '行程列表加载失败', data: [] })),
+        apiGet<JsonRecord[]>('/api/trips/undispatched-orders').catch(() => ({ error: '未分配订单加载失败', data: [] })),
+        apiGet<JsonRecord[]>('/api/trips/all-orders').catch(() => ({ error: '全部订单加载失败', data: [] })),
+        apiGet<JsonRecord[]>('/api/trips/available-vehicles').catch(() => ({ error: '可用车辆加载失败', data: [] })),
+      ]);
+
+      setData(prev => ({
+        ...prev,
+        trips: Array.isArray(tripsRes) ? tripsRes : (tripsRes.data || []),
+        undispatchedOrders: Array.isArray(undispatchedRes) ? undispatchedRes : (undispatchedRes.data || []),
+        allOrders: Array.isArray(allOrdersRes) ? allOrdersRes : (allOrdersRes.data || []),
+        availableVehicles: Array.isArray(vehiclesRes) ? vehiclesRes : (vehiclesRes.data || []),
+      }));
+    } catch (e) {
+      console.error('刷新调度数据失败:', e);
+    }
+  };
+
   const applyProductFilters = async (patch: Partial<MallFilterState>) => {
     const nextFilters = { ...productFilters, ...patch };
     setProductFilters(nextFilters);
@@ -11186,56 +11207,56 @@ function App() {
   const createTrip = async (vehicleId: string, orderIds: string[]) => {
     await runAction('创建行程', async () => {
       await apiPost('/api/trips', { vehicleId, orderIds });
-      await reload();
+      await refreshDispatchData();
     });
   };
 
   const assignOrdersToTrip = async (tripId: string, orderIds: string[]) => {
     await runAction('追加订单', async () => {
       await apiPost(`/api/admin/trips/${tripId}/assign-orders`, { orderIds });
-      await reload();
+      await refreshDispatchData();
     });
   };
 
   const removeOrderFromTrip = async (tripId: string, orderId: string) => {
     await runAction('移除订单', async () => {
       await apiDelete(`/api/admin/trips/${tripId}/remove-order/${orderId}`);
-      await reload();
+      await refreshDispatchData();
     });
   };
 
   const startTrip = async (tripId: string) => {
     await runAction('出发行程', async () => {
       await apiPost(`/api/trips/${tripId}/start`);
-      await reload();
+      await refreshDispatchData();
     });
   };
 
   const completeTrip = async (tripId: string) => {
     await runAction('完成行程', async () => {
       await apiPost(`/api/trips/${tripId}/complete`);
-      await reload();
+      await refreshDispatchData();
     });
   };
 
   const lockTrip = async (tripId: string) => {
     await runAction('锁定行程', async () => {
       await apiPost(`/api/trips/${tripId}/lock`);
-      await reload();
+      await refreshDispatchData();
     });
   };
 
   const unlockTrip = async (tripId: string) => {
     await runAction('解锁行程', async () => {
       await apiPost(`/api/trips/${tripId}/unlock`);
-      await reload();
+      await refreshDispatchData();
     });
   };
 
   const reorderStops = async (tripId: string, stopIds: string[]) => {
     await runAction('调整站点顺序', async () => {
       await apiPut(`/api/admin/trips/${tripId}/reorder-stops`, { stopIds });
-      await reload();
+      await refreshDispatchData();
     });
   };
 
@@ -11246,7 +11267,7 @@ function App() {
         const assignResult = res as { assigned: number; details?: Array<{ orderId: string; vehicleCode: string; timeSlot: string }> };
         showMessage('success', `已分配 ${assignResult.assigned} 个订单${dryRun ? '（预览模式）' : ''}`);
       }
-      await reload();
+      await refreshDispatchData();
     });
   };
 
