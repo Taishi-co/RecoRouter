@@ -46,6 +46,10 @@ where
             get(undispatched_orders::<S>),
         )
         .route(
+            "/api/trips/all-orders",
+            get(all_orders::<S>),
+        )
+        .route(
             "/api/trips/available-vehicles",
             get(available_vehicles::<S>),
         )
@@ -613,6 +617,61 @@ where
     .fetch_all(&state.db)
     .await
     .map_err(|err| ApiError::BadRequest(format!("查询未分配订单失败: {err}")))?;
+
+    Ok(ok("查询成功", orders))
+}
+
+async fn all_orders<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<TripQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let limit = query.page_size.unwrap_or(200).min(500);
+    let orders = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT row_to_json(order_row)
+        FROM (
+            SELECT o.*,
+                COALESCE(
+                    json_agg(
+                        json_build_object(
+                            'id', oi.id,
+                            'productId', oi.product_id,
+                            'productName', oi.product_name,
+                            'variantName', oi.variant_name,
+                            'sku', oi.sku,
+                            'quantity', oi.quantity,
+                            'unitPriceCents', oi.unit_price_cents,
+                            'lineTotalCents', oi.line_total_cents,
+                            'imageUrl', oi.image_url,
+                            'weightUnit', oi.weight_unit_label,
+                            'pricingMode', oi.pricing_mode
+                        )
+                    ) FILTER (WHERE oi.id IS NOT NULL),
+                    '[]'
+                ) as items,
+                t.id as trip_id,
+                t.status as trip_status,
+                COALESCE(t.vehicle_code, v.vehicle_code) as vehicle_code,
+                COALESCE(t.license_plate, v.license_plate) as license_plate,
+                COALESCE(t.vehicle_type, v.vehicle_type) as vehicle_type
+            FROM mall_orders o
+            LEFT JOIN mall_order_items oi ON oi.order_id = o.id
+            LEFT JOIN vehicle_trips t ON t.id = o.trip_id
+            LEFT JOIN vehicles v ON v.id = t.vehicle_id
+            WHERE o.status IN ('paid', 'ready_for_pickup', 'dispatching', 'completed')
+            GROUP BY o.id, t.id, v.vehicle_code, v.license_plate, v.vehicle_type
+            ORDER BY o.created_at DESC
+            LIMIT $1
+        ) order_row
+        "#,
+    )
+    .bind(limit)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("查询订单失败: {err}")))?;
 
     Ok(ok("查询成功", orders))
 }
