@@ -3810,7 +3810,7 @@ function DispatchSection({
   const [maxOrdersPerSlot, setMaxOrdersPerSlot] = useState(5);
   const [orderSearchType, setOrderSearchType] = useState('order_no');
   const [orderSearchKeyword, setOrderSearchKeyword] = useState('');
-  const [orderStatusFilter, setOrderStatusFilter] = useState('all');
+  const [orderStatusFilter, setOrderStatusFilter] = useState('undispatched');
   const [orderCurrentPage, setOrderCurrentPage] = useState(1);
   const [orderPageSize, setOrderPageSize] = useState(10);
   const [dispatchMode, setDispatchMode] = useState<'new_trip' | 'existing_trip'>('new_trip');
@@ -3875,6 +3875,10 @@ function DispatchSection({
       }
     });
   }, [allOrders, orderSearchType, orderSearchKeyword, orderStatusFilter]);
+
+  const selectableOrders = useMemo(() => {
+    return filteredAllOrders.filter(o => !stringValue(o, 'trip_id')).map(o => stringValue(o, 'id'));
+  }, [filteredAllOrders]);
 
   const orderTotalPages = Math.max(1, Math.ceil(filteredAllOrders.length / orderPageSize));
   const safeOrderCurrentPage = Math.min(orderCurrentPage, orderTotalPages);
@@ -4127,7 +4131,22 @@ function DispatchSection({
             <table>
               <thead>
                 <tr>
-                  <th style={{ width: '40px' }}></th>
+                  <th style={{ width: '40px' }}>
+                    {orderStatusFilter !== 'dispatched' && (
+                      <input
+                        type="checkbox"
+                        checked={selectableOrders.length > 0 && selectableOrders.every(id => selectedOrders.has(id))}
+                        ref={input => { if (input) input.indeterminate = selectedOrders.size > 0 && selectedOrders.size < selectableOrders.length; }}
+                        onChange={e => {
+                          if (e.target.checked) {
+                            setSelectedOrders(new Set(selectableOrders));
+                          } else {
+                            setSelectedOrders(new Set());
+                          }
+                        }}
+                      />
+                    )}
+                  </th>
                   <th>订单号</th>
                   <th>收货人</th>
                   <th>收货地址</th>
