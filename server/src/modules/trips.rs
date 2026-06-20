@@ -210,6 +210,7 @@ where
     if let Some(status) = &query.status {
         conditions.push(format!("t.status = '{status}'"));
     }
+    conditions.push("(EXISTS (SELECT 1 FROM trip_stops WHERE trip_id = t.id) OR t.status = 'cancelled')".to_string());
     let where_clause = conditions.join(" AND ");
 
     let trips = sqlx::query_scalar::<_, Value>(&format!(
@@ -495,6 +496,22 @@ where
             .bind(&trip_id)
             .execute(&mut *tx)
             .await?;
+    }
+
+    let has_remaining_stops: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM trip_stops WHERE trip_id = $1)",
+    )
+    .bind(&trip_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if !has_remaining_stops {
+        sqlx::query("DELETE FROM vehicle_trips WHERE id = $1")
+            .bind(&trip_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        return Ok(ok("行程已删除（最后一个站点已移除）", json!({"deleted": true})));
     }
 
     sync_trip_counts(&mut tx, &trip_id).await?;
@@ -846,6 +863,22 @@ where
         .bind(&order_id)
         .execute(&mut *tx)
         .await?;
+
+    let has_remaining_stops: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM trip_stops WHERE trip_id = $1)",
+    )
+    .bind(&trip_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if !has_remaining_stops {
+        sqlx::query("DELETE FROM vehicle_trips WHERE id = $1")
+            .bind(&trip_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        return Ok(ok("行程已删除（最后一个订单已移除）", json!({"deleted": true})));
+    }
 
     sync_trip_counts(&mut tx, &trip_id).await?;
 
@@ -1708,9 +1741,9 @@ where
         if order_ids.is_empty() {
             return Ok(ok("未选择订单", json!({"assigned": 0, "details": []})));
         }
-        sqlx::query_as::<_, (String, Option<String>, Option<String>)>(
+        sqlx::query_as::<_, (String, Option<String>)>(
             r#"
-            SELECT id, delivery_time_slot, delivery_date
+            SELECT id, delivery_time_slot
             FROM mall_orders
             WHERE id = ANY($1) AND trip_id IS NULL AND status IN ('paid', 'ready_for_pickup', 'dispatching')
             ORDER BY delivery_time_slot NULLS LAST, created_at ASC
@@ -1721,9 +1754,9 @@ where
         .await
         .map_err(|err| ApiError::BadRequest(format!("查询指定订单失败: {err}")))?
     } else {
-        sqlx::query_as::<_, (String, Option<String>, Option<String>)>(
+        sqlx::query_as::<_, (String, Option<String>)>(
             r#"
-            SELECT id, delivery_time_slot, delivery_date
+            SELECT id, delivery_time_slot
             FROM mall_orders
             WHERE trip_id IS NULL AND status IN ('paid', 'ready_for_pickup', 'dispatching')
             ORDER BY delivery_time_slot NULLS LAST, created_at ASC
@@ -1786,7 +1819,7 @@ where
         Option<String>,
         Vec<(String, Option<String>)>,
     > = std::collections::HashMap::new();
-    for (order_id, time_slot, _delivery_date) in pending_orders {
+    for (order_id, time_slot) in pending_orders {
         orders_by_slot
             .entry(time_slot.clone())
             .or_default()

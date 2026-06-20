@@ -3795,12 +3795,16 @@ function DispatchSection({
 }) {
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
   const [selectedVehicle, setSelectedVehicle] = useState('');
+  const [selectedTripId, setSelectedTripId] = useState('');
   const [tripFilter, setTripFilter] = useState('');
   const [expandedTrip, setExpandedTrip] = useState<string | null>(null);
-  const [assigningTripId, setAssigningTripId] = useState('');
-  const [assignOrderIds, setAssignOrderIds] = useState<Set<string>>(new Set());
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [maxOrdersPerSlot, setMaxOrdersPerSlot] = useState(5);
+  const [orderSearchType, setOrderSearchType] = useState('order_no');
+  const [orderSearchKeyword, setOrderSearchKeyword] = useState('');
+  const [orderCurrentPage, setOrderCurrentPage] = useState(1);
+  const [orderPageSize, setOrderPageSize] = useState(10);
+  const [dispatchMode, setDispatchMode] = useState<'new_trip' | 'existing_trip'>('new_trip');
 
   const toggleOrder = (id: string) => {
     setSelectedOrders(prev => {
@@ -3810,26 +3814,19 @@ function DispatchSection({
     });
   };
 
-  const toggleAssignOrder = (id: string) => {
-    setAssignOrderIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
-  const handleCreateTrip = async () => {
-    if (!selectedVehicle || selectedOrders.size === 0) return;
-    await onCreateTrip(selectedVehicle, Array.from(selectedOrders));
+  const handleDispatch = async () => {
+    if (selectedOrders.size === 0) return;
+    const orderIds = Array.from(selectedOrders);
+    if (dispatchMode === 'new_trip') {
+      if (!selectedVehicle) return;
+      await onCreateTrip(selectedVehicle, orderIds);
+      setSelectedVehicle('');
+    } else {
+      if (!selectedTripId) return;
+      await onAssignOrders(selectedTripId, orderIds);
+      setSelectedTripId('');
+    }
     setSelectedOrders(new Set());
-    setSelectedVehicle('');
-  };
-
-  const handleAssign = async () => {
-    if (!assigningTripId || assignOrderIds.size === 0) return;
-    await onAssignOrders(assigningTripId, Array.from(assignOrderIds));
-    setAssignOrderIds(new Set());
-    setAssigningTripId('');
   };
 
   const filteredTrips = tripFilter ? trips.filter(t => stringValue(t, 'status') === tripFilter) : trips;
@@ -3837,6 +3834,44 @@ function DispatchSection({
   const lockedTrips = trips.filter(t => stringValue(t, 'status') === 'locked');
   const inProgressTrips = trips.filter(t => stringValue(t, 'status') === 'in_progress');
   const editableTrips = trips.filter(t => stringValue(t, 'status') === 'planned' || stringValue(t, 'status') === 'locked');
+
+  const filteredUndispatchedOrders = useMemo(() => {
+    if (!orderSearchKeyword.trim()) return undispatchedOrders;
+    const keyword = orderSearchKeyword.trim().toLowerCase();
+    return undispatchedOrders.filter(order => {
+      switch (orderSearchType) {
+        case 'order_no':
+          return stringValue(order, 'order_no', stringValue(order, 'orderNo', '')).toLowerCase().includes(keyword);
+        case 'recipient':
+          return stringValue(order, 'recipient_name', stringValue(order, 'recipientName', '')).toLowerCase().includes(keyword)
+            || stringValue(order, 'recipient_phone', stringValue(order, 'recipientPhone', '')).toLowerCase().includes(keyword);
+        case 'product': {
+          const items = (order as Record<string, unknown>).items as JsonRecord[] | undefined;
+          if (!items || items.length === 0) return false;
+          return items.some(item => stringValue(item, 'productName', '').toLowerCase().includes(keyword));
+        }
+        case 'status':
+          return statusLabel(stringValue(order, 'status')).toLowerCase().includes(keyword);
+        default:
+          return true;
+      }
+    });
+  }, [undispatchedOrders, orderSearchType, orderSearchKeyword]);
+
+  const orderTotalPages = Math.max(1, Math.ceil(filteredUndispatchedOrders.length / orderPageSize));
+  const safeOrderCurrentPage = Math.min(orderCurrentPage, orderTotalPages);
+  const paginatedOrders = useMemo(() => {
+    const start = (safeOrderCurrentPage - 1) * orderPageSize;
+    return filteredUndispatchedOrders.slice(start, start + orderPageSize);
+  }, [filteredUndispatchedOrders, safeOrderCurrentPage, orderPageSize]);
+
+  const handleOrderSearch = () => {
+    setOrderCurrentPage(1);
+  };
+
+  const handleOrderPageChange = (page: number) => {
+    setOrderCurrentPage(Math.max(1, Math.min(page, orderTotalPages)));
+  };
 
   const tripStatusLabel: Record<string, string> = { planned: '未锁定', locked: '已锁定', in_progress: '运输中', completed: '已完成', cancelled: '已取消' };
   const tripStatusColor: Record<string, string> = { planned: 'badge-yellow', locked: 'badge-blue', in_progress: 'badge-green', completed: 'badge-gray', cancelled: 'badge-red' };
@@ -3854,30 +3889,94 @@ function DispatchSection({
         <StatCard label="运输中" value={String(inProgressTrips.length)} detail="正在配送" />
       </div>
 
-      {/* 创建行程 */}
-      <Panel title="创建行程" description="选择可用车辆和待分配订单，创建配送行程">
+      {/* 分配订单 */}
+      <Panel title="分配订单" description="将待分配订单分配到新车程或已有行程中">
+        {/* 模式切换 Tab */}
+        <div style={{ display: 'flex', gap: '4px', marginBottom: '16px', borderBottom: '1px solid #e5e7eb', paddingBottom: '0' }}>
+          <button
+            type="button"
+            onClick={() => { setDispatchMode('new_trip'); setSelectedTripId(''); }}
+            style={{
+              padding: '10px 16px',
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: dispatchMode === 'new_trip' ? 600 : 400,
+              color: dispatchMode === 'new_trip' ? '#1d4ed8' : '#6b7280',
+              borderBottom: dispatchMode === 'new_trip' ? '2px solid #1d4ed8' : '2px solid transparent',
+              marginBottom: '-1px',
+            }}
+          >
+            🚗 新车程
+          </button>
+          <button
+            type="button"
+            onClick={() => { setDispatchMode('existing_trip'); setSelectedVehicle(''); }}
+            style={{
+              padding: '10px 16px',
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: dispatchMode === 'existing_trip' ? 600 : 400,
+              color: dispatchMode === 'existing_trip' ? '#1d4ed8' : '#6b7280',
+              borderBottom: dispatchMode === 'existing_trip' ? '2px solid #1d4ed8' : '2px solid transparent',
+              marginBottom: '-1px',
+            }}
+          >
+            📋 已有行程
+            {editableTrips.length > 0 && (
+              <span style={{ marginLeft: '6px', padding: '1px 6px', fontSize: '11px', background: '#e0e7ff', color: '#4338ca', borderRadius: '10px' }}>
+                {editableTrips.length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* 目标选择器 */}
         <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 220px' }}>
-            <label style={{ display: 'block', fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>选择车辆</label>
-            <select value={selectedVehicle} onChange={e => setSelectedVehicle(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db' }}>
-              <option value="">-- 选择车辆 --</option>
-              {availableVehicles.map(v => (
-                <option key={stringValue(v, 'id')} value={stringValue(v, 'id')}>
-                  {stringValue(v, 'vehicle_code', stringValue(v, 'vehicleCode', ''))} - {stringValue(v, 'license_plate', stringValue(v, 'licensePlate', ''))} ({stringValue(v, 'vehicle_type', stringValue(v, 'vehicleType', ''))})
-                </option>
-              ))}
-            </select>
-          </div>
+          {dispatchMode === 'new_trip' ? (
+            <div style={{ flex: '1 1 280px' }}>
+              <label style={{ display: 'block', fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>选择车辆</label>
+              <select value={selectedVehicle} onChange={e => setSelectedVehicle(e.target.value)}>
+                <option value="">-- 选择车辆 --</option>
+                {availableVehicles.map(v => (
+                  <option key={stringValue(v, 'id')} value={stringValue(v, 'id')}>
+                    {stringValue(v, 'vehicle_code', stringValue(v, 'vehicleCode', ''))} - {stringValue(v, 'license_plate', stringValue(v, 'licensePlate', ''))} ({stringValue(v, 'vehicle_type', stringValue(v, 'vehicleType', ''))})
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div style={{ flex: '1 1 280px' }}>
+              <label style={{ display: 'block', fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>选择行程</label>
+              <select value={selectedTripId} onChange={e => setSelectedTripId(e.target.value)}>
+                <option value="">-- 选择行程 --</option>
+                {editableTrips.map(t => {
+                  const ts = stringValue(t, 'status');
+                  return (
+                    <option key={stringValue(t, 'id')} value={stringValue(t, 'id')}>
+                      {stringValue(t, 'vehicle_code', stringValue(t, 'vehicleCode', ''))} - {stringValue(t, 'license_plate', stringValue(t, 'licensePlate', ''))} [{tripStatusLabel[ts] || ts}] ({stringValue(t, 'total_orders', stringValue(t, 'totalOrders', '0'))}单)
+                    </option>
+                  );
+                })}
+              </select>
+              {editableTrips.length === 0 && (
+                <div style={{ fontSize: '12px', color: '#f59e0b', marginTop: '4px' }}>暂无可用行程，请先创建新车程</div>
+              )}
+            </div>
+          )}
           <div>
             <span style={{ fontSize: '12px', color: '#6b7280' }}>已选 {selectedOrders.size} 个订单</span>
           </div>
           <button
             className="primary-button"
             type="button"
-            disabled={!selectedVehicle || selectedOrders.size === 0}
-            onClick={handleCreateTrip}
+            disabled={selectedOrders.size === 0 || (dispatchMode === 'new_trip' ? !selectedVehicle : !selectedTripId)}
+            onClick={handleDispatch}
           >
-            <Icon name="route" /> 创建行程
+            <Icon name="route" /> 分配订单
           </button>
         </div>
 
@@ -3918,6 +4017,37 @@ function DispatchSection({
           </div>
         </div>
 
+        {/* 筛选栏 */}
+        <div className="admin-filterbar" style={{ marginBottom: '12px', gridTemplateColumns: 'minmax(120px, 0.6fr) minmax(200px, 1.2fr) auto auto auto' }}>
+          <select
+            value={orderSearchType}
+            onChange={e => { setOrderSearchType(e.target.value); setOrderCurrentPage(1); }}
+          >
+            <option value="order_no">订单号</option>
+            <option value="recipient">收货人</option>
+            <option value="product">商品</option>
+            <option value="status">状态</option>
+          </select>
+          <input
+            type="text"
+            value={orderSearchKeyword}
+            onChange={e => setOrderSearchKeyword(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleOrderSearch(); }}
+            placeholder="输入关键词搜索..."
+          />
+          <button className="primary-button small" type="button" onClick={handleOrderSearch}>
+            搜索
+          </button>
+          {orderSearchKeyword && (
+            <button className="ghost-button small" type="button" onClick={() => { setOrderSearchKeyword(''); setOrderCurrentPage(1); }}>
+              重置
+            </button>
+          )}
+          <span style={{ fontSize: '13px', color: '#667085' }}>
+            共 {filteredUndispatchedOrders.length} 条
+          </span>
+        </div>
+
         {/* 待分配订单列表 - 带详情展开 */}
         <div className="table-wrap">
           <table>
@@ -3934,7 +4064,7 @@ function DispatchSection({
               </tr>
             </thead>
             <tbody>
-              {undispatchedOrders.map(order => {
+              {paginatedOrders.map(order => {
                 const id = stringValue(order, 'id');
                 const items = (order as Record<string, unknown>).items as JsonRecord[] | undefined;
                 const isExpanded = expandedOrder === id;
@@ -4004,75 +4134,43 @@ function DispatchSection({
             </tbody>
           </table>
         </div>
-        {!undispatchedOrders.length ? <EmptyState text="暂无待分配订单" /> : null}
-      </Panel>
 
-      {/* 追加订单到已有行程（未锁定或已锁定状态都可追加） */}
-      {editableTrips.length > 0 && undispatchedOrders.length > 0 && (
-        <Panel title="追加订单到行程" description="将订单追加到未锁定或已锁定的行程中（发车前可自由调整）">
-          <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-            <div style={{ flex: '1 1 250px' }}>
-              <label style={{ display: 'block', fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>选择行程</label>
-              <select value={assigningTripId} onChange={e => setAssigningTripId(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db' }}>
-                <option value="">-- 选择行程 --</option>
-                {editableTrips.map(t => {
-                  const ts = stringValue(t, 'status');
-                  return (
-                    <option key={stringValue(t, 'id')} value={stringValue(t, 'id')}>
-                      {stringValue(t, 'vehicle_code', stringValue(t, 'vehicleCode', ''))} - {stringValue(t, 'license_plate', stringValue(t, 'licensePlate', ''))} [{tripStatusLabel[ts] || ts}] ({stringValue(t, 'total_orders', stringValue(t, 'totalOrders', '0'))}单)
-                    </option>
-                  );
-                })}
+        {/* 分页控件 */}
+        {filteredUndispatchedOrders.length > 0 && (
+          <div className="product-pagination">
+            <span>
+              第 {safeOrderCurrentPage} 页 · 每页 {orderPageSize} 条 · 共 {filteredUndispatchedOrders.length} 条
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <select
+                value={orderPageSize}
+                onChange={e => { setOrderPageSize(Number(e.target.value)); setOrderCurrentPage(1); }}
+                style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px' }}
+              >
+                <option value={5}>5条/页</option>
+                <option value={10}>10条/页</option>
+                <option value={20}>20条/页</option>
+                <option value={50}>50条/页</option>
               </select>
+              <button className="ghost-button small" type="button" disabled={safeOrderCurrentPage === 1} onClick={() => handleOrderPageChange(1)}>
+                首页
+              </button>
+              <button className="ghost-button small" type="button" disabled={safeOrderCurrentPage === 1} onClick={() => handleOrderPageChange(safeOrderCurrentPage - 1)}>
+                上一页
+              </button>
+              <span style={{ fontSize: '13px', color: '#667085' }}>{safeOrderCurrentPage} / {orderTotalPages}</span>
+              <button className="ghost-button small" type="button" disabled={safeOrderCurrentPage === orderTotalPages} onClick={() => handleOrderPageChange(safeOrderCurrentPage + 1)}>
+                下一页
+              </button>
+              <button className="ghost-button small" type="button" disabled={safeOrderCurrentPage === orderTotalPages} onClick={() => handleOrderPageChange(orderTotalPages)}>
+                末页
+              </button>
             </div>
-            <div>
-              <span style={{ fontSize: '12px', color: '#6b7280' }}>已选 {assignOrderIds.size} 个订单</span>
-            </div>
-            <button
-              className="primary-button"
-              type="button"
-              disabled={!assigningTripId || assignOrderIds.size === 0}
-              onClick={handleAssign}
-            >
-              <Icon name="plus" /> 追加订单
-            </button>
           </div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th style={{ width: '40px' }}></th>
-                  <th>订单号</th>
-                  <th>收货人</th>
-                  <th>收货地址</th>
-                  <th>商品</th>
-                  <th>金额</th>
-                </tr>
-              </thead>
-              <tbody>
-                {undispatchedOrders.map(order => {
-                  const id = stringValue(order, 'id');
-                  const items = (order as Record<string, unknown>).items as JsonRecord[] | undefined;
-                  return (
-                    <tr key={id} style={{ background: assignOrderIds.has(id) ? '#eff6ff' : undefined }}>
-                      <td><input type="checkbox" checked={assignOrderIds.has(id)} onChange={() => toggleAssignOrder(id)} /></td>
-                      <td><strong>{stringValue(order, 'order_no', stringValue(order, 'orderNo', shortId(id)))}</strong></td>
-                      <td>{stringValue(order, 'recipient_name', stringValue(order, 'recipientName', '-'))}</td>
-                      <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stringValue(order, 'address_text', stringValue(order, 'addressText', '-'))}</td>
-                      <td>
-                        {items && items.length > 0
-                          ? items.map(i => stringValue(i, 'productName', '')).filter(Boolean).join(', ') || '-'
-                          : '-'}
-                      </td>
-                      <td>{yuan(Math.round(numberValue(order, 'payable_cents', numberValue(order, 'payableCents', 0)) / 100))}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Panel>
-      )}
+        )}
+
+        {!filteredUndispatchedOrders.length ? <EmptyState text={orderSearchKeyword ? '未找到匹配的订单' : '暂无待分配订单'} /> : null}
+      </Panel>
 
       {/* 行程列表 */}
       <Panel title="行程列表" description="管理所有配送行程，锁定后可出发，发车前可增减订单">
