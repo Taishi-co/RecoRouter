@@ -3811,6 +3811,7 @@ function DispatchSection({
   const [orderSearchType, setOrderSearchType] = useState('order_no');
   const [orderSearchKeyword, setOrderSearchKeyword] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState('all');
+  const [orderTimeSlotFilter, setOrderTimeSlotFilter] = useState('all');
   const [orderCurrentPage, setOrderCurrentPage] = useState(1);
   const [orderPageSize, setOrderPageSize] = useState(10);
   const [dispatchMode, setDispatchMode] = useState<'new_trip' | 'existing_trip'>('new_trip');
@@ -3851,6 +3852,12 @@ function DispatchSection({
     } else if (orderStatusFilter === 'dispatched') {
       result = result.filter(o => stringValue(o, 'trip_id'));
     }
+    if (orderTimeSlotFilter !== 'all') {
+      result = result.filter(o => {
+        const slot = stringValue(o, 'delivery_time_slot', stringValue(o, 'deliveryTimeSlot', ''));
+        return slot === orderTimeSlotFilter;
+      });
+    }
     if (!orderSearchKeyword.trim()) return result;
     const keyword = orderSearchKeyword.trim().toLowerCase();
     return result.filter(order => {
@@ -3870,11 +3877,13 @@ function DispatchSection({
             || stringValue(order, 'license_plate', '').toLowerCase().includes(keyword);
         case 'status':
           return statusLabel(stringValue(order, 'status')).toLowerCase().includes(keyword);
+        case 'time_slot':
+          return stringValue(order, 'delivery_time_slot', stringValue(order, 'deliveryTimeSlot', '')).toLowerCase().includes(keyword);
         default:
           return true;
       }
     });
-  }, [allOrders, orderSearchType, orderSearchKeyword, orderStatusFilter]);
+  }, [allOrders, orderSearchType, orderSearchKeyword, orderStatusFilter, orderTimeSlotFilter]);
 
   const selectableOrders = useMemo(() => {
     return filteredAllOrders.filter(o => !stringValue(o, 'trip_id')).map(o => stringValue(o, 'id'));
@@ -4109,7 +4118,7 @@ function DispatchSection({
           </div>
 
           {/* 筛选栏 */}
-          <div className="admin-filterbar" style={{ marginBottom: '12px', gridTemplateColumns: 'minmax(120px, 0.7fr) minmax(120px, 0.7fr) minmax(200px, 1.2fr) auto auto auto' }}>
+          <div className="admin-filterbar" style={{ marginBottom: '12px', gridTemplateColumns: 'minmax(120px, 0.7fr) minmax(140px, 0.8fr) minmax(120px, 0.7fr) minmax(200px, 1.2fr) auto auto auto' }}>
             <select
               value={orderStatusFilter}
               onChange={e => { setOrderStatusFilter(e.target.value); setOrderCurrentPage(1); setSelectedOrders(new Set()); }}
@@ -4117,6 +4126,24 @@ function DispatchSection({
               <option value="all">全部订单</option>
               <option value="undispatched">未分配</option>
               <option value="dispatched">已分配</option>
+            </select>
+            <select
+              value={orderTimeSlotFilter}
+              onChange={e => { setOrderTimeSlotFilter(e.target.value); setOrderCurrentPage(1); setSelectedOrders(new Set()); }}
+            >
+              <option value="all">全部时段</option>
+              <option value="08:00-09:00">08:00-09:00</option>
+              <option value="09:00-10:00">09:00-10:00</option>
+              <option value="10:00-11:00">10:00-11:00</option>
+              <option value="11:00-12:00">11:00-12:00</option>
+              <option value="12:00-13:00">12:00-13:00</option>
+              <option value="13:00-14:00">13:00-14:00</option>
+              <option value="14:00-15:00">14:00-15:00</option>
+              <option value="15:00-16:00">15:00-16:00</option>
+              <option value="16:00-17:00">16:00-17:00</option>
+              <option value="17:00-18:00">17:00-18:00</option>
+              <option value="18:00-19:00">18:00-19:00</option>
+              <option value="19:00-20:00">19:00-20:00</option>
             </select>
             <select
               value={orderSearchType}
@@ -4175,6 +4202,7 @@ function DispatchSection({
                   <th>商品</th>
                   <th>金额</th>
                   <th>状态</th>
+                  <th>配送时段</th>
                   <th>分配车辆</th>
                   <th style={{ width: '60px' }}></th>
                 </tr>
@@ -4213,6 +4241,32 @@ function DispatchSection({
                       <td>{yuan(Math.round(numberValue(order, 'payable_cents', numberValue(order, 'payableCents', 0)) / 100))}</td>
                       <td><span className={badgeClass(stringValue(order, 'status'))}>{statusLabel(stringValue(order, 'status'))}</span></td>
                       <td>
+                        {(() => {
+                          const slot = stringValue(order, 'delivery_time_slot', stringValue(order, 'deliveryTimeSlot', ''));
+                          if (!slot) return <span style={{ fontSize: '12px', color: '#9ca3af' }}>-</span>;
+                          const slotColors: Record<string, { bg: string; text: string; border: string }> = {
+                            '08:00-09:00': { bg: '#fef3c7', text: '#92400e', border: '#fcd34d' },
+                            '09:00-10:00': { bg: '#dbeafe', text: '#1e40af', border: '#93c5fd' },
+                            '10:00-11:00': { bg: '#dcfce7', text: '#166534', border: '#86efac' },
+                            '11:00-12:00': { bg: '#fee2e2', text: '#991b1b', border: '#fca5a5' },
+                            '12:00-13:00': { bg: '#fce7f3', text: '#9d174d', border: '#f9a8d4' },
+                            '13:00-14:00': { bg: '#f3e8ff', text: '#6b21a8', border: '#d8b4fe' },
+                            '14:00-15:00': { bg: '#ede9fe', text: '#5b21b6', border: '#c4b5fd' },
+                            '15:00-16:00': { bg: '#e0f2fe', text: '#075985', border: '#7dd3fc' },
+                            '16:00-17:00': { bg: '#f0fdf4', text: '#166534', border: '#86efac' },
+                            '17:00-18:00': { bg: '#fff7ed', text: '#9a3412', border: '#fdba74' },
+                            '18:00-19:00': { bg: '#f1f5f9', text: '#334155', border: '#cbd5e1' },
+                            '19:00-20:00': { bg: '#fef9c3', text: '#854d0e', border: '#fde047' },
+                          };
+                          const style = slotColors[slot] || { bg: '#f3f4f6', text: '#4b5563', border: '#d1d5db' };
+                          return (
+                            <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px', background: style.bg, color: style.text, fontWeight: 600, border: `1px solid ${style.border}`, whiteSpace: 'nowrap' }}>
+                              🕐 {slot}
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      <td>
                         {isDispatched ? (
                           <div>
                             <div style={{ fontSize: '13px', fontWeight: 500, color: '#1f2937' }}>{vehicleCode || '-'}</div>
@@ -4240,7 +4294,7 @@ function DispatchSection({
                     </tr>
                     {isExpanded && (
                       <tr key={`${id}-detail`}>
-                        <td colSpan={9} style={{ padding: '0', background: '#f9fafb' }}>
+                        <td colSpan={10} style={{ padding: '0', background: '#f9fafb' }}>
                           <div style={{ padding: '12px 16px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
                             {/* 商品明细 */}
                             <div style={{ flex: '1 1 300px' }}>
