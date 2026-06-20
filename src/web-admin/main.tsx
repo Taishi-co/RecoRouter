@@ -3805,6 +3805,7 @@ function DispatchSection({
   const [selectedVehicle, setSelectedVehicle] = useState('');
   const [selectedTripId, setSelectedTripId] = useState('');
   const [tripFilter, setTripFilter] = useState('');
+  const [tripTimeSlotFilter, setTripTimeSlotFilter] = useState('all');
   const [expandedTrip, setExpandedTrip] = useState<string | null>(null);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [maxOrdersPerSlot, setMaxOrdersPerSlot] = useState(5);
@@ -3839,7 +3840,14 @@ function DispatchSection({
     setSelectedOrders(new Set());
   };
 
-  const filteredTrips = tripFilter ? trips.filter(t => stringValue(t, 'status') === tripFilter) : trips;
+  const filteredTrips = trips.filter(t => {
+    if (tripFilter && stringValue(t, 'status') !== tripFilter) return false;
+    if (tripTimeSlotFilter !== 'all') {
+      const slot = stringValue(t, 'delivery_time_slot', stringValue(t, 'deliveryTimeSlot', ''));
+      if (slot !== tripTimeSlotFilter) return false;
+    }
+    return true;
+  });
   const inProgressTrips = trips.filter(t => stringValue(t, 'status') === 'in_progress');
   const editableTrips = trips.filter(t => stringValue(t, 'status') === 'planned' || stringValue(t, 'status') === 'locked');
   const dispatchedOrders = allOrders.filter(o => stringValue(o, 'trip_id'));
@@ -4385,7 +4393,7 @@ function DispatchSection({
       {/* 行程视角 */}
       {activeTab === 'trips' && (
         <Panel title="行程列表" description="管理所有配送行程，锁定后可出发，发车前可增减订单">
-          <div className="admin-filterbar">
+          <div className="admin-filterbar" style={{ gridTemplateColumns: 'minmax(120px, 0.7fr) minmax(140px, 0.8fr) 1fr' }}>
             <select value={tripFilter} onChange={e => setTripFilter(e.target.value)}>
               <option value="">全部状态</option>
               <option value="planned">未锁定</option>
@@ -4394,6 +4402,25 @@ function DispatchSection({
               <option value="completed">已完成</option>
               <option value="cancelled">已取消</option>
             </select>
+            <select
+              value={tripTimeSlotFilter}
+              onChange={e => setTripTimeSlotFilter(e.target.value)}
+            >
+              <option value="all">全部时段</option>
+              <option value="08:00-09:00">08:00-09:00</option>
+              <option value="09:00-10:00">09:00-10:00</option>
+              <option value="10:00-11:00">10:00-11:00</option>
+              <option value="11:00-12:00">11:00-12:00</option>
+              <option value="12:00-13:00">12:00-13:00</option>
+              <option value="13:00-14:00">13:00-14:00</option>
+              <option value="14:00-15:00">14:00-15:00</option>
+              <option value="15:00-16:00">15:00-16:00</option>
+              <option value="16:00-17:00">16:00-17:00</option>
+              <option value="17:00-18:00">17:00-18:00</option>
+              <option value="18:00-19:00">18:00-19:00</option>
+              <option value="19:00-20:00">19:00-20:00</option>
+            </select>
+            <div></div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {filteredTrips.map(trip => {
