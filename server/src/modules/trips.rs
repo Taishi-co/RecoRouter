@@ -22,6 +22,18 @@ where
     Router::new()
         .route("/api/trips", get(list_trips::<S>).post(create_trip::<S>))
         .route(
+            "/api/trips/undispatched-orders",
+            get(undispatched_orders::<S>),
+        )
+        .route(
+            "/api/trips/all-orders",
+            get(all_orders::<S>),
+        )
+        .route(
+            "/api/trips/available-vehicles",
+            get(available_vehicles::<S>),
+        )
+        .route(
             "/api/trips/:id",
             get(get_trip::<S>)
                 .put(update_trip::<S>)
@@ -40,18 +52,6 @@ where
         .route(
             "/api/trips/:id/stops/:stop_id/complete",
             post(complete_stop::<S>),
-        )
-        .route(
-            "/api/trips/undispatched-orders",
-            get(undispatched_orders::<S>),
-        )
-        .route(
-            "/api/trips/all-orders",
-            get(all_orders::<S>),
-        )
-        .route(
-            "/api/trips/available-vehicles",
-            get(available_vehicles::<S>),
         )
 }
 
