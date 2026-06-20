@@ -241,7 +241,9 @@ where
                                 'cargoInfo', s.cargo_info,
                                 'status', s.status,
                                 'mallOrderId', s.mall_order_id,
-                                'completedAt', s.completed_at
+                                'completedAt', s.completed_at,
+                                'deliveryTimeSlot', o.delivery_time_slot,
+                                'deliveryDate', o.delivery_date
                             ) ORDER BY s.stop_sequence
                         ) FILTER (WHERE s.id IS NOT NULL),
                         '[]'
@@ -249,6 +251,7 @@ where
                 FROM vehicle_trips t
                 LEFT JOIN vehicles v ON v.id = t.vehicle_id
                 LEFT JOIN trip_stops s ON s.trip_id = t.id
+                LEFT JOIN mall_orders o ON o.id = s.mall_order_id
                 WHERE {where_clause}
                 GROUP BY t.id, v.vehicle_code, v.license_plate, v.vehicle_type
                 ORDER BY t.planned_departure_time DESC NULLS LAST, t.created_at DESC
