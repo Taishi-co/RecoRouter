@@ -122,6 +122,10 @@ struct CreateTripRequest {
     driver_id: Option<String>,
     #[serde(rename = "plannedDepartureTime", alias = "planned_departure_time")]
     planned_departure_time: Option<String>,
+    #[serde(rename = "deliveryDate", alias = "delivery_date")]
+    delivery_date: Option<String>,
+    #[serde(rename = "deliveryTimeSlot", alias = "delivery_time_slot")]
+    delivery_time_slot: Option<String>,
     notes: Option<String>,
     #[serde(rename = "orderIds", alias = "order_ids")]
     order_ids: Option<Vec<String>>,
@@ -770,6 +774,17 @@ where
     let mut tx = state.db.begin().await?;
     let mut added_count = 0i64;
 
+    // 获取行程当前的时间段
+    let trip_info: Option<(Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT delivery_date::text, delivery_time_slot FROM vehicle_trips WHERE id = $1",
+    )
+    .bind(&trip_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let (mut trip_delivery_date, mut trip_time_slot) = trip_info.unwrap_or((None, None));
+    let mut need_update_trip_slot = false;
+
     // Get current max stop sequence
     let max_seq: Option<i32> = sqlx::query_scalar(
         "SELECT COALESCE(MAX(stop_sequence), 0) FROM trip_stops WHERE trip_id = $1",
@@ -794,7 +809,8 @@ where
                 'recipientName', recipient_name, 'recipientPhone', recipient_phone,
                 'waypoints', COALESCE(waypoints, '[]'::jsonb),
                 'originLatitude', origin_latitude, 'originLongitude', origin_longitude,
-                'originAddress', origin_address)
+                'originAddress', origin_address,
+                'deliveryDate', delivery_date::text, 'deliveryTimeSlot', delivery_time_slot)
             "#,
         )
         .bind(order_id)
@@ -803,6 +819,19 @@ where
         .await?;
 
         let Some(order) = order else { continue };
+
+        // 如果行程没有时间段，从订单同步
+        if !need_update_trip_slot {
+            let order_date = order.get("deliveryDate").and_then(Value::as_str).map(String::from);
+            let order_slot = order.get("deliveryTimeSlot").and_then(Value::as_str).map(String::from);
+            if (trip_delivery_date.is_none() && order_date.is_some())
+                || (trip_time_slot.is_none() && order_slot.is_some())
+            {
+                trip_delivery_date = trip_delivery_date.or(order_date);
+                trip_time_slot = trip_time_slot.or(order_slot);
+                need_update_trip_slot = true;
+            }
+        }
 
         let seq = max_seq.unwrap_or(0) + (idx as i32 * 10) + 1;
         let mut current_seq = seq;
@@ -873,6 +902,18 @@ where
         return Err(ApiError::BadRequest(
             "所选订单均已被分配或当前状态不可分配".to_string(),
         ));
+    }
+
+    // 更新行程时间段
+    if need_update_trip_slot && (trip_delivery_date.is_some() || trip_time_slot.is_some()) {
+        sqlx::query(
+            "UPDATE vehicle_trips SET delivery_date = $1::date, delivery_time_slot = $2, updated_at = now() WHERE id = $3",
+        )
+        .bind(trip_delivery_date.as_deref())
+        .bind(&trip_time_slot)
+        .bind(&trip_id)
+        .execute(&mut *tx)
+        .await?;
     }
 
     sync_trip_counts(&mut tx, &trip_id).await?;
@@ -1073,8 +1114,8 @@ async fn do_create_trip(pool: &sqlx::PgPool, body: &CreateTripRequest) -> ApiRes
     let mut tx = pool.begin().await?;
     let trip: Value = sqlx::query_scalar(
         r#"
-        INSERT INTO vehicle_trips (vehicle_id, vehicle_code, license_plate, vehicle_type, driver_id, planned_departure_time, notes, status, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7, 'planned', $8)
+        INSERT INTO vehicle_trips (vehicle_id, vehicle_code, license_plate, vehicle_type, driver_id, planned_departure_time, delivery_date, delivery_time_slot, notes, status, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7::date, $8, $9, 'planned', $10)
         RETURNING row_to_json(vehicle_trips)
         "#,
     )
@@ -1084,6 +1125,8 @@ async fn do_create_trip(pool: &sqlx::PgPool, body: &CreateTripRequest) -> ApiRes
     .bind(&vehicle_type)
     .bind(&body.driver_id)
     .bind(body.planned_departure_time.as_deref())
+    .bind(body.delivery_date.as_deref())
+    .bind(&body.delivery_time_slot)
     .bind(&body.notes)
     .bind(&body.driver_id)
     .fetch_one(&mut *tx)

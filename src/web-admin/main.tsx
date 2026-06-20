@@ -4321,7 +4321,15 @@ function DispatchSection({
                         <span style={{ fontSize: '12px', color: '#6b7280' }}>({stringValue(trip, 'vehicle_type', stringValue(trip, 'vehicleType', ''))})</span>
                       </div>
                       <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                        {stringValue(trip, 'total_orders', stringValue(trip, 'totalOrders', '0'))} 个订单 · {stops.length} 个站点 · 计划出发: {formatDate(stringValue(trip, 'planned_departure_time', stringValue(trip, 'plannedDepartureTime'))) || '未设定'}
+                        {stringValue(trip, 'total_orders', stringValue(trip, 'totalOrders', '0'))} 个订单 · {stops.length} 个站点
+                        {(() => {
+                          const deliveryDate = stringValue(trip, 'delivery_date', stringValue(trip, 'deliveryDate', ''));
+                          const timeSlot = stringValue(trip, 'delivery_time_slot', stringValue(trip, 'deliveryTimeSlot', ''));
+                          if (deliveryDate || timeSlot) {
+                            return ` · 配送: ${[deliveryDate, timeSlot].filter(Boolean).join(' ')}`;
+                          }
+                          return '';
+                        })()}
                       </div>
                     </div>
                     <span className={tripStatusColor[status] || 'badge-gray'} style={{ fontSize: '13px', padding: '4px 12px', borderRadius: '12px', fontWeight: 600 }}>
