@@ -3810,7 +3810,7 @@ function DispatchSection({
   const [maxOrdersPerSlot, setMaxOrdersPerSlot] = useState(5);
   const [orderSearchType, setOrderSearchType] = useState('order_no');
   const [orderSearchKeyword, setOrderSearchKeyword] = useState('');
-  const [orderStatusFilter, setOrderStatusFilter] = useState('undispatched');
+  const [orderStatusFilter, setOrderStatusFilter] = useState('all');
   const [orderCurrentPage, setOrderCurrentPage] = useState(1);
   const [orderPageSize, setOrderPageSize] = useState(10);
   const [dispatchMode, setDispatchMode] = useState<'new_trip' | 'existing_trip'>('new_trip');
@@ -4008,7 +4008,29 @@ function DispatchSection({
               {dispatchMode === 'new_trip' ? (
                 <div style={{ flex: '1 1 240px' }}>
                   <label style={{ display: 'block', fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>选择车辆</label>
-                  <select value={selectedVehicle} onChange={e => setSelectedVehicle(e.target.value)}>
+                  <select
+                    value={selectedVehicle}
+                    onChange={e => {
+                      const vehicleId = e.target.value;
+                      setSelectedVehicle(vehicleId);
+                      // 检测该车辆当天是否已有进行中的行程
+                      if (vehicleId) {
+                        const today = new Date().toISOString().split('T')[0];
+                        const existingTrip = trips.find(t =>
+                          stringValue(t, 'vehicle_id', stringValue(t, 'vehicleId', '')) === vehicleId &&
+                          stringValue(t, 'status') !== 'completed' &&
+                          stringValue(t, 'status') !== 'cancelled' &&
+                          (stringValue(t, 'delivery_date', stringValue(t, 'deliveryDate', '')).split('T')[0] === today ||
+                            new Date(stringValue(t, 'created_at', stringValue(t, 'createdAt', ''))).toISOString().split('T')[0] === today)
+                        );
+                        if (existingTrip) {
+                          setDispatchMode('existing_trip');
+                          setSelectedTripId(stringValue(existingTrip, 'id'));
+                          setSelectedVehicle('');
+                        }
+                      }
+                    }}
+                  >
                     <option value="">-- 选择车辆 --</option>
                     {availableVehicles.map(v => (
                       <option key={stringValue(v, 'id')} value={stringValue(v, 'id')}>
@@ -4026,7 +4048,7 @@ function DispatchSection({
                       const ts = stringValue(t, 'status');
                       return (
                         <option key={stringValue(t, 'id')} value={stringValue(t, 'id')}>
-                          {stringValue(t, 'vehicle_code', stringValue(t, 'vehicleCode', ''))} - {stringValue(t, 'license_plate', stringValue(t, 'licensePlate', ''))} [{tripStatusLabel[ts] || ts}] ({stringValue(t, 'total_orders', stringValue(t, 'totalOrders', '0'))}单)
+                          #{stringValue(t, 'trip_no', stringValue(t, 'tripNo', '-'))} {stringValue(t, 'vehicle_code', stringValue(t, 'vehicleCode', ''))} - {stringValue(t, 'license_plate', stringValue(t, 'licensePlate', ''))} [{tripStatusLabel[ts] || ts}] ({stringValue(t, 'total_orders', stringValue(t, 'totalOrders', '0'))}单)
                         </option>
                       );
                     })}
@@ -4335,6 +4357,9 @@ function DispatchSection({
                   >
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                        <span style={{ fontSize: '14px', fontWeight: 700, color: '#0369a1' }}>
+                          #{stringValue(trip, 'trip_no', stringValue(trip, 'tripNo', '-'))}
+                        </span>
                         <strong style={{ fontSize: '15px' }}>{stringValue(trip, 'vehicle_code', stringValue(trip, 'vehicleCode', '-'))}</strong>
                         <span style={{ fontSize: '13px', color: '#6b7280' }}>{stringValue(trip, 'license_plate', stringValue(trip, 'licensePlate', ''))}</span>
                         <span style={{ fontSize: '12px', color: '#6b7280' }}>({stringValue(trip, 'vehicle_type', stringValue(trip, 'vehicleType', ''))})</span>

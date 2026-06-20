@@ -1111,6 +1111,34 @@ async fn do_create_trip(pool: &sqlx::PgPool, body: &CreateTripRequest) -> ApiRes
         .and_then(Value::as_str)
         .map(String::from);
 
+    // 确定配送日期：优先用传入的，没有默认今天
+    let delivery_date = body.delivery_date.clone().or_else(|| {
+        chrono::Local::now().format("%Y-%m-%d").to_string().into()
+    });
+
+    // 校验：同一天同一辆车只能有一个进行中的行程
+    let existing_trip: Option<Value> = sqlx::query_scalar(
+        r#"
+        SELECT row_to_json(vehicle_trips)
+        FROM vehicle_trips
+        WHERE vehicle_id = $1
+          AND delivery_date = $2::date
+          AND status IN ('planned', 'locked', 'in_progress')
+        LIMIT 1
+        "#,
+    )
+    .bind(&body.vehicle_id)
+    .bind(delivery_date.as_deref())
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(existing) = existing_trip {
+        let existing_no = existing.get("trip_no").and_then(Value::as_i64).unwrap_or(0);
+        return Err(ApiError::BadRequest(format!(
+            "该车辆今日已有行程（编号 #{existing_no}），请直接追加订单"
+        )));
+    }
+
     let mut tx = pool.begin().await?;
     let trip: Value = sqlx::query_scalar(
         r#"
@@ -1125,7 +1153,7 @@ async fn do_create_trip(pool: &sqlx::PgPool, body: &CreateTripRequest) -> ApiRes
     .bind(&vehicle_type)
     .bind(&body.driver_id)
     .bind(body.planned_departure_time.as_deref())
-    .bind(body.delivery_date.as_deref())
+    .bind(delivery_date.as_deref())
     .bind(&body.delivery_time_slot)
     .bind(&body.notes)
     .bind(&body.driver_id)
