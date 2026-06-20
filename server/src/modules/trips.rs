@@ -22,6 +22,18 @@ where
     Router::new()
         .route("/api/trips", get(list_trips::<S>).post(create_trip::<S>))
         .route(
+            "/api/trips/undispatched-orders",
+            get(undispatched_orders::<S>),
+        )
+        .route(
+            "/api/trips/all-orders",
+            get(all_orders::<S>),
+        )
+        .route(
+            "/api/trips/available-vehicles",
+            get(available_vehicles::<S>),
+        )
+        .route(
             "/api/trips/:id",
             get(get_trip::<S>)
                 .put(update_trip::<S>)
@@ -40,14 +52,6 @@ where
         .route(
             "/api/trips/:id/stops/:stop_id/complete",
             post(complete_stop::<S>),
-        )
-        .route(
-            "/api/trips/undispatched-orders",
-            get(undispatched_orders::<S>),
-        )
-        .route(
-            "/api/trips/available-vehicles",
-            get(available_vehicles::<S>),
         )
 }
 
@@ -118,6 +122,10 @@ struct CreateTripRequest {
     driver_id: Option<String>,
     #[serde(rename = "plannedDepartureTime", alias = "planned_departure_time")]
     planned_departure_time: Option<String>,
+    #[serde(rename = "deliveryDate", alias = "delivery_date")]
+    delivery_date: Option<String>,
+    #[serde(rename = "deliveryTimeSlot", alias = "delivery_time_slot")]
+    delivery_time_slot: Option<String>,
     notes: Option<String>,
     #[serde(rename = "orderIds", alias = "order_ids")]
     order_ids: Option<Vec<String>>,
@@ -233,7 +241,9 @@ where
                                 'cargoInfo', s.cargo_info,
                                 'status', s.status,
                                 'mallOrderId', s.mall_order_id,
-                                'completedAt', s.completed_at
+                                'completedAt', s.completed_at,
+                                'deliveryTimeSlot', o.delivery_time_slot,
+                                'deliveryDate', o.delivery_date
                             ) ORDER BY s.stop_sequence
                         ) FILTER (WHERE s.id IS NOT NULL),
                         '[]'
@@ -241,6 +251,7 @@ where
                 FROM vehicle_trips t
                 LEFT JOIN vehicles v ON v.id = t.vehicle_id
                 LEFT JOIN trip_stops s ON s.trip_id = t.id
+                LEFT JOIN mall_orders o ON o.id = s.mall_order_id
                 WHERE {where_clause}
                 GROUP BY t.id, v.vehicle_code, v.license_plate, v.vehicle_type
                 ORDER BY t.planned_departure_time DESC NULLS LAST, t.created_at DESC
@@ -617,6 +628,61 @@ where
     Ok(ok("查询成功", orders))
 }
 
+async fn all_orders<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<TripQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let limit = query.page_size.unwrap_or(200).min(500);
+    let orders = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT row_to_json(order_row)
+        FROM (
+            SELECT o.*,
+                COALESCE(
+                    json_agg(
+                        json_build_object(
+                            'id', oi.id,
+                            'productId', oi.product_id,
+                            'productName', oi.product_name,
+                            'variantName', oi.variant_name,
+                            'sku', oi.sku,
+                            'quantity', oi.quantity,
+                            'unitPriceCents', oi.unit_price_cents,
+                            'lineTotalCents', oi.line_total_cents,
+                            'imageUrl', oi.image_url,
+                            'weightUnit', oi.weight_unit_label,
+                            'pricingMode', oi.pricing_mode
+                        )
+                    ) FILTER (WHERE oi.id IS NOT NULL),
+                    '[]'
+                ) as items,
+                t.id as trip_id,
+                t.status as trip_status,
+                COALESCE(t.vehicle_code, v.vehicle_code) as vehicle_code,
+                COALESCE(t.license_plate, v.license_plate) as license_plate,
+                COALESCE(t.vehicle_type, v.vehicle_type) as vehicle_type
+            FROM mall_orders o
+            LEFT JOIN mall_order_items oi ON oi.order_id = o.id
+            LEFT JOIN vehicle_trips t ON t.id = o.trip_id
+            LEFT JOIN vehicles v ON v.id = t.vehicle_id
+            WHERE o.status IN ('paid', 'ready_for_pickup', 'dispatching', 'completed')
+            GROUP BY o.id, t.id, v.vehicle_code, v.license_plate, v.vehicle_type
+            ORDER BY o.created_at DESC
+            LIMIT $1
+        ) order_row
+        "#,
+    )
+    .bind(limit)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("查询订单失败: {err}")))?;
+
+    Ok(ok("查询成功", orders))
+}
+
 async fn available_vehicles<S>(
     State(state): State<AppState<S>>,
 ) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
@@ -711,6 +777,17 @@ where
     let mut tx = state.db.begin().await?;
     let mut added_count = 0i64;
 
+    // 获取行程当前的时间段
+    let trip_info: Option<(Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT delivery_date::text, delivery_time_slot FROM vehicle_trips WHERE id = $1",
+    )
+    .bind(&trip_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let (mut trip_delivery_date, mut trip_time_slot) = trip_info.unwrap_or((None, None));
+    let mut need_update_trip_slot = false;
+
     // Get current max stop sequence
     let max_seq: Option<i32> = sqlx::query_scalar(
         "SELECT COALESCE(MAX(stop_sequence), 0) FROM trip_stops WHERE trip_id = $1",
@@ -735,7 +812,8 @@ where
                 'recipientName', recipient_name, 'recipientPhone', recipient_phone,
                 'waypoints', COALESCE(waypoints, '[]'::jsonb),
                 'originLatitude', origin_latitude, 'originLongitude', origin_longitude,
-                'originAddress', origin_address)
+                'originAddress', origin_address,
+                'deliveryDate', delivery_date::text, 'deliveryTimeSlot', delivery_time_slot)
             "#,
         )
         .bind(order_id)
@@ -744,6 +822,19 @@ where
         .await?;
 
         let Some(order) = order else { continue };
+
+        // 如果行程没有时间段，从订单同步
+        if !need_update_trip_slot {
+            let order_date = order.get("deliveryDate").and_then(Value::as_str).map(String::from);
+            let order_slot = order.get("deliveryTimeSlot").and_then(Value::as_str).map(String::from);
+            if (trip_delivery_date.is_none() && order_date.is_some())
+                || (trip_time_slot.is_none() && order_slot.is_some())
+            {
+                trip_delivery_date = trip_delivery_date.or(order_date);
+                trip_time_slot = trip_time_slot.or(order_slot);
+                need_update_trip_slot = true;
+            }
+        }
 
         let seq = max_seq.unwrap_or(0) + (idx as i32 * 10) + 1;
         let mut current_seq = seq;
@@ -814,6 +905,18 @@ where
         return Err(ApiError::BadRequest(
             "所选订单均已被分配或当前状态不可分配".to_string(),
         ));
+    }
+
+    // 更新行程时间段
+    if need_update_trip_slot && (trip_delivery_date.is_some() || trip_time_slot.is_some()) {
+        sqlx::query(
+            "UPDATE vehicle_trips SET delivery_date = $1::date, delivery_time_slot = $2, updated_at = now() WHERE id = $3",
+        )
+        .bind(trip_delivery_date.as_deref())
+        .bind(&trip_time_slot)
+        .bind(&trip_id)
+        .execute(&mut *tx)
+        .await?;
     }
 
     sync_trip_counts(&mut tx, &trip_id).await?;
@@ -1011,11 +1114,39 @@ async fn do_create_trip(pool: &sqlx::PgPool, body: &CreateTripRequest) -> ApiRes
         .and_then(Value::as_str)
         .map(String::from);
 
+    // 确定配送日期：优先用传入的，没有默认今天
+    let delivery_date = body.delivery_date.clone().or_else(|| {
+        chrono::Local::now().format("%Y-%m-%d").to_string().into()
+    });
+
+    // 校验：同一天同一辆车只能有一个进行中的行程
+    let existing_trip: Option<Value> = sqlx::query_scalar(
+        r#"
+        SELECT row_to_json(vehicle_trips)
+        FROM vehicle_trips
+        WHERE vehicle_id = $1
+          AND delivery_date = $2::date
+          AND status IN ('planned', 'locked', 'in_progress')
+        LIMIT 1
+        "#,
+    )
+    .bind(&body.vehicle_id)
+    .bind(delivery_date.as_deref())
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(existing) = existing_trip {
+        let existing_no = existing.get("trip_no").and_then(Value::as_i64).unwrap_or(0);
+        return Err(ApiError::BadRequest(format!(
+            "该车辆今日已有行程（编号 #{existing_no}），请直接追加订单"
+        )));
+    }
+
     let mut tx = pool.begin().await?;
     let trip: Value = sqlx::query_scalar(
         r#"
-        INSERT INTO vehicle_trips (vehicle_id, vehicle_code, license_plate, vehicle_type, driver_id, planned_departure_time, notes, status, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7, 'planned', $8)
+        INSERT INTO vehicle_trips (vehicle_id, vehicle_code, license_plate, vehicle_type, driver_id, planned_departure_time, delivery_date, delivery_time_slot, notes, status, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7::date, $8, $9, 'planned', $10)
         RETURNING row_to_json(vehicle_trips)
         "#,
     )
@@ -1025,6 +1156,8 @@ async fn do_create_trip(pool: &sqlx::PgPool, body: &CreateTripRequest) -> ApiRes
     .bind(&vehicle_type)
     .bind(&body.driver_id)
     .bind(body.planned_departure_time.as_deref())
+    .bind(delivery_date.as_deref())
+    .bind(&body.delivery_time_slot)
     .bind(&body.notes)
     .bind(&body.driver_id)
     .fetch_one(&mut *tx)
@@ -1480,6 +1613,8 @@ async fn fetch_trip_detail(pool: &sqlx::PgPool, id: &str) -> ApiResult<Value> {
                             'cargoInfo', s.cargo_info,
                             'status', s.status,
                             'mallOrderId', s.mall_order_id,
+                            'deliveryTimeSlot', (SELECT delivery_time_slot FROM mall_orders WHERE id = s.mall_order_id),
+                            'deliveryDate', (SELECT delivery_date::text FROM mall_orders WHERE id = s.mall_order_id),
                             'arrivedAt', s.arrived_at,
                             'completedAt', s.completed_at,
                             'notes', s.notes,
