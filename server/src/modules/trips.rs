@@ -1610,6 +1610,8 @@ async fn fetch_trip_detail(pool: &sqlx::PgPool, id: &str) -> ApiResult<Value> {
                             'cargoInfo', s.cargo_info,
                             'status', s.status,
                             'mallOrderId', s.mall_order_id,
+                            'deliveryTimeSlot', (SELECT delivery_time_slot FROM mall_orders WHERE id = s.mall_order_id),
+                            'deliveryDate', (SELECT delivery_date::text FROM mall_orders WHERE id = s.mall_order_id),
                             'arrivedAt', s.arrived_at,
                             'completedAt', s.completed_at,
                             'notes', s.notes,

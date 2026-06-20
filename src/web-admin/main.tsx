@@ -4347,7 +4347,33 @@ function DispatchSection({
               const status = stringValue(trip, 'status');
               const stops = ((trip as Record<string, unknown>).stops as JsonRecord[] | undefined) || [];
               const isExpanded = expandedTrip === tripId;
-              const sortedStops = [...stops].sort((a, b) => numberValue(a, 'stopSequence', 0) - numberValue(b, 'stopSequence', 0));
+              const sortedStops = [...stops].sort((a, b) => {
+                const slotA = stringValue(a, 'deliveryTimeSlot', stringValue(a, 'delivery_time_slot', ''));
+                const slotB = stringValue(b, 'deliveryTimeSlot', stringValue(b, 'delivery_time_slot', ''));
+                if (slotA && slotB) return slotA.localeCompare(slotB);
+                if (slotA) return -1;
+                if (slotB) return 1;
+                return numberValue(a, 'stopSequence', 0) - numberValue(b, 'stopSequence', 0);
+              });
+
+              const timeSlotColors: Record<string, { bg: string; text: string; border: string }> = {
+                '08:00-09:00': { bg: '#fef3c7', text: '#92400e', border: '#fcd34d' },
+                '09:00-10:00': { bg: '#dbeafe', text: '#1e40af', border: '#93c5fd' },
+                '10:00-11:00': { bg: '#dcfce7', text: '#166534', border: '#86efac' },
+                '11:00-12:00': { bg: '#fee2e2', text: '#991b1b', border: '#fca5a5' },
+                '12:00-13:00': { bg: '#fce7f3', text: '#9d174d', border: '#f9a8d4' },
+                '13:00-14:00': { bg: '#f3e8ff', text: '#6b21a8', border: '#d8b4fe' },
+                '14:00-15:00': { bg: '#ede9fe', text: '#5b21b6', border: '#c4b5fd' },
+                '15:00-16:00': { bg: '#e0f2fe', text: '#075985', border: '#7dd3fc' },
+                '16:00-17:00': { bg: '#f0fdf4', text: '#166534', border: '#86efac' },
+                '17:00-18:00': { bg: '#fff7ed', text: '#9a3412', border: '#fdba74' },
+                '18:00-19:00': { bg: '#f1f5f9', text: '#334155', border: '#cbd5e1' },
+                '19:00-20:00': { bg: '#fef9c3', text: '#854d0e', border: '#fde047' },
+              };
+
+              const getTimeSlotStyle = (slot: string) => {
+                return timeSlotColors[slot] || { bg: '#f3f4f6', text: '#4b5563', border: '#d1d5db' };
+              };
               return (
                 <div key={tripId} style={{ border: `2px solid ${tripStatusBorder[status] || '#d1d5db'}`, borderRadius: '8px', overflow: 'hidden', background: '#fff' }}>
                   {/* 行程头部 */}
@@ -4407,22 +4433,24 @@ function DispatchSection({
                   {/* 展开的站点详情 */}
                   {isExpanded && (
                     <div style={{ padding: '12px 16px', borderTop: `1px solid ${tripStatusBorder[status] || '#e5e7eb'}` }}>
-                      <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '10px', color: '#374151' }}>配送站点（按顺序）</div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '10px', color: '#374151' }}>配送站点（按时间段排序）</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {sortedStops.map((stop, idx) => {
                           const stopId = stringValue(stop, 'id');
                           const stopStatus = stringValue(stop, 'status');
                           const stopType = stringValue(stop, 'stopType');
                           const orderId = stringValue(stop, 'mallOrderId');
+                          const timeSlot = stringValue(stop, 'deliveryTimeSlot', stringValue(stop, 'delivery_time_slot', ''));
+                          const slotStyle = getTimeSlotStyle(timeSlot);
                           const orderItems = (stop as Record<string, unknown>).orderItems as JsonRecord[] | undefined;
                           return (
-                            <div key={stopId} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '10px 14px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-                              {/* 序号圆点 */}
+                            <div key={stopId} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '10px 14px', background: '#f9fafb', borderRadius: '6px', border: `1px solid ${timeSlot ? slotStyle.border : '#e5e7eb'}`, borderLeftWidth: timeSlot ? '4px' : '1px' }}>
+                              {/* 序号圆点 + 时间段色条 */}
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', flexShrink: 0, paddingTop: '2px' }}>
-                                <span style={{ width: '28px', height: '28px', borderRadius: '50%', background: stopStatus === 'completed' ? '#10b981' : stopType === 'pickup' ? '#3b82f6' : '#f59e0b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 600 }}>
+                                <span style={{ width: '28px', height: '28px', borderRadius: '50%', background: stopStatus === 'completed' ? '#10b981' : timeSlot ? slotStyle.bg : stopType === 'pickup' ? '#3b82f6' : '#f59e0b', color: stopStatus === 'completed' ? '#fff' : timeSlot ? slotStyle.text : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 600, border: timeSlot ? `2px solid ${slotStyle.border}` : 'none' }}>
                                   {idx + 1}
                                 </span>
-                                {idx < sortedStops.length - 1 && <span style={{ width: '2px', height: '12px', background: '#d1d5db' }}></span>}
+                                {idx < sortedStops.length - 1 && <span style={{ width: '2px', height: '12px', background: timeSlot ? slotStyle.border : '#d1d5db' }}></span>}
                               </div>
                               {/* 站点信息 */}
                               <div style={{ flex: 1, minWidth: 0 }}>
@@ -4451,8 +4479,13 @@ function DispatchSection({
                                   {stringValue(stop, 'notes', '') && <span> · 备注: {stringValue(stop, 'notes', '')}</span>}
                                 </div>
                               </div>
-                              {/* 状态和操作 */}
+                              {/* 时间段和状态 */}
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0 }}>
+                                {timeSlot && (
+                                  <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px', background: slotStyle.bg, color: slotStyle.text, fontWeight: 600, border: `1px solid ${slotStyle.border}`, whiteSpace: 'nowrap' }}>
+                                    🕐 {timeSlot}
+                                  </span>
+                                )}
                                 <span className={stopStatus === 'completed' ? 'badge badge-green' : stopStatus === 'arrived' ? 'badge badge-yellow' : 'badge badge-blue'}>
                                   {stopStatus === 'completed' ? '已完成' : stopStatus === 'arrived' ? '已到达' : '待配送'}
                                 </span>
