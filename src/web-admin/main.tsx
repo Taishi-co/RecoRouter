@@ -1861,6 +1861,13 @@ function productImagesFromRecord(record: JsonRecord) {
   return compactProductImages(legacyImage ? [legacyImage, ...images] : images);
 }
 
+function productDisplayImagesFromRecord(record: JsonRecord) {
+  const images = arrayValue(record, 'images').map(item => String(item));
+  const imageUrl = stringValue(record, 'imageUrl');
+  const resolvedImages = compactProductImages(imageUrl ? [imageUrl, ...images] : images);
+  return resolvedImages.length ? resolvedImages : productImagesFromRecord(record);
+}
+
 function productFormImages(form: ProductForm) {
   return compactProductImages(form.imageUrl ? [form.imageUrl, ...form.images] : form.images);
 }
@@ -4719,7 +4726,7 @@ function MallProductDesignSection({
 }) {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const alertCount = products.filter(product => numberValue(product, 'stock') <= numberValue(product, 'stockAlertThreshold', 15)).length;
-  const completeCount = products.filter(product => productImagesFromRecord(product).length && stringValue(product, 'specification') && stringValue(product, 'saleMethod')).length;
+  const completeCount = products.filter(product => productDisplayImagesFromRecord(product).length && stringValue(product, 'specification') && stringValue(product, 'saleMethod')).length;
 
   return (
     <div className="mall-admin-design-page">
@@ -5230,7 +5237,7 @@ function ProductSpecSubtable({
 }
 
 function ProductImage({ record }: { record: JsonRecord }) {
-  const imageUrl = resolveImage(productImagesFromRecord(record)[0] || stringValue(record, 'imageUrl'));
+  const imageUrl = resolveImage(productDisplayImagesFromRecord(record)[0] || stringValue(record, 'imageUrl'));
   return (
     <div className="product-cell">
       {imageUrl ? <img alt="" src={imageUrl} /> : <span className="image-placeholder">无图</span>}

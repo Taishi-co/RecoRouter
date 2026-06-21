@@ -31,6 +31,14 @@ if (!/\/api\/admin\/mall\/uploads\/product-image/.test(webAdminSource) || !/type
   throw new Error('web admin product image form must upload operator-selected files through the mall admin upload API')
 }
 
+if (!/function productDisplayImagesFromRecord\(record: JsonRecord\)[\s\S]*arrayValue\(record, 'images'\)[\s\S]*stringValue\(record, 'imageUrl'\)[\s\S]*productImagesFromRecord\(record\)/.test(webAdminSource)) {
+  throw new Error('web admin product image display must prefer resolved images/imageUrl before falling back to raw imageKeys')
+}
+
+if (/function ProductImage\(\{ record \}[\s\S]*productImagesFromRecord\(record\)/.test(webAdminSource)) {
+  throw new Error('web admin product table image must not render raw imageKeys ahead of resolved COS image URLs')
+}
+
 if (/图片路径[\s\S]*?<select[\s\S]*mall-products\/(?:kiwi|fresh-milk|banana|durian|reco-dino)\.jpeg/.test(webAdminSource)) {
   throw new Error('web admin product image form must not use fixed mall product image choices')
 }
