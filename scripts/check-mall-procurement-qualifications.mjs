@@ -56,10 +56,13 @@ const checks = [
     name: 'App 商品列表和详情展示品质保证与查看资质',
     pass: /qualityGuaranteed/.test(files.service)
       && /MallQualificationReport/.test(files.service)
-      && /品质保证/.test(files.ui)
-      && /ProductQualificationSection/.test(files.product)
+      && /(品质保证|资质可查)/.test(files.ui)
+      && /ProductQualificationModal/.test(files.product)
       && /查看资质/.test(files.product)
-      && /mall-product-quality-panel/.test(files.theme),
+      && /Taro\.previewImage/.test(files.product)
+      && /Taro\.openDocument/.test(files.product)
+      && /Network\.downloadFile/.test(files.product)
+      && /mall-product-quality-modal/.test(files.theme),
   },
 ]
 

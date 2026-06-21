@@ -904,6 +904,16 @@ struct ProductVariantMutation {
     weight_unit_label: Option<String>,
     weight_unit_grams: Option<i32>,
     weight_tolerance_bps: Option<i32>,
+    #[serde(alias = "length_cm")]
+    length_cm: Option<f64>,
+    #[serde(alias = "width_cm")]
+    width_cm: Option<f64>,
+    #[serde(alias = "height_cm")]
+    height_cm: Option<f64>,
+    #[serde(alias = "volume_liters")]
+    volume_liters: Option<f64>,
+    #[serde(alias = "weight_kg")]
+    weight_kg: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -937,6 +947,16 @@ struct ProductVariant {
     weight_unit_grams: i32,
     #[serde(default = "default_product_variant_weight_tolerance_bps")]
     weight_tolerance_bps: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    length_cm: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    width_cm: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    height_cm: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    volume_liters: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    weight_kg: Option<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -950,6 +970,11 @@ struct ProductVariantDefaults {
     stock: i32,
     minimum_order_quantity: i32,
     status: String,
+    length_cm: Option<f64>,
+    width_cm: Option<f64>,
+    height_cm: Option<f64>,
+    volume_liters: Option<f64>,
+    weight_kg: Option<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -986,6 +1011,10 @@ struct CampaignMutationRequest {
     budget_cents: Option<i64>,
     rules: Option<Value>,
     status: Option<String>,
+    #[serde(alias = "starts_at")]
+    starts_at: Option<String>,
+    #[serde(alias = "ends_at")]
+    ends_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1375,6 +1404,7 @@ struct MallPriceSummary {
     subtotal_cents: i64,
     full_reduction_cents: i64,
     coupon_discount_cents: i64,
+    delivery_discount_cents: i64,
     member_discount_cents: i64,
     points_redeemed_cents: i64,
     total_discount_cents: i64,
@@ -2883,7 +2913,10 @@ where
         Err(err) => return Err(err.into()),
     }
 
-    Ok(ok("保存成功", fetch_member_profile(&state.db, &user_id).await?))
+    Ok(ok(
+        "保存成功",
+        fetch_member_profile(&state.db, &user_id).await?,
+    ))
 }
 
 async fn list_customer_coupons<S>(
@@ -3941,6 +3974,11 @@ where
         stock,
         minimum_order_quantity,
         status: product_status.clone(),
+        length_cm: body.length_cm,
+        width_cm: body.width_cm,
+        height_cm: body.height_cm,
+        volume_liters: body.volume_liters,
+        weight_kg: body.weight_kg,
     };
     let variants = normalize_product_variants(body.variants.as_deref(), &variant_defaults)?;
     let display_variant = display_product_variant(&variants);
@@ -4072,6 +4110,11 @@ where
             stock: body.stock.unwrap_or(0),
             minimum_order_quantity: body.minimum_order_quantity.unwrap_or(1),
             status: body.status.clone().unwrap_or_else(|| "on_sale".to_string()),
+            length_cm: body.length_cm,
+            width_cm: body.width_cm,
+            height_cm: body.height_cm,
+            volume_liters: body.volume_liters,
+            weight_kg: body.weight_kg,
         };
         let normalized_variants = normalize_product_variants(Some(variants), &variant_defaults)?;
         let display_variant = display_product_variant(&normalized_variants);
@@ -4675,8 +4718,18 @@ where
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
     {
-        builder.push(" AND c.campaign_type = ");
-        builder.push_bind(campaign_type);
+        match campaign_type.as_str() {
+            "full_reduction" => {
+                builder.push(" AND c.campaign_type IN ('full_reduction', 'discount')");
+            }
+            "delivery_reduction" => {
+                builder.push(" AND c.campaign_type IN ('delivery_reduction', 'delivery_subsidy')");
+            }
+            _ => {
+                builder.push(" AND c.campaign_type = ");
+                builder.push_bind(campaign_type);
+            }
+        }
     }
 
     let limit = query.page_size.unwrap_or(200).clamp(1, 500);
@@ -4699,10 +4752,12 @@ where
     let name = require_non_empty(body.name, "活动名称不能为空")?;
     let campaign_type = require_non_empty(body.campaign_type, "活动类型不能为空")?;
     let rules = body.rules.unwrap_or_else(|| json!({}));
+    let starts_at = non_empty(body.starts_at);
+    let ends_at = non_empty(body.ends_at);
     let campaign = sqlx::query_scalar::<_, Value>(
         r#"
-        INSERT INTO mall_campaigns (name, campaign_type, budget_cents, rules, status)
-        VALUES ($1, $2, COALESCE($3, 0), $4, COALESCE($5, 'draft'))
+        INSERT INTO mall_campaigns (name, campaign_type, budget_cents, rules, status, starts_at, ends_at)
+        VALUES ($1, $2, COALESCE($3, 0), $4, COALESCE($5, 'draft'), $6::timestamptz, $7::timestamptz)
         RETURNING campaign_json(mall_campaigns)
         "#,
     )
@@ -4711,6 +4766,8 @@ where
     .bind(body.budget_cents)
     .bind(rules)
     .bind(body.status)
+    .bind(starts_at)
+    .bind(ends_at)
     .fetch_one(&state.db)
     .await?;
     Ok(ok("活动创建成功", campaign))
@@ -4732,6 +4789,8 @@ where
             budget_cents = COALESCE($4, budget_cents),
             rules = COALESCE($5, rules),
             status = COALESCE($6, status),
+            starts_at = COALESCE($7::timestamptz, starts_at),
+            ends_at = COALESCE($8::timestamptz, ends_at),
             updated_at = now()
         WHERE id = $1
         RETURNING campaign_json(mall_campaigns)
@@ -4743,6 +4802,8 @@ where
     .bind(body.budget_cents)
     .bind(body.rules)
     .bind(body.status)
+    .bind(non_empty(body.starts_at))
+    .bind(non_empty(body.ends_at))
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| ApiError::NotFound("活动不存在".to_string()))?;
@@ -7347,10 +7408,16 @@ fn push_product_activity_filter(builder: &mut QueryBuilder<Postgres>, activity_t
               SELECT 1
               FROM mall_campaigns campaign
               WHERE campaign.status = 'active'
+                AND campaign.campaign_type IN ('discount', 'full_reduction', 'full_discount')
                 AND (campaign.starts_at IS NULL OR campaign.starts_at <= now())
                 AND (campaign.ends_at IS NULL OR campaign.ends_at >= now())
-                AND campaign.rules ? 'thresholdCents'
-                AND campaign.rules ? 'discountCents'
+                AND (
+                  campaign.rules ? 'thresholdCents'
+                  OR (
+                    jsonb_typeof(campaign.rules->'tiers') = 'array'
+                    AND jsonb_array_length(campaign.rules->'tiers') > 0
+                  )
+                )
             )
             "#,
             );
@@ -7366,6 +7433,8 @@ fn push_product_activity_filter(builder: &mut QueryBuilder<Postgres>, activity_t
                 AND campaign.status = 'active'
                 AND (campaign.starts_at IS NULL OR campaign.starts_at <= now())
                 AND (campaign.ends_at IS NULL OR campaign.ends_at >= now())
+                AND (NULLIF(item.value->>'startsAt', '') IS NULL OR (item.value->>'startsAt')::timestamptz <= now())
+                AND (NULLIF(item.value->>'endsAt', '') IS NULL OR (item.value->>'endsAt')::timestamptz >= now())
                 AND (
                   item.value->>'productId' = p.id::text
                   OR item.value->>'id' = p.id::text
@@ -7998,7 +8067,10 @@ async fn fetch_customer_coupon_payload(
     expire_customer_coupons(pool, user_id).await?;
     let mut coupons = fetch_customer_coupons(pool, user_id, coupon_type_filter).await?;
 
-    if let Some(status) = status_filter.map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(status) = status_filter
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         coupons.retain(|coupon| {
             coupon
                 .get("walletStatus")
@@ -8465,6 +8537,15 @@ fn strip_public_product_specs(product: &mut Value) {
             for variant in variants {
                 if let Some(variant_object) = variant.as_object_mut() {
                     variant_object.remove("supplyPriceCents");
+                    for key in [
+                        "lengthCm",
+                        "widthCm",
+                        "heightCm",
+                        "volumeLiters",
+                        "weightKg",
+                    ] {
+                        variant_object.remove(key);
+                    }
                 }
             }
         }
@@ -8539,6 +8620,11 @@ mod product_listing_query_tests {
             stock: 120,
             minimum_order_quantity: 1,
             status: "on_sale".to_string(),
+            length_cm: Some(10.0),
+            width_cm: Some(8.0),
+            height_cm: Some(20.0),
+            volume_liters: Some(1.6),
+            weight_kg: Some(0.5),
         };
 
         let variants = normalize_product_variants(None, &defaults)
@@ -8549,6 +8635,8 @@ mod product_listing_query_tests {
         assert_eq!(variants[0].price_cents, 300);
         assert_eq!(variants[0].stock, 120);
         assert_eq!(variants[0].pricing_mode, "fixed");
+        assert_eq!(variants[0].length_cm, Some(10.0));
+        assert_eq!(variants[0].weight_kg, Some(0.5));
     }
 
     #[test]
@@ -8563,6 +8651,11 @@ mod product_listing_query_tests {
             stock: 1,
             minimum_order_quantity: 1,
             status: "on_sale".to_string(),
+            length_cm: None,
+            width_cm: None,
+            height_cm: None,
+            volume_liters: None,
+            weight_kg: None,
         };
         let variants = (0..=MAX_PRODUCT_VARIANTS)
             .map(|index| ProductVariantMutation {
@@ -8583,6 +8676,11 @@ mod product_listing_query_tests {
                 weight_unit_label: None,
                 weight_unit_grams: None,
                 weight_tolerance_bps: None,
+                length_cm: None,
+                width_cm: None,
+                height_cm: None,
+                volume_liters: None,
+                weight_kg: None,
             })
             .collect::<Vec<_>>();
 
@@ -8604,6 +8702,11 @@ mod product_listing_query_tests {
             stock: 200,
             minimum_order_quantity: 30,
             status: "on_sale".to_string(),
+            length_cm: None,
+            width_cm: None,
+            height_cm: None,
+            volume_liters: None,
+            weight_kg: None,
         };
         let variants = vec![ProductVariantMutation {
             id: Some("by-jin".to_string()),
@@ -8623,6 +8726,11 @@ mod product_listing_query_tests {
             weight_unit_label: Some("斤".to_string()),
             weight_unit_grams: Some(500),
             weight_tolerance_bps: Some(800),
+            length_cm: Some(40.0),
+            width_cm: Some(30.0),
+            height_cm: Some(28.0),
+            volume_liters: Some(33.6),
+            weight_kg: Some(15.0),
         }];
 
         let normalized = normalize_product_variants(Some(&variants), &defaults)
@@ -8632,6 +8740,9 @@ mod product_listing_query_tests {
         assert_eq!(normalized[0].weight_unit_label, "斤");
         assert_eq!(normalized[0].weight_unit_grams, 500);
         assert_eq!(normalized[0].weight_tolerance_bps, 800);
+        assert_eq!(normalized[0].length_cm, Some(40.0));
+        assert_eq!(normalized[0].volume_liters, Some(33.6));
+        assert_eq!(normalized[0].weight_kg, Some(15.0));
         assert_eq!(weighed_line_total_cents(1000, 15_050, 500), 30_100);
     }
 
@@ -8754,6 +8865,12 @@ async fn find_fixed_price_campaign(
             NULLIF(campaign.rules #>> '{badge,textColor}', ''),
             NULLIF(campaign.rules->>'badgeTextColor', ''),
             '#FFFFFF'
+          ),
+          'badgePosition', COALESCE(
+            NULLIF(item.value->>'badgePosition', ''),
+            NULLIF(campaign.rules #>> '{badge,position}', ''),
+            NULLIF(campaign.rules->>'badgePosition', ''),
+            'top_left'
           )
         )
         FROM mall_campaigns campaign
@@ -8762,6 +8879,8 @@ async fn find_fixed_price_campaign(
           AND campaign.status = 'active'
           AND (campaign.starts_at IS NULL OR campaign.starts_at <= now())
           AND (campaign.ends_at IS NULL OR campaign.ends_at >= now())
+          AND (NULLIF(item.value->>'startsAt', '') IS NULL OR (item.value->>'startsAt')::timestamptz <= now())
+          AND (NULLIF(item.value->>'endsAt', '') IS NULL OR (item.value->>'endsAt')::timestamptz >= now())
           AND (
             item.value->>'productId' = $1
             OR item.value->>'id' = $1
@@ -8872,6 +8991,7 @@ async fn cart_payload(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
         "discountRuleCents": summary.discount_rule_cents,
         "fullReductionCents": summary.full_reduction_cents,
         "couponDiscountCents": summary.coupon_discount_cents,
+        "deliveryDiscountCents": summary.delivery_discount_cents,
         "memberDiscountCents": summary.member_discount_cents,
         "pointsRedeemedCents": summary.points_redeemed_cents,
         "totalDiscountCents": summary.total_discount_cents,
@@ -8940,6 +9060,7 @@ async fn checkout_payload(pool: &PgPool, checkout_id: &str) -> ApiResult<Value> 
         "discountRuleCents": summary.discount_rule_cents,
         "fullReductionCents": summary.full_reduction_cents,
         "couponDiscountCents": summary.coupon_discount_cents,
+        "deliveryDiscountCents": summary.delivery_discount_cents,
         "memberDiscountCents": summary.member_discount_cents,
         "pointsRedeemedCents": summary.points_redeemed_cents,
         "totalDiscountCents": summary.total_discount_cents,
@@ -9535,18 +9656,54 @@ async fn calculate_mall_discount_cents(
 ) -> ApiResult<MallDiscount> {
     let rules = sqlx::query_as::<_, CampaignDiscountRow>(
         r#"
+        WITH active_campaigns AS (
+          SELECT name, campaign_type, rules
+          FROM mall_campaigns
+          WHERE status = 'active'
+            AND campaign_type IN ('discount', 'full_reduction', 'full_discount')
+            AND (starts_at IS NULL OR starts_at <= now())
+            AND (ends_at IS NULL OR ends_at >= now())
+        ),
+        tier_rules AS (
+          SELECT
+            name,
+            campaign_type,
+            tier.value AS rule
+          FROM active_campaigns
+          JOIN LATERAL jsonb_array_elements(
+            CASE
+              WHEN jsonb_typeof(rules->'tiers') = 'array' AND jsonb_array_length(rules->'tiers') > 0
+                THEN rules->'tiers'
+              ELSE jsonb_build_array(rules)
+            END
+          ) AS tier(value) ON true
+        )
         SELECT
           name,
-          COALESCE(NULLIF(rules->>'thresholdCents', '')::bigint, 0) AS threshold_cents,
-          COALESCE(NULLIF(rules->>'discountCents', '')::bigint, 0) AS discount_cents
-        FROM mall_campaigns
-        WHERE status = 'active'
-          AND rules ? 'thresholdCents'
-          AND rules ? 'discountCents'
-        ORDER BY COALESCE(NULLIF(rules->>'thresholdCents', '')::bigint, 0) ASC,
-                 COALESCE(NULLIF(rules->>'discountCents', '')::bigint, 0) DESC
+          COALESCE(NULLIF(rule->>'thresholdCents', '')::bigint, 0) AS threshold_cents,
+          COALESCE(
+            NULLIF(rule->>'discountCents', '')::bigint,
+            CASE
+              WHEN campaign_type = 'full_discount' THEN GREATEST(
+                $1 - (
+                  $1 * COALESCE(
+                    NULLIF(rule->>'discountRateBps', '')::bigint,
+                    NULLIF(rule->>'discountBps', '')::bigint,
+                    10000
+                  ) / 10000
+                ),
+                0
+              )
+              ELSE 0
+            END
+          ) AS discount_cents
+        FROM tier_rules
+        WHERE COALESCE(NULLIF(rule->>'thresholdCents', '')::bigint, 0) >= 0
+        ORDER BY COALESCE(NULLIF(rule->>'thresholdCents', '')::bigint, 0) ASC,
+                 COALESCE(NULLIF(rule->>'discountCents', '')::bigint, 0) DESC
         "#,
     )
+    .bind(subtotal_cents)
     .fetch_all(pool)
     .await?;
 
@@ -9664,6 +9821,111 @@ async fn calculate_mall_coupon_discount_cents(
     })
 }
 
+async fn calculate_mall_delivery_campaign_discount_cents(
+    pool: &PgPool,
+    subtotal_cents: i64,
+    delivery_fee_cents: i64,
+) -> ApiResult<MallDiscount> {
+    if delivery_fee_cents <= 0 {
+        return Ok(MallDiscount {
+            discount_cents: 0,
+            description: None,
+            threshold_cents: None,
+            rule_discount_cents: None,
+            next_discount_cents: None,
+            next_gap_cents: None,
+        });
+    }
+
+    let rules = sqlx::query_as::<_, CampaignDiscountRow>(
+        r#"
+        WITH active_campaigns AS (
+          SELECT name, campaign_type, rules
+          FROM mall_campaigns
+          WHERE status = 'active'
+            AND campaign_type IN ('free_delivery', 'delivery_reduction', 'delivery_subsidy')
+            AND (starts_at IS NULL OR starts_at <= now())
+            AND (ends_at IS NULL OR ends_at >= now())
+        ),
+        tier_rules AS (
+          SELECT
+            name,
+            campaign_type,
+            tier.value AS rule
+          FROM active_campaigns
+          JOIN LATERAL jsonb_array_elements(
+            CASE
+              WHEN jsonb_typeof(rules->'tiers') = 'array' AND jsonb_array_length(rules->'tiers') > 0
+                THEN rules->'tiers'
+              ELSE jsonb_build_array(rules)
+            END
+          ) AS tier(value) ON true
+        )
+        SELECT
+          name,
+          COALESCE(NULLIF(rule->>'thresholdCents', '')::bigint, 0) AS threshold_cents,
+          CASE
+            WHEN campaign_type = 'free_delivery' THEN $1
+            ELSE COALESCE(NULLIF(rule->>'discountCents', '')::bigint, 0)
+          END AS discount_cents
+        FROM tier_rules
+        WHERE COALESCE(NULLIF(rule->>'thresholdCents', '')::bigint, 0) >= 0
+        ORDER BY COALESCE(NULLIF(rule->>'thresholdCents', '')::bigint, 0) ASC,
+                 CASE
+                   WHEN campaign_type = 'free_delivery' THEN $1
+                   ELSE COALESCE(NULLIF(rule->>'discountCents', '')::bigint, 0)
+                 END DESC
+        "#,
+    )
+    .bind(delivery_fee_cents)
+    .fetch_all(pool)
+    .await?;
+
+    let mut next_rule: Option<&CampaignDiscountRow> = None;
+    let mut best_rule: Option<&CampaignDiscountRow> = None;
+    for rule in &rules {
+        if rule.threshold_cents <= subtotal_cents {
+            if best_rule
+                .map(|current| rule.discount_cents > current.discount_cents)
+                .unwrap_or(true)
+            {
+                best_rule = Some(rule);
+            }
+        } else if next_rule
+            .map(|current| rule.threshold_cents < current.threshold_cents)
+            .unwrap_or(true)
+        {
+            next_rule = Some(rule);
+        }
+    }
+
+    if let Some(rule) = best_rule {
+        return Ok(MallDiscount {
+            discount_cents: rule.discount_cents.clamp(0, delivery_fee_cents),
+            description: Some(rule.name.clone()),
+            threshold_cents: Some(rule.threshold_cents),
+            rule_discount_cents: Some(rule.discount_cents),
+            next_discount_cents: next_rule.map(|rule| rule.discount_cents),
+            next_gap_cents: next_rule.map(|rule| rule.threshold_cents - subtotal_cents),
+        });
+    }
+
+    Ok(MallDiscount {
+        discount_cents: 0,
+        description: next_rule.map(|rule| {
+            format!(
+                "满{}减运费{}",
+                yuan_amount(rule.threshold_cents),
+                yuan_amount(rule.discount_cents)
+            )
+        }),
+        threshold_cents: next_rule.map(|rule| rule.threshold_cents),
+        rule_discount_cents: next_rule.map(|rule| rule.discount_cents),
+        next_discount_cents: next_rule.map(|rule| rule.discount_cents),
+        next_gap_cents: next_rule.map(|rule| rule.threshold_cents - subtotal_cents),
+    })
+}
+
 async fn calculate_mall_price_summary(
     pool: &PgPool,
     user_id: Option<&str>,
@@ -9673,6 +9935,9 @@ async fn calculate_mall_price_summary(
     let subtotal_cents = subtotal_cents.max(0);
     let full_reduction = calculate_mall_discount_cents(pool, subtotal_cents).await?;
     let coupon = calculate_mall_coupon_discount_cents(pool, subtotal_cents).await?;
+    let delivery_campaign =
+        calculate_mall_delivery_campaign_discount_cents(pool, subtotal_cents, delivery_fee_cents)
+            .await?;
     let member_context = fetch_member_pricing_context(pool, user_id).await?;
     let after_market_discount =
         (subtotal_cents - full_reduction.discount_cents - coupon.discount_cents).max(0);
@@ -9684,10 +9949,12 @@ async fn calculate_mall_price_summary(
     };
     let after_member_discount = (after_market_discount - member_discount_cents).max(0);
     let point_cents = i64::from(member_context.available_points / 100 * 100);
-    let max_points_redeemable = (after_member_discount + delivery_fee_cents - 1).max(0);
+    let max_points_redeemable =
+        (after_member_discount + delivery_fee_cents - delivery_campaign.discount_cents - 1).max(0);
     let points_redeemed_cents = point_cents.clamp(0, max_points_redeemable);
     let total_discount_cents = full_reduction.discount_cents
         + coupon.discount_cents
+        + delivery_campaign.discount_cents
         + member_discount_cents
         + points_redeemed_cents;
     let payable_cents = (subtotal_cents + delivery_fee_cents - total_discount_cents).max(0);
@@ -9707,6 +9974,13 @@ async fn calculate_mall_price_summary(
             "amountCents": coupon.discount_cents,
         }));
     }
+    if delivery_campaign.discount_cents > 0 {
+        discount_breakdown.push(json!({
+            "type": "delivery",
+            "label": delivery_campaign.description.clone().unwrap_or_else(|| "配送优惠".to_string()),
+            "amountCents": delivery_campaign.discount_cents,
+        }));
+    }
     if member_discount_cents > 0 {
         let level_name = member_context.level_name.as_deref().unwrap_or("会员折扣");
         discount_breakdown.push(json!({
@@ -9723,14 +9997,21 @@ async fn calculate_mall_price_summary(
         }));
     }
 
-    let next_gap = [full_reduction.next_gap_cents, coupon.next_gap_cents]
-        .into_iter()
-        .flatten()
-        .filter(|value| *value > 0)
-        .min();
+    let next_gap = [
+        full_reduction.next_gap_cents,
+        coupon.next_gap_cents,
+        delivery_campaign.next_gap_cents,
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|value| *value > 0)
+    .min();
     let next_discount = match next_gap {
         Some(gap) if Some(gap) == full_reduction.next_gap_cents => {
             full_reduction.next_discount_cents
+        }
+        Some(gap) if Some(gap) == delivery_campaign.next_gap_cents => {
+            delivery_campaign.next_discount_cents
         }
         Some(_) => coupon.next_discount_cents,
         None => None,
@@ -9754,15 +10035,20 @@ async fn calculate_mall_price_summary(
         subtotal_cents,
         full_reduction_cents: full_reduction.discount_cents,
         coupon_discount_cents: coupon.discount_cents,
+        delivery_discount_cents: delivery_campaign.discount_cents,
         member_discount_cents,
         points_redeemed_cents,
         total_discount_cents,
         payable_cents,
         discount_description,
-        discount_threshold_cents: full_reduction.threshold_cents.or(coupon.threshold_cents),
+        discount_threshold_cents: full_reduction
+            .threshold_cents
+            .or(coupon.threshold_cents)
+            .or(delivery_campaign.threshold_cents),
         discount_rule_cents: full_reduction
             .rule_discount_cents
-            .or(coupon.rule_discount_cents),
+            .or(coupon.rule_discount_cents)
+            .or(delivery_campaign.rule_discount_cents),
         next_discount_gap_cents: next_gap,
         next_discount_cents: next_discount,
         available_points: member_context.available_points,
@@ -11037,6 +11323,11 @@ fn normalize_product_variants(
             weight_unit_label: default_product_variant_weight_unit_label(),
             weight_unit_grams: default_product_variant_weight_unit_grams(),
             weight_tolerance_bps: default_product_variant_weight_tolerance_bps(),
+            length_cm: defaults.length_cm,
+            width_cm: defaults.width_cm,
+            height_cm: defaults.height_cm,
+            volume_liters: defaults.volume_liters,
+            weight_kg: defaults.weight_kg,
         });
     } else {
         for (index, variant) in source_variants.iter().enumerate() {
@@ -11078,6 +11369,11 @@ fn normalize_product_variants(
             )?;
             let weight_tolerance_bps =
                 normalize_product_variant_weight_tolerance_bps(variant.weight_tolerance_bps)?;
+            validate_optional_non_negative_f64(variant.length_cm, "规格长不能小于0")?;
+            validate_optional_non_negative_f64(variant.width_cm, "规格宽不能小于0")?;
+            validate_optional_non_negative_f64(variant.height_cm, "规格高不能小于0")?;
+            validate_optional_non_negative_f64(variant.volume_liters, "规格体积不能小于0")?;
+            validate_optional_non_negative_f64(variant.weight_kg, "规格重量不能小于0")?;
             normalized.push(ProductVariant {
                 id,
                 name,
@@ -11101,6 +11397,11 @@ fn normalize_product_variants(
                 weight_unit_label,
                 weight_unit_grams,
                 weight_tolerance_bps,
+                length_cm: variant.length_cm.or(defaults.length_cm),
+                width_cm: variant.width_cm.or(defaults.width_cm),
+                height_cm: variant.height_cm.or(defaults.height_cm),
+                volume_liters: variant.volume_liters.or(defaults.volume_liters),
+                weight_kg: variant.weight_kg.or(defaults.weight_kg),
             });
         }
     }

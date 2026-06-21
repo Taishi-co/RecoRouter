@@ -1,4 +1,4 @@
-import { useLayoutEffect, type CSSProperties, type PropsWithChildren, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState, type CSSProperties, type PropsWithChildren, type ReactNode } from 'react'
 import { Image, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import {
@@ -10,8 +10,10 @@ import {
   MapPin,
   Plus,
   Search,
+  ShieldCheck,
   ShoppingCart,
   UserRound,
+  X,
 } from 'lucide-react-taro'
 import sanyouLogo from '@/assets/brand/sanyou.png'
 import { resolveMallImageUrl, type MallProduct, yuan } from '@/services/mall'
@@ -227,14 +229,46 @@ export function mallProductDefaultSaleVariant(product?: MallProduct | null) {
   return variants.find((variant) => variant.id === product?.defaultVariantId) || variants[0]
 }
 
+export function mallProductDefaultAvailableVariant(product?: MallProduct | null) {
+  const variants = mallProductSaleVariants(product)
+  const availableVariants = variants.filter((variant) => variant.status === 'on_sale' && variant.stock > 0)
+  return availableVariants.find((variant) => variant.id === product?.defaultVariantId)
+    || availableVariants[0]
+    || mallProductDefaultSaleVariant(product)
+}
+
 export function mallProductRequiresVariantSelection(product?: MallProduct | null) {
-  return mallProductSaleVariants(product)
-    .filter((variant) => variant.status === 'on_sale' && variant.stock > 0)
-    .length > 1
+  return mallProductSaleVariants(product).length > 1
 }
 
 export function mallProductMinimumOrderQuantity(product?: MallProduct | null, variant = mallProductDefaultSaleVariant(product)) {
   return Math.max(Number(variant?.minimumOrderQuantity || product?.minimumOrderQuantity || 1), 1)
+}
+
+export function mallProductHasQualificationReports(product?: MallProduct | null) {
+  return Boolean(product?.qualificationReports?.some((report) => (
+    report
+    && report.status !== 'inactive'
+    && report.status !== 'deleted'
+    && Boolean(report.reportUrl?.trim())
+  )))
+}
+
+export function mallProductQuantityLimit(product?: MallProduct | null, variant = mallProductDefaultSaleVariant(product)) {
+  const stock = Number(variant?.stock ?? product?.stock ?? 0)
+  return stock > 0 ? stock : undefined
+}
+
+export function mallProductNormalizedQuantity(
+  product?: MallProduct | null,
+  variant = mallProductDefaultSaleVariant(product),
+  quantity = mallProductMinimumOrderQuantity(product, variant),
+) {
+  const minimum = mallProductMinimumOrderQuantity(product, variant)
+  const parsed = Math.floor(Number(quantity || minimum))
+  const nextQuantity = Math.max(Number.isFinite(parsed) ? parsed : minimum, minimum)
+  const limit = mallProductQuantityLimit(product, variant)
+  return limit && limit >= minimum ? Math.min(nextQuantity, limit) : nextQuantity
 }
 
 export function MallDealProductCard({
@@ -257,6 +291,7 @@ export function MallDealProductCard({
   const fixedPriceCampaign = product.fixedPriceCampaign
   const productTag = fixedPriceCampaign?.badgeText || rankLabel || product.discountLabel || product.tags?.[0] || (product.stock <= 10 ? '库存紧张' : '')
   const badgeIconUrl = resolveMallImageUrl(fixedPriceCampaign?.badgeIconUrl)
+  const hasQualificationReports = mallProductHasQualificationReports(product)
 
   return (
     <View className={layout === 'list' ? 'mall-v7-product-card mall-v7-product-card-list' : 'mall-v7-product-card'}>
@@ -264,7 +299,7 @@ export function MallDealProductCard({
         <MallProductThumb product={product} />
         {fixedPriceCampaign ? (
           <View
-            className="mall-v7-product-fixed-price-badge"
+            className={`mall-v7-product-fixed-price-badge mall-v7-product-fixed-price-badge-${fixedPriceCampaign.badgePosition || 'top_left'}`}
             style={{
               background: fixedPriceCampaign.badgeBackgroundColor || '#FF9238',
               color: fixedPriceCampaign.badgeTextColor || '#FFFFFF',
@@ -282,7 +317,12 @@ export function MallDealProductCard({
           {product.subtitle || product.categoryName || `${product.deliveryMinutes || 30} 分钟送达`}
         </Text>
         <View className="mall-v7-product-badges">
-          {product.qualityGuaranteed ? <Text>品质保证</Text> : null}
+          {hasQualificationReports ? (
+            <View className="mall-v7-quality-badge">
+              <ShieldCheck size={12} color="#2F7E43" strokeWidth={2.4} />
+              <Text>资质可查</Text>
+            </View>
+          ) : product.qualityGuaranteed ? <Text>品质保证</Text> : null}
           {product.couponStackable ? <Text>券可叠加</Text> : null}
           {(product.pointsDeductibleCents || 0) > 0 ? <Text>积分抵扣</Text> : null}
         </View>
@@ -297,6 +337,133 @@ export function MallDealProductCard({
       </View>
       <View className="mall-v7-add-button" onClick={() => onAdd?.(product)}>
         <Plus size={18} color="#FFFFFF" strokeWidth={3} />
+      </View>
+    </View>
+  )
+}
+
+export function MallProductSpecPicker({
+  product,
+  confirmText = '加入购物车',
+  loading,
+  onClose,
+  onConfirm,
+}: {
+  product: MallProduct
+  confirmText?: string
+  loading?: boolean
+  onClose: () => void
+  onConfirm: (variant: ReturnType<typeof mallProductDefaultSaleVariant>, quantity: number) => void | Promise<void>
+}) {
+  const variants = useMemo(() => mallProductSaleVariants(product), [product])
+  const defaultVariant = useMemo(() => {
+    return mallProductDefaultAvailableVariant(product)
+  }, [product])
+  const [selectedVariantId, setSelectedVariantId] = useState(defaultVariant?.id || '')
+  const selectedVariant = useMemo(() => {
+    if (!variants.length) return defaultVariant
+    return variants.find((variant) => variant.id === selectedVariantId) || defaultVariant
+  }, [defaultVariant, selectedVariantId, variants])
+  const minimumQuantity = mallProductMinimumOrderQuantity(product, selectedVariant)
+  const quantityLimit = mallProductQuantityLimit(product, selectedVariant)
+  const [quantity, setQuantity] = useState(minimumQuantity)
+
+  useEffect(() => {
+    setSelectedVariantId(defaultVariant?.id || '')
+  }, [defaultVariant?.id, product.id])
+
+  useEffect(() => {
+    setQuantity(minimumQuantity)
+  }, [minimumQuantity, product.id, selectedVariant?.id])
+
+  const changeQuantity = (delta: number) => {
+    setQuantity((current) => mallProductNormalizedQuantity(product, selectedVariant, current + delta))
+  }
+
+  const submit = () => {
+    if (loading) return
+    if (!selectedVariant) {
+      Taro.showToast({ title: '请选择规格', icon: 'none' })
+      return
+    }
+    if (selectedVariant.status !== 'on_sale' || selectedVariant.stock <= 0) {
+      Taro.showToast({ title: '该规格暂不可售', icon: 'none' })
+      return
+    }
+    onConfirm(selectedVariant, mallProductNormalizedQuantity(product, selectedVariant, quantity))
+  }
+
+  return (
+    <View className="mall-modal-mask" onClick={onClose}>
+      <View className="mall-product-picker" onClick={(event) => event.stopPropagation()}>
+        <View className="mall-product-picker-head">
+          <View>
+            <Text className="mall-product-picker-kicker">选择规格</Text>
+            <Text className="mall-product-picker-title">{product.name}</Text>
+          </View>
+          <View className="mall-product-picker-close" onClick={onClose}>
+            <X size={18} color="#657160" />
+          </View>
+        </View>
+
+        <View className="mall-variant-grid mall-product-picker-variants">
+          {variants.map((variant) => {
+            const active = selectedVariant?.id === variant.id
+            const disabled = variant.status !== 'on_sale' || variant.stock <= 0
+            return (
+              <View
+                key={variant.id}
+                className={[
+                  'mall-variant-option',
+                  active ? 'mall-variant-option-active' : '',
+                  disabled ? 'mall-variant-option-disabled' : '',
+                ].filter(Boolean).join(' ')}
+                onClick={() => {
+                  if (!disabled) setSelectedVariantId(variant.id)
+                }}
+              >
+                <Text className="mall-variant-option-name">{variant.name}</Text>
+                <Text className="mall-variant-option-meta">
+                  {variant.specification || variant.saleMethod || '按份'} · {mallYuan(variant.priceCents)}
+                </Text>
+                <Text className="mall-variant-option-stock">起订 {mallProductMinimumOrderQuantity(product, variant)} · 库存 {variant.stock}</Text>
+              </View>
+            )
+          })}
+        </View>
+
+        <View className="mall-product-picker-quantity">
+          <View>
+            <Text className="mall-product-picker-quantity-title">购买数量</Text>
+            <Text className="mall-product-picker-quantity-copy">
+              起订 {minimumQuantity}{quantityLimit && quantityLimit >= minimumQuantity ? ` · 库存 ${quantityLimit}` : ''}
+            </Text>
+          </View>
+          <View className="mall-stepper mall-product-picker-stepper">
+            <Text
+              className={quantity <= minimumQuantity ? 'mall-stepper-action mall-stepper-action-muted' : 'mall-stepper-action'}
+              onClick={() => changeQuantity(-1)}
+            >
+              −
+            </Text>
+            <Text className="mall-stepper-value">{quantity}</Text>
+            <Text
+              className={quantityLimit && quantityLimit >= minimumQuantity && quantity >= quantityLimit ? 'mall-stepper-action mall-stepper-action-muted' : 'mall-stepper-action'}
+              onClick={() => changeQuantity(1)}
+            >
+              ＋
+            </Text>
+          </View>
+        </View>
+
+        <View className="mall-product-picker-actions">
+          <View className="mall-product-picker-cancel" onClick={onClose}>
+            <Text>取消</Text>
+          </View>
+          <View className={loading ? 'mall-product-picker-confirm mall-product-picker-confirm-disabled' : 'mall-product-picker-confirm'} onClick={submit}>
+            <Text>{loading ? '处理中...' : confirmText}</Text>
+          </View>
+        </View>
       </View>
     </View>
   )

@@ -47,8 +47,8 @@ requireIncludes(webAdmin, '新增上架商品', 'Mall product create modal must 
 requireIncludes(webAdmin, 'supplyPriceYuan', 'Mall product listing form must collect purchase cost')
 requireIncludes(webAdmin, 'specification', 'Mall product listing form must collect sale specification')
 requireIncludes(webAdmin, 'saleMethod', 'Mall product listing form must collect sale method')
-requireIncludes(webAdmin, 'ProductSpecSubtable', 'Mall product loading dimensions must move into an internal spec subtable')
-requireIncludes(webAdmin, '装载规格（可选，不对外展示）', 'Mall loading specs must be marked optional and internal-only')
+requireIncludes(webAdmin, 'variant-loading-spec-grid', 'Mall product loading dimensions must be configured per sale variant')
+requireIncludes(webAdmin, 'variantLoadingPatch', 'Mall variant loading specs must update the matching sale variant')
 requireIncludes(webAdmin, 'productImageLimit = 20', 'Mall product image gallery must cap a product at 20 images')
 requireIncludes(webAdmin, 'ProductImageGalleryInput', 'Mall product form must support multiple uploaded product images')
 requireIncludes(webAdmin, 'multiple', 'Mall product image upload input must allow selecting multiple images')
@@ -173,16 +173,46 @@ const productFormSection = webAdmin.slice(
 for (const label of [
   '商品名称',
   '类目',
+  '状态',
+  '商品说明',
+]) {
+  requireIncludes(productFormSection, `${label}<span className="required-mark">*</span>`, `Mall product form must mark ${label} as required`)
+}
+
+for (const label of [
   '售价',
   '进货价',
   '库存',
   '规格',
-  '状态',
-  '商品说明',
-  '售卖方式',
+  '单份售卖方式',
+  '最小起订量',
 ]) {
-  requireIncludes(productFormSection, `${label}<span className="required-mark">*</span>`, `Mall product form must mark ${label} as required`)
+  requireIncludes(webAdmin, `data-variant-required="${label}"`, `Mall sale variant table must mark ${label} as required`)
 }
+
+const productBaseFormSection = productFormSection.slice(
+  productFormSection.indexOf('<div className="product-form-grid product-base-grid">'),
+  productFormSection.indexOf('<ProductVariantSubtable'),
+)
+
+for (const duplicatedLabel of [
+  '售价',
+  '进货价',
+  '库存',
+  '规格',
+  '售卖方式',
+  '最小起订量',
+]) {
+  if (productBaseFormSection.includes(`<label>${duplicatedLabel}`) || productBaseFormSection.includes(`${duplicatedLabel}<span className="required-mark">*</span>`)) {
+    throw new Error(`Mall product base form must not duplicate variant-level field: ${duplicatedLabel}`)
+  }
+}
+
+requireIncludes(webAdmin, 'variant.pricingMode === \'weighed\' &&', 'Fixed-price sale variants must hide weight unit and tolerance inputs')
+requireIncludes(webAdmin, 'variant-loading-spec-grid', 'Loading specs must be edited per sale variant')
+requireIncludes(webAdmin, 'variantLoadingPatch', 'Sale variants must carry their own loading spec patch')
+requireIncludes(webAdmin, 'product-modal-wide', 'Product create/edit modal must use a wider layout')
+requireIncludes(webAdmin, 'product-form-scroll-guard', 'Product create/edit modal must guard against horizontal overflow')
 
 if (productFormSection.includes('>原价')) {
   throw new Error('Mall product form must label purchase cost as 进货价 instead of 原价')

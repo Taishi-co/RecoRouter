@@ -12,7 +12,9 @@ import {
   MallBrandMark,
   MallDealProductCard,
   MallPage,
+  MallProductSpecPicker,
   MallSearchBox,
+  mallProductDefaultAvailableVariant,
   mallProductDefaultSaleVariant,
   mallProductMinimumOrderQuantity,
   mallProductRequiresVariantSelection,
@@ -64,6 +66,8 @@ export default function MallCategoryPage() {
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [loadError, setLoadError] = useState('')
+  const [specPickerProduct, setSpecPickerProduct] = useState<MallProduct | null>(null)
+  const [specPickerLoading, setSpecPickerLoading] = useState(false)
 
   useEffect(() => {
     let mounted = true
@@ -191,11 +195,10 @@ export default function MallCategoryPage() {
       return
     }
     if (mallProductRequiresVariantSelection(product)) {
-      Taro.showToast({ title: '请选择规格', icon: 'none' })
-      Taro.navigateTo({ url: `/pages/mall/product/index?id=${product.id}` })
+      setSpecPickerProduct(product)
       return
     }
-    const variant = mallProductDefaultSaleVariant(product)
+    const variant = mallProductDefaultAvailableVariant(product)
     const quantity = mallProductMinimumOrderQuantity(product, variant)
     try {
       await addMallCartItem(user.id, product.id, quantity, variant?.id)
@@ -205,6 +208,33 @@ export default function MallCategoryPage() {
         title: error instanceof Error ? error.message : '加入失败',
         icon: 'none',
       })
+    }
+  }
+
+  const handleSpecPickerConfirm = async (
+    variant: ReturnType<typeof mallProductDefaultSaleVariant>,
+    quantity: number,
+  ) => {
+    if (!specPickerProduct || !variant) return
+    const user = currentUser()
+    if (!user?.id) {
+      Taro.showToast({ title: '请先登录', icon: 'none' })
+      setSpecPickerProduct(null)
+      redirectToMallAuth('/pages/mall/category/index')
+      return
+    }
+    setSpecPickerLoading(true)
+    try {
+      await addMallCartItem(user.id, specPickerProduct.id, quantity, variant.id)
+      setSpecPickerProduct(null)
+      Taro.showToast({ title: '已加入购物车', icon: 'success' })
+    } catch (error) {
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '加入失败',
+        icon: 'none',
+      })
+    } finally {
+      setSpecPickerLoading(false)
     }
   }
 
@@ -310,6 +340,17 @@ export default function MallCategoryPage() {
             <Text>加载中...</Text>
           </View>
         </View>
+      ) : null}
+
+      {specPickerProduct ? (
+        <MallProductSpecPicker
+          product={specPickerProduct}
+          loading={specPickerLoading}
+          onClose={() => {
+            if (!specPickerLoading) setSpecPickerProduct(null)
+          }}
+          onConfirm={handleSpecPickerConfirm}
+        />
       ) : null}
     </MallPage>
   )

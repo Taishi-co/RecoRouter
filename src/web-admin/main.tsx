@@ -183,6 +183,11 @@ interface ProductVariantForm {
   weightUnitLabel: string;
   weightUnitGrams: string;
   weightTolerancePercent: string;
+  lengthCm: string;
+  widthCm: string;
+  heightCm: string;
+  volumeLiters: string;
+  weightKg: string;
 }
 
 interface ProductQualificationReportForm {
@@ -269,7 +274,27 @@ interface CampaignForm {
   campaignType: string;
   budgetYuan: string;
   status: string;
-  rules: string;
+  startsAt: string;
+  endsAt: string;
+  scopeType: string;
+  productIds: string;
+  productGroups: CampaignProductGroupForm[];
+  audienceType: string;
+  newCustomerRule: string;
+  tiers: CampaignTierForm[];
+}
+
+interface CampaignTierForm {
+  id: string;
+  thresholdYuan: string;
+  discountYuan: string;
+  discountPercent: string;
+}
+
+interface CampaignProductGroupForm {
+  id: string;
+  name: string;
+  productIds: string;
 }
 
 interface FixedPriceCampaignItemForm {
@@ -277,16 +302,27 @@ interface FixedPriceCampaignItemForm {
   fixedPriceYuan: string;
 }
 
+interface FixedPriceCampaignGroupForm {
+  id: string;
+  name: string;
+  startsAt: string;
+  endsAt: string;
+  items: FixedPriceCampaignItemForm[];
+}
+
 interface FixedPriceCampaignForm {
   id: string;
   name: string;
   status: string;
+  startsAt: string;
+  endsAt: string;
   badgeText: string;
   badgeIcon: string;
   badgeIconUrl: string;
   badgeBackgroundColor: string;
   badgeTextColor: string;
-  items: FixedPriceCampaignItemForm[];
+  badgePosition: string;
+  groups: FixedPriceCampaignGroupForm[];
 }
 
 interface PromotionVenueItemForm {
@@ -902,6 +938,11 @@ function createDefaultProductVariantForm(index = 0): ProductVariantForm {
     weightUnitLabel: '斤',
     weightUnitGrams: '500',
     weightTolerancePercent: '5',
+    lengthCm: '',
+    widthCm: '',
+    heightCm: '',
+    volumeLiters: '',
+    weightKg: '',
   };
 }
 
@@ -1006,25 +1047,89 @@ const productSortOptions = [
 
 const productPageSizeOptions = ['10', '20', '50', '100'];
 
+const campaignTypeOptions = [
+  { value: 'full_reduction', label: '满减' },
+  { value: 'full_discount', label: '满折' },
+  { value: 'free_delivery', label: '免运费' },
+  { value: 'delivery_reduction', label: '减运费' },
+  { value: 'fixed_price', label: '一口价' },
+  { value: 'promotion_venue', label: '大促会场' },
+];
+
+const campaignScopeOptions = [
+  { value: 'all', label: '全部商品' },
+  { value: 'partial', label: '部分商品' },
+  { value: 'product_group', label: '商品组' },
+];
+
+const campaignAudienceOptions = [
+  { value: 'all', label: '全部用户' },
+  { value: 'new_customer', label: '新客专享' },
+];
+
+const newCustomerRuleOptions = [
+  { value: 'first_product_purchase', label: '第一次购买此商品' },
+  { value: 'first_store_order', label: '第一次在本店下单' },
+  { value: 'first_platform_order', label: '第一次在叁友甄选下单' },
+];
+
+const fixedPriceBadgePositionOptions = [
+  { value: 'top_left', label: '左上角' },
+  { value: 'top_right', label: '右上角' },
+  { value: 'bottom_left', label: '左下角' },
+  { value: 'bottom_right', label: '右下角' },
+];
+
+const createCampaignTierForm = (overrides: Partial<CampaignTierForm> = {}): CampaignTierForm => ({
+  id: overrides.id || `tier-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`,
+  thresholdYuan: overrides.thresholdYuan || '49',
+  discountYuan: overrides.discountYuan || '6',
+  discountPercent: overrides.discountPercent || '95',
+});
+
+const createCampaignProductGroupForm = (overrides: Partial<CampaignProductGroupForm> = {}): CampaignProductGroupForm => ({
+  id: overrides.id || `group-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`,
+  name: overrides.name || '商品组',
+  productIds: overrides.productIds || '',
+});
+
+const createFixedPriceGroupForm = (overrides: Partial<FixedPriceCampaignGroupForm> = {}): FixedPriceCampaignGroupForm => ({
+  id: overrides.id || `group-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`,
+  name: overrides.name || '默认商品组',
+  startsAt: overrides.startsAt || '',
+  endsAt: overrides.endsAt || '',
+  items: overrides.items || [],
+});
+
 const initialCampaignForm: CampaignForm = {
   id: '',
-  name: '鲜选满减活动',
-  campaignType: 'discount',
+  name: '鲜选满减',
+  campaignType: 'full_reduction',
   budgetYuan: '3000',
   status: 'active',
-  rules: '{"thresholdCents":9900,"discountCents":1000}',
+  startsAt: '',
+  endsAt: '',
+  scopeType: 'all',
+  productIds: '',
+  productGroups: [],
+  audienceType: 'all',
+  newCustomerRule: 'first_platform_order',
+  tiers: [createCampaignTierForm()],
 };
 
 const initialFixedPriceCampaignForm: FixedPriceCampaignForm = {
   id: '',
   name: '本周一口价',
   status: 'active',
+  startsAt: '',
+  endsAt: '',
   badgeText: '一口价',
   badgeIcon: '¥',
   badgeIconUrl: '',
   badgeBackgroundColor: '#FF9238',
   badgeTextColor: '#FFFFFF',
-  items: [],
+  badgePosition: 'top_left',
+  groups: [createFixedPriceGroupForm()],
 };
 
 const initialPromotionVenueForm: PromotionVenueForm = {
@@ -1728,24 +1833,12 @@ function validateProductForm(form: ProductForm) {
   for (const [label, value] of [
     ['名称', form.name],
     ['类目', form.categoryCode],
-    ['售价', form.priceYuan],
-    ['进货价', form.supplyPriceYuan],
-    ['库存', form.stock],
-    ['规格', form.specification],
-    ['售卖方式', form.saleMethod],
-    ['最小起订量', form.minimumOrderQuantity],
     ['状态', form.status],
     ['商品说明', form.description],
   ]) {
     if (!String(value).trim()) {
       throw new Error(`${label}不能为空`);
     }
-  }
-  if (moneyFromYuan(form.priceYuan) <= 0) {
-    throw new Error('售价必须大于0');
-  }
-  if (moneyFromYuan(form.supplyPriceYuan) <= 0) {
-    throw new Error('进货价必须大于0');
   }
   if (!form.variants.length) {
     throw new Error('至少需要一个商品规格');
@@ -1757,8 +1850,17 @@ function validateProductForm(form: ProductForm) {
     if (!variant.name.trim()) {
       throw new Error(`第 ${index + 1} 个规格名称不能为空`);
     }
+    if (!variant.specification.trim()) {
+      throw new Error(`第 ${index + 1} 个规格不能为空`);
+    }
+    if (!variant.saleMethod.trim()) {
+      throw new Error(`第 ${index + 1} 个售卖方式不能为空`);
+    }
     if (moneyFromYuan(variant.priceYuan) <= 0) {
       throw new Error(`第 ${index + 1} 个规格售价必须大于0`);
+    }
+    if (moneyFromYuan(variant.supplyPriceYuan) <= 0) {
+      throw new Error(`第 ${index + 1} 个规格进货价必须大于0`);
     }
     const variantStock = Number(variant.stock);
     if (!Number.isFinite(variantStock) || variantStock < 0) {
@@ -1779,14 +1881,6 @@ function validateProductForm(form: ProductForm) {
       }
     }
   });
-  const stock = Number(form.stock);
-  if (!Number.isFinite(stock) || stock < 0) {
-    throw new Error('库存不能小于0');
-  }
-  const minimumOrderQuantity = Number(form.minimumOrderQuantity);
-  if (!Number.isFinite(minimumOrderQuantity) || minimumOrderQuantity <= 0) {
-    throw new Error('最小起订量必须大于0');
-  }
   form.qualificationReports.forEach((report, index) => {
     const hasAnyValue = [
       report.buyerId,
@@ -1947,6 +2041,11 @@ function productVariantsFromRecord(record: JsonRecord): ProductVariantForm[] {
       weightUnitLabel: stringValue(variant, 'weightUnitLabel', '斤'),
       weightUnitGrams: String(numberValue(variant, 'weightUnitGrams', 500)),
       weightTolerancePercent: (numberValue(variant, 'weightToleranceBps', 500) / 100).toString(),
+      lengthCm: stringValue(variant, 'lengthCm', stringValue(record, 'lengthCm')),
+      widthCm: stringValue(variant, 'widthCm', stringValue(record, 'widthCm')),
+      heightCm: stringValue(variant, 'heightCm', stringValue(record, 'heightCm')),
+      volumeLiters: stringValue(variant, 'volumeLiters', stringValue(record, 'volumeLiters')),
+      weightKg: stringValue(variant, 'weightKg', stringValue(record, 'weightKg')),
     }));
   if (variants.length) return variants.slice(0, productVariantLimit);
   return [{
@@ -1970,6 +2069,11 @@ function productVariantsFromRecord(record: JsonRecord): ProductVariantForm[] {
     weightUnitLabel: '斤',
     weightUnitGrams: '500',
     weightTolerancePercent: '5',
+    lengthCm: stringValue(record, 'lengthCm'),
+    widthCm: stringValue(record, 'widthCm'),
+    heightCm: stringValue(record, 'heightCm'),
+    volumeLiters: stringValue(record, 'volumeLiters'),
+    weightKg: stringValue(record, 'weightKg'),
   }];
 }
 
@@ -1992,7 +2096,33 @@ function productVariantPayload(form: ProductForm) {
     weightUnitLabel: variant.weightUnitLabel.trim() || '斤',
     weightUnitGrams: Number(variant.weightUnitGrams) || 500,
     weightToleranceBps: Math.round((Number(variant.weightTolerancePercent) || 0) * 100),
+    lengthCm: optionalNumber(variant.lengthCm),
+    widthCm: optionalNumber(variant.widthCm),
+    heightCm: optionalNumber(variant.heightCm),
+    volumeLiters: optionalNumber(variant.volumeLiters),
+    weightKg: optionalNumber(variant.weightKg),
   }));
+}
+
+function primaryProductVariant(form: ProductForm) {
+  return form.variants[0] || createDefaultProductVariantForm();
+}
+
+function productCompatibilityFields(form: ProductForm) {
+  const primaryVariant = primaryProductVariant(form);
+  return {
+    specification: primaryVariant.specification,
+    saleMethod: primaryVariant.saleMethod,
+    priceYuan: primaryVariant.priceYuan,
+    supplyPriceYuan: primaryVariant.supplyPriceYuan,
+    stock: primaryVariant.stock,
+    minimumOrderQuantity: primaryVariant.minimumOrderQuantity,
+    lengthCm: primaryVariant.lengthCm,
+    widthCm: primaryVariant.widthCm,
+    heightCm: primaryVariant.heightCm,
+    volumeLiters: primaryVariant.volumeLiters,
+    weightKg: primaryVariant.weightKg,
+  };
 }
 
 function tagsText(record: JsonRecord) {
@@ -2126,16 +2256,20 @@ function couponTypeLabel(value: string) {
 
 function campaignTypeLabel(value: string) {
   const labels: Record<string, string> = {
-    discount: '满减活动',
-    coupon: '券包活动',
-    bundle: '组合购',
-    subsidy: '配送补贴',
-    delivery_subsidy: '配送补贴',
-    free_delivery: '免配送费',
+    discount: '满减',
+    full_reduction: '满减',
+    full_discount: '满折',
+    free_delivery: '免运费',
+    delivery_reduction: '减运费',
+    delivery_subsidy: '减运费',
     fixed_price: '一口价',
     promotion_venue: '大促会场',
   };
   return labels[value] || value || '-';
+}
+
+function fixedPriceBadgePositionLabel(value: string) {
+  return fixedPriceBadgePositionOptions.find(option => option.value === value)?.label || value || '-';
 }
 
 const promotionVenueEntryPositionOptions = [
@@ -2235,22 +2369,190 @@ function homeSectionToForm(section: JsonRecord): HomeSectionForm {
   };
 }
 
+function normalizeCampaignTypeForForm(value: string) {
+  if (value === 'discount') return 'full_reduction';
+  if (value === 'delivery_subsidy' || value === 'subsidy') return 'delivery_reduction';
+  if (campaignTypeOptions.some(option => option.value === value)) return value;
+  return 'full_reduction';
+}
+
+function idListFromText(value: string) {
+  return value
+    .split(/[\s,，、]+/)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function idTextFromArray(values: unknown[]) {
+  return values
+    .map(item => String(item || '').trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
+function campaignTiersFromRules(rules: JsonRecord, campaignType: string): CampaignTierForm[] {
+  const tierRecords = arrayValue(rules, 'tiers')
+    .filter((item): item is JsonRecord => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
+  const source = tierRecords.length ? tierRecords : [rules];
+  const tiers = source
+    .map((tier, index) => {
+      const thresholdCents = numberValue(tier, 'thresholdCents', index === 0 ? numberValue(rules, 'thresholdCents', 4900) : 0);
+      const discountCents = numberValue(tier, 'discountCents', index === 0 ? numberValue(rules, 'discountCents', 600) : 0);
+      const discountRateBps = numberValue(tier, 'discountRateBps', numberValue(tier, 'discountBps', 9500));
+      return createCampaignTierForm({
+        id: stringValue(tier, 'id', `tier-${index + 1}`),
+        thresholdYuan: (thresholdCents / 100).toFixed(2).replace(/\.00$/, ''),
+        discountYuan: (discountCents / 100).toFixed(2).replace(/\.00$/, ''),
+        discountPercent: campaignType === 'full_discount'
+          ? (discountRateBps / 100).toFixed(1).replace(/\.0$/, '')
+          : '95',
+      });
+    })
+    .filter(tier => Number(tier.thresholdYuan) >= 0);
+  return tiers.length ? tiers : [createCampaignTierForm()];
+}
+
+function campaignProductGroupsFromRules(rules: JsonRecord): CampaignProductGroupForm[] {
+  return arrayValue(rules, 'productGroups')
+    .filter((item): item is JsonRecord => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+    .map((group, index) => createCampaignProductGroupForm({
+      id: stringValue(group, 'id', `group-${index + 1}`),
+      name: stringValue(group, 'name', `商品组${index + 1}`),
+      productIds: idTextFromArray(arrayValue(group, 'productIds')),
+    }));
+}
+
+function campaignRulesFromForm(form: CampaignForm, products: JsonRecord[]) {
+  const productById = new Map(products.map(product => [stringValue(product, 'id'), product]));
+  const campaignType = normalizeCampaignTypeForForm(form.campaignType);
+  const tiers = form.tiers
+    .map((tier, index) => {
+      const thresholdCents = moneyFromYuan(tier.thresholdYuan);
+      const base = {
+        id: tier.id || `tier-${index + 1}`,
+        thresholdCents,
+      };
+      if (campaignType === 'full_discount') {
+        const discountRateBps = Math.round((Number(tier.discountPercent) || 100) * 100);
+        return {
+          ...base,
+          discountRateBps: Math.min(Math.max(discountRateBps, 1), 10_000),
+        };
+      }
+      return {
+        ...base,
+        discountCents: moneyFromYuan(tier.discountYuan),
+      };
+    })
+    .filter(tier => tier.thresholdCents >= 0 && ('discountCents' in tier ? tier.discountCents > 0 : tier.discountRateBps > 0));
+  const productIds = idListFromText(form.productIds);
+  const productGroups = form.productGroups
+    .map((group, index) => {
+      const groupProductIds = idListFromText(group.productIds);
+      return {
+        id: group.id || `group-${index + 1}`,
+        name: group.name.trim() || `商品组${index + 1}`,
+        productIds: groupProductIds,
+        products: groupProductIds.map(productId => {
+          const product = productById.get(productId);
+          return {
+            productId,
+            sku: product ? stringValue(product, 'sku') : '',
+            productName: product ? stringValue(product, 'name') : '',
+          };
+        }),
+      };
+    })
+    .filter(group => group.productIds.length);
+  const firstTier = tiers[0];
+  const firstTierDiscountCents = firstTier && 'discountCents' in firstTier ? firstTier.discountCents : undefined;
+  const firstTierDiscountRateBps = firstTier && 'discountRateBps' in firstTier ? firstTier.discountRateBps : undefined;
+  return {
+    activityType: campaignType,
+    scope: {
+      type: form.scopeType || 'all',
+      productIds,
+      productGroups,
+    },
+    productIds,
+    productGroups,
+    audience: {
+      type: form.audienceType || 'all',
+      newCustomerRule: form.audienceType === 'new_customer' ? form.newCustomerRule : '',
+    },
+    tiers,
+    thresholdCents: firstTier?.thresholdCents,
+    discountCents: campaignType === 'full_discount' ? undefined : firstTierDiscountCents,
+    discountRateBps: campaignType === 'full_discount' ? firstTierDiscountRateBps : undefined,
+  };
+}
+
+function campaignTierSummary(campaign: JsonRecord) {
+  const rules = recordValue(campaign, 'rules');
+  const type = normalizeCampaignTypeForForm(stringValue(campaign, 'campaignType', stringValue(rules, 'activityType')));
+  const tiers = arrayValue(rules, 'tiers')
+    .filter((item): item is JsonRecord => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
+  const source = tiers.length ? tiers : [rules];
+  if (type === 'free_delivery') return '免运费';
+  return source
+    .map(tier => {
+      const threshold = yuan(numberValue(tier, 'thresholdCents'));
+      if (type === 'full_discount') {
+        const rate = numberValue(tier, 'discountRateBps', numberValue(tier, 'discountBps', 10000)) / 1000;
+        return `满 ${threshold} 打 ${rate.toFixed(1).replace(/\.0$/, '')} 折`;
+      }
+      return `满 ${threshold} 减 ${yuan(numberValue(tier, 'discountCents'))}`;
+    })
+    .filter(Boolean)
+    .join('，') || '-';
+}
+
+function campaignScopeSummary(campaign: JsonRecord) {
+  const rules = recordValue(campaign, 'rules');
+  const scope = recordValue(rules, 'scope');
+  const scopeType = stringValue(scope, 'type', arrayValue(rules, 'productGroups').length ? 'product_group' : arrayValue(rules, 'productIds').length ? 'partial' : 'all');
+  if (scopeType === 'all') return '全部商品';
+  if (scopeType === 'product_group') return `${arrayValue(rules, 'productGroups').length || arrayValue(scope, 'productGroups').length} 个商品组`;
+  return `${arrayValue(rules, 'productIds').length || arrayValue(scope, 'productIds').length} 个商品`;
+}
+
+function campaignAudienceSummary(campaign: JsonRecord) {
+  const rules = recordValue(campaign, 'rules');
+  const audience = recordValue(rules, 'audience');
+  const audienceType = stringValue(audience, 'type', 'all');
+  if (audienceType !== 'new_customer') return '全部用户';
+  const rule = stringValue(audience, 'newCustomerRule', 'first_platform_order');
+  return `新客专享：${newCustomerRuleOptions.find(option => option.value === rule)?.label || rule}`;
+}
+
 function campaignToForm(campaign: JsonRecord): CampaignForm {
   const rules = recordValue(campaign, 'rules');
+  const campaignType = normalizeCampaignTypeForForm(stringValue(campaign, 'campaignType', stringValue(rules, 'activityType', 'full_reduction')));
+  const scope = recordValue(rules, 'scope');
+  const audience = recordValue(rules, 'audience');
+  const productGroups = campaignProductGroupsFromRules(rules);
+  const productIds = idTextFromArray(arrayValue(rules, 'productIds').length ? arrayValue(rules, 'productIds') : arrayValue(scope, 'productIds'));
   return {
     id: stringValue(campaign, 'id'),
     name: stringValue(campaign, 'name'),
-    campaignType: stringValue(campaign, 'campaignType', 'discount'),
+    campaignType,
     budgetYuan: String((numberValue(campaign, 'budgetCents') / 100).toFixed(2)),
     status: stringValue(campaign, 'status', 'draft'),
-    rules: JSON.stringify(rules, null, 2),
+    startsAt: datetimeLocalValue(stringValue(campaign, 'startsAt')),
+    endsAt: datetimeLocalValue(stringValue(campaign, 'endsAt')),
+    scopeType: stringValue(scope, 'type', productGroups.length ? 'product_group' : productIds ? 'partial' : 'all'),
+    productIds,
+    productGroups,
+    audienceType: stringValue(audience, 'type', 'all'),
+    newCustomerRule: stringValue(audience, 'newCustomerRule', 'first_platform_order'),
+    tiers: campaignTiersFromRules(rules, campaignType),
   };
 }
 
 function fixedPriceCampaignToForm(campaign: JsonRecord): FixedPriceCampaignForm {
   const rules = recordValue(campaign, 'rules');
   const badge = recordValue(rules, 'badge');
-  const items = arrayValue(rules, 'items')
+  const legacyItems = arrayValue(rules, 'items')
     .map(item => {
       const record = item && typeof item === 'object' && !Array.isArray(item) ? item as JsonRecord : {};
       const productId = stringValue(record, 'productId', stringValue(record, 'id'));
@@ -2261,41 +2563,92 @@ function fixedPriceCampaignToForm(campaign: JsonRecord): FixedPriceCampaignForm 
       };
     })
     .filter((item): item is FixedPriceCampaignItemForm => Boolean(item));
+  const groups = arrayValue(rules, 'groups')
+    .filter((item): item is JsonRecord => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+    .map((group, index) => {
+      const groupItems = arrayValue(group, 'items')
+        .filter((item): item is JsonRecord => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+        .map(item => {
+          const productId = stringValue(item, 'productId', stringValue(item, 'id'));
+          if (!productId) return null;
+          return {
+            productId,
+            fixedPriceYuan: (numberValue(item, 'fixedPriceCents', numberValue(item, 'priceCents')) / 100).toFixed(2),
+          };
+        })
+        .filter((item): item is FixedPriceCampaignItemForm => Boolean(item));
+      return createFixedPriceGroupForm({
+        id: stringValue(group, 'id', `group-${index + 1}`),
+        name: stringValue(group, 'name', `商品组${index + 1}`),
+        startsAt: datetimeLocalValue(stringValue(group, 'startsAt')),
+        endsAt: datetimeLocalValue(stringValue(group, 'endsAt')),
+        items: groupItems,
+      });
+    })
+    .filter(group => group.items.length);
 
   return {
     id: stringValue(campaign, 'id'),
     name: stringValue(campaign, 'name', '本周一口价'),
     status: stringValue(campaign, 'status', 'active'),
+    startsAt: datetimeLocalValue(stringValue(campaign, 'startsAt')),
+    endsAt: datetimeLocalValue(stringValue(campaign, 'endsAt')),
     badgeText: stringValue(badge, 'text', stringValue(rules, 'badgeText', '一口价')),
     badgeIcon: stringValue(badge, 'icon', stringValue(rules, 'badgeIcon', '¥')),
     badgeIconUrl: stringValue(badge, 'iconUrl', stringValue(rules, 'badgeIconUrl')),
     badgeBackgroundColor: stringValue(badge, 'backgroundColor', stringValue(rules, 'badgeBackgroundColor', '#FF9238')),
     badgeTextColor: stringValue(badge, 'textColor', stringValue(rules, 'badgeTextColor', '#FFFFFF')),
-    items,
+    badgePosition: stringValue(badge, 'position', stringValue(rules, 'badgePosition', 'top_left')),
+    groups: groups.length ? groups : [createFixedPriceGroupForm({ items: legacyItems })],
   };
 }
 
 function fixedPriceCampaignRules(form: FixedPriceCampaignForm, products: JsonRecord[]) {
   const productById = new Map(products.map(product => [stringValue(product, 'id'), product]));
+  const groups = form.groups
+    .map((group, groupIndex) => {
+      const items = group.items
+        .map(item => {
+          const product = productById.get(item.productId);
+          return {
+            productId: item.productId,
+            sku: product ? stringValue(product, 'sku') : '',
+            productName: product ? stringValue(product, 'name') : '',
+            imageUrl: product ? productDisplayImagesFromRecord(product)[0] || stringValue(product, 'imageUrl') : '',
+            fixedPriceCents: moneyFromYuan(item.fixedPriceYuan),
+          };
+        })
+        .filter(item => item.productId && item.fixedPriceCents > 0);
+      return {
+        id: group.id || `group-${groupIndex + 1}`,
+        name: group.name.trim() || `商品组${groupIndex + 1}`,
+        startsAt: group.startsAt || form.startsAt,
+        endsAt: group.endsAt || form.endsAt,
+        items,
+      };
+    })
+    .filter(group => group.items.length);
+  const flattenedItems = groups.flatMap(group => group.items.map(item => ({
+    ...item,
+    groupId: group.id,
+    groupName: group.name,
+    startsAt: group.startsAt,
+    endsAt: group.endsAt,
+  })));
   return {
+    activityType: 'fixed_price',
+    startsAt: form.startsAt,
+    endsAt: form.endsAt,
     badge: {
       text: form.badgeText.trim() || '一口价',
       icon: form.badgeIcon.trim(),
       iconUrl: form.badgeIconUrl.trim(),
       backgroundColor: form.badgeBackgroundColor || '#FF9238',
       textColor: form.badgeTextColor || '#FFFFFF',
+      position: form.badgePosition || 'top_left',
     },
-    items: form.items
-      .map(item => {
-        const product = productById.get(item.productId);
-        return {
-          productId: item.productId,
-          sku: product ? stringValue(product, 'sku') : '',
-          productName: product ? stringValue(product, 'name') : '',
-          fixedPriceCents: moneyFromYuan(item.fixedPriceYuan),
-        };
-      })
-      .filter(item => item.productId && item.fixedPriceCents > 0),
+    groups,
+    items: flattenedItems,
   };
 }
 
@@ -4777,76 +5130,69 @@ function ProductFormFields({
   const wrapperClass = layout === 'tiles' ? 'mall-admin-tile-grid' : 'form-grid';
 
   return (
-    <div className={wrapperClass}>
-      <label className={fieldClass}>
-        <span className="field-label">商品名称<span className="required-mark">*</span></span>
-        <input required value={form.name} onChange={event => onChange({ name: event.target.value })} placeholder="例如 恒大苏打水" />
-      </label>
-      <label className={fieldClass}>
-        SKU
-        <input value={form.sku} onChange={event => onChange({ sku: event.target.value })} placeholder="不填自动生成" />
-      </label>
-      <label className={fieldClass}>
-        <span className="field-label">类目<span className="required-mark">*</span></span>
-        <select required value={form.categoryCode} onChange={event => onChange({ categoryCode: event.target.value })}>
-          {categories.map(category => (
-            <option key={stringValue(category, 'code')} value={stringValue(category, 'code')}>
-              {stringValue(category, 'name', stringValue(category, 'code'))}
-            </option>
-          ))}
-          {!categories.length ? <option value="fruit">水果鲜选</option> : null}
-        </select>
-      </label>
-      <ProductImageGalleryInput
-        className={fieldClass}
-        form={form}
-        onChange={onChange}
-        onUploadImage={onUploadImage}
-      />
-      <label className={fieldClass}>
-        <span className="field-label">售价<span className="required-mark">*</span></span>
-        <input required value={form.priceYuan} type="number" min="0.01" step="0.01" onChange={event => onChange({ priceYuan: event.target.value })} />
-      </label>
-      <label className={fieldClass}>
-        <span className="field-label">进货价<span className="required-mark">*</span></span>
-        <input required value={form.supplyPriceYuan} type="number" min="0.01" step="0.01" onChange={event => onChange({ supplyPriceYuan: event.target.value })} />
-      </label>
-      <label className={fieldClass}>
-        <span className="field-label">库存<span className="required-mark">*</span></span>
-        <input required value={form.stock} type="number" min="0" onChange={event => onChange({ stock: event.target.value })} />
-      </label>
-      <label className={fieldClass}>
-        <span className="field-label">规格<span className="required-mark">*</span></span>
-        <input required value={form.specification} onChange={event => onChange({ specification: event.target.value })} placeholder="单瓶 / 1件=24瓶 / 250ml*10盒" />
-      </label>
-      <label className={fieldClass}>
-        <span className="field-label">售卖方式<span className="required-mark">*</span></span>
-        <input required value={form.saleMethod} onChange={event => onChange({ saleMethod: event.target.value })} placeholder="单瓶 / 整件 / 按斤" />
-      </label>
-      <label className={fieldClass}>
-        <span className="field-label">最小起订量<span className="required-mark">*</span></span>
-        <input required value={form.minimumOrderQuantity} type="number" min="1" onChange={event => onChange({ minimumOrderQuantity: event.target.value })} />
-      </label>
-      <label className={fieldClass}>
-        <span className="field-label">状态<span className="required-mark">*</span></span>
-        <select required value={form.status} onChange={event => onChange({ status: event.target.value })}>
-          <option value="on_sale">在售</option>
-          <option value="off_sale">下架</option>
-          <option value="draft">草稿</option>
-        </select>
-      </label>
-      <label className={fieldClass}>
-        标签
-        <input value={form.tags} onChange={event => onChange({ tags: event.target.value })} placeholder="逗号分隔" />
-      </label>
-      <label className={layout === 'tiles' ? 'mall-admin-tile' : 'wide'}>
-        副标题
-        <input value={form.subtitle} onChange={event => onChange({ subtitle: event.target.value })} placeholder="规格、配送卖点" />
-      </label>
-      <label className={layout === 'tiles' ? 'mall-admin-tile' : 'wide'}>
-        <span className="field-label">商品说明<span className="required-mark">*</span></span>
-        <textarea required value={form.description} onChange={event => onChange({ description: event.target.value })} placeholder="商品卖点、包装、保存方式、售后说明等" />
-      </label>
+    <div className={`${wrapperClass} product-form-scroll-guard`}>
+      <div className="product-form-grid product-base-grid">
+        <label className={fieldClass}>
+          <span className="field-label">商品名称<span className="required-mark">*</span></span>
+          <input required value={form.name} onChange={event => onChange({ name: event.target.value })} placeholder="例如 恒大苏打水" />
+        </label>
+        <label className={fieldClass}>
+          SKU
+          <input value={form.sku} onChange={event => onChange({ sku: event.target.value })} placeholder="不填自动生成" />
+        </label>
+        <label className={fieldClass}>
+          <span className="field-label">类目<span className="required-mark">*</span></span>
+          <select required value={form.categoryCode} onChange={event => onChange({ categoryCode: event.target.value })}>
+            {categories.map(category => (
+              <option key={stringValue(category, 'code')} value={stringValue(category, 'code')}>
+                {stringValue(category, 'name', stringValue(category, 'code'))}
+              </option>
+            ))}
+            {!categories.length ? <option value="fruit">水果鲜选</option> : null}
+          </select>
+        </label>
+        <ProductImageGalleryInput
+          className={fieldClass}
+          form={form}
+          onChange={onChange}
+          onUploadImage={onUploadImage}
+        />
+        <label className={fieldClass}>
+          <span className="field-label">状态<span className="required-mark">*</span></span>
+          <select required value={form.status} onChange={event => onChange({ status: event.target.value })}>
+            <option value="on_sale">在售</option>
+            <option value="off_sale">下架</option>
+            <option value="draft">草稿</option>
+          </select>
+        </label>
+        <label className={fieldClass}>
+          标签
+          <input value={form.tags} onChange={event => onChange({ tags: event.target.value })} placeholder="逗号分隔" />
+        </label>
+        <label className={fieldClass}>
+          库存预警
+          <input value={form.stockAlertThreshold} type="number" min="0" onChange={event => onChange({ stockAlertThreshold: event.target.value })} />
+        </label>
+        <label className={fieldClass}>
+          配送分钟
+          <input value={form.deliveryMinutes} type="number" min="1" onChange={event => onChange({ deliveryMinutes: event.target.value })} />
+        </label>
+        <label className={fieldClass}>
+          冷链
+          <span className="toggle-line compact-toggle">
+            <input checked={form.coldChainRequired} type="checkbox" onChange={event => onChange({ coldChainRequired: event.target.checked })} />
+            需要
+          </span>
+        </label>
+        <label className={layout === 'tiles' ? 'mall-admin-tile' : 'wide'}>
+          副标题
+          <input value={form.subtitle} onChange={event => onChange({ subtitle: event.target.value })} placeholder="规格、配送卖点" />
+        </label>
+        <label className={layout === 'tiles' ? 'mall-admin-tile' : 'wide'}>
+          <span className="field-label">商品说明<span className="required-mark">*</span></span>
+          <textarea required value={form.description} onChange={event => onChange({ description: event.target.value })} placeholder="商品卖点、包装、保存方式、售后说明等" />
+        </label>
+      </div>
       <ProductVariantSubtable form={form} layout={layout} onChange={onChange} />
       <ProductQualificationSubtable
         form={form}
@@ -4855,7 +5201,6 @@ function ProductFormFields({
         onChange={onChange}
         onUploadQualificationFile={onUploadQualificationFile}
       />
-      <ProductSpecSubtable form={form} layout={layout} onChange={onChange} />
     </div>
   );
 }
@@ -4940,6 +5285,9 @@ function ProductVariantSubtable({
       )),
     });
   };
+  const variantLoadingPatch = (index: number, patch: Partial<ProductVariantForm>) => {
+    updateProductVariant(index, patch);
+  };
   const addProductVariant = () => {
     if (form.variants.length >= productVariantLimit) {
       showMessage('warning', `单个商品最多配置 ${productVariantLimit} 个规格`);
@@ -4963,83 +5311,119 @@ function ProductVariantSubtable({
         <span>{form.variants.length}/{productVariantLimit}</span>
         <button className="ghost-button compact-action" type="button" onClick={addProductVariant}>新增规格</button>
       </div>
-      <div className="spec-subtable-scroll">
-        <table className="spec-subtable product-variant-table">
-          <thead>
-            <tr>
-              <th>规格名</th>
-              <th>SKU</th>
-              <th>销售规格</th>
-              <th>售卖方式</th>
-              <th>售价</th>
-              <th>划线价</th>
-              <th>进货价</th>
-              <th>库存</th>
-              <th>起订</th>
-              <th>计价方式</th>
-              <th>重量单位</th>
-              <th>浮动范围</th>
-              <th>状态</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {form.variants.map((variant, index) => (
-              <tr key={`${variant.id}-${index}`}>
-                <td><input value={variant.name} onChange={event => updateProductVariant(index, { name: event.target.value })} /></td>
-                <td><input value={variant.sku} onChange={event => updateProductVariant(index, { sku: event.target.value })} /></td>
-                <td><input value={variant.specification} onChange={event => updateProductVariant(index, { specification: event.target.value })} /></td>
-                <td><input value={variant.saleMethod} onChange={event => updateProductVariant(index, { saleMethod: event.target.value })} /></td>
-                <td><input min="0.01" step="0.01" type="number" value={variant.priceYuan} onChange={event => updateProductVariant(index, { priceYuan: event.target.value })} /></td>
-                <td><input min="0" step="0.01" type="number" value={variant.originalPriceYuan} onChange={event => updateProductVariant(index, { originalPriceYuan: event.target.value })} /></td>
-                <td><input min="0" step="0.01" type="number" value={variant.supplyPriceYuan} onChange={event => updateProductVariant(index, { supplyPriceYuan: event.target.value })} /></td>
-                <td><input min="0" type="number" value={variant.stock} onChange={event => updateProductVariant(index, { stock: event.target.value })} /></td>
-                <td><input min="1" type="number" value={variant.minimumOrderQuantity} onChange={event => updateProductVariant(index, { minimumOrderQuantity: event.target.value })} /></td>
-                <td>
-                  <select value={variant.pricingMode} onChange={event => updateProductVariant(index, { pricingMode: event.target.value })}>
-                    <option value="fixed">固定计价</option>
-                    <option value="weighed">称重计价</option>
-                  </select>
-                </td>
-                <td>
-                  <select
-                    value={variant.weightUnitLabel}
-                    onChange={event => updateProductVariant(index, {
-                      weightUnitLabel: event.target.value,
-                      weightUnitGrams: event.target.value === '公斤' ? '1000' : event.target.value === '克' ? '1' : '500',
-                    })}
-                    disabled={variant.pricingMode !== 'weighed'}
-                  >
-                    <option value="斤">斤</option>
-                    <option value="公斤">公斤</option>
-                    <option value="克">克</option>
-                  </select>
-                </td>
-                <td>
-                  <input
-                    min="0"
-                    max="50"
-                    step="0.1"
-                    type="number"
-                    value={variant.weightTolerancePercent}
-                    onChange={event => updateProductVariant(index, { weightTolerancePercent: event.target.value })}
-                    disabled={variant.pricingMode !== 'weighed'}
-                  />
-                </td>
-                <td>
-                  <select value={variant.status} onChange={event => updateProductVariant(index, { status: event.target.value })}>
-                    <option value="on_sale">在售</option>
-                    <option value="off_sale">下架</option>
-                    <option value="draft">草稿</option>
-                  </select>
-                </td>
-                <td>
-                  <button className="ghost-button compact-action" type="button" onClick={() => removeProductVariant(index)}>删除</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="variant-card-list">
+        {form.variants.map((variant, index) => (
+          <article className="variant-card" key={`${variant.id}-${index}`}>
+            <div className="variant-card-head">
+              <strong>规格 {index + 1}</strong>
+              <button className="ghost-button compact-action" type="button" onClick={() => removeProductVariant(index)}>删除</button>
+            </div>
+            <div className="variant-form-grid">
+              <label>
+                规格名
+                <input value={variant.name} onChange={event => updateProductVariant(index, { name: event.target.value })} />
+              </label>
+              <label>
+                SKU
+                <input value={variant.sku} onChange={event => updateProductVariant(index, { sku: event.target.value })} />
+              </label>
+              <label data-variant-required="规格">
+                <span className="field-label">规格<span className="required-mark">*</span></span>
+                <input required value={variant.specification} onChange={event => updateProductVariant(index, { specification: event.target.value })} placeholder="1瓶 / 1箱 / 30斤" />
+              </label>
+              <label data-variant-required="单份售卖方式">
+                <span className="field-label">单份售卖方式<span className="required-mark">*</span></span>
+                <input required value={variant.saleMethod} onChange={event => updateProductVariant(index, { saleMethod: event.target.value })} placeholder="按份 / 按斤 / 整件" />
+              </label>
+              <label data-variant-required="售价">
+                <span className="field-label">售价<span className="required-mark">*</span></span>
+                <input min="0.01" step="0.01" required type="number" value={variant.priceYuan} onChange={event => updateProductVariant(index, { priceYuan: event.target.value })} />
+              </label>
+              <label>
+                划线价
+                <input min="0" step="0.01" type="number" value={variant.originalPriceYuan} onChange={event => updateProductVariant(index, { originalPriceYuan: event.target.value })} />
+              </label>
+              <label data-variant-required="进货价">
+                <span className="field-label">进货价<span className="required-mark">*</span></span>
+                <input min="0.01" step="0.01" required type="number" value={variant.supplyPriceYuan} onChange={event => updateProductVariant(index, { supplyPriceYuan: event.target.value })} />
+              </label>
+              <label data-variant-required="库存">
+                <span className="field-label">库存<span className="required-mark">*</span></span>
+                <input min="0" required type="number" value={variant.stock} onChange={event => updateProductVariant(index, { stock: event.target.value })} />
+              </label>
+              <label data-variant-required="最小起订量">
+                <span className="field-label">最小起订量<span className="required-mark">*</span></span>
+                <input min="1" required type="number" value={variant.minimumOrderQuantity} onChange={event => updateProductVariant(index, { minimumOrderQuantity: event.target.value })} />
+              </label>
+              <label>
+                计价方式
+                <select value={variant.pricingMode} onChange={event => updateProductVariant(index, { pricingMode: event.target.value })}>
+                  <option value="fixed">固定计价</option>
+                  <option value="weighed">称重计价</option>
+                </select>
+              </label>
+              {variant.pricingMode === 'weighed' && (
+                <>
+                  <label>
+                    重量单位
+                    <select
+                      value={variant.weightUnitLabel}
+                      onChange={event => updateProductVariant(index, {
+                        weightUnitLabel: event.target.value,
+                        weightUnitGrams: event.target.value === '公斤' ? '1000' : event.target.value === '克' ? '1' : '500',
+                      })}
+                    >
+                      <option value="斤">斤</option>
+                      <option value="公斤">公斤</option>
+                      <option value="克">克</option>
+                    </select>
+                  </label>
+                  <label>
+                    浮动范围 %
+                    <input
+                      min="0"
+                      max="50"
+                      step="0.1"
+                      type="number"
+                      value={variant.weightTolerancePercent}
+                      onChange={event => updateProductVariant(index, { weightTolerancePercent: event.target.value })}
+                    />
+                  </label>
+                </>
+              )}
+              <label>
+                状态
+                <select value={variant.status} onChange={event => updateProductVariant(index, { status: event.target.value })}>
+                  <option value="on_sale">在售</option>
+                  <option value="off_sale">下架</option>
+                  <option value="draft">草稿</option>
+                </select>
+              </label>
+            </div>
+            <div className="variant-loading-spec-grid">
+              <label>
+                长 cm
+                <input min="0" step="0.1" type="number" value={variant.lengthCm} onChange={event => variantLoadingPatch(index, { lengthCm: event.target.value })} />
+              </label>
+              <label>
+                宽 cm
+                <input min="0" step="0.1" type="number" value={variant.widthCm} onChange={event => variantLoadingPatch(index, { widthCm: event.target.value })} />
+              </label>
+              <label>
+                高 cm
+                <input min="0" step="0.1" type="number" value={variant.heightCm} onChange={event => variantLoadingPatch(index, { heightCm: event.target.value })} />
+              </label>
+              <label>
+                体积 L
+                <input min="0" step="0.01" type="number" value={variant.volumeLiters} onChange={event => variantLoadingPatch(index, { volumeLiters: event.target.value })} />
+              </label>
+              <label>
+                重量 kg
+                <input min="0" step="0.001" type="number" value={variant.weightKg} onChange={event => variantLoadingPatch(index, { weightKg: event.target.value })} />
+              </label>
+            </div>
+          </article>
+        ))}
       </div>
     </section>
   );
@@ -5184,58 +5568,6 @@ function ProductQualificationSubtable({
   );
 }
 
-function ProductSpecSubtable({
-  form,
-  layout,
-  onChange,
-}: {
-  form: ProductForm;
-  layout: 'grid' | 'tiles';
-  onChange: (patch: Partial<ProductForm>) => void;
-}) {
-  return (
-    <section className={layout === 'tiles' ? 'mall-admin-spec-subtable mall-admin-tile wide' : 'product-spec-subtable wide'}>
-      <div className="spec-subtable-head">
-        <strong>装载规格（可选，不对外展示）</strong>
-        <span>仅用于无人车装载、库存预警和履约判断</span>
-      </div>
-      <div className="spec-subtable-scroll">
-        <table className="spec-subtable">
-          <thead>
-            <tr>
-              <th>长 cm</th>
-              <th>宽 cm</th>
-              <th>高 cm</th>
-              <th>体积 L</th>
-              <th>重量 kg</th>
-              <th>预警阈值</th>
-              <th>配送分钟</th>
-              <th>冷链</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><input value={form.lengthCm} type="number" min="0" step="0.1" onChange={event => onChange({ lengthCm: event.target.value })} /></td>
-              <td><input value={form.widthCm} type="number" min="0" step="0.1" onChange={event => onChange({ widthCm: event.target.value })} /></td>
-              <td><input value={form.heightCm} type="number" min="0" step="0.1" onChange={event => onChange({ heightCm: event.target.value })} /></td>
-              <td><input value={form.volumeLiters} type="number" min="0" step="0.01" onChange={event => onChange({ volumeLiters: event.target.value })} /></td>
-              <td><input value={form.weightKg} type="number" min="0" step="0.001" onChange={event => onChange({ weightKg: event.target.value })} /></td>
-              <td><input value={form.stockAlertThreshold} type="number" min="0" onChange={event => onChange({ stockAlertThreshold: event.target.value })} /></td>
-              <td><input value={form.deliveryMinutes} type="number" min="1" onChange={event => onChange({ deliveryMinutes: event.target.value })} /></td>
-              <td>
-                <label className="toggle-line compact-toggle">
-                  <input checked={form.coldChainRequired} type="checkbox" onChange={event => onChange({ coldChainRequired: event.target.checked })} />
-                  需要
-                </label>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
 function ProductImage({ record }: { record: JsonRecord }) {
   const imageUrl = resolveImage(productDisplayImagesFromRecord(record)[0] || stringValue(record, 'imageUrl'));
   return (
@@ -5245,6 +5577,48 @@ function ProductImage({ record }: { record: JsonRecord }) {
         <strong>{stringValue(record, 'name', '未命名商品')}</strong>
         <small>{stringValue(record, 'specification', stringValue(record, 'subtitle', stringValue(record, 'sku')))}</small>
       </div>
+    </div>
+  );
+}
+
+function FixedPriceProductBadgePreview({
+  badgeBackgroundColor,
+  badgeIcon,
+  badgeIconUrl,
+  badgePosition,
+  badgeText,
+  badgeTextColor,
+  large = false,
+  product,
+}: {
+  badgeBackgroundColor: string;
+  badgeIcon: string;
+  badgeIconUrl: string;
+  badgePosition: string;
+  badgeText: string;
+  badgeTextColor: string;
+  large?: boolean;
+  product?: JsonRecord;
+}) {
+  const imageUrl = product ? resolveImage(productDisplayImagesFromRecord(product)[0] || stringValue(product, 'imageUrl')) : '';
+  return (
+    <div className={large ? 'fixed-price-product-preview large' : 'fixed-price-product-preview'}>
+      <div className="fixed-price-product-preview-image">
+        {imageUrl ? <img alt="" src={imageUrl} /> : <span className="image-placeholder">商品图</span>}
+        <span
+          className={`fixed-price-product-corner fixed-price-product-corner-${badgePosition || 'top_left'}`}
+          style={{ background: badgeBackgroundColor || '#FF9238', color: badgeTextColor || '#FFFFFF' }}
+        >
+          {badgeIconUrl ? <img alt="" src={resolveImage(badgeIconUrl)} /> : badgeIcon ? <i>{badgeIcon}</i> : null}
+          {badgeText || '一口价'}
+        </span>
+      </div>
+      {large ? (
+        <div>
+          <strong>{product ? stringValue(product, 'name', '商品预览') : '商品预览'}</strong>
+          <small>{fixedPriceBadgePositionLabel(badgePosition)}</small>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -5985,7 +6359,7 @@ function ProductCreateModal({
 }) {
   return (
     <div className="modal-backdrop">
-      <section className="modal-panel product-modal">
+      <section className="modal-panel product-modal product-modal-wide">
         <div className="panel-head">
           <div>
             <h2>新增上架商品</h2>
@@ -5995,7 +6369,7 @@ function ProductCreateModal({
             关闭
           </button>
         </div>
-        <form onSubmit={onSubmit}>
+        <form className="product-form-scroll-guard" onSubmit={onSubmit}>
           <ProductFormFields
             categories={categories}
             procurementBuyers={procurementBuyers}
@@ -6039,7 +6413,7 @@ function ProductEditModal({
 
   return (
     <div className="modal-backdrop">
-      <section className="modal-panel product-modal">
+      <section className="modal-panel product-modal product-modal-wide">
         <div className="panel-head">
           <div>
             <h2>编辑商品</h2>
@@ -6049,14 +6423,16 @@ function ProductEditModal({
             关闭
           </button>
         </div>
-        <ProductFormFields
-          categories={categories}
-          procurementBuyers={procurementBuyers}
-          form={draft}
-          onChange={patch => setDraft(current => ({ ...current, ...patch }))}
-          onUploadImage={onUploadImage}
-          onUploadQualificationFile={onUploadQualificationFile}
-        />
+        <div className="product-form-scroll-guard">
+          <ProductFormFields
+            categories={categories}
+            procurementBuyers={procurementBuyers}
+            form={draft}
+            onChange={patch => setDraft(current => ({ ...current, ...patch }))}
+            onUploadImage={onUploadImage}
+            onUploadQualificationFile={onUploadQualificationFile}
+          />
+        </div>
         <div className="modal-actions">
           <button className="ghost-button" type="button" onClick={onClose}>取消</button>
           <button className="primary-button" type="button" onClick={() => void onSave(id, draft)}>
@@ -8689,6 +9065,7 @@ function MallCampaignsSection({
   campaigns,
   filters,
   form,
+  products,
   onChange,
   onCampaignStatus,
   onDelete,
@@ -8701,6 +9078,7 @@ function MallCampaignsSection({
   campaigns: JsonRecord[];
   filters: MallFilterState;
   form: CampaignForm;
+  products: JsonRecord[];
   onChange: (patch: Partial<CampaignForm>) => void;
   onCampaignStatus: (id: string, status: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
@@ -8711,17 +9089,59 @@ function MallCampaignsSection({
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
+  const [productKeyword, setProductKeyword] = useState('');
+  const visibleProducts = products
+    .filter(product => {
+      const keyword = productKeyword.trim().toLowerCase();
+      if (!keyword) return true;
+      return [
+        stringValue(product, 'name'),
+        stringValue(product, 'sku'),
+        stringValue(product, 'categoryName'),
+        stringValue(product, 'categoryCode'),
+      ].some(value => value.toLowerCase().includes(keyword));
+    })
+    .slice(0, 100);
+  const selectedProductIds = new Set(idListFromText(form.productIds));
   const openCreate = () => {
     onReset();
+    setProductKeyword('');
     setModalOpen(true);
   };
   const openEdit = (campaign: JsonRecord) => {
     onEdit(campaign);
+    setProductKeyword('');
     setModalOpen(true);
   };
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     await onSubmit(event);
     setModalOpen(false);
+  };
+  const updateTier = (id: string, patch: Partial<CampaignTierForm>) => {
+    onChange({ tiers: form.tiers.map(tier => tier.id === id ? { ...tier, ...patch } : tier) });
+  };
+  const toggleProduct = (productId: string, checked: boolean) => {
+    const next = new Set(selectedProductIds);
+    if (checked) {
+      next.add(productId);
+    } else {
+      next.delete(productId);
+    }
+    onChange({ productIds: Array.from(next).join('\n') });
+  };
+  const updateGroup = (id: string, patch: Partial<CampaignProductGroupForm>) => {
+    onChange({ productGroups: form.productGroups.map(group => group.id === id ? { ...group, ...patch } : group) });
+  };
+  const toggleGroupProduct = (groupId: string, productId: string, checked: boolean) => {
+    const group = form.productGroups.find(item => item.id === groupId);
+    if (!group) return;
+    const next = new Set(idListFromText(group.productIds));
+    if (checked) {
+      next.add(productId);
+    } else {
+      next.delete(productId);
+    }
+    updateGroup(groupId, { productIds: Array.from(next).join('\n') });
   };
 
   return (
@@ -8730,11 +9150,9 @@ function MallCampaignsSection({
         <input value={filters.keyword} onChange={event => onFiltersChange({ keyword: event.target.value })} placeholder="搜索活动名称或类型" />
         <select value={filters.categoryCode} onChange={event => onFiltersChange({ categoryCode: event.target.value })}>
           <option value="">全部类型</option>
-          <option value="discount">满减活动</option>
-          <option value="coupon">券包活动</option>
-          <option value="bundle">组合购</option>
-          <option value="subsidy">配送补贴</option>
-          <option value="free_delivery">免配送费</option>
+          {campaignTypeOptions.map(option => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
         </select>
         <select value={filters.status} onChange={event => onFiltersChange({ status: event.target.value })}>
           <option value="">全部状态</option>
@@ -8753,7 +9171,7 @@ function MallCampaignsSection({
         </button>
       </div>
 
-      <Panel title="营销活动" description="展示活动列表，支持搜索、创建、编辑、启停和删除；配送补贴可作为活动类型维护">
+      <Panel title="营销活动">
         <div className="list-stack">
           {campaigns.map(campaign => {
             const id = stringValue(campaign, 'id');
@@ -8762,7 +9180,8 @@ function MallCampaignsSection({
               <article className="list-row" key={id}>
                 <div>
                   <strong>{stringValue(campaign, 'name')}</strong>
-                  <small>{campaignTypeLabel(stringValue(campaign, 'campaignType'))} · 预算 {yuan(numberValue(campaign, 'budgetCents'))} · 已消耗 {yuan(numberValue(campaign, 'spentCents'))}</small>
+                  <small>{campaignTypeLabel(stringValue(campaign, 'campaignType'))} · {campaignScopeSummary(campaign)} · {campaignAudienceSummary(campaign)}</small>
+                  <small>{campaignTierSummary(campaign)} · {formatDate(stringValue(campaign, 'startsAt'))} 至 {formatDate(stringValue(campaign, 'endsAt'))}</small>
                 </div>
                 <span className={badgeClass(status)}>{statusLabel(status)}</span>
                 <div className="actions">
@@ -8798,19 +9217,17 @@ function MallCampaignsSection({
                 关闭
               </button>
             </div>
-            <div className="form-grid">
+            <div className="form-grid campaign-form-grid">
               <label>
                 活动名称
-                <input value={form.name} onChange={event => onChange({ name: event.target.value })} />
+                <input required value={form.name} onChange={event => onChange({ name: event.target.value })} />
               </label>
               <label>
                 类型
                 <select value={form.campaignType} onChange={event => onChange({ campaignType: event.target.value })}>
-                  <option value="discount">满减活动</option>
-                  <option value="coupon">券包活动</option>
-                  <option value="bundle">组合购</option>
-                  <option value="subsidy">配送补贴</option>
-                  <option value="free_delivery">免配送费</option>
+                  {campaignTypeOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
                 </select>
               </label>
               <label>
@@ -8826,11 +9243,148 @@ function MallCampaignsSection({
                   <option value="expired">过期</option>
                 </select>
               </label>
-              <label className="wide">
-                活动规则
-                <textarea value={form.rules} onChange={event => onChange({ rules: event.target.value })} />
+              <label>
+                开始时间
+                <input value={form.startsAt} type="datetime-local" onChange={event => onChange({ startsAt: event.target.value })} />
               </label>
+              <label>
+                结束时间
+                <input value={form.endsAt} type="datetime-local" onChange={event => onChange({ endsAt: event.target.value })} />
+              </label>
+              <label>
+                适用范围
+                <select
+                  value={form.scopeType}
+                  onChange={event => {
+                    const scopeType = event.target.value;
+                    onChange({
+                      scopeType,
+                      productGroups: scopeType === 'product_group' && !form.productGroups.length
+                        ? [createCampaignProductGroupForm()]
+                        : form.productGroups,
+                    });
+                  }}
+                >
+                  {campaignScopeOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                用户范围
+                <select value={form.audienceType} onChange={event => onChange({ audienceType: event.target.value })}>
+                  {campaignAudienceOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              {form.audienceType === 'new_customer' ? (
+                <label>
+                  新客规则
+                  <select value={form.newCustomerRule} onChange={event => onChange({ newCustomerRule: event.target.value })}>
+                    {newCustomerRuleOptions.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
             </div>
+
+            {['full_reduction', 'full_discount', 'delivery_reduction'].includes(form.campaignType) ? (
+              <section className="campaign-rule-card">
+                <div className="campaign-rule-card-head">
+                  <strong>阶梯规则</strong>
+                  <button className="ghost-button" type="button" onClick={() => onChange({ tiers: [...form.tiers, createCampaignTierForm()] })}>
+                    <Icon name="plus" />
+                    新增阶梯
+                  </button>
+                </div>
+                <div className="campaign-tier-list">
+                  {form.tiers.map((tier, index) => (
+                    <div className="campaign-tier-row" key={tier.id}>
+                      <span>阶梯 {index + 1}</span>
+                      <label>
+                        满
+                        <input min="0" step="0.01" type="number" value={tier.thresholdYuan} onChange={event => updateTier(tier.id, { thresholdYuan: event.target.value })} />
+                      </label>
+                      {form.campaignType === 'full_discount' ? (
+                        <label>
+                          折扣
+                          <input min="1" max="100" step="0.1" type="number" value={tier.discountPercent} onChange={event => updateTier(tier.id, { discountPercent: event.target.value })} />
+                        </label>
+                      ) : (
+                        <label>
+                          减
+                          <input min="0.01" step="0.01" type="number" value={tier.discountYuan} onChange={event => updateTier(tier.id, { discountYuan: event.target.value })} />
+                        </label>
+                      )}
+                      <button
+                        className="ghost-button danger"
+                        disabled={form.tiers.length <= 1}
+                        type="button"
+                        onClick={() => onChange({ tiers: form.tiers.filter(item => item.id !== tier.id) })}
+                      >
+                        删除
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {form.scopeType !== 'all' ? (
+              <section className="campaign-rule-card">
+                <div className="campaign-rule-card-head">
+                  <strong>{form.scopeType === 'product_group' ? '商品组' : '选择商品'}</strong>
+                  <input value={productKeyword} onChange={event => setProductKeyword(event.target.value)} placeholder="搜索商品名、SKU、类目" />
+                  {form.scopeType === 'product_group' ? (
+                    <button className="ghost-button" type="button" onClick={() => onChange({ productGroups: [...form.productGroups, createCampaignProductGroupForm()] })}>
+                      <Icon name="plus" />
+                      新增商品组
+                    </button>
+                  ) : null}
+                </div>
+                {form.scopeType === 'partial' ? (
+                  <div className="campaign-product-picker">
+                    {visibleProducts.map(product => {
+                      const productId = stringValue(product, 'id');
+                      return (
+                        <label key={productId}>
+                          <input checked={selectedProductIds.has(productId)} type="checkbox" onChange={event => toggleProduct(productId, event.target.checked)} />
+                          <ProductImage record={product} />
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="campaign-group-list">
+                    {(form.productGroups.length ? form.productGroups : [createCampaignProductGroupForm()]).map(group => {
+                      const groupProductIds = new Set(idListFromText(group.productIds));
+                      return (
+                        <article className="campaign-group-card" key={group.id}>
+                          <div className="campaign-group-head">
+                            <input value={group.name} onChange={event => updateGroup(group.id, { name: event.target.value })} placeholder="商品组名称" />
+                            <span>已选 {groupProductIds.size} 个商品</span>
+                            <button className="ghost-button danger" type="button" onClick={() => onChange({ productGroups: form.productGroups.filter(item => item.id !== group.id) })}>删除组</button>
+                          </div>
+                          <div className="campaign-product-picker compact">
+                            {visibleProducts.map(product => {
+                              const productId = stringValue(product, 'id');
+                              return (
+                                <label key={productId}>
+                                  <input checked={groupProductIds.has(productId)} type="checkbox" onChange={event => toggleGroupProduct(group.id, productId, event.target.checked)} />
+                                  <ProductImage record={product} />
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            ) : null}
             <div className="modal-actions">
               <button className="ghost-button" type="button" onClick={() => setModalOpen(false)}>取消</button>
               <button className="primary-button" type="submit">
@@ -8871,7 +9425,13 @@ function MallFixedPriceCampaignsSection({
   const showMessage = useAdminMessage();
   const [modalOpen, setModalOpen] = useState(false);
   const [productKeyword, setProductKeyword] = useState('');
-  const selectedItems = new Map(form.items.map(item => [item.productId, item]));
+  const [activeGroupId, setActiveGroupId] = useState(form.groups[0]?.id || '');
+  const productById = useMemo(
+    () => new Map(products.map(product => [stringValue(product, 'id'), product])),
+    [products],
+  );
+  const activeGroup = form.groups.find(group => group.id === activeGroupId) || form.groups[0] || createFixedPriceGroupForm();
+  const selectedItems = new Map(activeGroup.items.map(item => [item.productId, item]));
   const visibleProducts = products
     .filter(product => {
       const keyword = productKeyword.trim().toLowerCase();
@@ -8884,15 +9444,33 @@ function MallFixedPriceCampaignsSection({
       ].some(value => value.toLowerCase().includes(keyword));
     })
     .slice(0, 120);
+  const previewProduct = activeGroup.items
+    .map(item => productById.get(item.productId))
+    .find(Boolean) || visibleProducts[0] || products[0];
+
+  useEffect(() => {
+    if (!form.groups.length) {
+      const group = createFixedPriceGroupForm();
+      onChange({ groups: [group] });
+      setActiveGroupId(group.id);
+      return;
+    }
+    if (!form.groups.some(group => group.id === activeGroupId)) {
+      setActiveGroupId(form.groups[0].id);
+    }
+  }, [activeGroupId, form.groups, onChange]);
 
   const openCreate = () => {
     onReset();
     setProductKeyword('');
+    setActiveGroupId(initialFixedPriceCampaignForm.groups[0]?.id || '');
     setModalOpen(true);
   };
   const openEdit = (campaign: JsonRecord) => {
     onEdit(campaign);
     setProductKeyword('');
+    const nextForm = fixedPriceCampaignToForm(campaign);
+    setActiveGroupId(nextForm.groups[0]?.id || '');
     setModalOpen(true);
   };
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -8902,21 +9480,37 @@ function MallFixedPriceCampaignsSection({
   const toggleProduct = (product: JsonRecord, checked: boolean) => {
     const productId = stringValue(product, 'id');
     if (!productId) return;
+    const currentItems = activeGroup.items || [];
     const nextItems = checked
       ? [
-          ...form.items,
+          ...currentItems,
           {
             productId,
             fixedPriceYuan: (numberValue(product, 'discountedPriceCents', numberValue(product, 'priceCents')) / 100).toFixed(2),
           },
         ]
-      : form.items.filter(item => item.productId !== productId);
-    onChange({ items: Array.from(new Map(nextItems.map(item => [item.productId, item])).values()) });
+      : currentItems.filter(item => item.productId !== productId);
+    updateFixedPriceGroup(activeGroup.id, {
+      items: Array.from(new Map(nextItems.map(item => [item.productId, item])).values()),
+    });
   };
   const updateItemPrice = (productId: string, fixedPriceYuan: string) => {
-    onChange({
-      items: form.items.map(item => item.productId === productId ? { ...item, fixedPriceYuan } : item),
+    updateFixedPriceGroup(activeGroup.id, {
+      items: activeGroup.items.map(item => item.productId === productId ? { ...item, fixedPriceYuan } : item),
     });
+  };
+  const updateFixedPriceGroup = (id: string, patch: Partial<FixedPriceCampaignGroupForm>) => {
+    onChange({ groups: form.groups.map(group => group.id === id ? { ...group, ...patch } : group) });
+  };
+  const addFixedPriceGroup = () => {
+    const group = createFixedPriceGroupForm({ name: `商品组${form.groups.length + 1}`, startsAt: form.startsAt, endsAt: form.endsAt });
+    onChange({ groups: [...form.groups, group] });
+    setActiveGroupId(group.id);
+  };
+  const removeFixedPriceGroup = (id: string) => {
+    const nextGroups = form.groups.filter(group => group.id !== id);
+    onChange({ groups: nextGroups.length ? nextGroups : [createFixedPriceGroupForm()] });
+    setActiveGroupId(nextGroups[0]?.id || '');
   };
   const uploadIcon = async (files: FileList | null | undefined) => {
     const file = files?.[0];
@@ -8935,7 +9529,7 @@ function MallFixedPriceCampaignsSection({
         <button className="mall-admin-submit" type="button" onClick={openCreate}>创建一口价</button>
       </div>
 
-      <Panel title="一口价" description="配置商品一口价活动和商品图左上角角标">
+      <Panel title="一口价">
         <div className="list-stack">
           {campaigns.map(campaign => {
             const id = stringValue(campaign, 'id');
@@ -8943,24 +9537,31 @@ function MallFixedPriceCampaignsSection({
             const rules = recordValue(campaign, 'rules');
             const badge = recordValue(rules, 'badge');
             const items = arrayValue(rules, 'items');
+            const groups = arrayValue(rules, 'groups');
             const badgeText = stringValue(badge, 'text', stringValue(rules, 'badgeText', '一口价'));
             const badgeIcon = stringValue(badge, 'icon', stringValue(rules, 'badgeIcon'));
             const badgeIconUrl = stringValue(badge, 'iconUrl', stringValue(rules, 'badgeIconUrl'));
             const badgeBackgroundColor = stringValue(badge, 'backgroundColor', stringValue(rules, 'badgeBackgroundColor', '#FF9238'));
             const badgeTextColor = stringValue(badge, 'textColor', stringValue(rules, 'badgeTextColor', '#FFFFFF'));
+            const badgePosition = stringValue(badge, 'position', stringValue(rules, 'badgePosition', 'top_left'));
+            const firstItem = items.find(item => Boolean(item) && typeof item === 'object' && !Array.isArray(item)) as JsonRecord | undefined;
+            const previewProductRecord = productById.get(stringValue(firstItem || {}, 'productId'));
             return (
               <article className="list-row" key={id}>
                 <div>
                   <strong>{stringValue(campaign, 'name', '一口价活动')}</strong>
-                  <small>{items.length} 个商品 · {campaignTypeLabel(stringValue(campaign, 'campaignType'))}</small>
+                  <small>{groups.length || 1} 个商品组 · {items.length} 个商品 · {formatDate(stringValue(campaign, 'startsAt'))} 至 {formatDate(stringValue(campaign, 'endsAt'))}</small>
+                  <small>角标位置：{fixedPriceBadgePositionLabel(badgePosition)}</small>
                 </div>
-                <span
-                  className="fixed-price-badge-preview"
-                  style={{ background: badgeBackgroundColor, color: badgeTextColor }}
-                >
-                  {badgeIconUrl ? <img alt="" src={resolveImage(badgeIconUrl)} /> : badgeIcon ? <i>{badgeIcon}</i> : null}
-                  {badgeText}
-                </span>
+                <FixedPriceProductBadgePreview
+                  badgeBackgroundColor={badgeBackgroundColor}
+                  badgeIcon={badgeIcon}
+                  badgeIconUrl={badgeIconUrl}
+                  badgePosition={badgePosition}
+                  badgeText={badgeText}
+                  badgeTextColor={badgeTextColor}
+                  product={previewProductRecord}
+                />
                 <span className={badgeClass(status)}>{statusLabel(status)}</span>
                 <div className="actions">
                   <button className="ghost-button" type="button" onClick={() => openEdit(campaign)}>
@@ -9010,6 +9611,14 @@ function MallFixedPriceCampaignsSection({
                 </select>
               </label>
               <label>
+                活动开始时间
+                <input value={form.startsAt} type="datetime-local" onChange={event => onChange({ startsAt: event.target.value })} />
+              </label>
+              <label>
+                活动结束时间
+                <input value={form.endsAt} type="datetime-local" onChange={event => onChange({ endsAt: event.target.value })} />
+              </label>
+              <label>
                 展示文字
                 <input required value={form.badgeText} onChange={event => onChange({ badgeText: event.target.value })} />
               </label>
@@ -9025,23 +9634,70 @@ function MallFixedPriceCampaignsSection({
                 文字颜色
                 <input type="color" value={form.badgeTextColor} onChange={event => onChange({ badgeTextColor: event.target.value })} />
               </label>
+              <label>
+                角标位置
+                <select value={form.badgePosition} onChange={event => onChange({ badgePosition: event.target.value })}>
+                  {fixedPriceBadgePositionOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
               <label className="wide">
                 icon 图片
                 <input accept="image/*" type="file" onChange={event => void uploadIcon(event.currentTarget.files)} />
                 <input value={form.badgeIconUrl} onChange={event => onChange({ badgeIconUrl: event.target.value })} placeholder="icon 图片地址，可不填" />
               </label>
               <div className="wide fixed-price-badge-editor">
-                <span>角标预览</span>
-                <strong style={{ background: form.badgeBackgroundColor, color: form.badgeTextColor }}>
-                  {form.badgeIconUrl ? <img alt="" src={resolveImage(form.badgeIconUrl)} /> : form.badgeIcon ? <i>{form.badgeIcon}</i> : null}
-                  {form.badgeText || '一口价'}
-                </strong>
+                <span>商品图预览</span>
+                <FixedPriceProductBadgePreview
+                  badgeBackgroundColor={form.badgeBackgroundColor}
+                  badgeIcon={form.badgeIcon}
+                  badgeIconUrl={form.badgeIconUrl}
+                  badgePosition={form.badgePosition}
+                  badgeText={form.badgeText || '一口价'}
+                  badgeTextColor={form.badgeTextColor}
+                  product={previewProduct}
+                  large
+                />
               </div>
+            </div>
+
+            <div className="fixed-price-group-tabs">
+              {form.groups.map(group => (
+                <button
+                  className={group.id === activeGroup.id ? 'active' : ''}
+                  key={group.id}
+                  type="button"
+                  onClick={() => setActiveGroupId(group.id)}
+                >
+                  {group.name || '商品组'} · {group.items.length}
+                </button>
+              ))}
+              <button type="button" onClick={addFixedPriceGroup}>
+                <Icon name="plus" />
+                新增商品组
+              </button>
+            </div>
+
+            <div className="fixed-price-group-editor">
+              <label>
+                商品组名称
+                <input value={activeGroup.name} onChange={event => updateFixedPriceGroup(activeGroup.id, { name: event.target.value })} />
+              </label>
+              <label>
+                组开始时间
+                <input value={activeGroup.startsAt} type="datetime-local" onChange={event => updateFixedPriceGroup(activeGroup.id, { startsAt: event.target.value })} />
+              </label>
+              <label>
+                组结束时间
+                <input value={activeGroup.endsAt} type="datetime-local" onChange={event => updateFixedPriceGroup(activeGroup.id, { endsAt: event.target.value })} />
+              </label>
+              <button className="ghost-button danger" disabled={form.groups.length <= 1} type="button" onClick={() => removeFixedPriceGroup(activeGroup.id)}>删除商品组</button>
             </div>
 
             <div className="fixed-price-product-tools">
               <input value={productKeyword} onChange={event => setProductKeyword(event.target.value)} placeholder="搜索商品名、SKU、类目" />
-              <span>已选 {form.items.length} 个商品</span>
+              <span>当前组已选 {activeGroup.items.length} 个商品</span>
             </div>
             <div className="table-wrap fixed-price-product-table">
               <table>
@@ -11046,6 +11702,7 @@ function App() {
         .filter(Boolean);
       const images = productFormImages(productForm);
       const variants = productVariantPayload(productForm);
+      const compatibility = productCompatibilityFields(productForm);
       const qualificationReports = productQualificationReportsPayload(productForm);
       await apiPost('/api/admin/mall/products', {
         name: productForm.name || '新增鲜选商品',
@@ -11056,18 +11713,18 @@ function App() {
         imageUrl: images[0] || '',
         images,
         variants,
-        specification: productForm.specification,
-        saleMethod: productForm.saleMethod,
-        priceCents: moneyFromYuan(productForm.priceYuan),
-        supplyPriceCents: moneyFromYuan(productForm.supplyPriceYuan),
-        stock: Number(productForm.stock) || 0,
+        specification: compatibility.specification,
+        saleMethod: compatibility.saleMethod,
+        priceCents: moneyFromYuan(compatibility.priceYuan),
+        supplyPriceCents: moneyFromYuan(compatibility.supplyPriceYuan),
+        stock: Number(compatibility.stock) || 0,
         stockAlertThreshold: Number(productForm.stockAlertThreshold) || 15,
-        minimumOrderQuantity: Number(productForm.minimumOrderQuantity) || 1,
-        lengthCm: optionalNumber(productForm.lengthCm),
-        widthCm: optionalNumber(productForm.widthCm),
-        heightCm: optionalNumber(productForm.heightCm),
-        volumeLiters: optionalNumber(productForm.volumeLiters),
-        weightKg: optionalNumber(productForm.weightKg),
+        minimumOrderQuantity: Number(compatibility.minimumOrderQuantity) || 1,
+        lengthCm: optionalNumber(compatibility.lengthCm),
+        widthCm: optionalNumber(compatibility.widthCm),
+        heightCm: optionalNumber(compatibility.heightCm),
+        volumeLiters: optionalNumber(compatibility.volumeLiters),
+        weightKg: optionalNumber(compatibility.weightKg),
         status: productForm.status,
         tags,
         deliveryMinutes: Number(productForm.deliveryMinutes) || 18,
@@ -11097,6 +11754,7 @@ function App() {
         .filter(Boolean);
       const images = productFormImages(form);
       const variants = productVariantPayload(form);
+      const compatibility = productCompatibilityFields(form);
       const qualificationReports = productQualificationReportsPayload(form);
       const product = await apiPut<JsonRecord>(`/api/admin/mall/products/${id}`, {
         name: form.name,
@@ -11107,18 +11765,18 @@ function App() {
         imageUrl: images[0] || '',
         images,
         variants,
-        specification: form.specification,
-        saleMethod: form.saleMethod,
-        priceCents: moneyFromYuan(form.priceYuan),
-        supplyPriceCents: moneyFromYuan(form.supplyPriceYuan),
-        stock: Number(form.stock) || 0,
+        specification: compatibility.specification,
+        saleMethod: compatibility.saleMethod,
+        priceCents: moneyFromYuan(compatibility.priceYuan),
+        supplyPriceCents: moneyFromYuan(compatibility.supplyPriceYuan),
+        stock: Number(compatibility.stock) || 0,
         stockAlertThreshold: Number(form.stockAlertThreshold) || 15,
-        minimumOrderQuantity: Number(form.minimumOrderQuantity) || 1,
-        lengthCm: optionalNumber(form.lengthCm),
-        widthCm: optionalNumber(form.widthCm),
-        heightCm: optionalNumber(form.heightCm),
-        volumeLiters: optionalNumber(form.volumeLiters),
-        weightKg: optionalNumber(form.weightKg),
+        minimumOrderQuantity: Number(compatibility.minimumOrderQuantity) || 1,
+        lengthCm: optionalNumber(compatibility.lengthCm),
+        widthCm: optionalNumber(compatibility.widthCm),
+        heightCm: optionalNumber(compatibility.heightCm),
+        volumeLiters: optionalNumber(compatibility.volumeLiters),
+        weightKg: optionalNumber(compatibility.weightKg),
         status: form.status,
         tags,
         deliveryMinutes: Number(form.deliveryMinutes) || 18,
@@ -11609,10 +12267,12 @@ function App() {
     await runAction(isEditing ? '活动更新' : '活动创建', async () => {
       const payload = {
         name: campaignForm.name,
-        campaignType: campaignForm.campaignType,
+        campaignType: normalizeCampaignTypeForForm(campaignForm.campaignType),
         budgetCents: moneyFromYuan(campaignForm.budgetYuan),
-        rules: JSON.parse(campaignForm.rules || '{}') as JsonRecord,
+        rules: campaignRulesFromForm(campaignForm, data.mallProducts),
         status: campaignForm.status,
+        startsAt: campaignForm.startsAt || null,
+        endsAt: campaignForm.endsAt || null,
       };
       const campaign = isEditing
         ? await apiPut<JsonRecord>(`/api/admin/mall/campaigns/${campaignForm.id}`, payload)
@@ -11641,13 +12301,16 @@ function App() {
       if (!fixedPriceCampaignForm.badgeText.trim()) {
         throw new Error('展示文字不能为空');
       }
-      if (!fixedPriceCampaignForm.items.length) {
+      const activeGroups = fixedPriceCampaignForm.groups.filter(group => group.items.length);
+      if (!activeGroups.length) {
         throw new Error('请至少选择一个商品');
       }
-      fixedPriceCampaignForm.items.forEach(item => {
-        if (moneyFromYuan(item.fixedPriceYuan) <= 0) {
-          throw new Error('一口价必须大于0');
-        }
+      activeGroups.forEach(group => {
+        group.items.forEach(item => {
+          if (moneyFromYuan(item.fixedPriceYuan) <= 0) {
+            throw new Error(`${group.name || '商品组'}的一口价必须大于0`);
+          }
+        });
       });
       const payload = {
         name: fixedPriceCampaignForm.name,
@@ -11655,6 +12318,8 @@ function App() {
         budgetCents: 0,
         rules: fixedPriceCampaignRules(fixedPriceCampaignForm, data.mallProducts),
         status: fixedPriceCampaignForm.status,
+        startsAt: fixedPriceCampaignForm.startsAt || null,
+        endsAt: fixedPriceCampaignForm.endsAt || null,
       };
       const campaign = isEditing
         ? await apiPut<JsonRecord>(`/api/admin/mall/campaigns/${fixedPriceCampaignForm.id}`, payload)
@@ -12480,6 +13145,7 @@ function App() {
           campaigns={data.campaigns}
           filters={campaignFilters}
           form={campaignForm}
+          products={data.mallProducts}
           onChange={patch => setCampaignForm(current => ({ ...current, ...patch }))}
           onCampaignStatus={updateCampaignStatus}
           onDelete={deleteCampaign}
