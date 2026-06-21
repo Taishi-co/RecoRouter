@@ -3776,6 +3776,8 @@ function DispatchSection({
   undispatchedOrders,
   allOrders,
   availableVehicles,
+  selectedDate,
+  onDateChange,
   onCreateTrip,
   onAssignOrders,
   onRemoveOrder,
@@ -3790,6 +3792,8 @@ function DispatchSection({
   undispatchedOrders: JsonRecord[];
   allOrders: JsonRecord[];
   availableVehicles: JsonRecord[];
+  selectedDate: string;
+  onDateChange: (date: string) => void;
   onCreateTrip: (vehicleId: string, orderIds: string[]) => Promise<void>;
   onAssignOrders: (tripId: string, orderIds: string[]) => Promise<void>;
   onRemoveOrder: (tripId: string, orderId: string) => Promise<void>;
@@ -3798,7 +3802,7 @@ function DispatchSection({
   onStartTrip: (tripId: string) => Promise<void>;
   onCompleteTrip: (tripId: string) => Promise<void>;
   onReorderStops: (_tripId: string, _stopIds: string[]) => Promise<void>;
-  onAutoAssign: (orderIds: string[], maxOrdersPerSlot: number, dryRun: boolean) => Promise<void>;
+  onAutoAssign: (orderIds: string[], maxOrdersPerSlot: number, dryRun: boolean, date?: string) => Promise<void>;
 }) {
   const [activeTab, setActiveTab] = useState<'orders' | 'trips'>('orders');
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
@@ -3816,6 +3820,26 @@ function DispatchSection({
   const [orderCurrentPage, setOrderCurrentPage] = useState(1);
   const [orderPageSize, setOrderPageSize] = useState(10);
   const [dispatchMode, setDispatchMode] = useState<'new_trip' | 'existing_trip'>('new_trip');
+
+  const dateOptions = useMemo(() => {
+    const dates: { value: string; label: string; isToday: boolean }[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      const value = date.toISOString().split('T')[0];
+      const month = date.getMonth() + 1;
+      const day = date.getDate();
+      const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+      const weekDay = weekDays[date.getDay()];
+      let label = `${month}/${day} ${weekDay}`;
+      if (i === 0) label = '今天';
+      else if (i === 1) label = '明天';
+      dates.push({ value, label, isToday: i === 0 });
+    }
+    return dates;
+  }, []);
 
   const toggleOrder = (id: string) => {
     setSelectedOrders(prev => {
@@ -3926,6 +3950,36 @@ function DispatchSection({
         <StatCard label="已分配" value={String(dispatchedOrders.length)} detail="已安排行程" />
         <StatCard label="可用车辆" value={String(availableVehicles.length)} detail="空闲可调度" />
         <StatCard label="运输中" value={String(inProgressTrips.length)} detail="正在配送" />
+      </div>
+
+      {/* 日期选择器 */}
+      <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: '14px', fontWeight: 500, color: '#374151' }}>📅 选择日期：</span>
+        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+          {dateOptions.map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => {
+                onDateChange(opt.value);
+                setSelectedOrders(new Set());
+              }}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '6px',
+                border: selectedDate === opt.value ? '1px solid #2563eb' : '1px solid #d1d5db',
+                background: selectedDate === opt.value ? '#2563eb' : '#fff',
+                color: selectedDate === opt.value ? '#fff' : '#374151',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: selectedDate === opt.value ? 500 : 400,
+                transition: 'all 0.15s',
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 主 Tab 切换 */}
@@ -4110,7 +4164,7 @@ function DispatchSection({
               <button
                 type="button"
                 style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #22c55e', background: '#fff', color: '#22c55e', cursor: 'pointer', fontSize: '13px' }}
-                onClick={() => onAutoAssign(Array.from(selectedOrders), maxOrdersPerSlot, true)}
+                onClick={() => onAutoAssign(Array.from(selectedOrders), maxOrdersPerSlot, true, selectedDate)}
                 disabled={selectedOrders.size === 0}
               >
                 预览分配
@@ -4118,7 +4172,7 @@ function DispatchSection({
               <button
                 type="button"
                 style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', background: '#22c55e', color: '#fff', cursor: 'pointer', fontSize: '13px', fontWeight: 500 }}
-                onClick={() => onAutoAssign(selectedOrders.size > 0 ? Array.from(selectedOrders) : undispatchedOrders.map(o => stringValue(o, 'id')), maxOrdersPerSlot, false)}
+                onClick={() => onAutoAssign(selectedOrders.size > 0 ? Array.from(selectedOrders) : undispatchedOrders.map(o => stringValue(o, 'id')), maxOrdersPerSlot, false, selectedDate)}
               >
                 {selectedOrders.size > 0 ? `分配选中 ${selectedOrders.size} 单` : '一键分配全部待分配'}
               </button>
@@ -10632,6 +10686,11 @@ function App() {
   const [groupLeaderFilters, setGroupLeaderFilters] = useState<GroupLeaderFilterState>(initialGroupLeaderFilters);
   const [campaignFilters, setCampaignFilters] = useState<MallFilterState>(initialProductFilters);
   const [couponFilters, setCouponFilters] = useState<MallFilterState>(initialProductFilters);
+  const [dispatchDate, setDispatchDate] = useState(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today.toISOString().split('T')[0];
+  });
   const [homeBannerFilters, setHomeBannerFilters] = useState<MallFilterState>(initialProductFilters);
   const [permissionFilters, setPermissionFilters] = useState<MallPermissionFilterState>(initialPermissionFilters);
   const [mallOpsFilters, setMallOpsFilters] = useState<MallOpsFilterState>(initialMallOpsFilters);
@@ -10785,12 +10844,13 @@ function App() {
     setNotice(Object.keys(result.errors).length ? '部分数据暂不可用，已显示可用内容' : '管理数据已更新');
   };
 
-  const refreshDispatchData = async () => {
+  const refreshDispatchData = async (date?: string) => {
+    const targetDate = date || dispatchDate;
     try {
       const [tripsRes, undispatchedRes, allOrdersRes, vehiclesRes] = await Promise.all([
-        apiGet<JsonRecord[]>('/api/trips', { limit: 100 }).catch(() => ({ error: '行程列表加载失败', data: [] })),
-        apiGet<JsonRecord[]>('/api/trips/undispatched-orders').catch(() => ({ error: '未分配订单加载失败', data: [] })),
-        apiGet<JsonRecord[]>('/api/trips/all-orders').catch(() => ({ error: '全部订单加载失败', data: [] })),
+        apiGet<JsonRecord[]>('/api/trips', { limit: 100, deliveryDate: targetDate }).catch(() => ({ error: '行程列表加载失败', data: [] })),
+        apiGet<JsonRecord[]>('/api/trips/undispatched-orders', { deliveryDate: targetDate }).catch(() => ({ error: '未分配订单加载失败', data: [] })),
+        apiGet<JsonRecord[]>('/api/trips/all-orders', { deliveryDate: targetDate }).catch(() => ({ error: '全部订单加载失败', data: [] })),
         apiGet<JsonRecord[]>('/api/trips/available-vehicles').catch(() => ({ error: '可用车辆加载失败', data: [] })),
       ]);
 
@@ -10838,6 +10898,12 @@ function App() {
 
     void reload();
   }, [session?.token]);
+
+  useEffect(() => {
+    if (activePageKey === 'vehicle.dispatch') {
+      void refreshDispatchData(dispatchDate);
+    }
+  }, [activePageKey]);
 
   useEffect(() => {
     if (!Object.keys(data.mallSettings).length) return;
@@ -11364,7 +11430,7 @@ function App() {
 
   const createTrip = async (vehicleId: string, orderIds: string[]) => {
     await runAction('创建行程', async () => {
-      await apiPost('/api/trips', { vehicleId, orderIds });
+      await apiPost('/api/trips', { vehicleId, orderIds, deliveryDate: dispatchDate });
       await refreshDispatchData();
     });
   };
@@ -11418,14 +11484,15 @@ function App() {
     });
   };
 
-  const autoAssignOrders = async (orderIds: string[], maxOrdersPerSlot: number, dryRun: boolean) => {
+  const autoAssignOrders = async (orderIds: string[], maxOrdersPerSlot: number, dryRun: boolean, date?: string) => {
+    const targetDate = date || dispatchDate;
     await runAction('智能调度', async () => {
-      const res = await apiPost('/api/admin/dispatch/auto-assign', { orderIds: orderIds.length > 0 ? orderIds : undefined, maxOrdersPerSlot, dryRun });
+      const res = await apiPost('/api/admin/dispatch/auto-assign', { orderIds: orderIds.length > 0 ? orderIds : undefined, maxOrdersPerSlot, dryRun, deliveryDate: targetDate });
       if (res && typeof res === 'object' && 'assigned' in res) {
         const assignResult = res as { assigned: number; details?: Array<{ orderId: string; vehicleCode: string; timeSlot: string }> };
         showMessage('success', `已分配 ${assignResult.assigned} 个订单${dryRun ? '（预览模式）' : ''}`);
       }
-      await refreshDispatchData();
+      await refreshDispatchData(targetDate);
     });
   };
 
@@ -12179,6 +12246,11 @@ function App() {
           undispatchedOrders={data.undispatchedOrders}
           allOrders={data.allOrders}
           availableVehicles={data.availableVehicles}
+          selectedDate={dispatchDate}
+          onDateChange={(date) => {
+            setDispatchDate(date);
+            void refreshDispatchData(date);
+          }}
           onCreateTrip={createTrip}
           onAssignOrders={assignOrdersToTrip}
           onRemoveOrder={removeOrderFromTrip}

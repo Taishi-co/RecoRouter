@@ -109,6 +109,8 @@ where
 struct TripQuery {
     vehicle_id: Option<String>,
     status: Option<String>,
+    #[serde(rename = "deliveryDate", alias = "delivery_date")]
+    delivery_date: Option<String>,
     page: Option<i64>,
     #[serde(rename = "pageSize", alias = "page_size", alias = "limit")]
     page_size: Option<i64>,
@@ -217,6 +219,9 @@ where
     }
     if let Some(status) = &query.status {
         conditions.push(format!("t.status = '{status}'"));
+    }
+    if let Some(delivery_date) = &query.delivery_date {
+        conditions.push(format!("t.delivery_date = '{delivery_date}'::date"));
     }
     conditions.push("(EXISTS (SELECT 1 FROM trip_stops WHERE trip_id = t.id) OR t.status = 'cancelled')".to_string());
     let where_clause = conditions.join(" AND ");
@@ -586,11 +591,13 @@ where
 
 async fn undispatched_orders<S>(
     State(state): State<AppState<S>>,
+    Query(query): Query<TripQuery>,
 ) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
 where
     S: Storage,
 {
-    let orders = sqlx::query_scalar::<_, Value>(
+    let delivery_date = query.delivery_date.clone();
+    let orders = sqlx::query_scalar::<_, Value>(&format!(
         r#"
         SELECT row_to_json(order_row)
         FROM (
@@ -616,11 +623,15 @@ where
             FROM mall_orders o
             LEFT JOIN mall_order_items oi ON oi.order_id = o.id
             WHERE o.trip_id IS NULL AND o.status IN ('paid', 'ready_for_pickup', 'dispatching')
+              {date_condition}
             GROUP BY o.id
             ORDER BY o.created_at ASC
         ) order_row
         "#,
-    )
+        date_condition = delivery_date.as_ref()
+            .map(|d| format!("AND o.delivery_date = '{d}'::date"))
+            .unwrap_or_default(),
+    ))
     .fetch_all(&state.db)
     .await
     .map_err(|err| ApiError::BadRequest(format!("查询未分配订单失败: {err}")))?;
@@ -636,7 +647,8 @@ where
     S: Storage,
 {
     let limit = query.page_size.unwrap_or(200).min(500);
-    let orders = sqlx::query_scalar::<_, Value>(
+    let delivery_date = query.delivery_date.clone();
+    let orders = sqlx::query_scalar::<_, Value>(&format!(
         r#"
         SELECT row_to_json(order_row)
         FROM (
@@ -669,12 +681,16 @@ where
             LEFT JOIN vehicle_trips t ON t.id = o.trip_id
             LEFT JOIN vehicles v ON v.id = t.vehicle_id
             WHERE o.status IN ('paid', 'ready_for_pickup', 'dispatching', 'completed')
+              {date_condition}
             GROUP BY o.id, t.id, v.vehicle_code, v.license_plate, v.vehicle_type
             ORDER BY o.created_at DESC
             LIMIT $1
         ) order_row
         "#,
-    )
+        date_condition = delivery_date.as_ref()
+            .map(|d| format!("AND o.delivery_date = '{d}'::date"))
+            .unwrap_or_default(),
+    ))
     .bind(limit)
     .fetch_all(&state.db)
     .await
@@ -1849,6 +1865,8 @@ struct AutoAssignRequest {
     max_orders_per_slot: Option<i32>,
     /// 是否只预览不执行（默认 false）
     dry_run: Option<bool>,
+    /// 配送日期（默认今天）
+    delivery_date: Option<String>,
 }
 
 /// 自动调度 - 最少车辆策略
@@ -1870,6 +1888,11 @@ where
     // 默认每车每时段 1 单，避免拥挤
     let max_per_slot = body.max_orders_per_slot.unwrap_or(1);
     let dry_run = body.dry_run.unwrap_or(false);
+    let delivery_date = body.delivery_date.clone();
+
+    let date_condition = delivery_date.as_ref()
+        .map(|d| format!("AND delivery_date = '{d}'::date"))
+        .unwrap_or_default();
 
     // 1. 获取待分配订单（指定订单或全部）
     let pending_orders = if let Some(ref order_ids) = body.order_ids {
@@ -1877,12 +1900,15 @@ where
             return Ok(ok("未选择订单", json!({"assigned": 0, "details": []})));
         }
         sqlx::query_as::<_, (String, Option<String>)>(
-            r#"
-            SELECT id, delivery_time_slot
-            FROM mall_orders
-            WHERE id = ANY($1) AND trip_id IS NULL AND status IN ('paid', 'ready_for_pickup', 'dispatching')
-            ORDER BY delivery_time_slot NULLS LAST, created_at ASC
-            "#,
+            &format!(
+                r#"
+                SELECT id, delivery_time_slot
+                FROM mall_orders
+                WHERE id = ANY($1) AND trip_id IS NULL AND status IN ('paid', 'ready_for_pickup', 'dispatching')
+                  {date_condition}
+                ORDER BY delivery_time_slot NULLS LAST, created_at ASC
+                "#,
+            ),
         )
         .bind(order_ids)
         .fetch_all(&state.db)
@@ -1890,12 +1916,15 @@ where
         .map_err(|err| ApiError::BadRequest(format!("查询指定订单失败: {err}")))?
     } else {
         sqlx::query_as::<_, (String, Option<String>)>(
-            r#"
-            SELECT id, delivery_time_slot
-            FROM mall_orders
-            WHERE trip_id IS NULL AND status IN ('paid', 'ready_for_pickup', 'dispatching')
-            ORDER BY delivery_time_slot NULLS LAST, created_at ASC
-            "#,
+            &format!(
+                r#"
+                SELECT id, delivery_time_slot
+                FROM mall_orders
+                WHERE trip_id IS NULL AND status IN ('paid', 'ready_for_pickup', 'dispatching')
+                  {date_condition}
+                ORDER BY delivery_time_slot NULLS LAST, created_at ASC
+                "#,
+            ),
         )
         .fetch_all(&state.db)
         .await
@@ -1926,21 +1955,26 @@ where
         return Ok(ok("没有可用车辆", json!({"assigned": 0, "details": []})));
     }
 
-    // 3. 获取每辆车今天各时间段的订单数（包括已分配和待分配的）
-    let vehicle_loads = sqlx::query_as::<_, (String, Option<String>, i64)>(
+    // 3. 获取每辆车指定日期各时间段的订单数（包括已分配和待分配的）
+    let vehicle_loads_sql = format!(
         r#"
         SELECT v.id as vehicle_id, o.delivery_time_slot, count(*) as order_count
         FROM vehicles v
-        LEFT JOIN vehicle_trips t ON t.vehicle_id = v.id AND date(t.created_at) = current_date AND t.status != 'cancelled'
+        LEFT JOIN vehicle_trips t ON t.vehicle_id = v.id AND t.delivery_date = {date_clause} AND t.status != 'cancelled'
         LEFT JOIN trip_stops ts ON ts.trip_id = t.id
         LEFT JOIN mall_orders o ON o.id = ts.mall_order_id
         WHERE v.status = 'active'
         GROUP BY v.id, o.delivery_time_slot
         "#,
-    )
-    .fetch_all(&state.db)
-    .await
-    .map_err(|err| ApiError::BadRequest(format!("查询车辆负载失败: {err}")))?;
+        date_clause = delivery_date.as_ref()
+            .map(|d| format!("'{d}'::date"))
+            .unwrap_or_else(|| "current_date".to_string()),
+    );
+
+    let vehicle_loads = sqlx::query_as::<_, (String, Option<String>, i64)>(&vehicle_loads_sql)
+        .fetch_all(&state.db)
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("查询车辆负载失败: {err}")))?;
 
     // 构建车辆负载映射: (vehicle_id, time_slot) -> count
     let mut load_map: std::collections::HashMap<(String, Option<String>), i64> =
@@ -2076,19 +2110,42 @@ where
     let mut tx = state.db.begin().await?;
     let mut trip_ids = std::collections::HashMap::<String, String>::new();
 
+    // 先查找该日期已有的行程
+    let existing_trips_sql = format!(
+        r#"
+        SELECT id, vehicle_id
+        FROM vehicle_trips
+        WHERE status != 'cancelled'
+          AND delivery_date = {date_clause}
+        "#,
+        date_clause = delivery_date.as_ref()
+            .map(|d| format!("'{d}'::date"))
+            .unwrap_or_else(|| "current_date".to_string()),
+    );
+
+    let existing_trips = sqlx::query_as::<_, (String, String)>(&existing_trips_sql)
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap_or_default();
+
+    for (trip_id, vehicle_id) in existing_trips {
+        trip_ids.insert(vehicle_id, trip_id);
+    }
+
     for (order_id, vehicle_id, vehicle_code, time_slot) in planned_assignments {
         let trip_id = if let Some(trip_id) = trip_ids.get(&vehicle_id) {
             trip_id.clone()
         } else {
             let trip_id: String = sqlx::query_scalar(
                 r#"
-                INSERT INTO vehicle_trips (vehicle_id, vehicle_code, status)
-                VALUES ($1, $2, 'planned')
+                INSERT INTO vehicle_trips (vehicle_id, vehicle_code, delivery_date, status)
+                VALUES ($1, $2, $3::date, 'planned')
                 RETURNING id
                 "#,
             )
             .bind(&vehicle_id)
             .bind(&vehicle_code)
+            .bind(delivery_date.as_deref())
             .fetch_one(&mut *tx)
             .await
             .map_err(|err| ApiError::BadRequest(format!("创建行程失败: {err}")))?;
