@@ -19,7 +19,9 @@ import {
 import {
   MallDealProductCard,
   MallPage,
+  MallProductSpecPicker,
   MallSectionTitle,
+  mallProductDefaultAvailableVariant,
   mallProductDefaultSaleVariant,
   mallProductMinimumOrderQuantity,
   mallProductRequiresVariantSelection,
@@ -80,6 +82,8 @@ export default function MallHome() {
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [now, setNow] = useState(() => Date.now())
+  const [specPickerProduct, setSpecPickerProduct] = useState<MallProduct | null>(null)
+  const [specPickerLoading, setSpecPickerLoading] = useState(false)
 
   useDidShow(() => {
     loadProducts()
@@ -193,11 +197,10 @@ export default function MallHome() {
       return
     }
     if (mallProductRequiresVariantSelection(product)) {
-      Taro.showToast({ title: '请选择规格', icon: 'none' })
-      Taro.navigateTo({ url: `/pages/mall/product/index?id=${product.id}` })
+      setSpecPickerProduct(product)
       return
     }
-    const variant = mallProductDefaultSaleVariant(product)
+    const variant = mallProductDefaultAvailableVariant(product)
     const quantity = mallProductMinimumOrderQuantity(product, variant)
     try {
       await addMallCartItem(user.id, product.id, quantity, variant?.id)
@@ -207,6 +210,33 @@ export default function MallHome() {
         title: error instanceof Error ? error.message : '加入失败',
         icon: 'none',
       })
+    }
+  }
+
+  const handleSpecPickerConfirm = async (
+    variant: ReturnType<typeof mallProductDefaultSaleVariant>,
+    quantity: number,
+  ) => {
+    if (!specPickerProduct || !variant) return
+    const user = currentUser()
+    if (!user?.id) {
+      Taro.showToast({ title: '请先登录', icon: 'none' })
+      setSpecPickerProduct(null)
+      redirectToMallAuth('/pages/mall/index/index')
+      return
+    }
+    setSpecPickerLoading(true)
+    try {
+      await addMallCartItem(user.id, specPickerProduct.id, quantity, variant.id)
+      setSpecPickerProduct(null)
+      Taro.showToast({ title: '已加入购物车', icon: 'success' })
+    } catch (error) {
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '加入失败',
+        icon: 'none',
+      })
+    } finally {
+      setSpecPickerLoading(false)
     }
   }
 
@@ -349,6 +379,17 @@ export default function MallHome() {
           <Text className="mall-empty-title">暂无可售商品</Text>
           <Text className="mall-empty-copy">运营补货中，请稍后再来。</Text>
         </View>
+      ) : null}
+
+      {specPickerProduct ? (
+        <MallProductSpecPicker
+          product={specPickerProduct}
+          loading={specPickerLoading}
+          onClose={() => {
+            if (!specPickerLoading) setSpecPickerProduct(null)
+          }}
+          onConfirm={handleSpecPickerConfirm}
+        />
       ) : null}
     </MallPage>
   )

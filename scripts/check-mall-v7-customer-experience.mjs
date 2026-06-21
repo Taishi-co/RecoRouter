@@ -103,14 +103,17 @@ const checks = [
       && /mall-product-detail-section/.test(files.theme),
   },
   {
-    name: '商品卡一键加购按最小起订量执行，多规格商品进入详情选择规格',
+    name: '商品卡一键加购按最小起订量执行，多规格商品弹窗选择规格',
     pass: /mallProductMinimumOrderQuantity/.test(files.ui)
       && /mallProductRequiresVariantSelection/.test(files.ui)
       && /mallProductDefaultSaleVariant/.test(files.ui)
       && /mallProductRequiresVariantSelection\(product\)/.test(files.home)
       && /mallProductRequiresVariantSelection\(product\)/.test(files.category)
-      && /请选择规格/.test(files.home)
-      && /请选择规格/.test(files.category)
+      && /MallProductSpecPicker/.test(files.ui)
+      && /MallProductSpecPicker/.test(files.home)
+      && /MallProductSpecPicker/.test(files.category)
+      && /specPickerProduct/.test(files.home)
+      && /specPickerProduct/.test(files.category)
       && /addMallCartItem\(user\.id,\s*product\.id,\s*quantity,\s*variant\?\.id\)/.test(files.home)
       && /addMallCartItem\(user\.id,\s*product\.id,\s*quantity,\s*variant\?\.id\)/.test(files.category)
       && /MAX_MALL_PURCHASE_QUANTITY/.test(files.serverMall)

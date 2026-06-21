@@ -1274,6 +1274,56 @@ body.reco-mall-h5 .taro_page {
   gap: 10PX;
 }
 
+.mall-product-floating-actions {
+  position: fixed;
+  left: 12PX;
+  right: 12PX;
+  bottom: 80PX;
+  z-index: 21;
+  padding: 10PX 12PX 12PX;
+  border-radius: 12PX;
+  background: #ffffff;
+  border: 1PX solid #d5ead1;
+  box-shadow: 0 8PX 18PX rgba(31, 45, 31, 0.16);
+  box-sizing: border-box;
+}
+
+.mall-product-floating-actions .mall-action-row {
+  margin-top: 10PX;
+}
+
+.mall-product-floating-actions .mall-button {
+  height: 46PX;
+}
+
+.mall-product-floating-spacer {
+  height: 150PX;
+}
+
+.mall-product-floating-quantity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12PX;
+}
+
+.mall-product-floating-quantity-title {
+  display: block;
+  color: #1f2d1f;
+  font-size: 14PX;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.mall-product-floating-quantity-copy {
+  display: block;
+  margin-top: 3PX;
+  color: #657160;
+  font-size: 11PX;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
 .mall-variant-panel {
   display: flex;
   flex-direction: column;
@@ -1391,6 +1441,12 @@ body.reco-mall-h5 .taro_page {
   font-weight: 900;
 }
 
+.mall-quality-entry-main {
+  display: flex;
+  align-items: center;
+  gap: 6PX;
+}
+
 .mall-quality-entry text:last-child,
 .mall-quality-entry span:last-child {
   color: #ff8a1f;
@@ -1418,10 +1474,51 @@ body.reco-mall-h5 .taro_page {
   font-weight: 900;
 }
 
+.mall-product-quality-head > view {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4PX;
+}
+
 .mall-product-quality-head text:last-child,
 .mall-product-quality-head span:last-child {
   color: #657160;
   font-size: 12PX;
+}
+
+.mall-product-quality-close {
+  flex: 0 0 auto;
+  color: #ff8a1f !important;
+  font-size: 13PX !important;
+  font-weight: 900;
+}
+
+.mall-product-quality-modal {
+  width: 100%;
+  max-width: 430PX;
+  max-height: 76vh;
+  margin-top: 0;
+  overflow-y: auto;
+  border-radius: 14PX 14PX 10PX 10PX;
+  box-shadow: 0 -10PX 30PX rgba(31, 45, 31, 0.16);
+}
+
+.mall-product-quality-suppliers {
+  display: flex;
+  align-items: center;
+  gap: 6PX;
+  flex-wrap: wrap;
+}
+
+.mall-product-quality-suppliers text,
+.mall-product-quality-suppliers span {
+  padding: 4PX 7PX;
+  border-radius: 6PX;
+  background: #fff4e5;
+  color: #9a5a16;
+  font-size: 11PX;
+  font-weight: 900;
 }
 
 .mall-product-quality-item {
@@ -3128,8 +3225,6 @@ body.reco-mall-h5 .taro_page {
 
 .mall-v7-product-fixed-price-badge {
   position: absolute;
-  left: 6PX;
-  top: 6PX;
   max-width: calc(100% - 12PX);
   min-height: 22PX;
   padding: 4PX 7PX;
@@ -3143,6 +3238,26 @@ body.reco-mall-h5 .taro_page {
   line-height: 1;
   overflow: hidden;
   white-space: nowrap;
+}
+
+.mall-v7-product-fixed-price-badge-top_left {
+  top: 6PX;
+  left: 6PX;
+}
+
+.mall-v7-product-fixed-price-badge-top_right {
+  top: 6PX;
+  right: 6PX;
+}
+
+.mall-v7-product-fixed-price-badge-bottom_left {
+  bottom: 6PX;
+  left: 6PX;
+}
+
+.mall-v7-product-fixed-price-badge-bottom_right {
+  right: 6PX;
+  bottom: 6PX;
 }
 
 .mall-v7-product-fixed-price-badge text,
@@ -3202,6 +3317,25 @@ body.reco-mall-h5 .taro_page {
   color: #2f7e43;
   font-size: 10PX;
   font-weight: 900;
+}
+
+.mall-v7-quality-badge {
+  min-height: 19PX;
+  padding: 3PX 5PX;
+  border-radius: 5PX;
+  background: #eef7ea;
+  color: #2f7e43;
+  display: flex;
+  align-items: center;
+  gap: 3PX;
+  box-sizing: border-box;
+}
+
+.mall-v7-quality-badge text,
+.mall-v7-quality-badge span {
+  padding: 0;
+  background: transparent;
+  color: #2f7e43;
 }
 
 .mall-v7-product-price-row {
@@ -3568,6 +3702,10 @@ body.reco-mall-h5 .taro_page {
   will-change: transform;
 }
 
+.mall-v7-cart-item-selected {
+  background: #f1faed;
+}
+
 .mall-v7-cart-item-swiped {
   transform: translateX(-76PX);
 }
@@ -3576,11 +3714,16 @@ body.reco-mall-h5 .taro_page {
   width: 20PX;
   height: 20PX;
   border-radius: 50%;
-  background: #2f7e43;
-  border: 1PX solid #2f7e43;
+  background: #ffffff;
+  border: 1PX solid #b8c5b4;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.mall-v7-cart-check-active {
+  background: #2f7e43;
+  border-color: #2f7e43;
 }
 
 .mall-v7-cart-thumb {
@@ -3914,6 +4057,119 @@ body.reco-mall-h5 .taro_page {
   justify-content: center;
   padding: 16PX;
   box-sizing: border-box;
+}
+
+.mall-product-picker {
+  width: 100%;
+  max-width: 430PX;
+  padding: 16PX;
+  border-radius: 14PX 14PX 10PX 10PX;
+  background: #ffffff;
+  box-sizing: border-box;
+  box-shadow: 0 -10PX 30PX rgba(31, 45, 31, 0.16);
+}
+
+.mall-product-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12PX;
+}
+
+.mall-product-picker-kicker {
+  display: block;
+  color: #63bf54;
+  font-size: 12PX;
+  font-weight: 900;
+}
+
+.mall-product-picker-title {
+  display: block;
+  margin-top: 4PX;
+  color: #1f2d1f;
+  font-size: 18PX;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.mall-product-picker-close {
+  width: 32PX;
+  height: 32PX;
+  border-radius: 8PX;
+  background: #f3f7f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mall-product-picker-variants {
+  margin-top: 14PX;
+  max-height: 310PX;
+  overflow-y: auto;
+}
+
+.mall-product-picker-quantity {
+  margin-top: 14PX;
+  padding: 11PX 12PX;
+  border-radius: 9PX;
+  background: #f7fbf4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12PX;
+}
+
+.mall-product-picker-quantity-title {
+  display: block;
+  color: #1f2d1f;
+  font-size: 14PX;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.mall-product-picker-quantity-copy {
+  display: block;
+  margin-top: 4PX;
+  color: #657160;
+  font-size: 11PX;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.mall-product-picker-stepper {
+  flex: 0 0 auto;
+}
+
+.mall-product-picker-actions {
+  margin-top: 16PX;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10PX;
+}
+
+.mall-product-picker-cancel,
+.mall-product-picker-confirm {
+  height: 44PX;
+  border-radius: 8PX;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14PX;
+  font-weight: 900;
+}
+
+.mall-product-picker-cancel {
+  background: #f4f6f0;
+  color: #657160;
+}
+
+.mall-product-picker-confirm {
+  background: #2f7e43;
+  color: #ffffff;
+}
+
+.mall-product-picker-confirm-disabled {
+  opacity: 0.65;
 }
 
 .mall-profile-editor {

@@ -115,6 +115,12 @@ export default function MallCartPage() {
     }
   }
 
+  const openCartItemProduct = (item: MallCartItem) => {
+    const productId = item.product?.id || item.productId
+    if (!productId) return
+    Taro.navigateTo({ url: `/pages/mall/product/index?id=${encodeURIComponent(productId)}` })
+  }
+
   const selectAllCartItems = async () => {
     try {
       await Promise.all(cart.items.map((item) => updateMallCartItem(item.id, { selected: !allSelected })))
@@ -292,14 +298,20 @@ export default function MallCartPage() {
                 <Trash2 size={18} color="#FFFFFF" />
                 <Text>删除</Text>
               </View>
-              <View className={swipedCartItemId === item.id ? 'mall-v7-cart-item mall-v7-cart-item-swiped' : 'mall-v7-cart-item'}>
-                <View className="mall-v7-cart-check" onClick={() => toggleItem(item)}>
+              <View
+                className={[
+                  'mall-v7-cart-item',
+                  item.selected ? 'mall-v7-cart-item-selected' : '',
+                  swipedCartItemId === item.id ? 'mall-v7-cart-item-swiped' : '',
+                ].filter(Boolean).join(' ')}
+              >
+                <View className={item.selected ? 'mall-v7-cart-check mall-v7-cart-check-active' : 'mall-v7-cart-check'} onClick={() => toggleItem(item)}>
                   {item.selected ? <Check size={16} color="#FFFFFF" /> : null}
                 </View>
-                <View className="mall-v7-cart-thumb">
+                <View className="mall-v7-cart-thumb" onClick={() => openCartItemProduct(item)}>
                   <MallProductThumb product={item.product} />
                 </View>
-                <View className="mall-v7-cart-copy">
+                <View className="mall-v7-cart-copy" onClick={() => openCartItemProduct(item)}>
                   <Text className="mall-v7-product-name">{item.product?.name || '商品'}</Text>
                   <Text className="mall-v7-product-subtitle">
                     {item.variantName || item.product?.specification || item.product?.subtitle || '基地直采 · 今日锁鲜'}
@@ -413,7 +425,9 @@ function buildCartDiscountDetail(cart: MallCart, payableCents: number, savedCent
     freeDeliveryDiscountCents?: number
   }
   const freeDeliveryDiscountCents = Math.max(
-    cartWithDeliveryDiscount.freeDeliveryDiscountCents
+    cart.deliveryDiscountCents
+      ?? cartWithDeliveryDiscount.freeDeliveryDiscountCents
+      ?? sumCartDiscountBreakdown(cart, 'delivery')
       ?? (deliveryFeeCents === 0 && cart.subtotalCents > 0 ? 600 : 0),
     0,
   )

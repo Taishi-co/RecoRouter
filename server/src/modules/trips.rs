@@ -25,10 +25,7 @@ where
             "/api/trips/undispatched-orders",
             get(undispatched_orders::<S>),
         )
-        .route(
-            "/api/trips/all-orders",
-            get(all_orders::<S>),
-        )
+        .route("/api/trips/all-orders", get(all_orders::<S>))
         .route(
             "/api/trips/available-vehicles",
             get(available_vehicles::<S>),
@@ -218,7 +215,10 @@ where
     if let Some(status) = &query.status {
         conditions.push(format!("t.status = '{status}'"));
     }
-    conditions.push("(EXISTS (SELECT 1 FROM trip_stops WHERE trip_id = t.id) OR t.status = 'cancelled')".to_string());
+    conditions.push(
+        "(EXISTS (SELECT 1 FROM trip_stops WHERE trip_id = t.id) OR t.status = 'cancelled')"
+            .to_string(),
+    );
     let where_clause = conditions.join(" AND ");
 
     let trips = sqlx::query_scalar::<_, Value>(&format!(
@@ -509,12 +509,11 @@ where
             .await?;
     }
 
-    let has_remaining_stops: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM trip_stops WHERE trip_id = $1)",
-    )
-    .bind(&trip_id)
-    .fetch_one(&mut *tx)
-    .await?;
+    let has_remaining_stops: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM trip_stops WHERE trip_id = $1)")
+            .bind(&trip_id)
+            .fetch_one(&mut *tx)
+            .await?;
 
     if !has_remaining_stops {
         sqlx::query("DELETE FROM vehicle_trips WHERE id = $1")
@@ -522,7 +521,10 @@ where
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
-        return Ok(ok("行程已删除（最后一个站点已移除）", json!({"deleted": true})));
+        return Ok(ok(
+            "行程已删除（最后一个站点已移除）",
+            json!({"deleted": true}),
+        ));
     }
 
     sync_trip_counts(&mut tx, &trip_id).await?;
@@ -825,8 +827,14 @@ where
 
         // 如果行程没有时间段，从订单同步
         if !need_update_trip_slot {
-            let order_date = order.get("deliveryDate").and_then(Value::as_str).map(String::from);
-            let order_slot = order.get("deliveryTimeSlot").and_then(Value::as_str).map(String::from);
+            let order_date = order
+                .get("deliveryDate")
+                .and_then(Value::as_str)
+                .map(String::from);
+            let order_slot = order
+                .get("deliveryTimeSlot")
+                .and_then(Value::as_str)
+                .map(String::from);
             if (trip_delivery_date.is_none() && order_date.is_some())
                 || (trip_time_slot.is_none() && order_slot.is_some())
             {
@@ -967,12 +975,11 @@ where
         .execute(&mut *tx)
         .await?;
 
-    let has_remaining_stops: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM trip_stops WHERE trip_id = $1)",
-    )
-    .bind(&trip_id)
-    .fetch_one(&mut *tx)
-    .await?;
+    let has_remaining_stops: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM trip_stops WHERE trip_id = $1)")
+            .bind(&trip_id)
+            .fetch_one(&mut *tx)
+            .await?;
 
     if !has_remaining_stops {
         sqlx::query("DELETE FROM vehicle_trips WHERE id = $1")
@@ -980,7 +987,10 @@ where
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
-        return Ok(ok("行程已删除（最后一个订单已移除）", json!({"deleted": true})));
+        return Ok(ok(
+            "行程已删除（最后一个订单已移除）",
+            json!({"deleted": true}),
+        ));
     }
 
     sync_trip_counts(&mut tx, &trip_id).await?;
@@ -1115,9 +1125,10 @@ async fn do_create_trip(pool: &sqlx::PgPool, body: &CreateTripRequest) -> ApiRes
         .map(String::from);
 
     // 确定配送日期：优先用传入的，没有默认今天
-    let delivery_date = body.delivery_date.clone().or_else(|| {
-        chrono::Local::now().format("%Y-%m-%d").to_string().into()
-    });
+    let delivery_date = body
+        .delivery_date
+        .clone()
+        .or_else(|| chrono::Local::now().format("%Y-%m-%d").to_string().into());
 
     // 校验：同一天同一辆车只能有一个进行中的行程
     let existing_trip: Option<Value> = sqlx::query_scalar(
@@ -1992,7 +2003,11 @@ where
                                     .copied()
                                     .unwrap_or(0);
                                 if current_load < max_per_slot as i64 {
-                                    Some((id.clone(), code.clone().unwrap_or_default(), current_load))
+                                    Some((
+                                        id.clone(),
+                                        code.clone().unwrap_or_default(),
+                                        current_load,
+                                    ))
                                 } else {
                                     None
                                 }

@@ -64,6 +64,7 @@ export interface MallFixedPriceCampaign {
   badgeIconUrl?: string | null
   badgeBackgroundColor?: string | null
   badgeTextColor?: string | null
+  badgePosition?: string | null
 }
 
 export interface MallProductVariant {
@@ -197,6 +198,7 @@ export interface MallCart {
   discountRuleCents?: number | null
   fullReductionCents?: number
   couponDiscountCents?: number
+  deliveryDiscountCents?: number
   memberDiscountCents?: number
   pointsRedeemedCents?: number
   totalDiscountCents?: number
@@ -463,6 +465,7 @@ export interface MallCheckout {
   weightAdjustmentCents?: number | null
   fullReductionCents?: number
   couponDiscountCents?: number
+  deliveryDiscountCents?: number
   memberDiscountCents?: number
   pointsRedeemedCents?: number
   totalDiscountCents?: number

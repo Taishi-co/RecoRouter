@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Image, Swiper, SwiperItem, Text, View } from '@tarojs/components'
 import Taro, { useShareAppMessage } from '@tarojs/taro'
-import { ChevronLeft, Share2, ShoppingCart } from 'lucide-react-taro'
+import { ChevronLeft, Share2, ShieldCheck, ShoppingCart } from 'lucide-react-taro'
 import { Button } from '@/components/ui/button'
+import { Network } from '@/network'
 import {
   addMallCartItem,
   createMallCheckout,
@@ -16,7 +17,10 @@ import {
   MallLocationStrip,
   MallPage,
   MallPrimaryButton,
+  mallProductDefaultAvailableVariant,
+  mallProductHasQualificationReports,
   mallProductMinimumOrderQuantity,
+  mallProductNormalizedQuantity,
   mallProductSaleVariants,
   mallYuan,
 } from '../mall-ui'
@@ -29,6 +33,7 @@ interface StoredUser {
 export default function MallProductDetail() {
   const [product, setProduct] = useState<MallProduct | null>(null)
   const [selectedVariantId, setSelectedVariantId] = useState('')
+  const [selectedQuantity, setSelectedQuantity] = useState(1)
   const [loading, setLoading] = useState(false)
   const [qualificationOpen, setQualificationOpen] = useState(false)
   const variants = useMemo(() => productVariants(product), [product])
@@ -51,11 +56,16 @@ export default function MallProductDetail() {
   useEffect(() => {
     if (!product) return
     const nextVariants = productVariants(product)
-    const defaultVariantId = product.defaultVariantId || nextVariants[0]?.id || ''
+    const defaultVariantId = mallProductDefaultAvailableVariant(product)?.id || nextVariants[0]?.id || ''
     setSelectedVariantId((current) => (
       nextVariants.some((variant) => variant.id === current) ? current : defaultVariantId
     ))
   }, [product])
+
+  useEffect(() => {
+    if (!product) return
+    setSelectedQuantity(mallProductMinimumOrderQuantity(product, selectedVariant))
+  }, [product?.id, selectedVariant?.id])
 
   useShareAppMessage(() => ({
     title: product?.name ? `叁友甄选｜${product.name}` : '叁友甄选',
@@ -97,7 +107,16 @@ export default function MallProductDetail() {
         Taro.showToast({ title: '请选择规格', icon: 'none' })
         return
       }
-      await addMallCartItem(user.id, product.id, mallProductMinimumOrderQuantity(product, selectedVariant), selectedVariant.id)
+      if (selectedVariant.status !== 'on_sale' || selectedVariant.stock <= 0) {
+        Taro.showToast({ title: '该规格暂不可售', icon: 'none' })
+        return
+      }
+      await addMallCartItem(
+        user.id,
+        product.id,
+        mallProductNormalizedQuantity(product, selectedVariant, selectedQuantity),
+        selectedVariant.id,
+      )
       Taro.showToast({ title: '已加入购物车', icon: 'success' })
     } catch (error) {
       Taro.showToast({
@@ -112,12 +131,16 @@ export default function MallProductDetail() {
     const user = requireUser()
     if (!user?.id) return
     try {
+      if (!selectedVariant || selectedVariant.status !== 'on_sale' || selectedVariant.stock <= 0) {
+        Taro.showToast({ title: '该规格暂不可售', icon: 'none' })
+        return
+      }
       const checkout = await createMallCheckout({
         userId: user.id,
         source: 'buy_now',
         productId: product.id,
-        variantId: selectedVariant?.id || undefined,
-        quantity: mallProductMinimumOrderQuantity(product, selectedVariant),
+        variantId: selectedVariant.id,
+        quantity: mallProductNormalizedQuantity(product, selectedVariant, selectedQuantity),
       })
       Taro.navigateTo({ url: `/pages/mall/confirm/index?checkoutId=${checkout.id}` })
     } catch (error) {
@@ -160,11 +183,14 @@ export default function MallProductDetail() {
                 起订 {mallProductMinimumOrderQuantity(product, selectedVariant)}
               </View>
             </View>
-            {product.qualityGuaranteed ? (
+            {mallProductHasQualificationReports(product) ? (
               <View className="mall-quality-entry">
-                <Text>品质保证</Text>
-                <Text onClick={() => setQualificationOpen(current => !current)}>
-                  {qualificationOpen ? '收起资质' : '查看资质'}
+                <View className="mall-quality-entry-main">
+                  <ShieldCheck size={16} color="#2F7E43" strokeWidth={2.4} />
+                  <Text>资质可查</Text>
+                </View>
+                <Text onClick={() => setQualificationOpen(true)}>
+                  查看资质
                 </Text>
               </View>
             ) : null}
@@ -181,53 +207,80 @@ export default function MallProductDetail() {
             <MallLocationStrip />
           </View>
 
-          {qualificationOpen ? <ProductQualificationSection product={product} /> : null}
+          <ProductDetailSections product={product} selectedVariant={selectedVariant} selectedQuantity={selectedQuantity} />
+          <View className="mall-product-floating-spacer" />
 
-          <ProductDetailSections product={product} selectedVariant={selectedVariant} />
-
-          <View className="mall-action-row">
-            <MallPrimaryButton subtle onClick={handleAddCart}>
-              <ShoppingCart size={18} color="#FF9238" />
-              <Text style={{ marginLeft: 6 }}>加入购物车</Text>
-            </MallPrimaryButton>
-            <MallPrimaryButton onClick={handleBuyNow}>
-              <Text>＋ 立即选购</Text>
-            </MallPrimaryButton>
+          <View className="mall-product-floating-actions">
+            <ProductQuantityControl
+              product={product}
+              selectedVariant={selectedVariant}
+              quantity={selectedQuantity}
+              onChange={setSelectedQuantity}
+            />
+            <View className="mall-action-row">
+              <MallPrimaryButton subtle onClick={handleAddCart}>
+                <ShoppingCart size={18} color="#FF9238" />
+                <Text style={{ marginLeft: 6 }}>加入购物车</Text>
+              </MallPrimaryButton>
+              <MallPrimaryButton onClick={handleBuyNow}>
+                <Text>＋ 立即选购</Text>
+              </MallPrimaryButton>
+            </View>
           </View>
+
+          {qualificationOpen ? <ProductQualificationModal product={product} onClose={() => setQualificationOpen(false)} /> : null}
         </>
       )}
     </MallPage>
   )
 }
 
-function ProductQualificationSection({ product }: { product: MallProduct }) {
+function ProductQualificationModal({
+  product,
+  onClose,
+}: {
+  product: MallProduct
+  onClose: () => void
+}) {
   const reports = productQualificationReports(product)
-  if (!reports.length) return null
+  const suppliers = productSuppliers(product)
 
   return (
-    <View className="mall-product-quality-panel">
-      <View className="mall-product-quality-head">
-        <Text>商品资质</Text>
-        <Text>报告可追溯</Text>
-      </View>
-      {reports.map((report) => (
-        <View className="mall-product-quality-item" key={report.id}>
+    <View className="mall-modal-mask" onClick={onClose}>
+      <View className="mall-product-quality-panel mall-product-quality-modal" onClick={(event) => event.stopPropagation()}>
+        <View className="mall-product-quality-head">
           <View>
-            <Text className="mall-product-quality-title">{report.reportName || '资质报告'}</Text>
-            <Text className="mall-product-quality-copy">
-              {[
-                report.reportType || '',
-                report.buyerName ? `供货商：${report.buyerName}` : '',
-                report.issuer ? `机构：${report.issuer}` : '',
-                report.expiresAt ? `有效期至：${report.expiresAt}` : '',
-              ].filter(Boolean).join(' · ') || '资质信息已归档'}
+            <Text>商品资质</Text>
+            <Text>{reports.length} 份报告可追溯</Text>
+          </View>
+          <Text className="mall-product-quality-close" onClick={onClose}>关闭</Text>
+        </View>
+        {suppliers.length ? (
+          <View className="mall-product-quality-suppliers">
+            {suppliers.map((supplier) => (
+              <Text key={supplier.id || supplier.name}>{supplier.name}</Text>
+            ))}
+          </View>
+        ) : null}
+        {reports.map((report) => (
+          <View className="mall-product-quality-item" key={report.id}>
+            <View>
+              <Text className="mall-product-quality-title">{report.reportName || '资质报告'}</Text>
+              <Text className="mall-product-quality-copy">
+                {[
+                  report.reportType || '',
+                  report.hideSupplier ? '' : report.buyerName ? `供货商：${report.buyerName}` : '',
+                  report.issuer ? `机构：${report.issuer}` : '',
+                  report.expiresAt ? `有效期至：${report.expiresAt}` : '',
+                ].filter(Boolean).join(' · ') || '资质信息已归档'}
+              </Text>
+            </View>
+            <Text className="mall-product-quality-link" onClick={() => openQualificationReport(report)}>
+              查看
             </Text>
           </View>
-          <Text className="mall-product-quality-link" onClick={() => openQualificationReport(report)}>
-            查看
-          </Text>
-        </View>
-      ))}
+        ))}
+      </View>
     </View>
   )
 }
@@ -343,9 +396,11 @@ function VariantSelector({
 function ProductDetailSections({
   product,
   selectedVariant,
+  selectedQuantity,
 }: {
   product: MallProduct
   selectedVariant: MallProductVariant | null
+  selectedQuantity: number
 }) {
   const detailParagraphs = splitProductDescription(product.description || product.subtitle)
   const specs = buildPublicSpecs(product, selectedVariant)
@@ -376,9 +431,9 @@ function ProductDetailSections({
         <Text className="mall-product-detail-title">起订信息</Text>
         <View className="mall-product-order-box">
           <Text>最小起订量 {mallProductMinimumOrderQuantity(product, selectedVariant)} 件</Text>
-          <Text>库存 {selectedVariant?.stock ?? product.stock} 件，下单数量不足起订量时将按起订量加入购物车</Text>
+          <Text>当前选择 {mallProductNormalizedQuantity(product, selectedVariant, selectedQuantity)} 件，库存 {selectedVariant?.stock ?? product.stock} 件</Text>
           {selectedVariant?.pricingMode === 'weighed' ? (
-            <Text>{weighedVariantRangeText(selectedVariant, mallProductMinimumOrderQuantity(product, selectedVariant))}，实际金额由客服称重后确认。</Text>
+            <Text>{weighedVariantRangeText(selectedVariant, mallProductNormalizedQuantity(product, selectedVariant, selectedQuantity))}，实际金额由客服称重后确认。</Text>
           ) : null}
         </View>
       </View>
@@ -420,7 +475,60 @@ function productQualificationReports(product: MallProduct): MallQualificationRep
     .filter((report) => Boolean(report.reportUrl?.trim()))
 }
 
-function openQualificationReport(report: MallQualificationReport) {
+function productSuppliers(product: MallProduct) {
+  return (product.procurementBuyers || [])
+    .filter((buyer) => buyer && buyer.status !== 'inactive' && buyer.status !== 'deleted' && !buyer.hideSupplier)
+    .map((buyer) => ({
+      id: buyer.id,
+      name: buyer.name || buyer.contactName || '供货商',
+    }))
+}
+
+function ProductQuantityControl({
+  product,
+  selectedVariant,
+  quantity,
+  onChange,
+}: {
+  product: MallProduct
+  selectedVariant: MallProductVariant | null
+  quantity: number
+  onChange: (quantity: number) => void
+}) {
+  const minimumQuantity = mallProductMinimumOrderQuantity(product, selectedVariant)
+  const normalizedQuantity = mallProductNormalizedQuantity(product, selectedVariant, quantity)
+  const stock = selectedVariant?.stock ?? product.stock
+  const atStockLimit = stock > 0 && stock >= minimumQuantity && normalizedQuantity >= stock
+  const updateQuantity = (nextQuantity: number) => {
+    onChange(mallProductNormalizedQuantity(product, selectedVariant, nextQuantity))
+  }
+
+  return (
+    <View className="mall-product-floating-quantity">
+      <View>
+        <Text className="mall-product-floating-quantity-title">数量</Text>
+        <Text className="mall-product-floating-quantity-copy">起订 {minimumQuantity}</Text>
+      </View>
+      <View className="mall-stepper">
+        <Text
+          className={normalizedQuantity <= minimumQuantity ? 'mall-stepper-action mall-stepper-action-muted' : 'mall-stepper-action'}
+          onClick={() => updateQuantity(normalizedQuantity - 1)}
+        >
+          −
+        </Text>
+        <Text className="mall-stepper-value">{normalizedQuantity}</Text>
+        <Text
+          className={atStockLimit ? 'mall-stepper-action mall-stepper-action-muted' : 'mall-stepper-action'}
+          onClick={() => updateQuantity(normalizedQuantity + 1)}
+        >
+          ＋
+        </Text>
+      </View>
+    </View>
+  )
+}
+
+async function openQualificationReport(report: MallQualificationReport) {
   const reportUrl = resolveMallImageUrl(report.reportUrl)
   if (!reportUrl) {
     Taro.showToast({ title: '资质文件地址为空', icon: 'none' })
@@ -431,10 +539,23 @@ function openQualificationReport(report: MallQualificationReport) {
     return
   }
   if (TARO_ENV === 'h5' && typeof window !== 'undefined') {
-    window.open(reportUrl, '_blank')
+    window.open(reportUrl, '_blank', 'noopener,noreferrer')
     return
   }
-  Taro.showToast({ title: '请在浏览器中查看资质文件', icon: 'none' })
+  Taro.showLoading({ title: '打开资质...' })
+  try {
+    const result = await Network.downloadFile({ url: reportUrl })
+    const filePath = result.tempFilePath || result.filePath
+    if (!filePath) throw new Error('empty file path')
+    await Taro.openDocument({ filePath, showMenu: true })
+  } catch (error) {
+    Taro.showToast({
+      title: error instanceof Error ? '资质文件打开失败' : '资质文件打开失败',
+      icon: 'none',
+    })
+  } finally {
+    Taro.hideLoading()
+  }
 }
 
 function productPriceCents(product: MallProduct, selectedVariant?: MallProductVariant | null) {
