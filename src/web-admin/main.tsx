@@ -2432,6 +2432,12 @@ function campaignRulesFromForm(form: CampaignForm, products: JsonRecord[]) {
         id: tier.id || `tier-${index + 1}`,
         thresholdCents,
       };
+      if (campaignType === 'free_delivery') {
+        return {
+          ...base,
+          discountCents: 0,
+        };
+      }
       if (campaignType === 'full_discount') {
         const discountRateBps = Math.round((Number(tier.discountPercent) || 100) * 100);
         return {
@@ -2444,7 +2450,11 @@ function campaignRulesFromForm(form: CampaignForm, products: JsonRecord[]) {
         discountCents: moneyFromYuan(tier.discountYuan),
       };
     })
-    .filter(tier => tier.thresholdCents >= 0 && ('discountCents' in tier ? tier.discountCents > 0 : tier.discountRateBps > 0));
+    .filter(tier => {
+      if (tier.thresholdCents < 0) return false;
+      if (campaignType === 'free_delivery') return tier.thresholdCents > 0;
+      return 'discountCents' in tier ? tier.discountCents > 0 : tier.discountRateBps > 0;
+    });
   const productIds = idListFromText(form.productIds);
   const productGroups = form.productGroups
     .map((group, index) => {
@@ -2493,13 +2503,18 @@ function campaignTierSummary(campaign: JsonRecord) {
   const tiers = arrayValue(rules, 'tiers')
     .filter((item): item is JsonRecord => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
   const source = tiers.length ? tiers : [rules];
-  if (type === 'free_delivery') return '免运费';
   return source
     .map(tier => {
       const threshold = yuan(numberValue(tier, 'thresholdCents'));
+      if (type === 'free_delivery') {
+        return `满 ${threshold} 免运费`;
+      }
       if (type === 'full_discount') {
         const rate = numberValue(tier, 'discountRateBps', numberValue(tier, 'discountBps', 10000)) / 1000;
         return `满 ${threshold} 打 ${rate.toFixed(1).replace(/\.0$/, '')} 折`;
+      }
+      if (type === 'delivery_reduction') {
+        return `满 ${threshold} 减运费 ${yuan(numberValue(tier, 'discountCents'))}`;
       }
       return `满 ${threshold} 减 ${yuan(numberValue(tier, 'discountCents'))}`;
     })
@@ -9061,6 +9076,141 @@ function MallHomeSectionsSection({
   );
 }
 
+const editableCampaignTypes = ['full_reduction', 'full_discount', 'free_delivery', 'delivery_reduction'];
+
+function CampaignBusinessFields({
+  form,
+  onChange,
+  onOpenFixedPriceCampaign,
+  onOpenPromotionVenue,
+  updateTier,
+}: {
+  form: CampaignForm;
+  onChange: (patch: Partial<CampaignForm>) => void;
+  onOpenFixedPriceCampaign: () => void;
+  onOpenPromotionVenue: () => void;
+  updateTier: (id: string, patch: Partial<CampaignTierForm>) => void;
+}) {
+  const campaignType = normalizeCampaignTypeForForm(form.campaignType);
+  const tiers = form.tiers.length ? form.tiers : [createCampaignTierForm()];
+  const firstTier = tiers[0];
+  const updateFirstTier = (patch: Partial<CampaignTierForm>) => {
+    onChange({ tiers: [{ ...firstTier, ...patch }] });
+  };
+
+  if (campaignType === 'fixed_price') {
+    return (
+      <section className="campaign-rule-card">
+        <div className="campaign-rule-card-head">
+          <strong>一口价活动</strong>
+        </div>
+        <p className="form-hint">进入一口价页面配置商品、商品组、角标和活动时间。</p>
+        <button className="primary-button" type="button" onClick={onOpenFixedPriceCampaign}>
+          <Icon name="megaphone" />
+          进入一口价页面
+        </button>
+      </section>
+    );
+  }
+
+  if (campaignType === 'promotion_venue') {
+    return (
+      <section className="campaign-rule-card">
+        <div className="campaign-rule-card-head">
+          <strong>大促会场</strong>
+        </div>
+        <p className="form-hint">进入大促会场页面配置会场入口、背景、文案和参与商品。</p>
+        <button className="primary-button" type="button" onClick={onOpenPromotionVenue}>
+          <Icon name="megaphone" />
+          进入大促会场页面
+        </button>
+      </section>
+    );
+  }
+
+  if (campaignType === 'free_delivery') {
+    return (
+      <section className="campaign-rule-card">
+        <div className="campaign-rule-card-head">
+          <strong>免运费规则</strong>
+        </div>
+        <div className="campaign-tier-list">
+          <div className="campaign-tier-row">
+            <label>
+              包邮门槛
+              <input
+                min="0.01"
+                required
+                step="0.01"
+                type="number"
+                value={firstTier.thresholdYuan}
+                onChange={event => updateFirstTier({ thresholdYuan: event.target.value })}
+              />
+            </label>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (!editableCampaignTypes.includes(campaignType)) {
+    return null;
+  }
+
+  const valueLabel = campaignType === 'full_discount'
+    ? '折扣力度'
+    : campaignType === 'delivery_reduction'
+      ? '运费减免金额'
+      : '满减金额';
+  const title = campaignType === 'delivery_reduction'
+    ? '运费减免规则'
+    : campaignType === 'full_discount'
+      ? '满折规则'
+      : '满减规则';
+
+  return (
+    <section className="campaign-rule-card">
+      <div className="campaign-rule-card-head">
+        <strong>{title}</strong>
+        <button className="ghost-button" type="button" onClick={() => onChange({ tiers: [...tiers, createCampaignTierForm()] })}>
+          <Icon name="plus" />
+          新增阶梯
+        </button>
+      </div>
+      <div className="campaign-tier-list">
+        {tiers.map((tier, index) => (
+          <div className="campaign-tier-row" key={tier.id}>
+            <span>阶梯 {index + 1}</span>
+            <label>
+              门槛金额
+              <input min="0" required step="0.01" type="number" value={tier.thresholdYuan} onChange={event => updateTier(tier.id, { thresholdYuan: event.target.value })} />
+            </label>
+            {campaignType === 'full_discount' ? (
+              <label>
+                {valueLabel}
+                <input min="1" max="100" required step="0.1" type="number" value={tier.discountPercent} onChange={event => updateTier(tier.id, { discountPercent: event.target.value })} />
+              </label>
+            ) : (
+              <label>
+                {valueLabel}
+                <input min="0.01" required step="0.01" type="number" value={tier.discountYuan} onChange={event => updateTier(tier.id, { discountYuan: event.target.value })} />
+              </label>
+            )}
+            <button
+              className="ghost-button danger"
+              disabled={tiers.length <= 1}
+              type="button"
+              onClick={() => onChange({ tiers: tiers.filter(item => item.id !== tier.id) })}
+            >
+              删除
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function MallCampaignsSection({
   campaigns,
   filters,
@@ -9071,6 +9221,8 @@ function MallCampaignsSection({
   onDelete,
   onEdit,
   onFiltersChange,
+  onOpenFixedPriceCampaign,
+  onOpenPromotionVenue,
   onReset,
   onSearch,
   onSubmit,
@@ -9084,6 +9236,8 @@ function MallCampaignsSection({
   onDelete: (id: string) => Promise<void>;
   onEdit: (campaign: JsonRecord) => void;
   onFiltersChange: (patch: Partial<MallFilterState>) => void;
+  onOpenFixedPriceCampaign: (campaign?: JsonRecord) => void;
+  onOpenPromotionVenue: (campaign?: JsonRecord) => void;
   onReset: () => void;
   onSearch: () => Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
@@ -9109,11 +9263,35 @@ function MallCampaignsSection({
     setModalOpen(true);
   };
   const openEdit = (campaign: JsonRecord) => {
+    const campaignType = normalizeCampaignTypeForForm(stringValue(campaign, 'campaignType', stringValue(recordValue(campaign, 'rules'), 'activityType')));
+    if (campaignType === 'fixed_price') {
+      setModalOpen(false);
+      onOpenFixedPriceCampaign(campaign);
+      return;
+    }
+    if (campaignType === 'promotion_venue') {
+      setModalOpen(false);
+      onOpenPromotionVenue(campaign);
+      return;
+    }
     onEdit(campaign);
     setProductKeyword('');
     setModalOpen(true);
   };
   const submit = async (event: FormEvent<HTMLFormElement>) => {
+    const campaignType = normalizeCampaignTypeForForm(form.campaignType);
+    if (campaignType === 'fixed_price') {
+      event.preventDefault();
+      setModalOpen(false);
+      onOpenFixedPriceCampaign();
+      return;
+    }
+    if (campaignType === 'promotion_venue') {
+      event.preventDefault();
+      setModalOpen(false);
+      onOpenPromotionVenue();
+      return;
+    }
     await onSubmit(event);
     setModalOpen(false);
   };
@@ -9187,7 +9365,11 @@ function MallCampaignsSection({
                 <div className="actions">
                   <button className="ghost-button" type="button" onClick={() => openEdit(campaign)}>
                     <Icon name="save" />
-                    编辑
+                    {normalizeCampaignTypeForForm(stringValue(campaign, 'campaignType', stringValue(recordValue(campaign, 'rules'), 'activityType'))) === 'fixed_price'
+                      ? '编辑一口价'
+                      : normalizeCampaignTypeForForm(stringValue(campaign, 'campaignType', stringValue(recordValue(campaign, 'rules'), 'activityType'))) === 'promotion_venue'
+                        ? '编辑会场'
+                        : '编辑'}
                   </button>
                   <button className="ghost-button" type="button" onClick={() => void onCampaignStatus(id, status === 'active' ? 'inactive' : 'active')}>
                     <Icon name={status === 'active' ? 'x' : 'check'} />
@@ -9290,47 +9472,19 @@ function MallCampaignsSection({
               ) : null}
             </div>
 
-            {['full_reduction', 'full_discount', 'delivery_reduction'].includes(form.campaignType) ? (
-              <section className="campaign-rule-card">
-                <div className="campaign-rule-card-head">
-                  <strong>阶梯规则</strong>
-                  <button className="ghost-button" type="button" onClick={() => onChange({ tiers: [...form.tiers, createCampaignTierForm()] })}>
-                    <Icon name="plus" />
-                    新增阶梯
-                  </button>
-                </div>
-                <div className="campaign-tier-list">
-                  {form.tiers.map((tier, index) => (
-                    <div className="campaign-tier-row" key={tier.id}>
-                      <span>阶梯 {index + 1}</span>
-                      <label>
-                        满
-                        <input min="0" step="0.01" type="number" value={tier.thresholdYuan} onChange={event => updateTier(tier.id, { thresholdYuan: event.target.value })} />
-                      </label>
-                      {form.campaignType === 'full_discount' ? (
-                        <label>
-                          折扣
-                          <input min="1" max="100" step="0.1" type="number" value={tier.discountPercent} onChange={event => updateTier(tier.id, { discountPercent: event.target.value })} />
-                        </label>
-                      ) : (
-                        <label>
-                          减
-                          <input min="0.01" step="0.01" type="number" value={tier.discountYuan} onChange={event => updateTier(tier.id, { discountYuan: event.target.value })} />
-                        </label>
-                      )}
-                      <button
-                        className="ghost-button danger"
-                        disabled={form.tiers.length <= 1}
-                        type="button"
-                        onClick={() => onChange({ tiers: form.tiers.filter(item => item.id !== tier.id) })}
-                      >
-                        删除
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            ) : null}
+            <CampaignBusinessFields
+              form={form}
+              updateTier={updateTier}
+              onChange={onChange}
+              onOpenFixedPriceCampaign={() => {
+                setModalOpen(false);
+                onOpenFixedPriceCampaign();
+              }}
+              onOpenPromotionVenue={() => {
+                setModalOpen(false);
+                onOpenPromotionVenue();
+              }}
+            />
 
             {form.scopeType !== 'all' ? (
               <section className="campaign-rule-card">
@@ -9388,8 +9542,12 @@ function MallCampaignsSection({
             <div className="modal-actions">
               <button className="ghost-button" type="button" onClick={() => setModalOpen(false)}>取消</button>
               <button className="primary-button" type="submit">
-                <Icon name="save" />
-                {form.id ? '保存活动' : '创建活动'}
+                <Icon name={['fixed_price', 'promotion_venue'].includes(normalizeCampaignTypeForForm(form.campaignType)) ? 'megaphone' : 'save'} />
+                {normalizeCampaignTypeForForm(form.campaignType) === 'fixed_price'
+                  ? '进入一口价页面'
+                  : normalizeCampaignTypeForForm(form.campaignType) === 'promotion_venue'
+                    ? '进入大促会场页面'
+                    : form.id ? '保存活动' : '创建活动'}
               </button>
             </div>
           </form>
@@ -12339,6 +12497,15 @@ function App() {
     setFixedPriceCampaignForm(fixedPriceCampaignToForm(campaign));
   };
 
+  const openFixedPriceCampaignPage = (campaign?: JsonRecord) => {
+    if (campaign) {
+      editFixedPriceCampaign(campaign);
+    } else {
+      setFixedPriceCampaignForm(initialFixedPriceCampaignForm);
+    }
+    setActivePageKey('mall.fixedPriceCampaigns');
+  };
+
   const savePromotionVenue = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const isEditing = Boolean(promotionVenueForm.id);
@@ -12375,6 +12542,15 @@ function App() {
 
   const editPromotionVenue = (campaign: JsonRecord) => {
     setPromotionVenueForm(promotionVenueToForm(campaign));
+  };
+
+  const openPromotionVenuePage = (campaign?: JsonRecord) => {
+    if (campaign) {
+      editPromotionVenue(campaign);
+    } else {
+      setPromotionVenueForm(initialPromotionVenueForm);
+    }
+    setActivePageKey('mall.promotionVenues');
   };
 
   const updateCampaignStatus = async (id: string, status: string) => {
@@ -13151,6 +13327,8 @@ function App() {
           onDelete={deleteCampaign}
           onEdit={editCampaign}
           onFiltersChange={patch => setCampaignFilters(current => ({ ...current, ...patch }))}
+          onOpenFixedPriceCampaign={openFixedPriceCampaignPage}
+          onOpenPromotionVenue={openPromotionVenuePage}
           onReset={resetCampaignForm}
           onSearch={reload}
           onSubmit={saveCampaign}

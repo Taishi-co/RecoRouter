@@ -34,6 +34,7 @@ const settingsSection = extractFunction(adminMain, 'MallSettingsSection');
 const homeBannersSection = extractFunction(adminMain, 'MallHomeBannersSection');
 const homeSectionsSection = extractFunction(adminMain, 'MallHomeSectionsSection');
 const paymentSplitSection = extractFunction(adminMain, 'MallPaymentSplitRulesSection');
+const campaignsSection = extractFunction(adminMain, 'MallCampaignsSection');
 
 assert(!/designPage\('mall\.couponCreate'/.test(adminMain), 'Mall admin coupon creation must be folded into coupon center, not a separate page.');
 assert(/designPage\('mall\.coupons', '券中心'/.test(adminMain), 'Mall admin coupon page must be renamed to coupon center.');
@@ -48,6 +49,13 @@ assert(/designPage\('mall\.homeNewArrivals', '新上专区'/.test(adminMain), 'M
 assert(/designPage\('mall\.homeHotProducts', '爆款推荐'/.test(adminMain), 'Mall admin must expose hot-product homepage section configuration.');
 assert(/function MallHomeSectionsSection\(/.test(adminMain), 'Web admin must render real homepage section configuration pages.');
 assert(/function MallCampaignsSection\(/.test(adminMain), 'Web admin must render a real campaign list section.');
+assert(/function CampaignBusinessFields\(/.test(adminMain), 'Campaign modal must render type-specific business fields instead of a generic rules-only editor.');
+assert(/门槛金额/.test(adminMain) && /满减金额/.test(adminMain), 'Full-reduction campaigns must expose threshold and reduction amount fields.');
+assert(/折扣力度/.test(adminMain), 'Full-discount campaigns must expose a discount input field.');
+assert(/包邮门槛/.test(adminMain), 'Free-delivery campaigns must expose a free-shipping threshold field.');
+assert(/运费减免金额/.test(adminMain), 'Delivery-reduction campaigns must expose a delivery-reduction amount field.');
+assert(/编辑一口价/.test(campaignsSection) && /onOpenFixedPriceCampaign/.test(campaignsSection), 'Fixed-price campaign edit from marketing list must navigate to the fixed-price page.');
+assert(/进入一口价页面配置商品、商品组、角标和活动时间/.test(adminMain), 'Fixed-price creation in the general campaign modal must direct operators to the fixed-price page.');
 assert(/function MallSettingsSection\(/.test(adminMain), 'Web admin must keep operation settings separate from campaign management.');
 assert(/function MallDeliveryRulesSection\(/.test(adminMain), 'Web admin must render a real delivery rules section.');
 assert(/function MallPaymentSplitRulesSection\(/.test(adminMain), 'Web admin must render a real payment split rules section.');
