@@ -377,7 +377,10 @@ async fn mall_coupon_wallet_and_points_mall_are_customer_endpoints() {
     assert_eq!(wallet_status, StatusCode::OK);
     assert_eq!(wallet_body["data"]["summary"]["claimableCount"], 1);
     assert_eq!(wallet_body["data"]["claimable"][0]["id"], active_coupon_id);
-    assert_eq!(wallet_body["data"]["claimable"][0]["walletStatus"], "claimable");
+    assert_eq!(
+        wallet_body["data"]["claimable"][0]["walletStatus"],
+        "claimable"
+    );
     assert_eq!(wallet_body["data"]["expiring"][0]["id"], active_coupon_id);
 
     let (claim_status, claim_body) = post_json(
@@ -425,8 +428,11 @@ async fn mall_coupon_wallet_and_points_mall_are_customer_endpoints() {
     .await
     .expect("points should be inserted");
 
-    let (points_status, points_body) =
-        get_json(&context.app, &format!("/api/mall/points-mall?userId={user_id}")).await;
+    let (points_status, points_body) = get_json(
+        &context.app,
+        &format!("/api/mall/points-mall?userId={user_id}"),
+    )
+    .await;
     assert_eq!(points_status, StatusCode::OK);
     assert_eq!(points_body["data"]["member"]["points"], 300);
     assert_eq!(points_body["data"]["rules"]["pointsPerYuan"], 1);
