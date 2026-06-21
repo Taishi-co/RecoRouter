@@ -245,7 +245,7 @@ where
                                 'deliveryTimeSlot', o.delivery_time_slot,
                                 'deliveryDate', o.delivery_date
                             ) ORDER BY s.stop_sequence
-                        ) FILTER (WHERE s.id IS NOT NULL),
+                        ) FILTER (WHERE s.id IS NOT NULL AND (o.status IS NULL OR o.status <> 'cancelled')),
                         '[]'
                     ) as stops
                 FROM vehicle_trips t
