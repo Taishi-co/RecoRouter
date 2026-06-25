@@ -4620,6 +4620,7 @@ body.reco-mall-h5 .taro_page {
 .mall-group-buy-status-completed,
 .mall-group-buy-status-offline,
 .mall-group-buy-status-balance_overdue_cancelled,
+.mall-group-buy-status-deposit_refunded,
 .mall-group-buy-status-refunded,
 .mall-group-buy-status-failed_refunded {
   background: #f1f2ee;
@@ -4635,6 +4636,7 @@ body.reco-mall-h5 .taro_page {
 .mall-group-buy-status-procuring,
 .mall-group-buy-status-procurement_confirmed,
 .mall-group-buy-status-failed_refunding,
+.mall-group-buy-status-activity_cancel_refunding,
 .mall-group-buy-status-cancelled_refunding {
   background: #fff1e5;
   color: #ff8a1f;
