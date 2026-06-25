@@ -75,6 +75,53 @@ export interface MallProductPromotion extends MallProductPromotionTag {
   endsAt?: string | null
 }
 
+export interface MallGroupBuyTier {
+  quantity: number
+  priceCents: number
+}
+
+export interface MallGroupBuyActivity {
+  id: string
+  name: string
+  productId: string
+  variantId?: string | null
+  unitName: string
+  status: string
+  startsAt?: string | null
+  endsAt?: string | null
+  balanceDueAt?: string | null
+  minGroupQuantity: number
+  maxQuantityPerUser?: number | null
+  minCreditScore?: number | null
+  overdueCreditPenalty?: number | null
+  depositType: string
+  depositValue: number
+  tiers: MallGroupBuyTier[]
+  formedQuantity?: number | null
+  currentQuantity: number
+  finalTierQuantity?: number | null
+  finalUnitPriceCents?: number | null
+  product?: MallProduct
+}
+
+export interface MallGroupBuySubscription {
+  id: string
+  activityId: string
+  userId: string
+  quantity: number
+  unitName: string
+  status: string
+  estimatedUnitPriceCents?: number | null
+  finalUnitPriceCents?: number | null
+  estimatedTotalCents?: number | null
+  depositCents?: number | null
+  balanceCents?: number | null
+  mallOrderId?: string | null
+  creditPenaltyPoints?: number | null
+  activity?: MallGroupBuyActivity
+  product?: MallProduct
+}
+
 export interface MallFixedPriceCampaign {
   campaignId?: string | null
   campaignName?: string | null
@@ -949,6 +996,33 @@ export async function listMallPromotionVenues(): Promise<MallPromotionVenue[]> {
 
 export async function getMallProduct(id: string): Promise<MallProduct> {
   return apiGet(`/api/mall/products/${id}`)
+}
+
+export async function listMallGroupBuys(): Promise<MallGroupBuyActivity[]> {
+  return apiGet('/api/mall/group-buys')
+}
+
+export async function getMallGroupBuy(id: string): Promise<MallGroupBuyActivity> {
+  return apiGet(`/api/mall/group-buys/${id}`)
+}
+
+export async function subscribeMallGroupBuy(
+  id: string,
+  data: { userId: string; quantity: number },
+): Promise<MallGroupBuySubscription> {
+  return apiPost(`/api/mall/group-buys/${id}/subscribe`, data)
+}
+
+export async function payMallGroupBuyDeposit(id: string, userId: string): Promise<MallGroupBuySubscription> {
+  return apiPost(`/api/mall/group-buy-subscriptions/${id}/pay-deposit`, { userId })
+}
+
+export async function payMallGroupBuyBalance(id: string, userId: string): Promise<MallGroupBuySubscription> {
+  return apiPost(`/api/mall/group-buy-subscriptions/${id}/pay-balance`, { userId })
+}
+
+export async function listMyMallGroupBuySubscriptions(userId: string): Promise<MallGroupBuySubscription[]> {
+  return apiGet('/api/mall/me/group-buy-subscriptions', { userId })
 }
 
 export async function getMallCart(userId: string): Promise<MallCart> {
