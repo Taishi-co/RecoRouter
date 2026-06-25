@@ -99,6 +99,6 @@ for (const apiName of [
 
 assert(admin.includes('mall.groupBuyPresale'), 'web admin group-buy page key exists')
 assert(packageJson.scripts['check:mall-group-buy-presale'] === 'node scripts/check-mall-group-buy-presale.mjs', 'package script exists')
-assert(!packageJson.scripts.validate.includes('check:mall-group-buy-presale'), 'validate defers group-buy check until final task')
+assert(packageJson.scripts.validate.includes('check:mall-group-buy-presale'), 'validate includes group-buy check')
 
 if (process.exitCode) process.exit(process.exitCode)
