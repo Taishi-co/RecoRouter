@@ -53,11 +53,15 @@ export default function MyMallGroupBuyPage() {
     if (!userId || payingId) return
     setPayingId(subscription.id)
     try {
-      await startOrderPayment({
+      const paymentResult = await startOrderPayment({
         orderId: subscription.id,
         businessType: 'mall_group_buy_balance',
         payerId: userId,
       })
+      if (!isPaymentPaid(paymentResult)) {
+        Taro.showToast({ title: '支付结果待确认，请稍后刷新', icon: 'none' })
+        return
+      }
       Taro.showToast({ title: '尾款已支付', icon: 'success' })
       await loadSubscriptions()
     } catch (error) {
@@ -193,16 +197,36 @@ function SubscriptionCard({
 
 function statusText(status: string) {
   const statusMap: Record<string, string> = {
+    draft: '待开始',
+    scheduled: '待开始',
+    published: '可报名',
+    enrolling: '报名中',
+    active: '进行中',
+    forming: '进行中',
     pending_deposit: '待付定金',
     deposit_paid: '已付定金',
     formed: '已成团',
+    ops_review: '运营审核',
+    procuring: '采购中',
+    procurement_confirmed: '备货中',
+    completed: '已完成',
+    failed_refunding: '未成团退款中',
+    failed_refunded: '未成团已退款',
+    cancelled_refunding: '取消退款中',
     pending_balance: '待付尾款',
     balance_paid: '尾款已付',
     order_created: '已转订单',
+    balance_overdue_cancelled: '尾款超时取消',
+    refunded: '已退款',
     cancelled: '已取消',
+    offline: '已下线',
     expired: '已失效',
   }
-  return statusMap[status] || status
+  return statusMap[status] || '状态待确认'
+}
+
+function isPaymentPaid(result: { status?: string | null; paymentStatus?: string | null }) {
+  return result.status === 'paid' || result.paymentStatus === 'paid'
 }
 
 function formatTime(value?: string | null) {
