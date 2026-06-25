@@ -2542,41 +2542,41 @@ td span {
   font-weight: 900;
 }
 
-.group-buy-modal {
+.gbuy-modal {
   width: min(920px, calc(100vw - 48px));
 }
 
-.group-buy-detail-modal {
+.gbuy-detail-modal {
   width: min(1100px, calc(100vw - 48px));
 }
 
-.group-buy-table-wrap table {
+.gbuy-table-wrap table {
   min-width: 1040px;
 }
 
-.group-buy-table-wrap td {
+.gbuy-table-wrap td {
   vertical-align: top;
 }
 
-.group-buy-table-wrap td strong,
-.group-buy-table-wrap td small {
+.gbuy-table-wrap td strong,
+.gbuy-table-wrap td small {
   display: block;
   max-width: 220px;
   overflow-wrap: anywhere;
 }
 
-.group-buy-actions {
+.gbuy-actions {
   max-width: 360px;
   flex-wrap: wrap;
 }
 
-.group-buy-tier-list {
+.gbuy-tier-list {
   display: grid;
   gap: 10px;
   min-width: 0;
 }
 
-.group-buy-tier-row {
+.gbuy-tier-row {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) minmax(140px, 1fr) auto;
   gap: 10px;
@@ -2584,11 +2584,11 @@ td span {
   min-width: 0;
 }
 
-.group-buy-tier-row label {
+.gbuy-tier-row label {
   min-width: 0;
 }
 
-.group-buy-progress {
+.gbuy-progress {
   display: grid;
   gap: 6px;
   min-width: 120px;
@@ -2597,7 +2597,7 @@ td span {
   font-weight: 800;
 }
 
-.group-buy-progress i {
+.gbuy-progress i {
   display: block;
   width: 100%;
   height: 8px;
@@ -2606,14 +2606,14 @@ td span {
   border-radius: 999px;
 }
 
-.group-buy-progress b {
+.gbuy-progress b {
   display: block;
   height: 100%;
   background: #4f8f5a;
   border-radius: inherit;
 }
 
-.group-buy-status {
+.gbuy-status {
   white-space: nowrap;
 }
 
@@ -4329,16 +4329,16 @@ textarea:focus {
     width: min(100%, calc(100vw - 24px));
   }
 
-  .group-buy-modal,
-  .group-buy-detail-modal {
+  .gbuy-modal,
+  .gbuy-detail-modal {
     width: min(100%, calc(100vw - 24px));
   }
 
-  .group-buy-tier-row {
+  .gbuy-tier-row {
     grid-template-columns: 1fr;
   }
 
-  .group-buy-actions {
+  .gbuy-actions {
     max-width: 100%;
   }
 

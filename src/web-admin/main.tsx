@@ -10801,7 +10801,7 @@ function MallGroupBuyPresaleSection({
       </div>
 
       <Panel title="集采预售">
-        <div className="table-wrap group-buy-table-wrap">
+        <div className="table-wrap gbuy-table-wrap">
           <table>
             <thead>
               <tr>
@@ -10834,7 +10834,7 @@ function MallGroupBuyPresaleSection({
                       <small>{groupBuyVariantName(groupBuy, products)}</small>
                     </td>
                     <td>
-                      <div className="group-buy-progress">
+                      <div className="gbuy-progress">
                         <span>{currentQuantity}/{minQuantity} {unitName}</span>
                         <i><b style={{ width: `${progress}%` }} /></i>
                       </div>
@@ -10845,14 +10845,14 @@ function MallGroupBuyPresaleSection({
                       <small>{groupBuyPaymentProgressSummary(groupBuy)}</small>
                     </td>
                     <td>
-                      <span className={`${badgeClass(status)} group-buy-status`}>{groupBuyStatusLabel(status)}</span>
+                      <span className={`${badgeClass(status)} gbuy-status`}>{groupBuyStatusLabel(status)}</span>
                     </td>
                     <td>
                       <small>{formatDate(stringValue(groupBuy, 'startsAt'))}</small>
                       <small>{formatDate(stringValue(groupBuy, 'endsAt'))}</small>
                     </td>
                     <td>
-                      <div className="actions group-buy-actions">
+                      <div className="actions gbuy-actions">
                         <button className="ghost-button" type="button" onClick={() => openEdit(groupBuy)}>
                           <Icon name="save" />
                           编辑
@@ -10894,7 +10894,7 @@ function MallGroupBuyPresaleSection({
 
       {modalOpen ? (
         <div className="modal-backdrop">
-          <form className="modal-panel group-buy-modal" onSubmit={submit}>
+          <form className="modal-panel gbuy-modal" onSubmit={submit}>
             <div className="modal-title-row">
               <div>
                 <h2>{form.id ? '编辑集采预售' : '新建集采预售'}</h2>
@@ -10996,9 +10996,9 @@ function MallGroupBuyPresaleSection({
                   新增档位
                 </button>
               </div>
-              <div className="group-buy-tier-list">
+              <div className="gbuy-tier-list">
                 {form.tiers.map(tier => (
-                  <div className="group-buy-tier-row" key={tier.id}>
+                  <div className="gbuy-tier-row" key={tier.id}>
                     <label>
                       件数
                       <input required min="1" type="number" value={tier.quantity} onChange={event => updateTier(tier.id, { quantity: event.target.value })} />
@@ -11028,7 +11028,7 @@ function MallGroupBuyPresaleSection({
 
       {detailOpen ? (
         <div className="modal-backdrop">
-          <div className="modal-panel group-buy-detail-modal">
+          <div className="modal-panel gbuy-detail-modal">
             <div className="modal-title-row">
               <div>
                 <h2>{detailActivity ? stringValue(detailActivity, 'name', '集采详情') : '集采详情'}</h2>
