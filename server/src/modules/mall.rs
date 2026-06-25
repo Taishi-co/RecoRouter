@@ -1390,6 +1390,7 @@ struct GroupBuyActivityRow {
     status: String,
     starts_at: DateTime<Utc>,
     ends_at: DateTime<Utc>,
+    balance_due_at: Option<DateTime<Utc>>,
     min_group_quantity: i32,
     max_quantity_per_user: Option<i32>,
     min_credit_score: i32,
@@ -2352,8 +2353,11 @@ where
         ));
     }
 
-    let existing_quantity = existing.as_ref().map(|row| row.quantity).unwrap_or(0);
-    let user_quantity = existing_quantity + body.quantity;
+    let previous_quantity = existing.as_ref().map(|row| row.quantity).unwrap_or(0);
+    let user_quantity = desired_group_buy_subscription_quantity(
+        existing.as_ref().map(|row| row.quantity),
+        body.quantity,
+    );
     if let Some(max_quantity) = activity.max_quantity_per_user {
         if user_quantity > max_quantity {
             return Err(ApiError::BadRequest(format!(
@@ -2374,7 +2378,7 @@ where
     .bind(&activity_id)
     .fetch_one(&mut *tx)
     .await?;
-    let target_quantity = current_quantity + body.quantity;
+    let target_quantity = current_quantity - previous_quantity + user_quantity;
     let tiers = parse_group_buy_tiers(&activity.tiers)?;
     let estimate_tier = select_group_buy_tier(&tiers, target_quantity)
         .or_else(|| tiers.first().cloned())
@@ -2419,7 +2423,7 @@ where
             Some(&existing.id),
             "subscription_updated",
             "认购数量更新",
-            Some("用户追加认购数量"),
+            Some("用户更新认购数量"),
             Some(&user_id),
             json!({ "quantity": user_quantity }),
         )
@@ -2625,7 +2629,7 @@ where
     validate_group_buy_time_window(starts_at, ends_at, body.balance_due_at)?;
     let min_group_quantity = body.min_group_quantity.unwrap_or(1);
     validate_positive_i32(min_group_quantity, "成团数量必须大于 0")?;
-    validate_optional_non_negative_i32(body.max_quantity_per_user, "单人限购数量不能为负数")?;
+    validate_optional_positive_i32(body.max_quantity_per_user, "单人限购数量必须大于 0")?;
     let min_credit_score = body.min_credit_score.unwrap_or(80);
     validate_non_negative_i32(min_credit_score, "最低信用分不能为负数")?;
     let overdue_credit_penalty = body.overdue_credit_penalty.unwrap_or(10);
@@ -2698,7 +2702,7 @@ where
     validate_group_buy_time_window(
         body.starts_at.unwrap_or(existing.starts_at),
         body.ends_at.unwrap_or(existing.ends_at),
-        body.balance_due_at,
+        body.balance_due_at.or(existing.balance_due_at),
     )?;
     let tiers = match body.tiers {
         Some(tiers) => Some(normalize_group_buy_tiers(tiers)?),
@@ -2714,7 +2718,7 @@ where
     if let Some(value) = body.min_group_quantity {
         validate_positive_i32(value, "成团数量必须大于 0")?;
     }
-    validate_optional_non_negative_i32(body.max_quantity_per_user, "单人限购数量不能为负数")?;
+    validate_optional_positive_i32(body.max_quantity_per_user, "单人限购数量必须大于 0")?;
     validate_optional_non_negative_i32(body.min_credit_score, "最低信用分不能为负数")?;
     validate_optional_non_negative_i32(body.overdue_credit_penalty, "逾期扣分不能为负数")?;
 
@@ -2834,6 +2838,12 @@ where
             "请提供新的结束时间或尾款截止时间".to_string(),
         ));
     }
+    let existing = fetch_group_buy_activity_row(&state.db, &id).await?;
+    validate_group_buy_time_window(
+        existing.starts_at,
+        body.ends_at.unwrap_or(existing.ends_at),
+        body.balance_due_at.or(existing.balance_due_at),
+    )?;
     let activity = sqlx::query_scalar::<_, Value>(
         r#"
         UPDATE mall_group_buy_activities
@@ -2886,6 +2896,23 @@ async fn admin_confirm_group_buy_procurement<S>(
 where
     S: Storage,
 {
+    let current_status: String =
+        sqlx::query_scalar("SELECT status FROM mall_group_buy_activities WHERE id = $1")
+            .bind(&id)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or_else(|| ApiError::NotFound("团购活动不存在".to_string()))?;
+    if !matches!(
+        current_status.as_str(),
+        "formed" | "ops_review" | "procuring"
+    ) {
+        return Err(ApiError::BadRequest("团购活动状态不可确认采购".to_string()));
+    }
+
+    repair_group_buy_order_fulfillment_codes(&state.db, &id).await?;
+    let procurement = create_group_buy_orders_for_activity(&state.db, &id).await?;
+    repair_group_buy_order_fulfillment_codes(&state.db, &id).await?;
+
     let activity = sqlx::query_scalar::<_, Value>(
         r#"
         UPDATE mall_group_buy_activities
@@ -2904,8 +2931,6 @@ where
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| ApiError::NotFound("团购活动不存在或状态不可确认采购".to_string()))?;
-
-    let procurement = create_group_buy_orders_for_activity(&state.db, &id).await?;
     insert_group_buy_event(
         &state.db,
         Some(&id),
@@ -12725,6 +12750,13 @@ pub fn calculate_group_buy_deposit_cents(
     }
 }
 
+fn desired_group_buy_subscription_quantity(
+    _existing_quantity: Option<i32>,
+    requested_quantity: i32,
+) -> i32 {
+    requested_quantity
+}
+
 fn parse_group_buy_tiers(value: &Value) -> ApiResult<Vec<GroupBuyTier>> {
     let tiers: Vec<GroupBuyTier> = serde_json::from_value(value.clone())
         .map_err(|err| ApiError::BadRequest(err.to_string()))?;
@@ -13243,6 +13275,38 @@ async fn create_group_buy_orders_for_activity(
     Ok(result)
 }
 
+async fn repair_group_buy_order_fulfillment_codes(
+    pool: &PgPool,
+    activity_id: &str,
+) -> ApiResult<()> {
+    let order_ids = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT DISTINCT subscription.mall_order_id
+        FROM mall_group_buy_subscriptions subscription
+        JOIN mall_orders orders ON orders.id = subscription.mall_order_id
+        WHERE subscription.activity_id = $1
+          AND subscription.status = 'order_created'
+          AND subscription.mall_order_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM mall_fulfillment_codes code
+            WHERE code.order_id = subscription.mall_order_id
+              AND code.status = 'ready'
+              AND (code.expires_at IS NULL OR code.expires_at > now())
+          )
+        "#,
+    )
+    .bind(activity_id)
+    .fetch_all(pool)
+    .await?;
+
+    for order_id in order_ids {
+        ensure_fulfillment_code(pool, &order_id, None, None).await?;
+    }
+
+    Ok(())
+}
+
 enum GroupBuyOrderCreationOutcome {
     Created(String),
     AlreadyLinked,
@@ -13716,16 +13780,12 @@ async fn deduct_group_buy_credit_tx(
     .fetch_one(&mut **tx)
     .await?;
     let score_after = (score_before - penalty).max(0);
-    sqlx::query("UPDATE users SET credit_score = $2, updated_at = now() WHERE id = $1")
-        .bind(user_id)
-        .bind(score_after)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query(
+    let ledger_id = sqlx::query_scalar::<_, String>(
         r#"
         INSERT INTO mall_credit_ledger (user_id, source_type, source_id, delta, score_before, score_after, reason)
         VALUES ($1, 'mall_group_buy', $2, $3, $4, $5, 'balance_overdue')
         ON CONFLICT (source_type, source_id, reason) DO NOTHING
+        RETURNING id
         "#,
     )
     .bind(user_id)
@@ -13733,8 +13793,15 @@ async fn deduct_group_buy_credit_tx(
     .bind(-penalty)
     .bind(score_before)
     .bind(score_after)
-    .execute(&mut **tx)
+    .fetch_optional(&mut **tx)
     .await?;
+    if ledger_id.is_some() {
+        sqlx::query("UPDATE users SET credit_score = $2, updated_at = now() WHERE id = $1")
+            .bind(user_id)
+            .bind(score_after)
+            .execute(&mut **tx)
+            .await?;
+    }
     Ok(())
 }
 
@@ -14366,6 +14433,14 @@ fn validate_optional_non_negative_i32(value: Option<i32>, message: &str) -> ApiR
     }
 }
 
+fn validate_optional_positive_i32(value: Option<i32>, message: &str) -> ApiResult<()> {
+    if value.is_some_and(|next| next <= 0) {
+        Err(ApiError::BadRequest(message.to_string()))
+    } else {
+        Ok(())
+    }
+}
+
 fn validate_optional_non_negative_i64(value: Option<i64>, message: &str) -> ApiResult<()> {
     if value.is_some_and(|next| next < 0) {
         Err(ApiError::BadRequest(message.to_string()))
@@ -14786,5 +14861,12 @@ mod tests {
         let tier = select_group_buy_force_tier(&tiers, 30).expect("tier");
         assert_eq!(tier.quantity, 100);
         assert_eq!(tier.price_cents, 300);
+    }
+
+    #[test]
+    fn group_buy_subscribe_uses_desired_total_quantity() {
+        assert_eq!(desired_group_buy_subscription_quantity(Some(5), 5), 5);
+        assert_eq!(desired_group_buy_subscription_quantity(Some(5), 8), 8);
+        assert_eq!(desired_group_buy_subscription_quantity(None, 3), 3);
     }
 }
