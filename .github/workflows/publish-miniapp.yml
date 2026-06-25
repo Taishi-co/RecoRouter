@@ -32,6 +32,16 @@ on:
         required: true
         default: https://car.shcxyz.site
         type: string
+      app_profile:
+        description: App profile to build and upload
+        required: true
+        default: mall
+        type: choice
+        options:
+          - mall
+          - vehicle
+          - admin
+          - all
 
 concurrency:
   group: recorouter-miniapp-${{ github.ref }}
@@ -53,6 +63,7 @@ jobs:
       SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
       MINIAPP_PLATFORM: ${{ inputs.platform || vars.MINIAPP_PLATFORM || 'weapp' }}
       PROJECT_DOMAIN: ${{ inputs.project_domain || vars.PROJECT_DOMAIN || 'https://car.shcxyz.site' }}
+      RECO_APP_PROFILE: ${{ inputs.app_profile || vars.RECO_APP_PROFILE || 'mall' }}
       TARO_APP_WEAPP_APPID: ${{ vars.TARO_APP_WEAPP_APPID }}
     steps:
       - uses: actions/checkout@v4
@@ -103,7 +114,7 @@ jobs:
           set -euo pipefail
           remote="$SERVER_USER@$SERVER_HOST"
           upload_cmd='cat > /tmp/recorouter-miniapp-source.tar.gz.tmp && mv /tmp/recorouter-miniapp-source.tar.gz.tmp /tmp/recorouter-miniapp-source.tar.gz'
-          remote_cmd="TARO_APP_WEAPP_APPID='$TARO_APP_WEAPP_APPID' MINIAPP_PLATFORM='$MINIAPP_PLATFORM' PROJECT_DOMAIN='$PROJECT_DOMAIN' MINIAPP_UPLOAD_VERSION='$MINIAPP_UPLOAD_VERSION' MINIAPP_UPLOAD_DESC='$MINIAPP_UPLOAD_DESC' bash /tmp/recorouter-miniapp-install/deploy/upload-miniapp.sh /tmp/recorouter-miniapp-source.tar.gz"
+          remote_cmd="TARO_APP_WEAPP_APPID='$TARO_APP_WEAPP_APPID' MINIAPP_PLATFORM='$MINIAPP_PLATFORM' PROJECT_DOMAIN='$PROJECT_DOMAIN' RECO_APP_PROFILE='$RECO_APP_PROFILE' MINIAPP_UPLOAD_VERSION='$MINIAPP_UPLOAD_VERSION' MINIAPP_UPLOAD_DESC='$MINIAPP_UPLOAD_DESC' bash /tmp/recorouter-miniapp-install/deploy/upload-miniapp.sh /tmp/recorouter-miniapp-source.tar.gz"
           install_cmd="mkdir -p /tmp/recorouter-miniapp-install && rm -rf /tmp/recorouter-miniapp-install/* && tar -xzf /tmp/recorouter-miniapp-source.tar.gz -C /tmp/recorouter-miniapp-install && $remote_cmd"
           if [ -n "${SERVER_SSH_KEY:-}" ]; then
             ssh -T -p "$SERVER_PORT" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -i ~/.ssh/recorouter_deploy_key "$remote" "$upload_cmd" < /tmp/recorouter-miniapp-source.tar.gz
