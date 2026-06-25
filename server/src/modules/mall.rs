@@ -3,6 +3,7 @@ use axum::{
     routing::{get, post, put},
     Json, Router,
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
@@ -43,6 +44,24 @@ where
         )
         .route("/api/mall/products", get(list_products::<S>))
         .route("/api/mall/products/:id", get(get_product::<S>))
+        .route("/api/mall/group-buys", get(list_group_buys::<S>))
+        .route("/api/mall/group-buys/:id", get(get_group_buy::<S>))
+        .route(
+            "/api/mall/group-buys/:id/subscribe",
+            post(subscribe_group_buy::<S>),
+        )
+        .route(
+            "/api/mall/group-buy-subscriptions/:id/pay-deposit",
+            post(pay_group_buy_deposit::<S>),
+        )
+        .route(
+            "/api/mall/group-buy-subscriptions/:id/pay-balance",
+            post(pay_group_buy_balance::<S>),
+        )
+        .route(
+            "/api/mall/me/group-buy-subscriptions",
+            get(list_my_group_buy_subscriptions::<S>),
+        )
         .route("/api/mall/cart", get(get_cart::<S>))
         .route("/api/mall/cart/items", post(upsert_cart_item::<S>))
         .route(
@@ -216,6 +235,42 @@ where
             put(admin_update_procurement_buyer::<S>).delete(admin_delete_procurement_buyer::<S>),
         )
         .route(
+            "/api/admin/mall/group-buys",
+            get(admin_list_group_buys::<S>).post(admin_create_group_buy::<S>),
+        )
+        .route(
+            "/api/admin/mall/group-buys/:id",
+            put(admin_update_group_buy::<S>),
+        )
+        .route(
+            "/api/admin/mall/group-buys/:id/publish",
+            post(admin_publish_group_buy::<S>),
+        )
+        .route(
+            "/api/admin/mall/group-buys/:id/offline",
+            post(admin_offline_group_buy::<S>),
+        )
+        .route(
+            "/api/admin/mall/group-buys/:id/force-form",
+            post(admin_force_form_group_buy::<S>),
+        )
+        .route(
+            "/api/admin/mall/group-buys/:id/extend",
+            post(admin_extend_group_buy::<S>),
+        )
+        .route(
+            "/api/admin/mall/group-buys/:id/cancel",
+            post(admin_cancel_group_buy::<S>),
+        )
+        .route(
+            "/api/admin/mall/group-buys/:id/confirm-procurement",
+            post(admin_confirm_group_buy_procurement::<S>),
+        )
+        .route(
+            "/api/admin/mall/group-buys/:id/subscriptions",
+            get(admin_list_group_buy_subscriptions::<S>),
+        )
+        .route(
             "/api/admin/mall/products",
             get(admin_list_products::<S>).post(admin_create_product::<S>),
         )
@@ -325,6 +380,66 @@ struct ProductQuery {
     page: Option<i64>,
     #[serde(alias = "page_size", alias = "limit")]
     page_size: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupBuyTier {
+    pub quantity: i32,
+    #[serde(alias = "price_cents")]
+    pub price_cents: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GroupBuyActivityRequest {
+    name: Option<String>,
+    #[serde(alias = "product_id")]
+    product_id: Option<String>,
+    #[serde(alias = "variant_id")]
+    variant_id: Option<String>,
+    #[serde(alias = "unit_name")]
+    unit_name: Option<String>,
+    #[serde(alias = "starts_at")]
+    starts_at: Option<DateTime<Utc>>,
+    #[serde(alias = "ends_at")]
+    ends_at: Option<DateTime<Utc>>,
+    #[serde(alias = "balance_due_at")]
+    balance_due_at: Option<DateTime<Utc>>,
+    #[serde(alias = "min_group_quantity")]
+    min_group_quantity: Option<i32>,
+    #[serde(alias = "max_quantity_per_user")]
+    max_quantity_per_user: Option<i32>,
+    #[serde(alias = "min_credit_score")]
+    min_credit_score: Option<i32>,
+    #[serde(alias = "overdue_credit_penalty")]
+    overdue_credit_penalty: Option<i32>,
+    #[serde(alias = "deposit_type")]
+    deposit_type: Option<String>,
+    #[serde(alias = "deposit_value")]
+    deposit_value: Option<i32>,
+    tiers: Option<Vec<GroupBuyTier>>,
+    #[serde(alias = "created_by", alias = "actor_id")]
+    created_by: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GroupBuySubscribeRequest {
+    #[serde(alias = "user_id")]
+    user_id: String,
+    quantity: i32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GroupBuyUserQuery {
+    #[serde(alias = "user_id")]
+    user_id: Option<String>,
+    status: Option<String>,
+    #[serde(alias = "page_size", alias = "limit")]
+    page_size: Option<i64>,
+    page: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1269,6 +1384,30 @@ struct AfterSaleOrderContext {
     payable_cents: i64,
 }
 
+#[derive(Debug, FromRow)]
+struct GroupBuyActivityRow {
+    unit_name: String,
+    status: String,
+    starts_at: DateTime<Utc>,
+    ends_at: DateTime<Utc>,
+    min_group_quantity: i32,
+    max_quantity_per_user: Option<i32>,
+    min_credit_score: i32,
+    overdue_credit_penalty: i32,
+    deposit_type: String,
+    deposit_value: i32,
+    tiers: Value,
+}
+
+#[derive(Debug, FromRow)]
+struct GroupBuySubscriptionRow {
+    id: String,
+    activity_id: String,
+    user_id: String,
+    quantity: i32,
+    status: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CreateSupportSessionRequest {
@@ -2045,6 +2184,750 @@ where
     .await?
     .ok_or_else(|| ApiError::NotFound("采购商不存在".to_string()))?;
     Ok(ok("采购商已删除", buyer))
+}
+
+async fn list_group_buys<S>(
+    State(state): State<AppState<S>>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    advance_group_buy_activities(&state.db).await?;
+    let mut activities = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT COALESCE(jsonb_agg(payload ORDER BY sort_ends_at ASC, sort_created_at DESC), '[]'::jsonb)
+        FROM (
+          SELECT
+            activity.ends_at AS sort_ends_at,
+            activity.created_at AS sort_created_at,
+            mall_group_buy_activity_json(activity)
+              || jsonb_build_object(
+                'product', product_json(product, category.name),
+                'currentQuantity', COALESCE(subscription_totals.current_quantity, 0)
+              ) AS payload
+          FROM mall_group_buy_activities activity
+          JOIN mall_products product ON product.id = activity.product_id
+          LEFT JOIN mall_categories category ON category.code = product.category_code
+          LEFT JOIN LATERAL (
+            SELECT COALESCE(sum(subscription.quantity), 0)::integer AS current_quantity
+            FROM mall_group_buy_subscriptions subscription
+            WHERE subscription.activity_id = activity.id
+              AND subscription.status NOT IN (
+                'deposit_refunded',
+                'balance_overdue_cancelled',
+                'activity_cancel_refunding',
+                'refunded'
+              )
+          ) subscription_totals ON true
+          WHERE activity.status IN ('published', 'enrolling', 'formed')
+            AND product.status = 'on_sale'
+        ) rows
+        "#,
+    )
+    .fetch_one(&state.db)
+    .await?
+    .as_array()
+    .cloned()
+    .unwrap_or_default();
+    resolve_mall_image_urls_in_list(&state.storage, &mut activities).await?;
+    Ok(ok("查询成功", activities))
+}
+
+async fn get_group_buy<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    advance_group_buy_activities(&state.db).await?;
+    let mut activity = fetch_group_buy_activity_payload(&state.db, &id, true)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("团购活动不存在或已下线".to_string()))?;
+    resolve_mall_image_urls(&state.storage, &mut activity).await?;
+    Ok(ok("查询成功", activity))
+}
+
+async fn subscribe_group_buy<S>(
+    State(state): State<AppState<S>>,
+    Path(activity_id): Path<String>,
+    Json(body): Json<GroupBuySubscribeRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let user_id = body.user_id.trim().to_string();
+    validate_required(&user_id, "用户ID不能为空")?;
+    validate_positive_i32(body.quantity, "认购数量必须大于 0")?;
+
+    let mut tx = state.db.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(format!(
+            "mall_group_buy_subscription:{activity_id}:{user_id}"
+        ))
+        .execute(&mut *tx)
+        .await?;
+
+    let activity = sqlx::query_as::<_, GroupBuyActivityRow>(
+        r#"
+        SELECT
+          id, product_id, variant_id, unit_name, status, starts_at, ends_at, balance_due_at,
+          min_group_quantity, max_quantity_per_user, min_credit_score,
+          overdue_credit_penalty, deposit_type, deposit_value, tiers
+        FROM mall_group_buy_activities
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+    )
+    .bind(&activity_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("团购活动不存在".to_string()))?;
+
+    if !matches!(activity.status.as_str(), "published" | "enrolling") {
+        return Err(ApiError::BadRequest("团购活动当前不可认购".to_string()));
+    }
+    let now = Utc::now();
+    if now < activity.starts_at || now > activity.ends_at {
+        return Err(ApiError::BadRequest("团购活动不在认购时间内".to_string()));
+    }
+
+    let credit_score: i32 = sqlx::query_scalar(
+        "SELECT COALESCE(credit_score, 100) FROM users WHERE id = $1 FOR UPDATE",
+    )
+    .bind(&user_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("用户不存在".to_string()))?;
+    if credit_score < activity.min_credit_score {
+        return Err(ApiError::Forbidden(
+            "信用分不足，暂不能参与该团购".to_string(),
+        ));
+    }
+
+    let existing = sqlx::query_as::<_, GroupBuySubscriptionRow>(
+        r#"
+        SELECT id, activity_id, user_id, quantity, status
+        FROM mall_group_buy_subscriptions
+        WHERE activity_id = $1
+          AND user_id = $2
+          AND status NOT IN ('deposit_refunded', 'balance_overdue_cancelled', 'activity_cancel_refunding', 'refunded')
+        FOR UPDATE
+        "#,
+    )
+    .bind(&activity_id)
+    .bind(&user_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    if existing
+        .as_ref()
+        .is_some_and(|row| row.status.as_str() != "pending_deposit")
+    {
+        return Err(ApiError::Conflict(
+            "已支付订金的认购不可直接修改".to_string(),
+        ));
+    }
+
+    let existing_quantity = existing.as_ref().map(|row| row.quantity).unwrap_or(0);
+    let user_quantity = existing_quantity + body.quantity;
+    if let Some(max_quantity) = activity.max_quantity_per_user {
+        if user_quantity > max_quantity {
+            return Err(ApiError::BadRequest(format!(
+                "单个用户最多可认购 {max_quantity} {}",
+                activity.unit_name
+            )));
+        }
+    }
+
+    let current_quantity: i32 = sqlx::query_scalar(
+        r#"
+        SELECT COALESCE(sum(quantity), 0)::integer
+        FROM mall_group_buy_subscriptions
+        WHERE activity_id = $1
+          AND status NOT IN ('deposit_refunded', 'balance_overdue_cancelled', 'activity_cancel_refunding', 'refunded')
+        "#,
+    )
+    .bind(&activity_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let target_quantity = current_quantity + body.quantity;
+    let tiers = parse_group_buy_tiers(&activity.tiers)?;
+    let estimate_tier = select_group_buy_tier(&tiers, target_quantity)
+        .or_else(|| tiers.first().cloned())
+        .ok_or_else(|| ApiError::BadRequest("阶梯价格不能为空".to_string()))?;
+    let estimated_total_cents = i64::from(user_quantity) * estimate_tier.price_cents;
+    let deposit_cents = calculate_group_buy_deposit_cents(
+        &activity.deposit_type,
+        activity.deposit_value,
+        user_quantity,
+        estimate_tier.price_cents,
+    )
+    .clamp(0, estimated_total_cents);
+    let balance_cents = (estimated_total_cents - deposit_cents).max(0);
+
+    let subscription = if let Some(existing) = existing {
+        let subscription = sqlx::query_scalar::<_, Value>(
+            r#"
+            UPDATE mall_group_buy_subscriptions
+            SET quantity = $2,
+                estimated_unit_price_cents = $3,
+                estimated_total_cents = $4,
+                deposit_cents = $5,
+                balance_cents = $6,
+                updated_at = now()
+            WHERE id = $1
+              AND status = 'pending_deposit'
+            RETURNING mall_group_buy_subscription_json(mall_group_buy_subscriptions)
+            "#,
+        )
+        .bind(&existing.id)
+        .bind(user_quantity)
+        .bind(estimate_tier.price_cents)
+        .bind(estimated_total_cents)
+        .bind(deposit_cents)
+        .bind(balance_cents)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| ApiError::Conflict("认购状态已变化，请刷新后重试".to_string()))?;
+        insert_group_buy_event_tx(
+            &mut tx,
+            Some(&activity_id),
+            Some(&existing.id),
+            "subscription_updated",
+            "认购数量更新",
+            Some("用户追加认购数量"),
+            Some(&user_id),
+            json!({ "quantity": user_quantity }),
+        )
+        .await?;
+        subscription
+    } else {
+        let subscription = sqlx::query_scalar::<_, Value>(
+            r#"
+            INSERT INTO mall_group_buy_subscriptions (
+              activity_id, user_id, quantity, unit_name, status,
+              estimated_unit_price_cents, estimated_total_cents, deposit_cents, balance_cents
+            )
+            VALUES ($1, $2, $3, $4, 'pending_deposit', $5, $6, $7, $8)
+            RETURNING mall_group_buy_subscription_json(mall_group_buy_subscriptions)
+            "#,
+        )
+        .bind(&activity_id)
+        .bind(&user_id)
+        .bind(user_quantity)
+        .bind(&activity.unit_name)
+        .bind(estimate_tier.price_cents)
+        .bind(estimated_total_cents)
+        .bind(deposit_cents)
+        .bind(balance_cents)
+        .fetch_one(&mut *tx)
+        .await?;
+        let subscription_id = subscription["id"].as_str().map(str::to_string);
+        insert_group_buy_event_tx(
+            &mut tx,
+            Some(&activity_id),
+            subscription_id.as_deref(),
+            "subscription_created",
+            "用户提交认购",
+            Some("等待支付订金"),
+            Some(&user_id),
+            json!({ "quantity": user_quantity }),
+        )
+        .await?;
+        subscription
+    };
+
+    tx.commit().await?;
+    Ok(ok("认购已创建", subscription))
+}
+
+async fn pay_group_buy_deposit<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let subscription = fetch_group_buy_subscription_payload(&state.db, &id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("团购认购不存在".to_string()))?;
+    if subscription.get("status").and_then(Value::as_str) != Some("pending_deposit") {
+        return Err(ApiError::BadRequest("当前认购不需要支付订金".to_string()));
+    }
+    Ok(ok(
+        "订金待支付",
+        json!({
+            "businessType": "mall_group_buy_deposit",
+            "subscription": subscription,
+            "amountCents": subscription.get("depositCents").cloned().unwrap_or(Value::Null)
+        }),
+    ))
+}
+
+async fn pay_group_buy_balance<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    advance_group_buy_activities(&state.db).await?;
+    let subscription = fetch_group_buy_subscription_payload(&state.db, &id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("团购认购不存在".to_string()))?;
+    if subscription.get("status").and_then(Value::as_str) != Some("pending_balance") {
+        return Err(ApiError::BadRequest("当前认购不需要支付尾款".to_string()));
+    }
+    Ok(ok(
+        "尾款待支付",
+        json!({
+            "businessType": "mall_group_buy_balance",
+            "subscription": subscription,
+            "amountCents": subscription.get("balanceCents").cloned().unwrap_or(Value::Null)
+        }),
+    ))
+}
+
+async fn list_my_group_buy_subscriptions<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<GroupBuyUserQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    advance_group_buy_activities(&state.db).await?;
+    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT mall_group_buy_subscription_json(subscription)
+          || jsonb_build_object(
+            'activity', mall_group_buy_activity_json(activity),
+            'product', product_json(product, category.name)
+          )
+        FROM mall_group_buy_subscriptions subscription
+        JOIN mall_group_buy_activities activity ON activity.id = subscription.activity_id
+        JOIN mall_products product ON product.id = activity.product_id
+        LEFT JOIN mall_categories category ON category.code = product.category_code
+        WHERE subscription.user_id =
+        "#,
+    );
+    builder.push_bind(user_id);
+    if let Some(status) = non_empty(query.status) {
+        builder.push(" AND subscription.status = ");
+        builder.push_bind(status);
+    }
+    let page = query.page.unwrap_or(1).max(1);
+    let page_size = query.page_size.unwrap_or(50).clamp(1, 100);
+    builder.push(" ORDER BY subscription.created_at DESC LIMIT ");
+    builder.push_bind(page_size);
+    builder.push(" OFFSET ");
+    builder.push_bind((page - 1) * page_size);
+
+    let mut subscriptions = builder
+        .build_query_scalar::<Value>()
+        .fetch_all(&state.db)
+        .await?;
+    resolve_mall_image_urls_in_list(&state.storage, &mut subscriptions).await?;
+    Ok(ok("查询成功", subscriptions))
+}
+
+async fn admin_list_group_buys<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<GroupBuyUserQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    advance_group_buy_activities(&state.db).await?;
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT mall_group_buy_activity_json(activity)
+          || jsonb_build_object(
+            'product', product_json(product, category.name),
+            'currentQuantity', COALESCE(subscription_totals.current_quantity, 0),
+            'subscriptionCount', COALESCE(subscription_totals.subscription_count, 0),
+            'depositPaidCount', COALESCE(subscription_totals.deposit_paid_count, 0),
+            'balancePaidCount', COALESCE(subscription_totals.balance_paid_count, 0)
+          )
+        FROM mall_group_buy_activities activity
+        JOIN mall_products product ON product.id = activity.product_id
+        LEFT JOIN mall_categories category ON category.code = product.category_code
+        LEFT JOIN LATERAL (
+          SELECT
+            COALESCE(sum(subscription.quantity), 0)::integer AS current_quantity,
+            count(*)::integer AS subscription_count,
+            count(*) FILTER (WHERE subscription.status IN ('deposit_paid', 'pending_balance', 'balance_paid', 'order_created'))::integer AS deposit_paid_count,
+            count(*) FILTER (WHERE subscription.status IN ('balance_paid', 'order_created'))::integer AS balance_paid_count
+          FROM mall_group_buy_subscriptions subscription
+          WHERE subscription.activity_id = activity.id
+            AND subscription.status NOT IN ('deposit_refunded', 'balance_overdue_cancelled', 'activity_cancel_refunding', 'refunded')
+        ) subscription_totals ON true
+        WHERE 1 = 1
+        "#,
+    );
+    if let Some(status) = non_empty(query.status) {
+        builder.push(" AND activity.status = ");
+        builder.push_bind(status);
+    }
+    builder.push(" ORDER BY activity.created_at DESC LIMIT 200");
+
+    let mut activities = builder
+        .build_query_scalar::<Value>()
+        .fetch_all(&state.db)
+        .await?;
+    resolve_mall_image_urls_in_list(&state.storage, &mut activities).await?;
+    Ok(ok("查询成功", activities))
+}
+
+async fn admin_create_group_buy<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<GroupBuyActivityRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let name = require_non_empty(body.name, "活动名称不能为空")?;
+    let product_id = require_non_empty(body.product_id, "商品ID不能为空")?;
+    let variant_id = non_empty(body.variant_id);
+    let variant =
+        ensure_product_variant_can_sell(&state.db, &product_id, variant_id.as_deref(), 1).await?;
+    let unit_name = optional_non_empty(body.unit_name, "单位名称不能为空")?.unwrap_or(variant.name);
+    let starts_at = body
+        .starts_at
+        .ok_or_else(|| ApiError::BadRequest("开始时间不能为空".to_string()))?;
+    let ends_at = body
+        .ends_at
+        .ok_or_else(|| ApiError::BadRequest("结束时间不能为空".to_string()))?;
+    validate_group_buy_time_window(starts_at, ends_at, body.balance_due_at)?;
+    let min_group_quantity = body.min_group_quantity.unwrap_or(1);
+    validate_positive_i32(min_group_quantity, "成团数量必须大于 0")?;
+    validate_optional_non_negative_i32(body.max_quantity_per_user, "单人限购数量不能为负数")?;
+    let min_credit_score = body.min_credit_score.unwrap_or(80);
+    validate_non_negative_i32(min_credit_score, "最低信用分不能为负数")?;
+    let overdue_credit_penalty = body.overdue_credit_penalty.unwrap_or(10);
+    validate_non_negative_i32(overdue_credit_penalty, "逾期扣分不能为负数")?;
+    let deposit_type = normalize_group_buy_deposit_type(body.deposit_type.as_deref())?;
+    let deposit_value = body.deposit_value.unwrap_or(20);
+    validate_non_negative_i32(deposit_value, "订金数值不能为负数")?;
+    let tiers = normalize_group_buy_tiers(
+        body.tiers
+            .ok_or_else(|| ApiError::BadRequest("阶梯价格不能为空".to_string()))?,
+    )?;
+    let activity = sqlx::query_scalar::<_, Value>(
+        r#"
+        INSERT INTO mall_group_buy_activities (
+          name, product_id, variant_id, unit_name, status, starts_at, ends_at, balance_due_at,
+          min_group_quantity, max_quantity_per_user, min_credit_score, overdue_credit_penalty,
+          deposit_type, deposit_value, tiers, created_by
+        )
+        VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        RETURNING mall_group_buy_activity_json(mall_group_buy_activities)
+        "#,
+    )
+    .bind(name)
+    .bind(&product_id)
+    .bind(variant_id.as_deref())
+    .bind(unit_name)
+    .bind(starts_at)
+    .bind(ends_at)
+    .bind(body.balance_due_at)
+    .bind(min_group_quantity)
+    .bind(body.max_quantity_per_user)
+    .bind(min_credit_score)
+    .bind(overdue_credit_penalty)
+    .bind(deposit_type)
+    .bind(deposit_value)
+    .bind(json!(tiers))
+    .bind(non_empty(body.created_by))
+    .fetch_one(&state.db)
+    .await?;
+    let activity_id = activity["id"].as_str().map(str::to_string);
+    insert_group_buy_event(
+        &state.db,
+        activity_id.as_deref(),
+        None,
+        "created",
+        "团购活动创建",
+        Some("活动以草稿状态创建"),
+        None,
+        json!({}),
+    )
+    .await?;
+    Ok(ok("团购活动创建成功", activity))
+}
+
+async fn admin_update_group_buy<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<GroupBuyActivityRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let existing = fetch_group_buy_activity_row(&state.db, &id).await?;
+    if !matches!(
+        existing.status.as_str(),
+        "draft" | "published" | "enrolling"
+    ) {
+        return Err(ApiError::BadRequest("当前状态不可编辑".to_string()));
+    }
+    validate_group_buy_time_window(
+        body.starts_at.unwrap_or(existing.starts_at),
+        body.ends_at.unwrap_or(existing.ends_at),
+        body.balance_due_at,
+    )?;
+    let tiers = match body.tiers {
+        Some(tiers) => Some(normalize_group_buy_tiers(tiers)?),
+        None => None,
+    };
+    let deposit_type = match body.deposit_type.as_deref() {
+        Some(value) => Some(normalize_group_buy_deposit_type(Some(value))?),
+        None => None,
+    };
+    if let Some(value) = body.deposit_value {
+        validate_non_negative_i32(value, "订金数值不能为负数")?;
+    }
+    if let Some(value) = body.min_group_quantity {
+        validate_positive_i32(value, "成团数量必须大于 0")?;
+    }
+    validate_optional_non_negative_i32(body.max_quantity_per_user, "单人限购数量不能为负数")?;
+    validate_optional_non_negative_i32(body.min_credit_score, "最低信用分不能为负数")?;
+    validate_optional_non_negative_i32(body.overdue_credit_penalty, "逾期扣分不能为负数")?;
+
+    let activity = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_group_buy_activities
+        SET name = COALESCE($2, name),
+            unit_name = COALESCE($3, unit_name),
+            starts_at = COALESCE($4, starts_at),
+            ends_at = COALESCE($5, ends_at),
+            balance_due_at = COALESCE($6, balance_due_at),
+            min_group_quantity = COALESCE($7, min_group_quantity),
+            max_quantity_per_user = COALESCE($8, max_quantity_per_user),
+            min_credit_score = COALESCE($9, min_credit_score),
+            overdue_credit_penalty = COALESCE($10, overdue_credit_penalty),
+            deposit_type = COALESCE($11, deposit_type),
+            deposit_value = COALESCE($12, deposit_value),
+            tiers = COALESCE($13, tiers),
+            updated_at = now()
+        WHERE id = $1
+          AND status IN ('draft', 'published', 'enrolling')
+        RETURNING mall_group_buy_activity_json(mall_group_buy_activities)
+        "#,
+    )
+    .bind(&id)
+    .bind(optional_non_empty(body.name, "活动名称不能为空")?)
+    .bind(optional_non_empty(body.unit_name, "单位名称不能为空")?)
+    .bind(body.starts_at)
+    .bind(body.ends_at)
+    .bind(body.balance_due_at)
+    .bind(body.min_group_quantity)
+    .bind(body.max_quantity_per_user)
+    .bind(body.min_credit_score)
+    .bind(body.overdue_credit_penalty)
+    .bind(deposit_type)
+    .bind(body.deposit_value)
+    .bind(tiers.map(|tiers| json!(tiers)))
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("团购活动不存在或状态已变化".to_string()))?;
+    insert_group_buy_event(
+        &state.db,
+        Some(&id),
+        None,
+        "updated",
+        "团购活动更新",
+        Some("管理员更新活动配置"),
+        None,
+        json!({}),
+    )
+    .await?;
+    Ok(ok("团购活动更新成功", activity))
+}
+
+async fn admin_publish_group_buy<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    update_group_buy_status(
+        &state.db,
+        &id,
+        &["draft"],
+        "published",
+        "published",
+        "团购活动发布",
+        "活动已发布，等待开始认购",
+    )
+    .await
+}
+
+async fn admin_offline_group_buy<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    update_group_buy_status(
+        &state.db,
+        &id,
+        &["published", "enrolling"],
+        "offline",
+        "offline",
+        "团购活动下线",
+        "管理员下线活动",
+    )
+    .await
+}
+
+async fn admin_force_form_group_buy<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    form_group_buy_activity(&state.db, &id, "manual_force_form").await?;
+    let activity = fetch_group_buy_activity_payload(&state.db, &id, false)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("团购活动不存在".to_string()))?;
+    Ok(ok("已强制成团", activity))
+}
+
+async fn admin_extend_group_buy<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<GroupBuyActivityRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    if body.ends_at.is_none() && body.balance_due_at.is_none() {
+        return Err(ApiError::BadRequest(
+            "请提供新的结束时间或尾款截止时间".to_string(),
+        ));
+    }
+    let activity = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_group_buy_activities
+        SET ends_at = COALESCE($2, ends_at),
+            balance_due_at = COALESCE($3, balance_due_at),
+            updated_at = now()
+        WHERE id = $1
+          AND status IN ('published', 'enrolling', 'formed', 'ops_review')
+        RETURNING mall_group_buy_activity_json(mall_group_buy_activities)
+        "#,
+    )
+    .bind(&id)
+    .bind(body.ends_at)
+    .bind(body.balance_due_at)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("团购活动不存在或状态不可延期".to_string()))?;
+    insert_group_buy_event(
+        &state.db,
+        Some(&id),
+        None,
+        "extended",
+        "团购活动延期",
+        Some("管理员调整活动时间"),
+        None,
+        json!({ "endsAt": body.ends_at, "balanceDueAt": body.balance_due_at }),
+    )
+    .await?;
+    Ok(ok("团购活动已延期", activity))
+}
+
+async fn admin_cancel_group_buy<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    cancel_group_buy_activity(&state.db, &id, "admin_cancel").await?;
+    let activity = fetch_group_buy_activity_payload(&state.db, &id, false)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("团购活动不存在".to_string()))?;
+    Ok(ok("团购活动已取消", activity))
+}
+
+async fn admin_confirm_group_buy_procurement<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let activity = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_group_buy_activities
+        SET status = CASE
+              WHEN status IN ('formed', 'ops_review') THEN 'procuring'
+              ELSE status
+            END,
+            ops_review_reason = NULL,
+            updated_at = now()
+        WHERE id = $1
+          AND status IN ('formed', 'ops_review', 'procuring')
+        RETURNING mall_group_buy_activity_json(mall_group_buy_activities)
+        "#,
+    )
+    .bind(&id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("团购活动不存在或状态不可确认采购".to_string()))?;
+    insert_group_buy_event(
+        &state.db,
+        Some(&id),
+        None,
+        "procurement_confirmed",
+        "确认采购",
+        Some("普通商城订单创建需由后续任务接入，当前保持采购中状态"),
+        None,
+        json!({ "orderCreation": "deferred" }),
+    )
+    .await?;
+    Ok(ok("已确认采购", activity))
+}
+
+async fn admin_list_group_buy_subscriptions<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Query(query): Query<GroupBuyUserQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT mall_group_buy_subscription_json(subscription)
+          || jsonb_build_object(
+            'userPhone', app_user.phone,
+            'userName', COALESCE(app_user.name, app_user.nickname, app_user.username, app_user.phone),
+            'activity', mall_group_buy_activity_json(activity)
+          )
+        FROM mall_group_buy_subscriptions subscription
+        JOIN mall_group_buy_activities activity ON activity.id = subscription.activity_id
+        LEFT JOIN users app_user ON app_user.id = subscription.user_id
+        WHERE subscription.activity_id =
+        "#,
+    );
+    builder.push_bind(id);
+    if let Some(status) = non_empty(query.status) {
+        builder.push(" AND subscription.status = ");
+        builder.push_bind(status);
+    }
+    builder.push(" ORDER BY subscription.created_at DESC LIMIT 500");
+    let subscriptions = builder
+        .build_query_scalar::<Value>()
+        .fetch_all(&state.db)
+        .await?;
+    Ok(ok("查询成功", subscriptions))
 }
 
 async fn admin_list_products<S>(
@@ -6895,6 +7778,158 @@ async fn release_mall_order_promotions_tx(
     Ok(())
 }
 
+pub async fn settle_group_buy_deposit_payment_success(
+    pool: &PgPool,
+    subscription_id: &str,
+) -> ApiResult<()> {
+    let updated = sqlx::query_as::<_, GroupBuySubscriptionRow>(
+        r#"
+        UPDATE mall_group_buy_subscriptions
+        SET status = 'deposit_paid',
+            deposit_paid_at = COALESCE(deposit_paid_at, now()),
+            updated_at = now()
+        WHERE id = $1
+          AND status = 'pending_deposit'
+        RETURNING id, activity_id, user_id, quantity, status
+        "#,
+    )
+    .bind(subscription_id)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(subscription) = updated {
+        insert_group_buy_event(
+            pool,
+            Some(&subscription.activity_id),
+            Some(&subscription.id),
+            "deposit_paid",
+            "订金支付成功",
+            Some("用户订金已支付"),
+            Some(&subscription.user_id),
+            json!({ "quantity": subscription.quantity }),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+pub async fn settle_group_buy_balance_payment_success(
+    pool: &PgPool,
+    subscription_id: &str,
+) -> ApiResult<()> {
+    let updated = sqlx::query_as::<_, GroupBuySubscriptionRow>(
+        r#"
+        UPDATE mall_group_buy_subscriptions
+        SET status = 'balance_paid',
+            balance_paid_at = COALESCE(balance_paid_at, now()),
+            updated_at = now()
+        WHERE id = $1
+          AND status = 'pending_balance'
+        RETURNING id, activity_id, user_id, quantity, status
+        "#,
+    )
+    .bind(subscription_id)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(subscription) = updated {
+        insert_group_buy_event(
+            pool,
+            Some(&subscription.activity_id),
+            Some(&subscription.id),
+            "balance_paid",
+            "尾款支付成功",
+            Some("用户尾款已支付"),
+            Some(&subscription.user_id),
+            json!({ "quantity": subscription.quantity }),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+pub async fn advance_group_buy_activities(pool: &PgPool) -> ApiResult<()> {
+    let started_ids = sqlx::query_scalar::<_, String>(
+        r#"
+        UPDATE mall_group_buy_activities
+        SET status = 'enrolling',
+            updated_at = now()
+        WHERE status = 'published'
+          AND starts_at <= now()
+          AND ends_at > now()
+        RETURNING id
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+    for activity_id in started_ids {
+        insert_group_buy_event(
+            pool,
+            Some(&activity_id),
+            None,
+            "enrolling",
+            "开始认购",
+            Some("活动进入认购期"),
+            None,
+            json!({}),
+        )
+        .await?;
+    }
+
+    let ended_ids = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT id
+        FROM mall_group_buy_activities
+        WHERE status IN ('published', 'enrolling')
+          AND ends_at <= now()
+        ORDER BY ends_at ASC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+    for activity_id in ended_ids {
+        let active_quantity: i32 = sqlx::query_scalar(
+            r#"
+            SELECT COALESCE(sum(quantity), 0)::integer
+            FROM mall_group_buy_subscriptions
+            WHERE activity_id = $1
+              AND status IN ('deposit_paid', 'pending_balance', 'balance_paid', 'order_created')
+            "#,
+        )
+        .bind(&activity_id)
+        .fetch_one(pool)
+        .await?;
+        let min_group_quantity: i32 = sqlx::query_scalar(
+            "SELECT min_group_quantity FROM mall_group_buy_activities WHERE id = $1",
+        )
+        .bind(&activity_id)
+        .fetch_one(pool)
+        .await?;
+        if active_quantity >= min_group_quantity {
+            form_group_buy_activity(pool, &activity_id, "auto_form").await?;
+        } else {
+            cancel_group_buy_activity(pool, &activity_id, "minimum_not_met").await?;
+        }
+    }
+
+    let due_ids = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT id
+        FROM mall_group_buy_activities
+        WHERE status = 'formed'
+          AND balance_due_at IS NOT NULL
+          AND balance_due_at <= now()
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+    for activity_id in due_ids {
+        close_group_buy_balance_due(pool, &activity_id).await?;
+    }
+
+    Ok(())
+}
+
 pub async fn settle_mall_order_payment_success(pool: &PgPool, order_id: &str) -> ApiResult<()> {
     sqlx::query(
         r#"
@@ -11619,6 +12654,584 @@ async fn insert_fulfillment_event_tx(
     Ok(())
 }
 
+pub fn select_group_buy_tier(tiers: &[GroupBuyTier], quantity: i32) -> Option<GroupBuyTier> {
+    tiers
+        .iter()
+        .filter(|tier| quantity >= tier.quantity)
+        .max_by_key(|tier| tier.quantity)
+        .cloned()
+}
+
+pub fn calculate_group_buy_deposit_cents(
+    deposit_type: &str,
+    deposit_value: i32,
+    quantity: i32,
+    unit_price_cents: i64,
+) -> i64 {
+    let total_cents = i64::from(quantity.max(0)) * unit_price_cents.max(0);
+    match deposit_type {
+        "percent" => total_cents * i64::from(deposit_value.max(0)) / 100,
+        "unit_fixed" => i64::from(quantity.max(0)) * i64::from(deposit_value.max(0)),
+        "order_fixed" => i64::from(deposit_value.max(0)),
+        _ => 0,
+    }
+}
+
+fn parse_group_buy_tiers(value: &Value) -> ApiResult<Vec<GroupBuyTier>> {
+    let tiers: Vec<GroupBuyTier> = serde_json::from_value(value.clone())
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+    normalize_group_buy_tiers(tiers)
+}
+
+fn normalize_group_buy_tiers(tiers: Vec<GroupBuyTier>) -> ApiResult<Vec<GroupBuyTier>> {
+    if tiers.is_empty() {
+        return Err(ApiError::BadRequest("阶梯价格不能为空".to_string()));
+    }
+    let mut previous_quantity = 0;
+    for tier in &tiers {
+        validate_positive_i32(tier.quantity, "阶梯数量必须大于 0")?;
+        validate_positive_i64(tier.price_cents, "阶梯价格必须大于 0")?;
+        if tier.quantity <= previous_quantity {
+            return Err(ApiError::BadRequest(
+                "阶梯数量必须按从小到大排序且不能重复".to_string(),
+            ));
+        }
+        previous_quantity = tier.quantity;
+    }
+    Ok(tiers)
+}
+
+fn normalize_group_buy_deposit_type(value: Option<&str>) -> ApiResult<String> {
+    let value = value.unwrap_or("percent").trim();
+    match value {
+        "percent" | "unit_fixed" | "order_fixed" => Ok(value.to_string()),
+        _ => Err(ApiError::BadRequest("订金类型不正确".to_string())),
+    }
+}
+
+fn validate_group_buy_time_window(
+    starts_at: DateTime<Utc>,
+    ends_at: DateTime<Utc>,
+    balance_due_at: Option<DateTime<Utc>>,
+) -> ApiResult<()> {
+    if ends_at <= starts_at {
+        return Err(ApiError::BadRequest("结束时间必须晚于开始时间".to_string()));
+    }
+    if let Some(balance_due_at) = balance_due_at {
+        if balance_due_at <= ends_at {
+            return Err(ApiError::BadRequest(
+                "尾款截止时间必须晚于认购结束时间".to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+async fn fetch_group_buy_activity_row(
+    pool: &PgPool,
+    activity_id: &str,
+) -> ApiResult<GroupBuyActivityRow> {
+    sqlx::query_as::<_, GroupBuyActivityRow>(
+        r#"
+        SELECT
+          id, product_id, variant_id, unit_name, status, starts_at, ends_at, balance_due_at,
+          min_group_quantity, max_quantity_per_user, min_credit_score,
+          overdue_credit_penalty, deposit_type, deposit_value, tiers
+        FROM mall_group_buy_activities
+        WHERE id = $1
+        "#,
+    )
+    .bind(activity_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("团购活动不存在".to_string()))
+}
+
+async fn fetch_group_buy_activity_payload(
+    pool: &PgPool,
+    activity_id: &str,
+    public_only: bool,
+) -> ApiResult<Option<Value>> {
+    sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT mall_group_buy_activity_json(activity)
+          || jsonb_build_object(
+            'product', product_json(product, category.name),
+            'currentQuantity', COALESCE(subscription_totals.current_quantity, 0)
+          )
+        FROM mall_group_buy_activities activity
+        JOIN mall_products product ON product.id = activity.product_id
+        LEFT JOIN mall_categories category ON category.code = product.category_code
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(sum(subscription.quantity), 0)::integer AS current_quantity
+          FROM mall_group_buy_subscriptions subscription
+          WHERE subscription.activity_id = activity.id
+            AND subscription.status NOT IN (
+              'deposit_refunded',
+              'balance_overdue_cancelled',
+              'activity_cancel_refunding',
+              'refunded'
+            )
+        ) subscription_totals ON true
+        WHERE activity.id = $1
+          AND (
+            $2::boolean = false
+            OR (
+              activity.status IN ('published', 'enrolling', 'formed')
+              AND product.status = 'on_sale'
+            )
+          )
+        "#,
+    )
+    .bind(activity_id)
+    .bind(public_only)
+    .fetch_optional(pool)
+    .await
+    .map_err(ApiError::from)
+}
+
+async fn fetch_group_buy_subscription_payload(
+    pool: &PgPool,
+    subscription_id: &str,
+) -> ApiResult<Option<Value>> {
+    sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT mall_group_buy_subscription_json(subscription)
+          || jsonb_build_object(
+            'activity', mall_group_buy_activity_json(activity),
+            'product', product_json(product, category.name)
+          )
+        FROM mall_group_buy_subscriptions subscription
+        JOIN mall_group_buy_activities activity ON activity.id = subscription.activity_id
+        JOIN mall_products product ON product.id = activity.product_id
+        LEFT JOIN mall_categories category ON category.code = product.category_code
+        WHERE subscription.id = $1
+        "#,
+    )
+    .bind(subscription_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(ApiError::from)
+}
+
+async fn insert_group_buy_event(
+    pool: &PgPool,
+    activity_id: Option<&str>,
+    subscription_id: Option<&str>,
+    event_type: &str,
+    title: &str,
+    description: Option<&str>,
+    actor_id: Option<&str>,
+    metadata: Value,
+) -> ApiResult<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO mall_group_buy_events (
+          activity_id, subscription_id, event_type, title, description, actor_id, metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        "#,
+    )
+    .bind(activity_id)
+    .bind(subscription_id)
+    .bind(event_type)
+    .bind(title)
+    .bind(description)
+    .bind(actor_id)
+    .bind(metadata)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+async fn insert_group_buy_event_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    activity_id: Option<&str>,
+    subscription_id: Option<&str>,
+    event_type: &str,
+    title: &str,
+    description: Option<&str>,
+    actor_id: Option<&str>,
+    metadata: Value,
+) -> ApiResult<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO mall_group_buy_events (
+          activity_id, subscription_id, event_type, title, description, actor_id, metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        "#,
+    )
+    .bind(activity_id)
+    .bind(subscription_id)
+    .bind(event_type)
+    .bind(title)
+    .bind(description)
+    .bind(actor_id)
+    .bind(metadata)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn update_group_buy_status(
+    pool: &PgPool,
+    activity_id: &str,
+    from_statuses: &[&str],
+    to_status: &str,
+    event_type: &str,
+    title: &str,
+    description: &str,
+) -> ApiResult<Json<ApiEnvelope<Value>>> {
+    let from_statuses: Vec<String> = from_statuses
+        .iter()
+        .map(|status| status.to_string())
+        .collect();
+    let activity = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_group_buy_activities
+        SET status = $3,
+            updated_at = now()
+        WHERE id = $1
+          AND status = ANY($2::text[])
+        RETURNING mall_group_buy_activity_json(mall_group_buy_activities)
+        "#,
+    )
+    .bind(activity_id)
+    .bind(from_statuses)
+    .bind(to_status)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("团购活动不存在或状态不可操作".to_string()))?;
+    insert_group_buy_event(
+        pool,
+        Some(activity_id),
+        None,
+        event_type,
+        title,
+        Some(description),
+        None,
+        json!({ "status": to_status }),
+    )
+    .await?;
+    Ok(ok("操作成功", activity))
+}
+
+async fn form_group_buy_activity(pool: &PgPool, activity_id: &str, reason: &str) -> ApiResult<()> {
+    let mut tx = pool.begin().await?;
+    let activity = sqlx::query_as::<_, GroupBuyActivityRow>(
+        r#"
+        SELECT
+          id, product_id, variant_id, unit_name, status, starts_at, ends_at, balance_due_at,
+          min_group_quantity, max_quantity_per_user, min_credit_score,
+          overdue_credit_penalty, deposit_type, deposit_value, tiers
+        FROM mall_group_buy_activities
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+    )
+    .bind(activity_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("团购活动不存在".to_string()))?;
+    if !matches!(
+        activity.status.as_str(),
+        "published" | "enrolling" | "formed"
+    ) {
+        tx.commit().await?;
+        return Ok(());
+    }
+    if activity.status == "formed" {
+        tx.commit().await?;
+        return Ok(());
+    }
+
+    let formed_quantity: i32 = sqlx::query_scalar(
+        r#"
+        SELECT COALESCE(sum(quantity), 0)::integer
+        FROM mall_group_buy_subscriptions
+        WHERE activity_id = $1
+          AND status IN ('deposit_paid', 'pending_balance', 'balance_paid', 'order_created')
+        "#,
+    )
+    .bind(activity_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if formed_quantity < activity.min_group_quantity {
+        tx.commit().await?;
+        cancel_group_buy_activity(pool, activity_id, "minimum_not_met").await?;
+        return Ok(());
+    }
+
+    let tiers = parse_group_buy_tiers(&activity.tiers)?;
+    let final_tier = select_group_buy_tier(&tiers, formed_quantity)
+        .ok_or_else(|| ApiError::BadRequest("未匹配到成团阶梯价格".to_string()))?;
+    sqlx::query(
+        r#"
+        UPDATE mall_group_buy_activities
+        SET status = 'formed',
+            formed_quantity = $2,
+            final_tier_quantity = $3,
+            final_unit_price_cents = $4,
+            balance_due_at = COALESCE(balance_due_at, now() + interval '3 days'),
+            updated_at = now()
+        WHERE id = $1
+          AND status IN ('published', 'enrolling')
+        "#,
+    )
+    .bind(activity_id)
+    .bind(formed_quantity)
+    .bind(final_tier.quantity)
+    .bind(final_tier.price_cents)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        r#"
+        UPDATE mall_group_buy_subscriptions
+        SET final_unit_price_cents = $2,
+            estimated_total_cents = quantity * $2,
+            balance_cents = GREATEST(quantity * $2 - deposit_cents, 0),
+            status = CASE
+              WHEN status = 'deposit_paid' AND GREATEST(quantity * $2 - deposit_cents, 0) = 0 THEN 'balance_paid'
+              WHEN status = 'deposit_paid' THEN 'pending_balance'
+              ELSE status
+            END,
+            balance_paid_at = CASE
+              WHEN status = 'deposit_paid' AND GREATEST(quantity * $2 - deposit_cents, 0) = 0
+              THEN COALESCE(balance_paid_at, now())
+              ELSE balance_paid_at
+            END,
+            updated_at = now()
+        WHERE activity_id = $1
+          AND status IN ('deposit_paid', 'pending_balance', 'balance_paid')
+        "#,
+    )
+    .bind(activity_id)
+    .bind(final_tier.price_cents)
+    .execute(&mut *tx)
+    .await?;
+    insert_group_buy_event_tx(
+        &mut tx,
+        Some(activity_id),
+        None,
+        "formed",
+        "团购成团",
+        Some("活动达到成团数量，进入尾款阶段"),
+        None,
+        json!({
+            "reason": reason,
+            "formedQuantity": formed_quantity,
+            "finalTierQuantity": final_tier.quantity,
+            "finalUnitPriceCents": final_tier.price_cents
+        }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn cancel_group_buy_activity(
+    pool: &PgPool,
+    activity_id: &str,
+    reason: &str,
+) -> ApiResult<()> {
+    let mut tx = pool.begin().await?;
+    let updated_id = sqlx::query_scalar::<_, String>(
+        r#"
+        UPDATE mall_group_buy_activities
+        SET status = 'cancelled_refunding',
+            ops_review_reason = $2,
+            updated_at = now()
+        WHERE id = $1
+          AND status NOT IN ('cancelled_refunding', 'offline', 'procuring')
+        RETURNING id
+        "#,
+    )
+    .bind(activity_id)
+    .bind(reason)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if updated_id.is_none() {
+        tx.commit().await?;
+        return Ok(());
+    }
+    sqlx::query(
+        r#"
+        UPDATE mall_group_buy_subscriptions
+        SET status = CASE
+              WHEN status = 'pending_deposit' THEN 'deposit_refunded'
+              ELSE 'activity_cancel_refunding'
+            END,
+            cancel_reason = $2,
+            updated_at = now()
+        WHERE activity_id = $1
+          AND status NOT IN ('deposit_refunded', 'balance_overdue_cancelled', 'activity_cancel_refunding', 'refunded', 'order_created')
+        "#,
+    )
+    .bind(activity_id)
+    .bind(reason)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO mall_group_buy_events (activity_id, subscription_id, event_type, title, description, metadata)
+        SELECT $1, subscription.id, 'refund_required', '团购取消待退款', '活动取消，需处理已支付款项退款',
+               jsonb_build_object('reason', $2)
+        FROM mall_group_buy_subscriptions subscription
+        WHERE subscription.activity_id = $1
+          AND subscription.status = 'activity_cancel_refunding'
+        "#,
+    )
+    .bind(activity_id)
+    .bind(reason)
+    .execute(&mut *tx)
+    .await?;
+    insert_group_buy_event_tx(
+        &mut tx,
+        Some(activity_id),
+        None,
+        "cancelled_refunding",
+        "团购取消",
+        Some("活动取消，进入退款处理"),
+        None,
+        json!({ "reason": reason }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn close_group_buy_balance_due(pool: &PgPool, activity_id: &str) -> ApiResult<()> {
+    let mut tx = pool.begin().await?;
+    let activity = sqlx::query_as::<_, GroupBuyActivityRow>(
+        r#"
+        SELECT
+          id, product_id, variant_id, unit_name, status, starts_at, ends_at, balance_due_at,
+          min_group_quantity, max_quantity_per_user, min_credit_score,
+          overdue_credit_penalty, deposit_type, deposit_value, tiers
+        FROM mall_group_buy_activities
+        WHERE id = $1
+          AND status = 'formed'
+        FOR UPDATE
+        "#,
+    )
+    .bind(activity_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(activity) = activity else {
+        tx.commit().await?;
+        return Ok(());
+    };
+
+    let overdue_subscriptions = sqlx::query_as::<_, GroupBuySubscriptionRow>(
+        r#"
+        UPDATE mall_group_buy_subscriptions
+        SET status = 'balance_overdue_cancelled',
+            cancel_reason = 'balance_overdue',
+            credit_penalty_points = $2,
+            updated_at = now()
+        WHERE activity_id = $1
+          AND status = 'pending_balance'
+        RETURNING id, activity_id, user_id, quantity, status
+        "#,
+    )
+    .bind(activity_id)
+    .bind(activity.overdue_credit_penalty)
+    .fetch_all(&mut *tx)
+    .await?;
+    for subscription in &overdue_subscriptions {
+        deduct_group_buy_credit_tx(
+            &mut tx,
+            &subscription.user_id,
+            &subscription.id,
+            activity.overdue_credit_penalty,
+        )
+        .await?;
+        insert_group_buy_event_tx(
+            &mut tx,
+            Some(activity_id),
+            Some(&subscription.id),
+            "balance_overdue_cancelled",
+            "尾款逾期取消",
+            Some("用户未在截止时间前支付尾款"),
+            Some(&subscription.user_id),
+            json!({ "penalty": activity.overdue_credit_penalty }),
+        )
+        .await?;
+    }
+
+    let next_status = if overdue_subscriptions.is_empty() {
+        "procuring"
+    } else {
+        "ops_review"
+    };
+    sqlx::query(
+        r#"
+        UPDATE mall_group_buy_activities
+        SET status = $2,
+            ops_review_reason = CASE WHEN $2 = 'ops_review' THEN 'balance_overdue' ELSE NULL END,
+            updated_at = now()
+        WHERE id = $1
+          AND status = 'formed'
+        "#,
+    )
+    .bind(activity_id)
+    .bind(next_status)
+    .execute(&mut *tx)
+    .await?;
+    insert_group_buy_event_tx(
+        &mut tx,
+        Some(activity_id),
+        None,
+        "balance_due_closed",
+        "尾款阶段结束",
+        Some("尾款截止后推进活动状态"),
+        None,
+        json!({ "status": next_status, "overdueCount": overdue_subscriptions.len() }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn deduct_group_buy_credit_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    user_id: &str,
+    subscription_id: &str,
+    penalty: i32,
+) -> ApiResult<()> {
+    if penalty <= 0 {
+        return Ok(());
+    }
+    let score_before: i32 = sqlx::query_scalar(
+        "SELECT COALESCE(credit_score, 100) FROM users WHERE id = $1 FOR UPDATE",
+    )
+    .bind(user_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    let score_after = (score_before - penalty).max(0);
+    sqlx::query("UPDATE users SET credit_score = $2, updated_at = now() WHERE id = $1")
+        .bind(user_id)
+        .bind(score_after)
+        .execute(&mut **tx)
+        .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO mall_credit_ledger (user_id, source_type, source_id, delta, score_before, score_after, reason)
+        VALUES ($1, 'mall_group_buy', $2, $3, $4, $5, 'balance_overdue')
+        ON CONFLICT (source_type, source_id, reason) DO NOTHING
+        "#,
+    )
+    .bind(user_id)
+    .bind(subscription_id)
+    .bind(-penalty)
+    .bind(score_before)
+    .bind(score_after)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
 fn validate_required(value: &str, message: &str) -> ApiResult<()> {
     if value.trim().is_empty() {
         return Err(ApiError::BadRequest(message.to_string()));
@@ -12617,5 +14230,38 @@ mod tests {
         let error = mall_delivery_fee_cents(1000, &settings, Some(&address)).unwrap_err();
 
         assert!(format!("{error}").contains("超出配送范围"));
+    }
+
+    #[test]
+    fn group_buy_final_tier_uses_highest_matched_quantity() {
+        let tiers = vec![
+            GroupBuyTier {
+                quantity: 100,
+                price_cents: 300,
+            },
+            GroupBuyTier {
+                quantity: 200,
+                price_cents: 200,
+            },
+        ];
+        let tier = select_group_buy_tier(&tiers, 230).expect("tier");
+        assert_eq!(tier.quantity, 200);
+        assert_eq!(tier.price_cents, 200);
+    }
+
+    #[test]
+    fn group_buy_deposit_supports_percent_unit_and_order_modes() {
+        assert_eq!(
+            calculate_group_buy_deposit_cents("percent", 20, 30, 300),
+            1_800
+        );
+        assert_eq!(
+            calculate_group_buy_deposit_cents("unit_fixed", 50, 30, 300),
+            1_500
+        );
+        assert_eq!(
+            calculate_group_buy_deposit_cents("order_fixed", 1_000, 30, 300),
+            1_000
+        );
     }
 }
