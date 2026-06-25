@@ -51,6 +51,9 @@ const miniAppPages = [
   'pages/mall/payment-success/index',    // 商城-支付成功
   'pages/mall/orders/index',             // 商城-订单/支付/售后/追踪
   'pages/mall/order-detail/index',       // 商城-订单详情
+  'pages/mall/group-buy/index',          // 商城-集采预售
+  'pages/mall/group-buy/detail',         // 商城-集采详情
+  'pages/mall/group-buy/my',             // 商城-我的集采
   'pages/mall/after-sale/index',         // 商城-售后申请
   'pages/mall/support/index',            // 商城-客服中心
   'pages/mall/auth/index',               // 商城-登录注册
@@ -135,6 +138,9 @@ const mallPages = [
   'pages/mall/payment-success/index',    // 商城-支付成功
   'pages/mall/orders/index',             // 商城-订单/支付/售后/追踪
   'pages/mall/order-detail/index',       // 商城-订单详情
+  'pages/mall/group-buy/index',          // 商城-集采预售
+  'pages/mall/group-buy/detail',         // 商城-集采详情
+  'pages/mall/group-buy/my',             // 商城-我的集采
   'pages/mall/after-sale/index',         // 商城-售后申请
   'pages/mall/support/index',            // 商城-客服中心
   'pages/mall/auth/index',               // 商城-登录注册

@@ -1267,6 +1267,11 @@ body.reco-mall-h5 .taro_page {
   color: #ff9238;
 }
 
+.mall-button-disabled {
+  background: #edf0ea;
+  color: #7c8678;
+}
+
 .mall-action-row {
   margin-top: 14PX;
   display: grid;
@@ -4472,4 +4477,428 @@ body.reco-mall-h5 .taro_page {
 .mall-empty-compact {
   margin-top: 8PX;
   padding: 10PX 0;
+}
+
+.mall-group-buy-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12PX;
+  margin-bottom: 14PX;
+}
+
+.mall-group-buy-home-entry {
+  margin-top: 12PX;
+  padding: 12PX;
+  border: 1PX solid #cce7c7;
+  border-radius: 10PX;
+  background: #ffffff;
+  display: grid;
+  grid-template-columns: 42PX 1fr auto;
+  gap: 10PX;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+.mall-group-buy-home-entry-icon {
+  width: 42PX;
+  height: 42PX;
+  border-radius: 10PX;
+  background: #2f7e43;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mall-group-buy-home-entry-copy {
+  min-width: 0;
+}
+
+.mall-group-buy-home-entry-copy text:first-child,
+.mall-group-buy-home-entry-copy span:first-child {
+  display: block;
+  color: #20301f;
+  font-size: 15PX;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.mall-group-buy-home-entry-copy text:nth-child(2),
+.mall-group-buy-home-entry-copy span:nth-child(2) {
+  display: block;
+  margin-top: 4PX;
+  color: #657160;
+  font-size: 12PX;
+  line-height: 1.25;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mall-group-buy-home-entry-action {
+  color: #ff8a1f;
+  font-size: 12PX;
+  font-weight: 900;
+}
+
+.mall-group-buy-list {
+  display: grid;
+  gap: 12PX;
+}
+
+.mall-group-buy-card,
+.mall-group-buy-detail-card,
+.mall-group-buy-panel {
+  width: 100%;
+  padding: 13PX;
+  border: 1PX solid #cce7c7;
+  border-radius: 10PX;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+.mall-group-buy-card-head,
+.mall-group-buy-title-row,
+.mall-group-buy-quantity-head,
+.mall-group-buy-card-foot,
+.mall-group-buy-progress-row,
+.mall-group-buy-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10PX;
+}
+
+.mall-group-buy-card-head > view:first-child,
+.mall-group-buy-card-head > div:first-child,
+.mall-group-buy-detail-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.mall-group-buy-title {
+  display: block;
+  color: #20301f;
+  font-size: 16PX;
+  line-height: 1.25;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mall-group-buy-subtitle {
+  display: block;
+  margin-top: 5PX;
+  color: #657160;
+  font-size: 12PX;
+  line-height: 1.35;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mall-group-buy-status {
+  height: 24PX;
+  padding: 0 8PX;
+  border-radius: 7PX;
+  background: #eefbea;
+  color: #2f7e43;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  font-size: 11PX;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+.mall-group-buy-status-closed,
+.mall-group-buy-status-cancelled,
+.mall-group-buy-status-expired,
+.mall-group-buy-status-completed,
+.mall-group-buy-status-offline,
+.mall-group-buy-status-balance_overdue_cancelled,
+.mall-group-buy-status-deposit_refunded,
+.mall-group-buy-status-refunded,
+.mall-group-buy-status-failed_refunded {
+  background: #f1f2ee;
+  color: #7c8678;
+}
+
+.mall-group-buy-status-pending_balance,
+.mall-group-buy-status-active,
+.mall-group-buy-status-forming,
+.mall-group-buy-status-enrolling,
+.mall-group-buy-status-published,
+.mall-group-buy-status-ops_review,
+.mall-group-buy-status-procuring,
+.mall-group-buy-status-procurement_confirmed,
+.mall-group-buy-status-failed_refunding,
+.mall-group-buy-status-activity_cancel_refunding,
+.mall-group-buy-status-cancelled_refunding {
+  background: #fff1e5;
+  color: #ff8a1f;
+}
+
+.mall-group-buy-status-formed,
+.mall-group-buy-status-deposit_paid,
+.mall-group-buy-status-balance_paid,
+.mall-group-buy-status-order_created {
+  background: #eefbea;
+  color: #2f7e43;
+}
+
+.mall-group-buy-progress-row {
+  margin-top: 12PX;
+  color: #657160;
+  font-size: 12PX;
+  font-weight: 900;
+}
+
+.mall-group-buy-progress-row-detail {
+  margin-top: 14PX;
+}
+
+.mall-group-buy-progress {
+  flex: 1;
+  height: 8PX;
+  border-radius: 999PX;
+  background: #edf3e9;
+  overflow: hidden;
+}
+
+.mall-group-buy-progress-fill {
+  height: 100%;
+  border-radius: 999PX;
+  background: #63bf54;
+}
+
+.mall-group-buy-meta-grid {
+  margin-top: 12PX;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 8PX;
+  align-items: center;
+}
+
+.mall-group-buy-meta-grid > view,
+.mall-group-buy-meta-grid > div,
+.mall-group-buy-card-foot > view,
+.mall-group-buy-card-foot > div {
+  display: flex;
+  align-items: center;
+  gap: 5PX;
+  min-width: 0;
+  color: #657160;
+  font-size: 11PX;
+  font-weight: 800;
+}
+
+.mall-group-buy-meta-grid > view:last-child,
+.mall-group-buy-meta-grid > div:last-child {
+  justify-content: flex-end;
+}
+
+.mall-group-buy-price {
+  color: #ff8a1f;
+  font-size: 16PX;
+  line-height: 1;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.mall-group-buy-detail-card {
+  margin-top: 8PX;
+}
+
+.mall-group-buy-detail-product {
+  display: grid;
+  grid-template-columns: 92PX 1fr;
+  gap: 12PX;
+  align-items: center;
+}
+
+.mall-group-buy-detail-thumb {
+  width: 92PX;
+  height: 92PX;
+  border-radius: 10PX;
+  overflow: hidden;
+}
+
+.mall-group-buy-detail-thumb .mall-product-image,
+.mall-group-buy-detail-thumb .mall-product-illustration {
+  width: 92PX;
+  height: 92PX;
+  border-radius: 10PX;
+}
+
+.mall-group-buy-panel {
+  margin-top: 12PX;
+}
+
+.mall-group-buy-panel-title {
+  display: block;
+  color: #20301f;
+  font-size: 15PX;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.mall-group-buy-tier-list {
+  margin-top: 10PX;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8PX;
+}
+
+.mall-group-buy-tier {
+  min-height: 54PX;
+  padding: 9PX;
+  border-radius: 9PX;
+  background: #f4fbf5;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5PX;
+  box-sizing: border-box;
+}
+
+.mall-group-buy-tier text:first-child,
+.mall-group-buy-tier span:first-child {
+  color: #657160;
+  font-size: 11PX;
+  font-weight: 800;
+}
+
+.mall-group-buy-tier text:last-child,
+.mall-group-buy-tier span:last-child {
+  color: #ff8a1f;
+  font-size: 15PX;
+  font-weight: 900;
+}
+
+.mall-group-buy-info-row {
+  min-height: 34PX;
+  border-bottom: 1PX solid #edf3e9;
+  color: #657160;
+  font-size: 12PX;
+  font-weight: 800;
+}
+
+.mall-group-buy-info-row:last-child {
+  border-bottom: 0;
+}
+
+.mall-group-buy-info-row text:last-child,
+.mall-group-buy-info-row span:last-child {
+  color: #20301f;
+  font-weight: 900;
+  text-align: right;
+}
+
+.mall-group-buy-stepper {
+  height: 36PX;
+  padding: 0 5PX;
+  border: 1PX solid #cce7c7;
+  border-radius: 9PX;
+  display: flex;
+  align-items: center;
+  gap: 12PX;
+  background: #fbfaf6;
+}
+
+.mall-group-buy-stepper text,
+.mall-group-buy-stepper span {
+  min-width: 24PX;
+  text-align: center;
+  color: #20301f;
+  font-size: 14PX;
+  font-weight: 900;
+}
+
+.mall-group-buy-stepper-button {
+  width: 28PX;
+  height: 28PX;
+  border-radius: 7PX;
+  background: #eefbea;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mall-group-buy-credit {
+  margin-top: 10PX;
+  padding: 10PX 12PX;
+  border-radius: 9PX;
+  background: #f4fbf5;
+  color: #2f7e43;
+  display: flex;
+  align-items: center;
+  gap: 7PX;
+  font-size: 12PX;
+  font-weight: 900;
+}
+
+.mall-group-buy-action-spacer {
+  height: 78PX;
+}
+
+.mall-group-buy-bottom-action {
+  position: fixed;
+  left: 12PX;
+  right: 12PX;
+  bottom: 82PX;
+  z-index: 20;
+  padding: 10PX;
+  border: 1PX solid #e0ead9;
+  border-radius: 12PX;
+  background: #ffffff;
+  box-shadow: 0 8PX 20PX rgba(31, 45, 31, 0.14);
+  box-sizing: border-box;
+}
+
+.mall-group-buy-subscription-money {
+  margin-top: 12PX;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8PX;
+}
+
+.mall-group-buy-subscription-money > view,
+.mall-group-buy-subscription-money > div {
+  min-height: 56PX;
+  padding: 8PX;
+  border-radius: 9PX;
+  background: #fbfaf6;
+  box-sizing: border-box;
+}
+
+.mall-group-buy-subscription-money text:first-child,
+.mall-group-buy-subscription-money span:first-child {
+  display: block;
+  color: #657160;
+  font-size: 11PX;
+  font-weight: 800;
+}
+
+.mall-group-buy-subscription-money text:last-child,
+.mall-group-buy-subscription-money span:last-child {
+  display: block;
+  margin-top: 6PX;
+  color: #20301f;
+  font-size: 14PX;
+  font-weight: 900;
+}
+
+.mall-group-buy-card-foot {
+  margin-top: 12PX;
+  min-height: 34PX;
+}
+
+.mall-small-button-subtle {
+  border: 1PX solid #cce7c7;
+  background: #eefbea;
+  color: #2f7e43;
 }

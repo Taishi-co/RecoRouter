@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Image, Swiper, SwiperItem, Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { Bell, Clock3, Flame, MapPin, Sparkles } from 'lucide-react-taro'
+import { Bell, Clock3, Flame, MapPin, Sparkles, Users } from 'lucide-react-taro'
 import {
   addMallCartItem,
   listMallCategories,
@@ -289,6 +289,17 @@ export default function MallHome() {
           </View>
         </View>
       ) : null}
+
+      <View className="mall-group-buy-home-entry" onClick={() => Taro.navigateTo({ url: '/pages/mall/group-buy/index' })}>
+        <View className="mall-group-buy-home-entry-icon">
+          <Users size={20} color="#FFFFFF" strokeWidth={2.6} />
+        </View>
+        <View className="mall-group-buy-home-entry-copy">
+          <Text>集采预售</Text>
+          <Text>社区拼量价，定金锁单</Text>
+        </View>
+        <Text className="mall-group-buy-home-entry-action">去看看</Text>
+      </View>
 
       <View className="mall-v7-section mall-v7-flash-sale">
         <View className="mall-v7-section-head">

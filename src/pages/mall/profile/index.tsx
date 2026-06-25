@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { Gift, Headphones, LogOut, MapPin, PackageCheck, Pencil, Phone, Settings } from 'lucide-react-taro'
+import { Gift, Headphones, LogOut, MapPin, PackageCheck, Pencil, Phone, Settings, Users } from 'lucide-react-taro'
 import { Input } from '@/components/ui/input'
 import {
   getMallProfile,
@@ -209,6 +209,13 @@ export default function MallProfilePage() {
         subtitle={`可用 ${availableCouponCount} 张${expiringCouponCount > 0 ? ` · ${expiringCouponCount} 张即将过期` : ''}`}
         action="查看"
         onClick={() => Taro.navigateTo({ url: '/pages/mall/coupons/index' })}
+      />
+      <ProfileLink
+        icon={<Users size={20} color="#2F7E43" />}
+        title="我的集采"
+        subtitle="定金、尾款和到货进度"
+        action="查看"
+        onClick={() => Taro.navigateTo({ url: '/pages/mall/group-buy/my' })}
       />
       <ProfileLink
         icon={<MapPin size={20} color="#2F7E43" />}
