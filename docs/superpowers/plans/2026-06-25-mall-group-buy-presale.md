@@ -12,7 +12,7 @@
 
 ## File Structure
 
-- Create `server/migrations/0042_mall_group_buy_presale.sql`: group-buy tables, indexes, JSON helpers, and seed activity.
+- Create `server/migrations/0042_mall_group_buy_presale.sql`: group-buy tables, indexes, and JSON helpers.
 - Modify `server/src/modules/mall.rs`: public and admin routes, data structs, validators, state transitions, credit ledger helpers, order generation helper.
 - Modify `server/src/modules/payments.rs`: add `mall_group_buy_deposit` and `mall_group_buy_balance` payment business types.
 - Modify `src/services/payment.ts`: extend `PaymentBusinessType` union.
@@ -554,28 +554,80 @@ Implement `subscribe_group_buy` to:
 3. Fetch `users.credit_score`; block below `min_credit_score`.
 4. Check `max_quantity_per_user`.
 5. Use selected tier if current quantity plus requested quantity reaches a tier; otherwise use the lowest configured tier for estimated display.
-6. Upsert a single active subscription per user and activity.
+6. Create or update a single active subscription per user and activity.
 
-Core insert:
+Use a transaction with an advisory lock and explicit select/update/insert. Do not target `mall_group_buy_subscriptions_active_user_uidx` through PostgreSQL's constraint-conflict syntax: it is a partial unique index, not a table constraint.
+
+Core transaction shape:
 
 ```rust
-INSERT INTO mall_group_buy_subscriptions (
-  activity_id, user_id, quantity, unit_name, status,
-  estimated_unit_price_cents, estimated_total_cents, deposit_cents, balance_cents
-)
-VALUES ($1, $2, $3, $4, 'pending_deposit', $5, $6, $7, GREATEST($6 - $7, 0))
-ON CONFLICT ON CONSTRAINT mall_group_buy_subscriptions_active_user_uidx
-DO UPDATE SET
-  quantity = EXCLUDED.quantity,
-  estimated_unit_price_cents = EXCLUDED.estimated_unit_price_cents,
-  estimated_total_cents = EXCLUDED.estimated_total_cents,
-  deposit_cents = EXCLUDED.deposit_cents,
-  balance_cents = EXCLUDED.balance_cents,
-  updated_at = now()
-RETURNING mall_group_buy_subscription_json(mall_group_buy_subscriptions)
-```
+let mut tx = state.db.begin().await?;
 
-If PostgreSQL does not allow `ON CONFLICT ON CONSTRAINT` for the partial unique index, replace it with an advisory lock and explicit select/update/insert in one transaction.
+sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+    .bind(format!("mall_group_buy_subscription:{activity_id}:{user_id}"))
+    .execute(&mut *tx)
+    .await?;
+
+let existing = sqlx::query_scalar::<_, String>(
+    r#"
+    SELECT id
+    FROM mall_group_buy_subscriptions
+    WHERE activity_id = $1
+      AND user_id = $2
+      AND status NOT IN ('deposit_refunded', 'balance_overdue_cancelled', 'activity_cancel_refunding', 'refunded')
+    FOR UPDATE
+    "#,
+)
+.bind(&activity_id)
+.bind(&user_id)
+.fetch_optional(&mut *tx)
+.await?;
+
+let row = if let Some(subscription_id) = existing {
+    sqlx::query_scalar::<_, JsonValue>(
+        r#"
+        UPDATE mall_group_buy_subscriptions
+        SET quantity = $2,
+            estimated_unit_price_cents = $3,
+            estimated_total_cents = $4,
+            deposit_cents = $5,
+            balance_cents = GREATEST($4 - $5, 0),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING mall_group_buy_subscription_json(mall_group_buy_subscriptions)
+        "#,
+    )
+    .bind(subscription_id)
+    .bind(quantity)
+    .bind(estimated_unit_price_cents)
+    .bind(estimated_total_cents)
+    .bind(deposit_cents)
+    .fetch_one(&mut *tx)
+    .await?
+} else {
+    sqlx::query_scalar::<_, JsonValue>(
+        r#"
+        INSERT INTO mall_group_buy_subscriptions (
+          activity_id, user_id, quantity, unit_name, status,
+          estimated_unit_price_cents, estimated_total_cents, deposit_cents, balance_cents
+        )
+        VALUES ($1, $2, $3, $4, 'pending_deposit', $5, $6, $7, GREATEST($6 - $7, 0))
+        RETURNING mall_group_buy_subscription_json(mall_group_buy_subscriptions)
+        "#,
+    )
+    .bind(&activity_id)
+    .bind(&user_id)
+    .bind(quantity)
+    .bind(&unit_name)
+    .bind(estimated_unit_price_cents)
+    .bind(estimated_total_cents)
+    .bind(deposit_cents)
+    .fetch_one(&mut *tx)
+    .await?
+};
+
+tx.commit().await?;
+```
 
 - [ ] **Step 7: Implement admin CRUD and actions**
 
