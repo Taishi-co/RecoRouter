@@ -27,7 +27,7 @@
 - Modify `src/web-admin/main.tsx`: load group-buy data, add menu item, activity CRUD, actions, subscription detail modal.
 - Modify `src/web-admin/styles.css`: group-buy admin styles.
 - Create `scripts/check-mall-group-buy-presale.mjs`: static guard for routes, business types, pages, and admin wiring.
-- Modify `package.json`: add `check:mall-group-buy-presale` and include it in `validate`.
+- Modify `package.json`: add `check:mall-group-buy-presale`; defer adding it to `validate` until Task 6 because the full guard intentionally stays red until backend, payment, miniapp, and admin surfaces exist.
 
 ## Current Worktree Rule
 
@@ -90,6 +90,38 @@ for (const table of [
   assert(migration.includes(`CREATE TABLE IF NOT EXISTS ${table}`), `${table} table exists`)
 }
 
+for (const indexName of [
+  'mall_group_buy_activities_status_time_idx',
+  'mall_group_buy_activities_product_idx',
+  'mall_group_buy_subscriptions_active_user_uidx',
+  'mall_group_buy_subscriptions_activity_status_idx',
+  'mall_group_buy_subscriptions_user_idx',
+  'mall_group_buy_events_activity_idx',
+  'mall_group_buy_events_subscription_idx',
+  'mall_credit_ledger_source_uidx',
+  'mall_credit_ledger_user_idx',
+]) {
+  assert(migration.includes(indexName), `${indexName} index exists`)
+}
+
+for (const helper of [
+  'mall_group_buy_activity_json',
+  'mall_group_buy_subscription_json',
+]) {
+  assert(migration.includes(`CREATE OR REPLACE FUNCTION ${helper}`), `${helper} helper function exists`)
+}
+
+for (const ddlPattern of [
+  'CREATE TABLE IF NOT EXISTS',
+  'CREATE INDEX IF NOT EXISTS',
+  'CREATE OR REPLACE FUNCTION',
+]) {
+  assert(migration.includes(ddlPattern), `${ddlPattern} pattern is used`)
+}
+
+assert(!/\bREFERENCES\b/i.test(migration), 'migration has no REFERENCES tokens')
+assert(!/\bFOREIGN\s+KEY\b/i.test(migration), 'migration has no FOREIGN KEY tokens')
+
 for (const businessType of ['mall_group_buy_deposit', 'mall_group_buy_balance']) {
   assert(migration.includes(businessType), `${businessType} migration reference exists`)
   assert(payments.includes(businessType), `${businessType} backend payment type exists`)
@@ -127,7 +159,7 @@ for (const apiName of [
 
 assert(admin.includes('mall.groupBuyPresale'), 'web admin group-buy page key exists')
 assert(packageJson.scripts['check:mall-group-buy-presale'] === 'node scripts/check-mall-group-buy-presale.mjs', 'package script exists')
-assert(packageJson.scripts.validate.includes('check:mall-group-buy-presale'), 'validate includes group-buy check')
+assert(!packageJson.scripts.validate.includes('check:mall-group-buy-presale'), 'validate defers group-buy check until final task')
 
 if (process.exitCode) process.exit(process.exitCode)
 ```
@@ -306,7 +338,7 @@ AS $$
 $$;
 ```
 
-- [ ] **Step 4: Wire package script**
+- [ ] **Step 4: Wire package script only**
 
 Add this script entry to `package.json`:
 
@@ -314,7 +346,7 @@ Add this script entry to `package.json`:
 "check:mall-group-buy-presale": "node scripts/check-mall-group-buy-presale.mjs"
 ```
 
-Also add `\"pnpm check:mall-group-buy-presale\"` to the `validate` script's concurrently command list.
+Do not add `\"pnpm check:mall-group-buy-presale\"` to the `validate` script yet. The full guard checks future backend, payment, miniapp, and admin surfaces, so it intentionally remains red until Tasks 2-5 are complete. Task 6 wires it into `validate`.
 
 - [ ] **Step 5: Run schema guard until only code/UI checks fail**
 
@@ -324,7 +356,7 @@ Run:
 node scripts/check-mall-group-buy-presale.mjs
 ```
 
-Expected: table checks and package script checks pass; route, service, payment, page, and admin checks still fail.
+Expected: table, index, helper, additive-DDL, no-physical-FK-token, migration business-type, package script, and validate-deferral checks pass; route, service, payment, page, and admin checks still fail.
 
 - [ ] **Step 6: Commit**
 
@@ -1409,9 +1441,14 @@ git commit -m "Add web admin group buy operations"
 ### Task 6: Final Verification, PR, And Deployment Prep
 
 **Files:**
+- Modify: `package.json`
 - Modify only if checks require small fixes in files touched by Tasks 1-5.
 
-- [ ] **Step 1: Run focused validation**
+- [ ] **Step 1: Wire final static guard into validate**
+
+After backend, payment, miniapp, and admin group-buy surfaces exist, add `\"pnpm check:mall-group-buy-presale\"` to the `validate` script's concurrently command list. This is intentionally delayed from Task 1 because the full guard is red until every feature surface is implemented.
+
+- [ ] **Step 2: Run focused validation**
 
 Run:
 
@@ -1427,7 +1464,7 @@ pnpm build:weapp:mall
 
 Expected: all commands pass.
 
-- [ ] **Step 2: Run split validation**
+- [ ] **Step 3: Run split validation**
 
 Run:
 
@@ -1437,7 +1474,7 @@ pnpm validate:split
 
 Expected: PASS.
 
-- [ ] **Step 3: Run full validation if time allows**
+- [ ] **Step 4: Run full validation if time allows**
 
 Run:
 
@@ -1447,7 +1484,7 @@ pnpm validate
 
 Expected: PASS. If it fails on an unrelated pre-existing check, record the failing check and prove focused group-buy checks pass.
 
-- [ ] **Step 4: Inspect git scope**
+- [ ] **Step 5: Inspect git scope**
 
 Run:
 
@@ -1458,7 +1495,7 @@ git diff --stat recorouter/main...HEAD
 
 Expected: only group-buy schema, backend, payment, miniapp, web admin, styles, scripts, and package changes are present.
 
-- [ ] **Step 5: Push and open PR**
+- [ ] **Step 6: Push and open PR**
 
 Run:
 
@@ -1485,7 +1522,7 @@ PR body must include:
 - pnpm build:weapp:mall
 ```
 
-- [ ] **Step 6: Deployment prep**
+- [ ] **Step 7: Deployment prep**
 
 After PR review or user approval, deploy backend migrations and services before publishing the miniapp because the miniapp pages depend on new APIs.
 
@@ -1525,7 +1562,7 @@ Spec coverage:
 - Miniapp pages: Task 4.
 - Web admin page: Task 5.
 - Payment business types: Task 3.
-- Validation: Task 6.
+- Validation: Task 1 adds the standalone static guard and keeps it out of `validate` while intentionally red; Task 6 wires the guard into `validate` after all backend, payment, miniapp, and admin surfaces are complete.
 
 Placeholder scan: no unresolved implementation placeholders are intentionally left in this plan. Where snippets use surrounding existing app helpers, the task names the exact existing file and required behavior.
 
