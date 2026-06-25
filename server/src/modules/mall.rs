@@ -1432,6 +1432,10 @@ struct GroupBuyProcurementResult {
     created_order_ids: Vec<String>,
 }
 
+fn group_buy_procurement_can_advance(result: &GroupBuyProcurementResult) -> bool {
+    result.missing_address_count == 0 && result.stock_failed_count == 0
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CreateSupportSessionRequest {
@@ -2799,16 +2803,60 @@ async fn admin_offline_group_buy<S>(
 where
     S: Storage,
 {
-    update_group_buy_status(
-        &state.db,
-        &id,
-        &["published", "enrolling"],
-        "offline",
+    let mut tx = state.db.begin().await?;
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM mall_group_buy_activities WHERE id = $1 FOR UPDATE")
+            .bind(&id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(|| ApiError::NotFound("团购活动不存在".to_string()))?;
+    let paid_subscription_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT count(*)
+        FROM mall_group_buy_subscriptions
+        WHERE activity_id = $1
+          AND status IN ('deposit_paid', 'pending_balance', 'balance_paid', 'order_created')
+        "#,
+    )
+    .bind(&id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !can_offline_group_buy(&status, paid_subscription_count) {
+        tx.rollback().await?;
+        if paid_subscription_count > 0 {
+            return Err(ApiError::BadRequest(
+                "已有用户支付定金，不能直接下线，请取消活动并退款".to_string(),
+            ));
+        }
+        return Err(ApiError::BadRequest("当前状态不可直接下线".to_string()));
+    }
+    let activity = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_group_buy_activities
+        SET status = 'offline',
+            updated_at = now()
+        WHERE id = $1
+          AND status IN ('draft', 'published')
+        RETURNING mall_group_buy_activity_json(mall_group_buy_activities)
+        "#,
+    )
+    .bind(&id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("团购活动不存在或状态不可操作".to_string()))?;
+    insert_group_buy_event_tx(
+        &mut tx,
+        Some(&id),
+        None,
         "offline",
         "团购活动下线",
-        "管理员下线活动",
+        Some("管理员下线活动"),
+        None,
+        json!({ "status": "offline" }),
     )
-    .await
+    .await?;
+    tx.commit().await?;
+    Ok(ok("操作成功", activity))
 }
 
 async fn admin_force_form_group_buy<S>(
@@ -2912,15 +2960,19 @@ where
     repair_group_buy_order_fulfillment_codes(&state.db, &id).await?;
     let procurement = create_group_buy_orders_for_activity(&state.db, &id).await?;
     repair_group_buy_order_fulfillment_codes(&state.db, &id).await?;
+    let advanced_to_procuring = group_buy_procurement_can_advance(&procurement);
 
     let activity = sqlx::query_scalar::<_, Value>(
         r#"
         UPDATE mall_group_buy_activities
         SET status = CASE
-              WHEN status IN ('formed', 'ops_review') THEN 'procuring'
-              ELSE status
+              WHEN $2 THEN 'procuring'
+              ELSE 'ops_review'
             END,
-            ops_review_reason = NULL,
+            ops_review_reason = CASE
+              WHEN $2 THEN NULL
+              ELSE 'procurement_pending'
+            END,
             updated_at = now()
         WHERE id = $1
           AND status IN ('formed', 'ops_review', 'procuring')
@@ -2928,6 +2980,7 @@ where
         "#,
     )
     .bind(&id)
+    .bind(advanced_to_procuring)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| ApiError::NotFound("团购活动不存在或状态不可确认采购".to_string()))?;
@@ -2943,7 +2996,8 @@ where
             "createdCount": procurement.created_count,
             "existingCount": procurement.existing_count,
             "missingAddressCount": procurement.missing_address_count,
-            "stockFailedCount": procurement.stock_failed_count
+            "stockFailedCount": procurement.stock_failed_count,
+            "advancedToProcuring": advanced_to_procuring
         }),
     )
     .await?;
@@ -2956,6 +3010,7 @@ where
                 "existingCount": procurement.existing_count,
                 "missingAddressCount": procurement.missing_address_count,
                 "stockFailedCount": procurement.stock_failed_count,
+                "advancedToProcuring": advanced_to_procuring,
                 "skippedMissingAddressSubscriptionIds": procurement.skipped_missing_address_subscription_ids,
                 "skippedStockSubscriptionIds": procurement.skipped_stock_subscription_ids,
                 "createdOrderIds": procurement.created_order_ids
@@ -12757,6 +12812,10 @@ fn desired_group_buy_subscription_quantity(
     requested_quantity
 }
 
+fn can_offline_group_buy(status: &str, paid_subscription_count: i64) -> bool {
+    matches!(status, "draft" | "published") && paid_subscription_count == 0
+}
+
 fn parse_group_buy_tiers(value: &Value) -> ApiResult<Vec<GroupBuyTier>> {
     let tiers: Vec<GroupBuyTier> = serde_json::from_value(value.clone())
         .map_err(|err| ApiError::BadRequest(err.to_string()))?;
@@ -13388,6 +13447,49 @@ async fn create_group_buy_order_for_subscription(
         tx.commit().await?;
         return Ok(GroupBuyOrderCreationOutcome::InsufficientStock);
     }
+    let guard_variant_id = seed.variant_id.as_deref();
+    let reserved_stock = sqlx::query(
+        r#"
+        UPDATE mall_products
+        SET stock = stock - $2,
+            sold_count = sold_count + $2,
+            variants = (
+              SELECT COALESCE(jsonb_agg(
+                CASE WHEN variant.value->>'id' = $4 THEN
+                  jsonb_set(
+                    variant.value,
+                    '{stock}',
+                    to_jsonb(((variant.value->>'stock')::integer - $2))
+                  )
+                ELSE variant.value END
+                ORDER BY variant.ordinality
+              ), variants)
+              FROM jsonb_array_elements(COALESCE(variants, '[]'::jsonb)) WITH ORDINALITY AS variant(value, ordinality)
+            ),
+            updated_at = now()
+        WHERE id = $1
+          AND stock >= $2
+          AND (
+            $3::text IS NULL
+            OR EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(COALESCE(variants, '[]'::jsonb)) AS variant(value)
+              WHERE variant.value->>'id' = $3
+                AND COALESCE((variant.value->>'stock')::integer, 0) >= $2
+            )
+          )
+        "#,
+    )
+    .bind(&seed.product_id)
+    .bind(seed.quantity)
+    .bind(guard_variant_id)
+    .bind(&variant.id)
+    .execute(&mut *tx)
+    .await?;
+    if reserved_stock.rows_affected() != 1 {
+        tx.rollback().await?;
+        return Ok(GroupBuyOrderCreationOutcome::InsufficientStock);
+    }
 
     let subtotal_cents = seed.unit_price_cents * i64::from(seed.quantity);
     let order_no = new_mall_order_no();
@@ -13488,34 +13590,6 @@ async fn create_group_buy_order_for_subscription(
     } else {
         "none"
     })
-    .execute(&mut *tx)
-    .await?;
-
-    sqlx::query(
-        r#"
-        UPDATE mall_products
-        SET stock = GREATEST(stock - $2, 0),
-            sold_count = sold_count + $2,
-            variants = (
-              SELECT COALESCE(jsonb_agg(
-                CASE WHEN variant.value->>'id' = $3 THEN
-                  jsonb_set(
-                    variant.value,
-                    '{stock}',
-                    to_jsonb(GREATEST(((variant.value->>'stock')::integer - $2), 0))
-                  )
-                ELSE variant.value END
-                ORDER BY variant.ordinality
-              ), variants)
-              FROM jsonb_array_elements(variants) WITH ORDINALITY AS variant(value, ordinality)
-            ),
-            updated_at = now()
-        WHERE id = $1
-        "#,
-    )
-    .bind(&seed.product_id)
-    .bind(seed.quantity)
-    .bind(&variant.id)
     .execute(&mut *tx)
     .await?;
 
@@ -14868,5 +14942,26 @@ mod tests {
         assert_eq!(desired_group_buy_subscription_quantity(Some(5), 5), 5);
         assert_eq!(desired_group_buy_subscription_quantity(Some(5), 8), 8);
         assert_eq!(desired_group_buy_subscription_quantity(None, 3), 3);
+    }
+
+    #[test]
+    fn group_buy_offline_is_listing_only_without_paid_subscriptions() {
+        assert!(can_offline_group_buy("draft", 0));
+        assert!(can_offline_group_buy("published", 0));
+        assert!(!can_offline_group_buy("enrolling", 0));
+        assert!(!can_offline_group_buy("published", 1));
+    }
+
+    #[test]
+    fn group_buy_procurement_advances_only_without_skips() {
+        let mut result = GroupBuyProcurementResult::default();
+        assert!(group_buy_procurement_can_advance(&result));
+
+        result.missing_address_count = 1;
+        assert!(!group_buy_procurement_can_advance(&result));
+
+        result.missing_address_count = 0;
+        result.stock_failed_count = 1;
+        assert!(!group_buy_procurement_can_advance(&result));
     }
 }
