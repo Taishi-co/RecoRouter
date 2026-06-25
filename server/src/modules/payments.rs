@@ -185,6 +185,7 @@ struct PayableOrderRow {
     commission_amount: Option<f64>,
     payable_cents: Option<i64>,
     cargo_name: Option<String>,
+    group_buy_pay_window_open: Option<bool>,
 }
 
 #[derive(Debug, FromRow)]
@@ -440,7 +441,8 @@ async fn fetch_payable_order(
                     o.fare_price::float8 AS fare_price,
                     o.commission_amount::float8 AS commission_amount,
                     NULL::bigint AS payable_cents,
-                    d.cargo_name
+                    d.cargo_name,
+                    NULL::boolean AS group_buy_pay_window_open
                 FROM orders o
                 LEFT JOIN demands d ON d.id = o.demand_id
                 WHERE o.id = $1
@@ -461,7 +463,8 @@ async fn fetch_payable_order(
                 NULL::float8 AS fare_price,
                 NULL::float8 AS commission_amount,
                 payable_cents,
-                'RecoRouter Fresh'::text AS cargo_name
+                'RecoRouter Fresh'::text AS cargo_name,
+                NULL::boolean AS group_buy_pay_window_open
             FROM mall_orders
             WHERE id = $1
             "#,
@@ -483,7 +486,12 @@ async fn fetch_payable_order(
                 NULL::float8 AS fare_price,
                 NULL::float8 AS commission_amount,
                 subscription.deposit_cents AS payable_cents,
-                activity.name AS cargo_name
+                activity.name AS cargo_name,
+                (
+                    activity.status IN ('published', 'enrolling')
+                    AND activity.starts_at <= now()
+                    AND activity.ends_at > now()
+                ) AS group_buy_pay_window_open
             FROM mall_group_buy_subscriptions subscription
             JOIN mall_group_buy_activities activity ON activity.id = subscription.activity_id
             WHERE subscription.id = $1
@@ -506,7 +514,8 @@ async fn fetch_payable_order(
                 NULL::float8 AS fare_price,
                 NULL::float8 AS commission_amount,
                 subscription.balance_cents AS payable_cents,
-                activity.name AS cargo_name
+                activity.name AS cargo_name,
+                NULL::boolean AS group_buy_pay_window_open
             FROM mall_group_buy_subscriptions subscription
             JOIN mall_group_buy_activities activity ON activity.id = subscription.activity_id
             WHERE subscription.id = $1
@@ -584,6 +593,11 @@ fn validate_payable_order(
         PaymentBusinessType::MallGroupBuyDeposit => {
             if order.status.as_deref() != Some("pending_deposit") {
                 return Err(ApiError::BadRequest("当前认购单不可支付定金".to_string()));
+            }
+            if order.group_buy_pay_window_open == Some(false) {
+                return Err(ApiError::BadRequest(
+                    "认购已结束，不能继续支付订金".to_string(),
+                ));
             }
             if order.payment_status.as_deref() == Some("paid") {
                 return Err(ApiError::BadRequest("定金已支付".to_string()));
@@ -880,8 +894,9 @@ impl fmt::Display for PaymentProvider {
 #[cfg(test)]
 mod tests {
     use super::{
-        decrypt_wechat_notification, new_out_trade_no, with_wechat_json_headers,
-        PaymentBusinessType, PaymentProvider, WechatJsapiClientPayload, WECHAT_JSAPI_URL,
+        decrypt_wechat_notification, new_out_trade_no, validate_payable_order,
+        with_wechat_json_headers, PayableOrderRow, PaymentBusinessType, PaymentProvider,
+        WechatJsapiClientPayload, WECHAT_JSAPI_URL,
     };
     use crate::wechat_pay::WechatNotifyResource;
 
@@ -915,6 +930,26 @@ mod tests {
             .unwrap();
         assert_eq!(balance, PaymentBusinessType::MallGroupBuyBalance);
         assert_eq!(balance.as_str(), "mall_group_buy_balance");
+    }
+
+    #[test]
+    fn group_buy_deposit_prepay_requires_open_activity_window() {
+        let order = PayableOrderRow {
+            id: "subscription-expired".to_string(),
+            status: Some("pending_deposit".to_string()),
+            payment_status: Some("pending".to_string()),
+            commission_payment_status: None,
+            fare_price: None,
+            commission_amount: None,
+            payable_cents: Some(500),
+            cargo_name: Some("集采苹果".to_string()),
+            group_buy_pay_window_open: Some(false),
+        };
+
+        let error = validate_payable_order(&order, PaymentBusinessType::MallGroupBuyDeposit)
+            .expect_err("expired activity should not accept deposit prepay");
+
+        assert!(format!("{error}").contains("认购已结束"));
     }
 
     #[test]

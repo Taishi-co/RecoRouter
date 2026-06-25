@@ -2525,11 +2525,27 @@ async fn pay_group_buy_deposit<S>(
 where
     S: Storage,
 {
+    advance_group_buy_activities(&state.db).await?;
     let subscription = fetch_group_buy_subscription_payload(&state.db, &id)
         .await?
         .ok_or_else(|| ApiError::NotFound("团购认购不存在".to_string()))?;
     if subscription.get("status").and_then(Value::as_str) != Some("pending_deposit") {
         return Err(ApiError::BadRequest("当前认购不需要支付订金".to_string()));
+    }
+    let activity_id = subscription
+        .get("activityId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ApiError::BadRequest("认购活动信息不完整".to_string()))?;
+    let activity = fetch_group_buy_activity_row(&state.db, activity_id).await?;
+    if !group_buy_deposit_payment_window_open(
+        &activity.status,
+        activity.starts_at,
+        activity.ends_at,
+        Utc::now(),
+    ) {
+        return Err(ApiError::BadRequest(
+            "认购已结束，不能继续支付订金".to_string(),
+        ));
     }
     Ok(ok(
         "订金待支付",
@@ -8096,13 +8112,30 @@ pub async fn settle_group_buy_deposit_payment_success(
 ) -> ApiResult<()> {
     let updated = sqlx::query_as::<_, GroupBuySubscriptionRow>(
         r#"
-        UPDATE mall_group_buy_subscriptions
-        SET status = 'deposit_paid',
+        UPDATE mall_group_buy_subscriptions subscription
+        SET status = CASE
+                WHEN subscription.status = 'pending_deposit'
+                  AND activity.status IN ('published', 'enrolling')
+                  AND activity.starts_at <= now()
+                  AND activity.ends_at > now()
+                THEN 'deposit_paid'
+                ELSE 'activity_cancel_refunding'
+            END,
             deposit_paid_at = COALESCE(deposit_paid_at, now()),
+            cancel_reason = CASE
+                WHEN subscription.status = 'pending_deposit'
+                  AND activity.status IN ('published', 'enrolling')
+                  AND activity.starts_at <= now()
+                  AND activity.ends_at > now()
+                THEN cancel_reason
+                ELSE 'deposit_paid_after_enrollment_closed'
+            END,
             updated_at = now()
-        WHERE id = $1
-          AND status = 'pending_deposit'
-        RETURNING id, activity_id, user_id, quantity, status
+        FROM mall_group_buy_activities activity
+        WHERE subscription.id = $1
+          AND subscription.status IN ('pending_deposit', 'deposit_refunded')
+          AND activity.id = subscription.activity_id
+        RETURNING subscription.id, subscription.activity_id, subscription.user_id, subscription.quantity, subscription.status
         "#,
     )
     .bind(subscription_id)
@@ -8110,17 +8143,34 @@ pub async fn settle_group_buy_deposit_payment_success(
     .await?;
 
     if let Some(subscription) = updated {
-        insert_group_buy_event(
-            pool,
-            Some(&subscription.activity_id),
-            Some(&subscription.id),
-            "deposit_paid",
-            "订金支付成功",
-            Some("用户订金已支付"),
-            Some(&subscription.user_id),
-            json!({ "quantity": subscription.quantity }),
-        )
-        .await?;
+        if subscription.status == "deposit_paid" {
+            insert_group_buy_event(
+                pool,
+                Some(&subscription.activity_id),
+                Some(&subscription.id),
+                "deposit_paid",
+                "订金支付成功",
+                Some("用户订金已支付"),
+                Some(&subscription.user_id),
+                json!({ "quantity": subscription.quantity }),
+            )
+            .await?;
+        } else {
+            insert_group_buy_event(
+                pool,
+                Some(&subscription.activity_id),
+                Some(&subscription.id),
+                "refund_required",
+                "订金逾期到账待退款",
+                Some("用户付款完成时认购已结束，需原路退回订金"),
+                Some(&subscription.user_id),
+                json!({
+                    "quantity": subscription.quantity,
+                    "reason": "deposit_paid_after_enrollment_closed"
+                }),
+            )
+            .await?;
+        }
     }
     Ok(())
 }
@@ -10303,8 +10353,16 @@ fn campaign_applies_to_product(
     }
 
     for array in [
-        rules.and_then(|rules| rules.get("categoryCodes").or_else(|| rules.get("category_codes"))),
-        scope.and_then(|scope| scope.get("categoryCodes").or_else(|| scope.get("category_codes"))),
+        rules.and_then(|rules| {
+            rules
+                .get("categoryCodes")
+                .or_else(|| rules.get("category_codes"))
+        }),
+        scope.and_then(|scope| {
+            scope
+                .get("categoryCodes")
+                .or_else(|| scope.get("category_codes"))
+        }),
     ]
     .into_iter()
     .flatten()
@@ -10423,7 +10481,9 @@ fn build_product_promotion_from_campaign(campaign: &Value) -> Value {
         .unwrap_or_else(|| default_campaign_text_color(&campaign_type).to_string());
     let rule_explanation =
         json_non_empty_string(display.and_then(|display| display.get("ruleExplanation")))
-            .unwrap_or_else(|| default_campaign_rule_explanation(&campaign_type, rules, &campaign_name));
+            .unwrap_or_else(|| {
+                default_campaign_rule_explanation(&campaign_type, rules, &campaign_name)
+            });
     let limit_text = json_non_empty_string(display.and_then(|display| display.get("limitText")));
 
     json!({
@@ -10459,13 +10519,12 @@ fn fixed_price_badge_string(
     badge_key: &str,
     legacy_key: &str,
 ) -> Option<String> {
-    rules
-        .and_then(|rules| {
-            rules
-                .get("badge")
-                .and_then(|badge| json_non_empty_string(badge.get(badge_key)))
-                .or_else(|| json_non_empty_string(rules.get(legacy_key)))
-        })
+    rules.and_then(|rules| {
+        rules
+            .get("badge")
+            .and_then(|badge| json_non_empty_string(badge.get(badge_key)))
+            .or_else(|| json_non_empty_string(rules.get(legacy_key)))
+    })
 }
 
 fn json_non_empty_string(value: Option<&Value>) -> Option<String> {
@@ -10558,11 +10617,15 @@ fn default_campaign_rule_explanation(
         "delivery_reduction" | "delivery_subsidy" if threshold > 0 && discount > 0 => {
             format!("活动期间，参与商品满{threshold}元减配送费{discount}元。")
         }
-        "delivery_reduction" | "delivery_subsidy" => "活动期间，参与商品可享配送费优惠。".to_string(),
+        "delivery_reduction" | "delivery_subsidy" => {
+            "活动期间，参与商品可享配送费优惠。".to_string()
+        }
         "full_discount" => "活动期间，参与商品满足门槛后享受折扣优惠。".to_string(),
         "coupon" => "活动期间，参与商品可使用指定优惠券。".to_string(),
         "promotion_venue" => "活动期间，会场内商品按页面活动规则享受优惠。".to_string(),
-        _ if threshold > 0 && discount > 0 => format!("活动期间，参与商品满{threshold}元减{discount}元。"),
+        _ if threshold > 0 && discount > 0 => {
+            format!("活动期间，参与商品满{threshold}元减{discount}元。")
+        }
         _ => "活动期间，参与商品可享优惠。".to_string(),
     }
 }
@@ -13087,6 +13150,15 @@ fn validate_group_buy_time_window(
     Ok(())
 }
 
+fn group_buy_deposit_payment_window_open(
+    status: &str,
+    starts_at: DateTime<Utc>,
+    ends_at: DateTime<Utc>,
+    now: DateTime<Utc>,
+) -> bool {
+    matches!(status, "published" | "enrolling") && starts_at <= now && ends_at > now
+}
+
 async fn fetch_group_buy_activity_row(
     pool: &PgPool,
     activity_id: &str,
@@ -15259,6 +15331,36 @@ mod tests {
             calculate_group_buy_capped_deposit_cents("percent", 100, 30, 300, min_price),
             6_000
         );
+    }
+
+    #[test]
+    fn group_buy_deposit_payment_window_closes_after_activity_end() {
+        let now = Utc::now();
+        assert!(group_buy_deposit_payment_window_open(
+            "enrolling",
+            now - chrono::Duration::minutes(10),
+            now + chrono::Duration::minutes(10),
+            now,
+        ));
+
+        assert!(!group_buy_deposit_payment_window_open(
+            "enrolling",
+            now - chrono::Duration::minutes(20),
+            now - chrono::Duration::minutes(1),
+            now,
+        ));
+        assert!(!group_buy_deposit_payment_window_open(
+            "enrolling",
+            now - chrono::Duration::minutes(20),
+            now,
+            now,
+        ));
+        assert!(!group_buy_deposit_payment_window_open(
+            "formed",
+            now - chrono::Duration::minutes(10),
+            now + chrono::Duration::minutes(10),
+            now,
+        ));
     }
 
     #[test]

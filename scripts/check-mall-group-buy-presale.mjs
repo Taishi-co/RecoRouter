@@ -98,6 +98,12 @@ for (const apiName of [
 }
 
 assert(admin.includes('mall.groupBuyPresale'), 'web admin group-buy page key exists')
+assert(payments.includes('activity.ends_at > now()'), 'deposit prepay uses strict enrollment end gate')
+assert(mall.includes('activity.ends_at > now()'), 'deposit settlement uses strict enrollment end gate')
+assert(mall.includes("subscription.status IN ('pending_deposit', 'deposit_refunded')"), 'late deposit settlement handles lifecycle-cancelled subscriptions')
+assert(mall.includes('deposit_paid_after_enrollment_closed'), 'late deposit settlement records refund reason')
+assert(!mall.includes("COALESCE(cancel_reason, 'deposit_paid_after_enrollment_closed')"), 'late deposit settlement overwrites stale lifecycle cancel reason')
+assert(mall.includes('refund_required'), 'late deposit settlement records refund-required event')
 assert(packageJson.scripts['check:mall-group-buy-presale'] === 'node scripts/check-mall-group-buy-presale.mjs', 'package script exists')
 assert(packageJson.scripts.validate.includes('check:mall-group-buy-presale'), 'validate includes group-buy check')
 
