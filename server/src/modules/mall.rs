@@ -1434,6 +1434,10 @@ fn group_buy_procurement_can_advance(result: &GroupBuyProcurementResult) -> bool
     result.missing_address_count == 0 && result.stock_failed_count == 0
 }
 
+fn can_confirm_group_buy_procurement(status: &str, pending_balance_count: i64) -> bool {
+    status != "formed" || pending_balance_count == 0
+}
+
 struct GroupBuyActivitySpecBinding {
     variant_id: String,
     unit_name: String,
@@ -2966,6 +2970,7 @@ async fn admin_confirm_group_buy_procurement<S>(
 where
     S: Storage,
 {
+    advance_group_buy_activities(&state.db).await?;
     let current_status: String =
         sqlx::query_scalar("SELECT status FROM mall_group_buy_activities WHERE id = $1")
             .bind(&id)
@@ -2977,6 +2982,24 @@ where
         "formed" | "ops_review" | "procuring"
     ) {
         return Err(ApiError::BadRequest("团购活动状态不可确认采购".to_string()));
+    }
+    if current_status == "formed" {
+        let pending_balance_count: i64 = sqlx::query_scalar(
+            r#"
+            SELECT count(*)
+            FROM mall_group_buy_subscriptions
+            WHERE activity_id = $1
+              AND status = 'pending_balance'
+            "#,
+        )
+        .bind(&id)
+        .fetch_one(&state.db)
+        .await?;
+        if !can_confirm_group_buy_procurement(&current_status, pending_balance_count) {
+            return Err(ApiError::BadRequest(
+                "仍有用户待付尾款，不能确认采购".to_string(),
+            ));
+        }
     }
 
     repair_group_buy_order_fulfillment_codes(&state.db, &id).await?;
@@ -15012,6 +15035,14 @@ mod tests {
         result.missing_address_count = 0;
         result.stock_failed_count = 1;
         assert!(!group_buy_procurement_can_advance(&result));
+    }
+
+    #[test]
+    fn group_buy_procurement_requires_balance_close_for_formed_pending_balance() {
+        assert!(!can_confirm_group_buy_procurement("formed", 1));
+        assert!(can_confirm_group_buy_procurement("formed", 0));
+        assert!(can_confirm_group_buy_procurement("ops_review", 1));
+        assert!(can_confirm_group_buy_procurement("procuring", 1));
     }
 
     #[test]
