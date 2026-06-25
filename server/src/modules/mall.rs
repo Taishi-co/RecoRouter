@@ -1408,6 +1408,29 @@ struct GroupBuySubscriptionRow {
     status: String,
 }
 
+#[derive(Debug, FromRow)]
+struct GroupBuyOrderSeedRow {
+    subscription_id: String,
+    activity_id: String,
+    user_id: String,
+    quantity: i32,
+    product_id: String,
+    variant_id: Option<String>,
+    unit_price_cents: i64,
+    product: Value,
+}
+
+#[derive(Debug, Default)]
+struct GroupBuyProcurementResult {
+    created_count: usize,
+    existing_count: usize,
+    missing_address_count: usize,
+    stock_failed_count: usize,
+    skipped_missing_address_subscription_ids: Vec<String>,
+    skipped_stock_subscription_ids: Vec<String>,
+    created_order_ids: Vec<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CreateSupportSessionRequest {
@@ -2791,7 +2814,7 @@ async fn admin_force_form_group_buy<S>(
 where
     S: Storage,
 {
-    form_group_buy_activity(&state.db, &id, "manual_force_form").await?;
+    force_form_group_buy_activity(&state.db, &id).await?;
     let activity = fetch_group_buy_activity_payload(&state.db, &id, false)
         .await?
         .ok_or_else(|| ApiError::NotFound("团购活动不存在".to_string()))?;
@@ -2881,18 +2904,39 @@ where
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| ApiError::NotFound("团购活动不存在或状态不可确认采购".to_string()))?;
+
+    let procurement = create_group_buy_orders_for_activity(&state.db, &id).await?;
     insert_group_buy_event(
         &state.db,
         Some(&id),
         None,
         "procurement_confirmed",
         "确认采购",
-        Some("普通商城订单创建需由后续任务接入，当前保持采购中状态"),
+        Some("系统为已付尾款认购生成普通商城订单"),
         None,
-        json!({ "orderCreation": "deferred" }),
+        json!({
+            "createdCount": procurement.created_count,
+            "existingCount": procurement.existing_count,
+            "missingAddressCount": procurement.missing_address_count,
+            "stockFailedCount": procurement.stock_failed_count
+        }),
     )
     .await?;
-    Ok(ok("已确认采购", activity))
+    Ok(ok(
+        "已确认采购",
+        json!({
+            "activity": activity,
+            "orderCreation": {
+                "createdCount": procurement.created_count,
+                "existingCount": procurement.existing_count,
+                "missingAddressCount": procurement.missing_address_count,
+                "stockFailedCount": procurement.stock_failed_count,
+                "skippedMissingAddressSubscriptionIds": procurement.skipped_missing_address_subscription_ids,
+                "skippedStockSubscriptionIds": procurement.skipped_stock_subscription_ids,
+                "createdOrderIds": procurement.created_order_ids
+            }
+        }),
+    ))
 }
 
 async fn admin_list_group_buy_subscriptions<S>(
@@ -12662,6 +12706,10 @@ pub fn select_group_buy_tier(tiers: &[GroupBuyTier], quantity: i32) -> Option<Gr
         .cloned()
 }
 
+pub fn select_group_buy_force_tier(tiers: &[GroupBuyTier], quantity: i32) -> Option<GroupBuyTier> {
+    select_group_buy_tier(tiers, quantity).or_else(|| tiers.first().cloned())
+}
+
 pub fn calculate_group_buy_deposit_cents(
     deposit_type: &str,
     deposit_value: i32,
@@ -13028,6 +13076,464 @@ async fn form_group_buy_activity(pool: &PgPool, activity_id: &str, reason: &str)
     .await?;
     tx.commit().await?;
     Ok(())
+}
+
+async fn force_form_group_buy_activity(pool: &PgPool, activity_id: &str) -> ApiResult<()> {
+    let mut tx = pool.begin().await?;
+    let activity = sqlx::query_as::<_, GroupBuyActivityRow>(
+        r#"
+        SELECT
+          id, product_id, variant_id, unit_name, status, starts_at, ends_at, balance_due_at,
+          min_group_quantity, max_quantity_per_user, min_credit_score,
+          overdue_credit_penalty, deposit_type, deposit_value, tiers
+        FROM mall_group_buy_activities
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+    )
+    .bind(activity_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("团购活动不存在".to_string()))?;
+    if activity.status == "formed" {
+        tx.commit().await?;
+        return Ok(());
+    }
+    if !matches!(activity.status.as_str(), "published" | "enrolling") {
+        return Err(ApiError::BadRequest("当前状态不可强制成团".to_string()));
+    }
+
+    let formed_quantity: i32 = sqlx::query_scalar(
+        r#"
+        SELECT COALESCE(sum(quantity), 0)::integer
+        FROM mall_group_buy_subscriptions
+        WHERE activity_id = $1
+          AND status IN ('deposit_paid', 'pending_balance', 'balance_paid', 'order_created')
+        "#,
+    )
+    .bind(activity_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if formed_quantity <= 0 {
+        return Err(ApiError::BadRequest(
+            "暂无已付定金认购，不能强制成团".to_string(),
+        ));
+    }
+
+    let tiers = parse_group_buy_tiers(&activity.tiers)?;
+    let final_tier = select_group_buy_force_tier(&tiers, formed_quantity)
+        .ok_or_else(|| ApiError::BadRequest("阶梯价格不能为空".to_string()))?;
+    sqlx::query(
+        r#"
+        UPDATE mall_group_buy_activities
+        SET status = 'formed',
+            formed_quantity = $2,
+            final_tier_quantity = $3,
+            final_unit_price_cents = $4,
+            balance_due_at = COALESCE(balance_due_at, now() + interval '3 days'),
+            updated_at = now()
+        WHERE id = $1
+          AND status IN ('published', 'enrolling')
+        "#,
+    )
+    .bind(activity_id)
+    .bind(formed_quantity)
+    .bind(final_tier.quantity)
+    .bind(final_tier.price_cents)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        r#"
+        UPDATE mall_group_buy_subscriptions
+        SET final_unit_price_cents = $2,
+            estimated_total_cents = quantity * $2,
+            balance_cents = GREATEST(quantity * $2 - deposit_cents, 0),
+            status = CASE
+              WHEN status = 'deposit_paid' AND GREATEST(quantity * $2 - deposit_cents, 0) = 0 THEN 'balance_paid'
+              WHEN status = 'deposit_paid' THEN 'pending_balance'
+              ELSE status
+            END,
+            balance_paid_at = CASE
+              WHEN status = 'deposit_paid' AND GREATEST(quantity * $2 - deposit_cents, 0) = 0
+              THEN COALESCE(balance_paid_at, now())
+              ELSE balance_paid_at
+            END,
+            updated_at = now()
+        WHERE activity_id = $1
+          AND status IN ('deposit_paid', 'pending_balance', 'balance_paid')
+        "#,
+    )
+    .bind(activity_id)
+    .bind(final_tier.price_cents)
+    .execute(&mut *tx)
+    .await?;
+    insert_group_buy_event_tx(
+        &mut tx,
+        Some(activity_id),
+        None,
+        "force_formed",
+        "团购强制成团",
+        Some("管理员在未达到最低成团数量时强制成团"),
+        None,
+        json!({
+            "formedQuantity": formed_quantity,
+            "finalTierQuantity": final_tier.quantity,
+            "finalUnitPriceCents": final_tier.price_cents
+        }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn create_group_buy_orders_for_activity(
+    pool: &PgPool,
+    activity_id: &str,
+) -> ApiResult<GroupBuyProcurementResult> {
+    let mut result = GroupBuyProcurementResult::default();
+    result.existing_count = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT count(*)
+        FROM mall_group_buy_subscriptions
+        WHERE activity_id = $1
+          AND mall_order_id IS NOT NULL
+          AND status IN ('balance_paid', 'order_created')
+        "#,
+    )
+    .bind(activity_id)
+    .fetch_one(pool)
+    .await? as usize;
+
+    let subscription_ids = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT id
+        FROM mall_group_buy_subscriptions
+        WHERE activity_id = $1
+          AND status = 'balance_paid'
+          AND mall_order_id IS NULL
+        ORDER BY created_at ASC
+        "#,
+    )
+    .bind(activity_id)
+    .fetch_all(pool)
+    .await?;
+
+    for subscription_id in subscription_ids {
+        match create_group_buy_order_for_subscription(pool, &subscription_id).await? {
+            GroupBuyOrderCreationOutcome::Created(order_id) => {
+                result.created_count += 1;
+                result.created_order_ids.push(order_id);
+            }
+            GroupBuyOrderCreationOutcome::AlreadyLinked => {
+                result.existing_count += 1;
+            }
+            GroupBuyOrderCreationOutcome::MissingDefaultAddress => {
+                result.missing_address_count += 1;
+                result
+                    .skipped_missing_address_subscription_ids
+                    .push(subscription_id);
+            }
+            GroupBuyOrderCreationOutcome::InsufficientStock => {
+                result.stock_failed_count += 1;
+                result.skipped_stock_subscription_ids.push(subscription_id);
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+enum GroupBuyOrderCreationOutcome {
+    Created(String),
+    AlreadyLinked,
+    MissingDefaultAddress,
+    InsufficientStock,
+}
+
+async fn create_group_buy_order_for_subscription(
+    pool: &PgPool,
+    subscription_id: &str,
+) -> ApiResult<GroupBuyOrderCreationOutcome> {
+    let mut tx = pool.begin().await?;
+    let seed = sqlx::query_as::<_, GroupBuyOrderSeedRow>(
+        r#"
+        SELECT
+          subscription.id AS subscription_id,
+          subscription.activity_id,
+          subscription.user_id,
+          subscription.quantity,
+          activity.product_id,
+          activity.variant_id,
+          COALESCE(
+            subscription.final_unit_price_cents,
+            activity.final_unit_price_cents,
+            subscription.estimated_unit_price_cents
+          ) AS unit_price_cents,
+          product_json(product, category.name) AS product
+        FROM mall_group_buy_subscriptions subscription
+        JOIN mall_group_buy_activities activity ON activity.id = subscription.activity_id
+        JOIN mall_products product ON product.id = activity.product_id
+        LEFT JOIN mall_categories category ON category.code = product.category_code
+        WHERE subscription.id = $1
+          AND subscription.status = 'balance_paid'
+          AND subscription.mall_order_id IS NULL
+        FOR UPDATE OF subscription, activity, product
+        "#,
+    )
+    .bind(subscription_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(seed) = seed else {
+        tx.commit().await?;
+        return Ok(GroupBuyOrderCreationOutcome::AlreadyLinked);
+    };
+
+    let address = sqlx::query_as::<_, AddressSnapshotRow>(
+        r#"
+        SELECT
+          id AS address_id,
+          pickup_point_id,
+          contact_name,
+          contact_phone,
+          address_text,
+          latitude::float8 AS latitude,
+          longitude::float8 AS longitude
+        FROM mall_addresses
+        WHERE user_id = $1
+          AND is_default = true
+        ORDER BY updated_at DESC NULLS LAST, created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(&seed.user_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(address) = address else {
+        tx.commit().await?;
+        return Ok(GroupBuyOrderCreationOutcome::MissingDefaultAddress);
+    };
+
+    let variant = group_buy_order_variant(&seed)?;
+    if variant.stock < seed.quantity
+        || seed
+            .product
+            .get("stock")
+            .and_then(Value::as_i64)
+            .is_some_and(|stock| stock < i64::from(seed.quantity))
+    {
+        tx.commit().await?;
+        return Ok(GroupBuyOrderCreationOutcome::InsufficientStock);
+    }
+
+    let subtotal_cents = seed.unit_price_cents * i64::from(seed.quantity);
+    let order_no = new_mall_order_no();
+    let cabin_code = random_cabin_code();
+    let delivery_method = if address.pickup_point_id.is_some() {
+        "社区团购自提"
+    } else {
+        "社区配送到家"
+    };
+    let pickup_method = if address.pickup_point_id.is_some() {
+        "团长核销提货码"
+    } else {
+        "联系用户确认送达"
+    };
+
+    let order_id: String = sqlx::query_scalar(
+        r#"
+        INSERT INTO mall_orders (
+          order_no, user_id, checkout_id, address_id, pickup_point_id, recipient_name, recipient_phone,
+          address_text, latitude, longitude, delivery_method, pickup_method, expected_delivery_window,
+          payment_expires_at, delivery_date, delivery_time_slot,
+          subtotal_cents, delivery_fee_cents, coupon_cents, payable_cents,
+          payment_status, status, fulfillment_status, paid_at,
+          cabin_code, remark, estimated_payable_cents, weight_adjustment_status
+        )
+        VALUES (
+          $1, $2, NULL, $3, $4, $5, $6,
+          $7, $8::numeric, $9::numeric, $10, $11, NULL,
+          NULL, NULL, NULL,
+          $12, 0, 0, $12,
+          'paid', 'ready_for_pickup', 'code_pending', now(),
+          $13, $14, $12, $15
+        )
+        RETURNING id
+        "#,
+    )
+    .bind(&order_no)
+    .bind(&seed.user_id)
+    .bind(&address.address_id)
+    .bind(&address.pickup_point_id)
+    .bind(&address.contact_name)
+    .bind(&address.contact_phone)
+    .bind(&address.address_text)
+    .bind(address.latitude)
+    .bind(address.longitude)
+    .bind(delivery_method)
+    .bind(pickup_method)
+    .bind(subtotal_cents)
+    .bind(cabin_code)
+    .bind(format!("团购认购 {}", seed.subscription_id))
+    .bind(if variant.pricing_mode == "weighed" {
+        "pending"
+    } else {
+        "none"
+    })
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let line_total = subtotal_cents;
+    let estimated_weight_grams = if variant.pricing_mode == "weighed" {
+        Some(
+            seed.quantity
+                .saturating_mul(variant.weight_unit_grams.max(1)),
+        )
+    } else {
+        None
+    };
+    sqlx::query(
+        r#"
+        INSERT INTO mall_order_items (
+          order_id, product_id, variant_id, variant_name, sku, product_name, category_code, image_url,
+          unit_price_cents, quantity, line_total_cents, estimated_line_total_cents,
+          pricing_mode, estimated_weight_grams, weight_unit, weight_unit_label, weight_unit_grams,
+          weight_tolerance_bps, weight_adjustment_status
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12, $13, $14, $15, $16, $17, $18)
+        "#,
+    )
+    .bind(&order_id)
+    .bind(&seed.product_id)
+    .bind(&variant.id)
+    .bind(&variant.name)
+    .bind(&variant.sku)
+    .bind(string_field(&seed.product, "name"))
+    .bind(non_empty_string_field(&seed.product, "categoryCode"))
+    .bind(non_empty_string_field(&seed.product, "imageUrl"))
+    .bind(seed.unit_price_cents)
+    .bind(seed.quantity)
+    .bind(line_total)
+    .bind(&variant.pricing_mode)
+    .bind(estimated_weight_grams)
+    .bind(&variant.weight_unit)
+    .bind(&variant.weight_unit_label)
+    .bind(variant.weight_unit_grams)
+    .bind(variant.weight_tolerance_bps)
+    .bind(if variant.pricing_mode == "weighed" {
+        "pending"
+    } else {
+        "none"
+    })
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        UPDATE mall_products
+        SET stock = GREATEST(stock - $2, 0),
+            sold_count = sold_count + $2,
+            variants = (
+              SELECT COALESCE(jsonb_agg(
+                CASE WHEN variant.value->>'id' = $3 THEN
+                  jsonb_set(
+                    variant.value,
+                    '{stock}',
+                    to_jsonb(GREATEST(((variant.value->>'stock')::integer - $2), 0))
+                  )
+                ELSE variant.value END
+                ORDER BY variant.ordinality
+              ), variants)
+              FROM jsonb_array_elements(variants) WITH ORDINALITY AS variant(value, ordinality)
+            ),
+            updated_at = now()
+        WHERE id = $1
+        "#,
+    )
+    .bind(&seed.product_id)
+    .bind(seed.quantity)
+    .bind(&variant.id)
+    .execute(&mut *tx)
+    .await?;
+
+    let linked = sqlx::query_scalar::<_, String>(
+        r#"
+        UPDATE mall_group_buy_subscriptions
+        SET mall_order_id = $2,
+            status = 'order_created',
+            updated_at = now()
+        WHERE id = $1
+          AND status = 'balance_paid'
+          AND mall_order_id IS NULL
+        RETURNING id
+        "#,
+    )
+    .bind(&seed.subscription_id)
+    .bind(&order_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if linked.is_none() {
+        tx.rollback().await?;
+        return Ok(GroupBuyOrderCreationOutcome::AlreadyLinked);
+    }
+
+    insert_order_event_tx(
+        &mut tx,
+        &order_id,
+        "paid",
+        "团购订单已生成",
+        "订金和尾款已支付，订单进入待自提",
+        "done",
+    )
+    .await?;
+    insert_group_buy_event_tx(
+        &mut tx,
+        Some(&seed.activity_id),
+        Some(&seed.subscription_id),
+        "order_created",
+        "团购订单已生成",
+        Some("系统已为已付尾款认购生成普通商城订单"),
+        Some(&seed.user_id),
+        json!({ "orderId": order_id.clone() }),
+    )
+    .await?;
+    tx.commit().await?;
+    ensure_fulfillment_code(pool, &order_id, address.pickup_point_id.as_deref(), None).await?;
+    Ok(GroupBuyOrderCreationOutcome::Created(order_id))
+}
+
+fn group_buy_order_variant(seed: &GroupBuyOrderSeedRow) -> ApiResult<ProductVariant> {
+    if seed.product.get("status").and_then(Value::as_str) != Some("on_sale") {
+        return Err(ApiError::BadRequest("商品不存在或已下架".to_string()));
+    }
+    let variants_value = seed
+        .product
+        .get("variants")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let variants: Vec<ProductVariant> = serde_json::from_value(variants_value)
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+    let variant_id = seed
+        .variant_id
+        .as_deref()
+        .or_else(|| seed.product.get("defaultVariantId").and_then(Value::as_str))
+        .or_else(|| variants.first().map(|variant| variant.id.as_str()))
+        .map(str::to_string)
+        .ok_or_else(|| ApiError::BadRequest("商品规格不存在".to_string()))?;
+    variants
+        .into_iter()
+        .find(|variant| variant.id == variant_id)
+        .ok_or_else(|| ApiError::BadRequest("商品规格不存在".to_string()))
+}
+
+fn non_empty_string_field(record: &Value, key: &str) -> Option<String> {
+    record.get(key).and_then(Value::as_str).and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
 }
 
 async fn cancel_group_buy_activity(
@@ -14263,5 +14769,22 @@ mod tests {
             calculate_group_buy_deposit_cents("order_fixed", 1_000, 30, 300),
             1_000
         );
+    }
+
+    #[test]
+    fn group_buy_force_form_uses_lowest_tier_below_first_threshold() {
+        let tiers = vec![
+            GroupBuyTier {
+                quantity: 100,
+                price_cents: 300,
+            },
+            GroupBuyTier {
+                quantity: 200,
+                price_cents: 200,
+            },
+        ];
+        let tier = select_group_buy_force_tier(&tiers, 30).expect("tier");
+        assert_eq!(tier.quantity, 100);
+        assert_eq!(tier.price_cents, 300);
     }
 }
