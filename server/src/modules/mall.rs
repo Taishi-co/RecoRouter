@@ -1384,6 +1384,8 @@ struct AfterSaleOrderContext {
 
 #[derive(Debug, FromRow)]
 struct GroupBuyActivityRow {
+    product_id: String,
+    variant_id: Option<String>,
     unit_name: String,
     status: String,
     starts_at: DateTime<Utc>,
@@ -1448,6 +1450,14 @@ fn group_buy_activity_spec_binding(variant: &ProductVariant) -> GroupBuyActivity
         variant_id: variant.id.clone(),
         unit_name: variant.name.clone(),
     }
+}
+
+fn group_buy_spec_rebind_requested(product_id: Option<&str>, variant_id: Option<&str>) -> bool {
+    product_id.is_some() || variant_id.is_some()
+}
+
+fn can_rebind_group_buy_spec(active_subscription_count: i64) -> bool {
+    active_subscription_count == 0
 }
 
 #[derive(Debug, Deserialize)]
@@ -2731,6 +2741,56 @@ where
     ) {
         return Err(ApiError::BadRequest("当前状态不可编辑".to_string()));
     }
+    let requested_product_id = optional_non_empty(body.product_id, "商品ID不能为空")?;
+    let requested_variant_id = optional_non_empty(body.variant_id, "商品规格不能为空")?;
+    let spec_rebind_requested = group_buy_spec_rebind_requested(
+        requested_product_id.as_deref(),
+        requested_variant_id.as_deref(),
+    );
+    let spec_rebind = if spec_rebind_requested {
+        let active_subscription_count: i64 = sqlx::query_scalar(
+            r#"
+            SELECT count(*)
+            FROM mall_group_buy_subscriptions
+            WHERE activity_id = $1
+              AND status NOT IN (
+                'deposit_refunded',
+                'balance_overdue_cancelled',
+                'activity_cancel_refunding',
+                'refunded'
+              )
+            "#,
+        )
+        .bind(&id)
+        .fetch_one(&state.db)
+        .await?;
+        if !can_rebind_group_buy_spec(active_subscription_count) {
+            return Err(ApiError::BadRequest(
+                "已有用户认购，不能修改商品规格".to_string(),
+            ));
+        }
+        let resolved_product_id = requested_product_id
+            .as_deref()
+            .unwrap_or(existing.product_id.as_str());
+        let variant_id_for_resolution = if requested_variant_id.is_some() {
+            requested_variant_id.as_deref()
+        } else if requested_product_id.is_some() {
+            None
+        } else {
+            existing.variant_id.as_deref()
+        };
+        let variant = ensure_product_variant_can_sell(
+            &state.db,
+            resolved_product_id,
+            variant_id_for_resolution,
+            1,
+        )
+        .await?;
+        let binding = group_buy_activity_spec_binding(&variant);
+        Some((resolved_product_id.to_string(), binding))
+    } else {
+        None
+    };
     validate_group_buy_time_window(
         body.starts_at.unwrap_or(existing.starts_at),
         body.ends_at.unwrap_or(existing.ends_at),
@@ -2758,16 +2818,19 @@ where
         r#"
         UPDATE mall_group_buy_activities
         SET name = COALESCE($2, name),
-            starts_at = COALESCE($3, starts_at),
-            ends_at = COALESCE($4, ends_at),
-            balance_due_at = COALESCE($5, balance_due_at),
-            min_group_quantity = COALESCE($6, min_group_quantity),
-            max_quantity_per_user = COALESCE($7, max_quantity_per_user),
-            min_credit_score = COALESCE($8, min_credit_score),
-            overdue_credit_penalty = COALESCE($9, overdue_credit_penalty),
-            deposit_type = COALESCE($10, deposit_type),
-            deposit_value = COALESCE($11, deposit_value),
-            tiers = COALESCE($12, tiers),
+            product_id = COALESCE($3, product_id),
+            variant_id = COALESCE($4, variant_id),
+            unit_name = COALESCE($5, unit_name),
+            starts_at = COALESCE($6, starts_at),
+            ends_at = COALESCE($7, ends_at),
+            balance_due_at = COALESCE($8, balance_due_at),
+            min_group_quantity = COALESCE($9, min_group_quantity),
+            max_quantity_per_user = COALESCE($10, max_quantity_per_user),
+            min_credit_score = COALESCE($11, min_credit_score),
+            overdue_credit_penalty = COALESCE($12, overdue_credit_penalty),
+            deposit_type = COALESCE($13, deposit_type),
+            deposit_value = COALESCE($14, deposit_value),
+            tiers = COALESCE($15, tiers),
             updated_at = now()
         WHERE id = $1
           AND status IN ('draft', 'published', 'enrolling')
@@ -2776,6 +2839,21 @@ where
     )
     .bind(&id)
     .bind(optional_non_empty(body.name, "活动名称不能为空")?)
+    .bind(
+        spec_rebind
+            .as_ref()
+            .map(|(product_id, _)| product_id.as_str()),
+    )
+    .bind(
+        spec_rebind
+            .as_ref()
+            .map(|(_, binding)| binding.variant_id.as_str()),
+    )
+    .bind(
+        spec_rebind
+            .as_ref()
+            .map(|(_, binding)| binding.unit_name.as_str()),
+    )
     .bind(body.starts_at)
     .bind(body.ends_at)
     .bind(body.balance_due_at)
@@ -15076,6 +15154,16 @@ mod tests {
 
         assert_eq!(binding.variant_id, "variant-stable");
         assert_eq!(binding.unit_name, "5kg 箱");
+    }
+
+    #[test]
+    fn group_buy_spec_rebind_requires_request_and_no_active_subscription() {
+        assert!(!group_buy_spec_rebind_requested(None, None));
+        assert!(group_buy_spec_rebind_requested(Some("product-a"), None));
+        assert!(group_buy_spec_rebind_requested(None, Some("variant-a")));
+
+        assert!(can_rebind_group_buy_spec(0));
+        assert!(!can_rebind_group_buy_spec(1));
     }
 
     #[test]
