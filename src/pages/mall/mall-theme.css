@@ -1557,6 +1557,119 @@ body.reco-mall-h5 .taro_page {
   font-weight: 900;
 }
 
+.mall-product-promotion-panel {
+  margin-top: 12PX;
+}
+
+.mall-product-promotion-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10PX;
+}
+
+.mall-product-promotion-head > view:first-child,
+.mall-product-promotion-head > div:first-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.mall-product-promotion-head text:first-child,
+.mall-product-promotion-head span:first-child {
+  color: #21301f;
+  font-size: 15PX;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.mall-product-promotion-summary {
+  margin-top: 7PX;
+  display: flex;
+  align-items: center;
+  gap: 5PX;
+  overflow: hidden;
+}
+
+.mall-product-promotion-summary text,
+.mall-product-promotion-summary span {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 3PX 6PX;
+  border-radius: 5PX;
+  font-size: 10PX;
+  font-weight: 900;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mall-product-promotion-list {
+  margin-top: 12PX;
+  display: flex;
+  flex-direction: column;
+  gap: 10PX;
+}
+
+.mall-product-promotion-item {
+  padding-top: 10PX;
+  border-top: 1PX solid #edf5ea;
+  display: flex;
+  gap: 9PX;
+  align-items: flex-start;
+}
+
+.mall-product-promotion-tag {
+  min-height: 22PX;
+  max-width: 108PX;
+  padding: 4PX 6PX;
+  border-radius: 5PX;
+  display: inline-flex;
+  align-items: center;
+  gap: 4PX;
+  box-sizing: border-box;
+  font-size: 10PX;
+  line-height: 1.2;
+  font-weight: 900;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.mall-product-promotion-tag image,
+.mall-product-promotion-tag img {
+  width: 12PX;
+  height: 12PX;
+  flex: 0 0 12PX;
+}
+
+.mall-product-promotion-tag text,
+.mall-product-promotion-tag span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mall-product-promotion-copy {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4PX;
+}
+
+.mall-product-promotion-copy text,
+.mall-product-promotion-copy span {
+  color: #64715f;
+  font-size: 11PX;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.mall-product-promotion-title {
+  color: #21301f !important;
+  font-size: 13PX !important;
+  font-weight: 900 !important;
+}
+
 .mall-product-detail-panel {
   margin-top: 14PX;
   border: 1PX solid #cce7c7;
@@ -3306,7 +3419,8 @@ body.reco-mall-h5 .taro_page {
   display: flex;
   align-items: center;
   gap: 5PX;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
 .mall-v7-product-badges text,
@@ -3336,6 +3450,48 @@ body.reco-mall-h5 .taro_page {
   padding: 0;
   background: transparent;
   color: #2f7e43;
+}
+
+.mall-v7-promotion-tag {
+  min-height: 20PX;
+  max-width: 100%;
+  padding: 3PX 5PX;
+  border-radius: 5PX;
+  display: inline-flex;
+  align-items: center;
+  gap: 3PX;
+  flex: 0 1 auto;
+  box-sizing: border-box;
+  font-size: 10PX;
+  line-height: 1.2;
+  font-weight: 900;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mall-v7-promotion-tag text,
+.mall-v7-promotion-tag span {
+  min-width: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 10PX;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mall-v7-promotion-tag-icon {
+  width: 12PX;
+  height: 12PX;
+  flex: 0 0 12PX;
+}
+
+.mall-v7-promotion-more {
+  flex: 0 0 auto;
 }
 
 .mall-v7-product-price-row {

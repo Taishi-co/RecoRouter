@@ -276,12 +276,31 @@ interface CampaignForm {
   status: string;
   startsAt: string;
   endsAt: string;
+  displayTitle: string;
+  tagText: string;
+  iconText: string;
+  iconUrl: string;
+  tagBackgroundColor: string;
+  tagTextColor: string;
+  ruleExplanation: string;
+  limitText: string;
   scopeType: string;
   productIds: string;
   productGroups: CampaignProductGroupForm[];
   audienceType: string;
   newCustomerRule: string;
   tiers: CampaignTierForm[];
+}
+
+interface CampaignDisplayConfig {
+  title: string;
+  tagText: string;
+  iconText: string;
+  iconUrl: string;
+  backgroundColor: string;
+  textColor: string;
+  ruleExplanation: string;
+  limitText: string;
 }
 
 interface CampaignTierForm {
@@ -334,8 +353,10 @@ interface PromotionVenueForm {
   name: string;
   status: string;
   title: string;
+  tagText: string;
   subtitle: string;
   copy: string;
+  limitText: string;
   buttonText: string;
   iconText: string;
   iconUrl: string;
@@ -1109,6 +1130,14 @@ const initialCampaignForm: CampaignForm = {
   status: 'active',
   startsAt: '',
   endsAt: '',
+  displayTitle: '鲜选满减',
+  tagText: '满99减10',
+  iconText: '减',
+  iconUrl: '',
+  tagBackgroundColor: '#FFF1E5',
+  tagTextColor: '#E85D04',
+  ruleExplanation: '活动期间，参与商品满99元减10元。',
+  limitText: '限活动商品；退款后按实付金额退回。',
   scopeType: 'all',
   productIds: '',
   productGroups: [],
@@ -1137,8 +1166,10 @@ const initialPromotionVenueForm: PromotionVenueForm = {
   name: '周末大促会场',
   status: 'active',
   title: '周末大促',
+  tagText: '大促',
   subtitle: '限时精选',
   copy: '生鲜好货集中上新',
+  limitText: '限会场商品参与，具体优惠以下单页为准。',
   buttonText: '进入会场',
   iconText: '促',
   iconUrl: '',
@@ -2268,6 +2299,59 @@ function campaignTypeLabel(value: string) {
   return labels[value] || value || '-';
 }
 
+function campaignDisplayDefaults(campaignType: string, name = ''): CampaignDisplayConfig {
+  const defaults: Record<string, Omit<CampaignDisplayConfig, 'title' | 'ruleExplanation' | 'limitText' | 'iconUrl'>> = {
+    discount: { tagText: '满减', iconText: '减', backgroundColor: '#FFF1E5', textColor: '#E85D04' },
+    full_reduction: { tagText: '满减', iconText: '减', backgroundColor: '#FFF1E5', textColor: '#E85D04' },
+    full_discount: { tagText: '满折', iconText: '折', backgroundColor: '#FEE2E2', textColor: '#B91C1C' },
+    free_delivery: { tagText: '免运费', iconText: '免', backgroundColor: '#EAF7EE', textColor: '#2F7E43' },
+    delivery_reduction: { tagText: '减运费', iconText: '运', backgroundColor: '#EAF2FF', textColor: '#2563EB' },
+    delivery_subsidy: { tagText: '减运费', iconText: '运', backgroundColor: '#EAF2FF', textColor: '#2563EB' },
+    fixed_price: { tagText: '一口价', iconText: '¥', backgroundColor: '#FF9238', textColor: '#FFFFFF' },
+    promotion_venue: { tagText: '大促', iconText: '促', backgroundColor: '#F4FBF5', textColor: '#153A24' },
+  };
+  const fallback = defaults[normalizeCampaignTypeForForm(campaignType)] || defaults.full_reduction;
+  return {
+    title: name || '优惠活动',
+    tagText: fallback.tagText,
+    iconText: fallback.iconText,
+    iconUrl: '',
+    backgroundColor: fallback.backgroundColor,
+    textColor: fallback.textColor,
+    ruleExplanation: '',
+    limitText: '',
+  };
+}
+
+function campaignDisplayFromRules(campaignType: string, name: string, rules: JsonRecord): CampaignDisplayConfig {
+  const defaults = campaignDisplayDefaults(campaignType, name);
+  const display = recordValue(rules, 'display');
+  return {
+    title: stringValue(display, 'title', defaults.title),
+    tagText: stringValue(display, 'tagText', defaults.tagText),
+    iconText: stringValue(display, 'iconText', defaults.iconText),
+    iconUrl: stringValue(display, 'iconUrl', defaults.iconUrl),
+    backgroundColor: stringValue(display, 'backgroundColor', defaults.backgroundColor),
+    textColor: stringValue(display, 'textColor', defaults.textColor),
+    ruleExplanation: stringValue(display, 'ruleExplanation', defaults.ruleExplanation),
+    limitText: stringValue(display, 'limitText', defaults.limitText),
+  };
+}
+
+function campaignDisplayFromForm(form: CampaignForm): CampaignDisplayConfig {
+  const defaults = campaignDisplayDefaults(form.campaignType, form.name);
+  return {
+    title: form.displayTitle.trim() || form.name.trim() || defaults.title,
+    tagText: form.tagText.trim() || defaults.tagText,
+    iconText: form.iconText.trim(),
+    iconUrl: form.iconUrl.trim(),
+    backgroundColor: form.tagBackgroundColor || defaults.backgroundColor,
+    textColor: form.tagTextColor || defaults.textColor,
+    ruleExplanation: form.ruleExplanation.trim(),
+    limitText: form.limitText.trim(),
+  };
+}
+
 function fixedPriceBadgePositionLabel(value: string) {
   return fixedPriceBadgePositionOptions.find(option => option.value === value)?.label || value || '-';
 }
@@ -2479,6 +2563,7 @@ function campaignRulesFromForm(form: CampaignForm, products: JsonRecord[]) {
   const firstTierDiscountRateBps = firstTier && 'discountRateBps' in firstTier ? firstTier.discountRateBps : undefined;
   return {
     activityType: campaignType,
+    display: campaignDisplayFromForm(form),
     scope: {
       type: form.scopeType || 'all',
       productIds,
@@ -2545,6 +2630,7 @@ function campaignToForm(campaign: JsonRecord): CampaignForm {
   const campaignType = normalizeCampaignTypeForForm(stringValue(campaign, 'campaignType', stringValue(rules, 'activityType', 'full_reduction')));
   const scope = recordValue(rules, 'scope');
   const audience = recordValue(rules, 'audience');
+  const display = campaignDisplayFromRules(campaignType, stringValue(campaign, 'name'), rules);
   const productGroups = campaignProductGroupsFromRules(rules);
   const productIds = idTextFromArray(arrayValue(rules, 'productIds').length ? arrayValue(rules, 'productIds') : arrayValue(scope, 'productIds'));
   return {
@@ -2555,6 +2641,14 @@ function campaignToForm(campaign: JsonRecord): CampaignForm {
     status: stringValue(campaign, 'status', 'draft'),
     startsAt: datetimeLocalValue(stringValue(campaign, 'startsAt')),
     endsAt: datetimeLocalValue(stringValue(campaign, 'endsAt')),
+    displayTitle: display.title,
+    tagText: display.tagText,
+    iconText: display.iconText,
+    iconUrl: display.iconUrl,
+    tagBackgroundColor: display.backgroundColor,
+    tagTextColor: display.textColor,
+    ruleExplanation: display.ruleExplanation,
+    limitText: display.limitText,
     scopeType: stringValue(scope, 'type', productGroups.length ? 'product_group' : productIds ? 'partial' : 'all'),
     productIds,
     productGroups,
@@ -2662,6 +2756,16 @@ function fixedPriceCampaignRules(form: FixedPriceCampaignForm, products: JsonRec
       textColor: form.badgeTextColor || '#FFFFFF',
       position: form.badgePosition || 'top_left',
     },
+    display: {
+      title: form.name.trim() || '本周一口价',
+      tagText: form.badgeText.trim() || '一口价',
+      iconText: form.badgeIcon.trim(),
+      iconUrl: form.badgeIconUrl.trim(),
+      backgroundColor: form.badgeBackgroundColor || '#FF9238',
+      textColor: form.badgeTextColor || '#FFFFFF',
+      ruleExplanation: `活动期间，参与商品按${form.badgeText.trim() || '一口价'}结算。`,
+      limitText: '限所选商品参与，具体价格以下单页为准。',
+    },
     groups,
     items: flattenedItems,
   };
@@ -2669,6 +2773,7 @@ function fixedPriceCampaignRules(form: FixedPriceCampaignForm, products: JsonRec
 
 function promotionVenueToForm(campaign: JsonRecord): PromotionVenueForm {
   const rules = recordValue(campaign, 'rules');
+  const display = campaignDisplayFromRules('promotion_venue', stringValue(campaign, 'name', '周末大促会场'), rules);
   const items = arrayValue(rules, 'items')
     .map(item => {
       const record = item && typeof item === 'object' && !Array.isArray(item) ? item as JsonRecord : {};
@@ -2683,8 +2788,10 @@ function promotionVenueToForm(campaign: JsonRecord): PromotionVenueForm {
     name: stringValue(campaign, 'name', '周末大促会场'),
     status: stringValue(campaign, 'status', 'active'),
     title: stringValue(rules, 'title', stringValue(campaign, 'name', '周末大促')),
+    tagText: display.tagText,
     subtitle: stringValue(rules, 'subtitle', '限时精选'),
     copy: stringValue(rules, 'copy', '生鲜好货集中上新'),
+    limitText: display.limitText,
     buttonText: stringValue(rules, 'buttonText', '进入会场'),
     iconText: stringValue(rules, 'iconText', '促'),
     iconUrl: stringValue(rules, 'iconUrl'),
@@ -2703,6 +2810,16 @@ function promotionVenueRules(form: PromotionVenueForm, products: JsonRecord[]) {
     title: form.title.trim() || form.name.trim(),
     subtitle: form.subtitle.trim(),
     copy: form.copy.trim(),
+    display: {
+      title: form.title.trim() || form.name.trim() || '周末大促',
+      tagText: form.tagText.trim() || '大促',
+      iconText: form.iconText.trim(),
+      iconUrl: form.iconUrl.trim(),
+      backgroundColor: form.backgroundColor || '#F4FBF5',
+      textColor: form.textColor || '#153A24',
+      ruleExplanation: form.copy.trim() || '活动期间，会场内商品按页面活动规则享受优惠。',
+      limitText: form.limitText.trim(),
+    },
     buttonText: form.buttonText.trim() || '进入会场',
     iconText: form.iconText.trim(),
     iconUrl: form.iconUrl.trim(),
@@ -8664,6 +8781,32 @@ function HomeSectionPreview({
   );
 }
 
+function CampaignDisplayPreview({ display }: { display: CampaignDisplayConfig }) {
+  const iconUrl = display.iconUrl.trim();
+  const tagTooLong = display.tagText.trim().length > 8;
+  return (
+    <div className="wide campaign-display-preview">
+      <div>
+        <span>商品列表 tag 预览</span>
+        <strong
+          className="campaign-display-tag"
+          style={{ background: display.backgroundColor, color: display.textColor }}
+        >
+          {iconUrl ? <img alt="" src={resolveImage(iconUrl)} /> : display.iconText ? <i>{display.iconText}</i> : null}
+          {display.tagText || '优惠'}
+        </strong>
+        {tagTooLong ? <small className="campaign-display-warning">tag 文案偏长，商品卡会优先展示前 2-3 个活动</small> : null}
+      </div>
+      <div className="campaign-display-detail">
+        <span>商品详情优惠活动预览</span>
+        <b>{display.title || '优惠活动'}</b>
+        <p>{display.ruleExplanation || '活动规则解释将展示在这里。'}</p>
+        <small>{display.limitText || '使用限制未填写时前台不展示该行。'}</small>
+      </div>
+    </div>
+  );
+}
+
 function MallHomeBannersSection({
   banners,
   filters,
@@ -9321,6 +9464,7 @@ function MallCampaignsSection({
     }
     updateGroup(groupId, { productIds: Array.from(next).join('\n') });
   };
+  const previewDisplay = campaignDisplayFromForm(form);
 
   return (
     <div className="page-grid">
@@ -9406,7 +9550,20 @@ function MallCampaignsSection({
               </label>
               <label>
                 类型
-                <select value={form.campaignType} onChange={event => onChange({ campaignType: event.target.value })}>
+                <select
+                  value={form.campaignType}
+                  onChange={event => {
+                    const campaignType = event.target.value;
+                    const defaults = campaignDisplayDefaults(campaignType, form.name);
+                    onChange({
+                      campaignType,
+                      tagText: defaults.tagText,
+                      iconText: defaults.iconText,
+                      tagBackgroundColor: defaults.backgroundColor,
+                      tagTextColor: defaults.textColor,
+                    });
+                  }}
+                >
                   {campaignTypeOptions.map(option => (
                     <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
@@ -9471,6 +9628,48 @@ function MallCampaignsSection({
                 </label>
               ) : null}
             </div>
+
+            <section className="campaign-rule-card">
+              <div className="campaign-rule-card-head">
+                <strong>前台展示</strong>
+                <span>商品列表 tag 与详情页“优惠活动”共用此配置</span>
+              </div>
+              <div className="form-grid">
+                <label>
+                  展示标题
+                  <input value={form.displayTitle} onChange={event => onChange({ displayTitle: event.target.value })} placeholder="商品详情优惠活动标题" />
+                </label>
+                <label>
+                  tag 文案
+                  <input value={form.tagText} onChange={event => onChange({ tagText: event.target.value })} placeholder="满49减6 / 免运费" />
+                </label>
+                <label>
+                  icon 文本
+                  <input value={form.iconText} onChange={event => onChange({ iconText: event.target.value })} placeholder="减 / 折 / 免" />
+                </label>
+                <label>
+                  icon URL
+                  <input value={form.iconUrl} onChange={event => onChange({ iconUrl: event.target.value })} placeholder="对象存储 icon 地址，可不填" />
+                </label>
+                <label>
+                  tag 背景色
+                  <input type="color" value={form.tagBackgroundColor} onChange={event => onChange({ tagBackgroundColor: event.target.value })} />
+                </label>
+                <label>
+                  tag 文字色
+                  <input type="color" value={form.tagTextColor} onChange={event => onChange({ tagTextColor: event.target.value })} />
+                </label>
+                <label className="wide">
+                  活动规则解释
+                  <textarea value={form.ruleExplanation} onChange={event => onChange({ ruleExplanation: event.target.value })} placeholder="展示给用户看的活动规则说明" />
+                </label>
+                <label className="wide">
+                  使用限制
+                  <textarea value={form.limitText} onChange={event => onChange({ limitText: event.target.value })} placeholder="适用商品、时期、退款、叠加限制等说明" />
+                </label>
+                <CampaignDisplayPreview display={previewDisplay} />
+              </div>
+            </section>
 
             <CampaignBusinessFields
               form={form}
@@ -9680,6 +9879,16 @@ function MallFixedPriceCampaignsSection({
       showMessage('error', '角标 icon 上传失败');
     }
   };
+  const fixedPricePreviewDisplay: CampaignDisplayConfig = {
+    title: form.name.trim() || '本周一口价',
+    tagText: form.badgeText.trim() || '一口价',
+    iconText: form.badgeIcon.trim(),
+    iconUrl: form.badgeIconUrl.trim(),
+    backgroundColor: form.badgeBackgroundColor || '#FF9238',
+    textColor: form.badgeTextColor || '#FFFFFF',
+    ruleExplanation: `活动期间，参与商品按${form.badgeText.trim() || '一口价'}结算。`,
+    limitText: '限所选商品参与，具体价格以下单页为准。',
+  };
 
   return (
     <div className="page-grid">
@@ -9818,6 +10027,7 @@ function MallFixedPriceCampaignsSection({
                   large
                 />
               </div>
+              <CampaignDisplayPreview display={fixedPricePreviewDisplay} />
             </div>
 
             <div className="fixed-price-group-tabs">
@@ -9987,6 +10197,16 @@ function MallPromotionVenuesSection({
       showMessage('error', key === 'iconUrl' ? '会场 icon 上传失败' : '会场背景上传失败');
     }
   };
+  const promotionVenuePreviewDisplay: CampaignDisplayConfig = {
+    title: form.title.trim() || form.name.trim() || '周末大促',
+    tagText: form.tagText.trim() || '大促',
+    iconText: form.iconText.trim(),
+    iconUrl: form.iconUrl.trim(),
+    backgroundColor: form.backgroundColor || '#F4FBF5',
+    textColor: form.textColor || '#153A24',
+    ruleExplanation: form.copy.trim() || '活动期间，会场内商品按页面活动规则享受优惠。',
+    limitText: form.limitText.trim(),
+  };
 
   return (
     <div className="page-grid">
@@ -10083,6 +10303,10 @@ function MallPromotionVenuesSection({
                 <input required value={form.title} onChange={event => onChange({ title: event.target.value })} />
               </label>
               <label>
+                商品 tag 文案
+                <input value={form.tagText} onChange={event => onChange({ tagText: event.target.value })} placeholder="大促 / 周末惠" />
+              </label>
+              <label>
                 副标题
                 <input value={form.subtitle} onChange={event => onChange({ subtitle: event.target.value })} />
               </label>
@@ -10105,6 +10329,10 @@ function MallPromotionVenuesSection({
               <label className="wide">
                 文案
                 <textarea value={form.copy} onChange={event => onChange({ copy: event.target.value })} />
+              </label>
+              <label className="wide">
+                使用限制
+                <textarea value={form.limitText} onChange={event => onChange({ limitText: event.target.value })} placeholder="限会场商品参与，具体优惠以下单页为准" />
               </label>
               <label className="wide">
                 会场 icon
@@ -10131,6 +10359,7 @@ function MallPromotionVenuesSection({
                   <small>{form.buttonText || '进入会场'}</small>
                 </span>
               </div>
+              <CampaignDisplayPreview display={promotionVenuePreviewDisplay} />
             </div>
 
             <div className="fixed-price-product-tools">

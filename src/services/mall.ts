@@ -53,6 +53,26 @@ export interface MallProduct {
   procurementBuyers?: MallProcurementBuyer[]
   qualificationReports?: MallQualificationReport[]
   fixedPriceCampaign?: MallFixedPriceCampaign | null
+  promotionTags?: MallProductPromotionTag[]
+  promotions?: MallProductPromotion[]
+}
+
+export interface MallProductPromotionTag {
+  campaignId: string
+  campaignType: string
+  tagText: string
+  iconText?: string | null
+  iconUrl?: string | null
+  backgroundColor?: string | null
+  textColor?: string | null
+}
+
+export interface MallProductPromotion extends MallProductPromotionTag {
+  title: string
+  ruleExplanation: string
+  limitText?: string | null
+  startsAt?: string | null
+  endsAt?: string | null
 }
 
 export interface MallFixedPriceCampaign {

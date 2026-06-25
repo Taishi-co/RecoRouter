@@ -7487,7 +7487,6 @@ fn push_product_promotion_venue_filter(
             AND EXISTS (
               SELECT 1
               FROM mall_campaigns campaign
-              JOIN LATERAL jsonb_array_elements(COALESCE(campaign.rules->'items', '[]'::jsonb)) AS item(value) ON true
               WHERE campaign.campaign_type = 'promotion_venue'
                 AND campaign.status = 'active'
                 AND (campaign.starts_at IS NULL OR campaign.starts_at <= now())
@@ -7501,9 +7500,50 @@ fn push_product_promotion_venue_filter(
     builder.push(
         r#"
                 AND (
-                  item.value->>'productId' = p.id::text
-                  OR item.value->>'id' = p.id::text
-                  OR item.value->>'sku' = p.sku
+                  EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(COALESCE(campaign.rules->'items', '[]'::jsonb)) AS item(value)
+                    WHERE item.value #>> '{}' = p.id::text
+                       OR item.value #>> '{}' = p.sku
+                       OR item.value->>'productId' = p.id::text
+                       OR item.value->>'id' = p.id::text
+                       OR item.value->>'sku' = p.sku
+                  )
+                  OR EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(COALESCE(campaign.rules->'productIds', campaign.rules->'product_ids', campaign.rules->'scope'->'productIds', '[]'::jsonb)) AS product_id(value)
+                    WHERE product_id.value #>> '{}' = p.id::text
+                       OR product_id.value #>> '{}' = p.sku
+                       OR product_id.value->>'productId' = p.id::text
+                       OR product_id.value->>'id' = p.id::text
+                       OR product_id.value->>'sku' = p.sku
+                  )
+                  OR EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(COALESCE(campaign.rules->'categoryCodes', campaign.rules->'category_codes', campaign.rules->'scope'->'categoryCodes', '[]'::jsonb)) AS category(value)
+                    WHERE category.value #>> '{}' = p.category_code
+                       OR category.value->>'code' = p.category_code
+                       OR category.value->>'categoryCode' = p.category_code
+                  )
+                  OR EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(COALESCE(campaign.rules->'productGroups', campaign.rules->'scope'->'productGroups', '[]'::jsonb)) AS product_group(value)
+                    WHERE EXISTS (
+                      SELECT 1
+                      FROM jsonb_array_elements(COALESCE(product_group.value->'productIds', product_group.value->'product_ids', '[]'::jsonb)) AS group_product_id(value)
+                      WHERE group_product_id.value #>> '{}' = p.id::text
+                         OR group_product_id.value #>> '{}' = p.sku
+                    )
+                    OR EXISTS (
+                      SELECT 1
+                      FROM jsonb_array_elements(COALESCE(product_group.value->'products', '[]'::jsonb)) AS group_product(value)
+                      WHERE group_product.value #>> '{}' = p.id::text
+                         OR group_product.value #>> '{}' = p.sku
+                         OR group_product.value->>'productId' = p.id::text
+                         OR group_product.value->>'id' = p.id::text
+                         OR group_product.value->>'sku' = p.sku
+                    )
+                  )
                 )
             )
         "#,
@@ -8817,7 +8857,367 @@ async fn enrich_product_pricing(pool: &PgPool, product: &mut Value) -> ApiResult
         }
     }
 
+    enrich_product_promotions(pool, product).await?;
+
     Ok(())
+}
+
+async fn enrich_product_promotions(pool: &PgPool, product: &mut Value) -> ApiResult<()> {
+    let Some(product_object) = product.as_object() else {
+        return Ok(());
+    };
+    let product_id = product_object
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let sku = product_object
+        .get("sku")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let category_code = product_object
+        .get("categoryCode")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+
+    if product_id.is_empty() {
+        return Ok(());
+    }
+
+    let campaigns = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT campaign_json(c)
+        FROM mall_campaigns c
+        WHERE c.status = 'active'
+          AND (c.starts_at IS NULL OR c.starts_at <= now())
+          AND (c.ends_at IS NULL OR c.ends_at >= now())
+        ORDER BY
+          CASE c.campaign_type
+            WHEN 'fixed_price' THEN 0
+            WHEN 'free_delivery' THEN 1
+            WHEN 'delivery_reduction' THEN 2
+            WHEN 'delivery_subsidy' THEN 2
+            WHEN 'discount' THEN 3
+            WHEN 'full_reduction' THEN 3
+            WHEN 'full_discount' THEN 4
+            WHEN 'coupon' THEN 5
+            WHEN 'promotion_venue' THEN 6
+            ELSE 9
+          END ASC,
+          c.updated_at DESC,
+          c.created_at DESC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let promotions: Vec<Value> = campaigns
+        .iter()
+        .filter(|campaign| campaign_applies_to_product(campaign, &product_id, &sku, &category_code))
+        .map(build_product_promotion_from_campaign)
+        .filter(|promotion| !promotion.is_null())
+        .collect();
+    let tags: Vec<Value> = promotions.iter().map(product_promotion_tag).collect();
+
+    if let Some(object) = product.as_object_mut() {
+        object.insert("promotionTags".to_string(), json!(tags));
+        object.insert("promotions".to_string(), json!(promotions));
+    }
+
+    Ok(())
+}
+
+fn campaign_applies_to_product(
+    campaign: &Value,
+    product_id: &str,
+    sku: &str,
+    category_code: &str,
+) -> bool {
+    let rules = campaign.get("rules");
+    let scope = rules.and_then(|rules| rules.get("scope"));
+    let mut has_explicit_scope = false;
+    let mut matches_explicit_scope = false;
+
+    for array in [
+        rules.and_then(|rules| rules.get("items")),
+        rules.and_then(|rules| rules.get("productIds").or_else(|| rules.get("product_ids"))),
+        scope.and_then(|scope| scope.get("productIds").or_else(|| scope.get("product_ids"))),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(Value::as_array)
+    {
+        has_explicit_scope = true;
+        matches_explicit_scope |= array
+            .iter()
+            .any(|item| product_scope_value_matches(item, product_id, sku));
+    }
+
+    for array in [
+        rules.and_then(|rules| rules.get("categoryCodes").or_else(|| rules.get("category_codes"))),
+        scope.and_then(|scope| scope.get("categoryCodes").or_else(|| scope.get("category_codes"))),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(Value::as_array)
+    {
+        has_explicit_scope = true;
+        matches_explicit_scope |= array
+            .iter()
+            .any(|item| category_scope_value_matches(item, category_code));
+    }
+
+    for array in [
+        rules.and_then(|rules| rules.get("productGroups")),
+        scope.and_then(|scope| scope.get("productGroups")),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(Value::as_array)
+    {
+        has_explicit_scope = true;
+        matches_explicit_scope |= array.iter().any(|group| {
+            group
+                .get("productIds")
+                .or_else(|| group.get("product_ids"))
+                .and_then(Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .any(|item| product_scope_value_matches(item, product_id, sku))
+                })
+                .unwrap_or(false)
+                || group
+                    .get("products")
+                    .and_then(Value::as_array)
+                    .map(|items| {
+                        items
+                            .iter()
+                            .any(|item| product_scope_value_matches(item, product_id, sku))
+                    })
+                    .unwrap_or(false)
+        });
+    }
+
+    if has_explicit_scope {
+        return matches_explicit_scope;
+    }
+
+    matches!(
+        campaign
+            .get("campaignType")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+        "discount"
+            | "full_reduction"
+            | "full_discount"
+            | "free_delivery"
+            | "delivery_reduction"
+            | "delivery_subsidy"
+            | "coupon"
+    )
+}
+
+fn product_scope_value_matches(value: &Value, product_id: &str, sku: &str) -> bool {
+    json_string_matches(Some(value), product_id)
+        || json_string_matches(Some(value), sku)
+        || json_string_matches(value.get("productId"), product_id)
+        || json_string_matches(value.get("id"), product_id)
+        || json_string_matches(value.get("sku"), sku)
+}
+
+fn category_scope_value_matches(value: &Value, category_code: &str) -> bool {
+    json_string_matches(Some(value), category_code)
+        || json_string_matches(value.get("code"), category_code)
+        || json_string_matches(value.get("categoryCode"), category_code)
+}
+
+fn json_string_matches(value: Option<&Value>, expected: &str) -> bool {
+    !expected.is_empty()
+        && value
+            .and_then(Value::as_str)
+            .map(|value| value == expected)
+            .unwrap_or(false)
+}
+
+fn build_product_promotion_from_campaign(campaign: &Value) -> Value {
+    let campaign_id = json_non_empty_string(campaign.get("id")).unwrap_or_default();
+    let campaign_type = json_non_empty_string(campaign.get("campaignType")).unwrap_or_default();
+    if campaign_id.is_empty() || campaign_type.is_empty() {
+        return Value::Null;
+    }
+
+    let campaign_name =
+        json_non_empty_string(campaign.get("name")).unwrap_or_else(|| "优惠活动".to_string());
+    let rules = campaign.get("rules");
+    let display = rules
+        .and_then(|rules| rules.get("display"))
+        .filter(|display| display.is_object());
+
+    let title = json_non_empty_string(display.and_then(|display| display.get("title")))
+        .or_else(|| json_non_empty_string(rules.and_then(|rules| rules.get("title"))))
+        .unwrap_or_else(|| campaign_name.clone());
+    let tag_text = json_non_empty_string(display.and_then(|display| display.get("tagText")))
+        .or_else(|| fixed_price_badge_string(rules, "text", "badgeText"))
+        .unwrap_or_else(|| default_campaign_tag_text(&campaign_type, rules));
+    let icon_text = json_non_empty_string(display.and_then(|display| display.get("iconText")))
+        .or_else(|| fixed_price_badge_string(rules, "icon", "badgeIcon"))
+        .unwrap_or_else(|| default_campaign_icon_text(&campaign_type).to_string());
+    let icon_url = json_non_empty_string(display.and_then(|display| display.get("iconUrl")))
+        .or_else(|| fixed_price_badge_string(rules, "iconUrl", "badgeIconUrl"));
+    let background_color =
+        json_non_empty_string(display.and_then(|display| display.get("backgroundColor")))
+            .or_else(|| fixed_price_badge_string(rules, "backgroundColor", "badgeBackgroundColor"))
+            .unwrap_or_else(|| default_campaign_background_color(&campaign_type).to_string());
+    let text_color = json_non_empty_string(display.and_then(|display| display.get("textColor")))
+        .or_else(|| fixed_price_badge_string(rules, "textColor", "badgeTextColor"))
+        .unwrap_or_else(|| default_campaign_text_color(&campaign_type).to_string());
+    let rule_explanation =
+        json_non_empty_string(display.and_then(|display| display.get("ruleExplanation")))
+            .unwrap_or_else(|| default_campaign_rule_explanation(&campaign_type, rules, &campaign_name));
+    let limit_text = json_non_empty_string(display.and_then(|display| display.get("limitText")));
+
+    json!({
+        "campaignId": campaign_id,
+        "campaignType": campaign_type,
+        "title": title,
+        "tagText": tag_text,
+        "iconText": icon_text,
+        "iconUrl": icon_url,
+        "backgroundColor": background_color,
+        "textColor": text_color,
+        "ruleExplanation": rule_explanation,
+        "limitText": limit_text,
+        "startsAt": campaign.get("startsAt").cloned().unwrap_or(Value::Null),
+        "endsAt": campaign.get("endsAt").cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn product_promotion_tag(promotion: &Value) -> Value {
+    json!({
+        "campaignId": promotion.get("campaignId").cloned().unwrap_or(Value::Null),
+        "campaignType": promotion.get("campaignType").cloned().unwrap_or(Value::Null),
+        "tagText": promotion.get("tagText").cloned().unwrap_or(Value::Null),
+        "iconText": promotion.get("iconText").cloned().unwrap_or(Value::Null),
+        "iconUrl": promotion.get("iconUrl").cloned().unwrap_or(Value::Null),
+        "backgroundColor": promotion.get("backgroundColor").cloned().unwrap_or(Value::Null),
+        "textColor": promotion.get("textColor").cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn fixed_price_badge_string(
+    rules: Option<&Value>,
+    badge_key: &str,
+    legacy_key: &str,
+) -> Option<String> {
+    rules
+        .and_then(|rules| {
+            rules
+                .get("badge")
+                .and_then(|badge| json_non_empty_string(badge.get(badge_key)))
+                .or_else(|| json_non_empty_string(rules.get(legacy_key)))
+        })
+}
+
+fn json_non_empty_string(value: Option<&Value>) -> Option<String> {
+    value
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn json_i64_value(value: Option<&Value>) -> Option<i64> {
+    value.and_then(|value| {
+        value
+            .as_i64()
+            .or_else(|| value.as_str().and_then(|value| value.parse::<i64>().ok()))
+    })
+}
+
+fn rule_i64_value(rules: Option<&Value>, key: &str) -> Option<i64> {
+    rules.and_then(|rules| json_i64_value(rules.get(key)))
+}
+
+fn default_campaign_tag_text(campaign_type: &str, rules: Option<&Value>) -> String {
+    match campaign_type {
+        "fixed_price" => "一口价".to_string(),
+        "free_delivery" => "免运费".to_string(),
+        "delivery_reduction" | "delivery_subsidy" => "减运费".to_string(),
+        "full_discount" => "满折".to_string(),
+        "coupon" => "优惠券".to_string(),
+        "promotion_venue" => "大促".to_string(),
+        _ => {
+            let threshold = rule_i64_value(rules, "thresholdCents").unwrap_or_default() / 100;
+            let discount = rule_i64_value(rules, "discountCents").unwrap_or_default() / 100;
+            if threshold > 0 && discount > 0 {
+                format!("满{threshold}减{discount}")
+            } else {
+                "满减".to_string()
+            }
+        }
+    }
+}
+
+fn default_campaign_icon_text(campaign_type: &str) -> &'static str {
+    match campaign_type {
+        "fixed_price" => "¥",
+        "free_delivery" => "免",
+        "delivery_reduction" | "delivery_subsidy" => "运",
+        "full_discount" => "折",
+        "coupon" => "券",
+        "promotion_venue" => "促",
+        _ => "减",
+    }
+}
+
+fn default_campaign_background_color(campaign_type: &str) -> &'static str {
+    match campaign_type {
+        "fixed_price" => "#FF9238",
+        "free_delivery" => "#EAF7EE",
+        "delivery_reduction" | "delivery_subsidy" => "#EAF2FF",
+        "full_discount" => "#FEE2E2",
+        "coupon" => "#FFF7ED",
+        "promotion_venue" => "#F4FBF5",
+        _ => "#FFF1E5",
+    }
+}
+
+fn default_campaign_text_color(campaign_type: &str) -> &'static str {
+    match campaign_type {
+        "fixed_price" => "#FFFFFF",
+        "free_delivery" => "#2F7E43",
+        "delivery_reduction" | "delivery_subsidy" => "#2563EB",
+        "full_discount" => "#B91C1C",
+        "coupon" => "#C2410C",
+        "promotion_venue" => "#153A24",
+        _ => "#E85D04",
+    }
+}
+
+fn default_campaign_rule_explanation(
+    campaign_type: &str,
+    rules: Option<&Value>,
+    campaign_name: &str,
+) -> String {
+    let threshold = rule_i64_value(rules, "thresholdCents").unwrap_or_default() / 100;
+    let discount = rule_i64_value(rules, "discountCents").unwrap_or_default() / 100;
+    match campaign_type {
+        "fixed_price" => format!("活动期间，参与商品按{campaign_name}活动价结算。"),
+        "free_delivery" if threshold > 0 => format!("活动期间，参与商品满{threshold}元免配送费。"),
+        "free_delivery" => "活动期间，参与商品免配送费。".to_string(),
+        "delivery_reduction" | "delivery_subsidy" if threshold > 0 && discount > 0 => {
+            format!("活动期间，参与商品满{threshold}元减配送费{discount}元。")
+        }
+        "delivery_reduction" | "delivery_subsidy" => "活动期间，参与商品可享配送费优惠。".to_string(),
+        "full_discount" => "活动期间，参与商品满足门槛后享受折扣优惠。".to_string(),
+        "coupon" => "活动期间，参与商品可使用指定优惠券。".to_string(),
+        "promotion_venue" => "活动期间，会场内商品按页面活动规则享受优惠。".to_string(),
+        _ if threshold > 0 && discount > 0 => format!("活动期间，参与商品满{threshold}元减{discount}元。"),
+        _ => "活动期间，参与商品可享优惠。".to_string(),
+    }
 }
 
 async fn find_fixed_price_campaign(

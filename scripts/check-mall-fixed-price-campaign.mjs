@@ -50,13 +50,15 @@ const checks = [
       && /fixedPriceYuan/.test(files.admin),
   },
   {
-    name: 'app service and product card render the configurable one-price badge on product images',
+    name: 'app service and product card expose one-price campaigns through unified promotion tags',
     pass: /fixedPriceCampaign\?: MallFixedPriceCampaign/.test(files.service)
       && /interface MallFixedPriceCampaign/.test(files.service)
-      && /mall-v7-product-fixed-price-badge/.test(files.ui)
-      && /badgeBackgroundColor/.test(files.ui)
-      && /badgeIconUrl/.test(files.ui)
-      && /mall-v7-product-fixed-price-badge/.test(files.theme),
+      && /promotionTags\?: MallProductPromotionTag\[\]/.test(files.service)
+      && /fixedPriceCampaignRules[\s\S]*display:/.test(files.admin)
+      && /promotionTags/.test(files.ui)
+      && /mall-v7-promotion-tag/.test(files.ui)
+      && !/fixedPriceCampaign/.test(extractFunction(files.ui, 'MallDealProductCard'))
+      && /mall-v7-promotion-tag/.test(files.theme),
   },
 ]
 
@@ -73,4 +75,11 @@ console.log(`Mall fixed-price campaign checks passed (${checks.length} checks).`
 
 function read(path) {
   return readFileSync(path, 'utf8')
+}
+
+function extractFunction(source, name) {
+  const start = source.indexOf(`function ${name}(`)
+  if (start < 0) return ''
+  const next = source.indexOf('\nfunction ', start + 1)
+  return source.slice(start, next === -1 ? source.length : next)
 }
