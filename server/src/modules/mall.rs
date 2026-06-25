@@ -240,7 +240,7 @@ where
         )
         .route(
             "/api/admin/mall/group-buys/:id",
-            put(admin_update_group_buy::<S>),
+            get(admin_get_group_buy::<S>).put(admin_update_group_buy::<S>),
         )
         .route(
             "/api/admin/mall/group-buys/:id/publish",
@@ -398,8 +398,6 @@ struct GroupBuyActivityRequest {
     product_id: Option<String>,
     #[serde(alias = "variant_id")]
     variant_id: Option<String>,
-    #[serde(alias = "unit_name")]
-    unit_name: Option<String>,
     #[serde(alias = "starts_at")]
     starts_at: Option<DateTime<Utc>>,
     #[serde(alias = "ends_at")]
@@ -1434,6 +1432,18 @@ struct GroupBuyProcurementResult {
 
 fn group_buy_procurement_can_advance(result: &GroupBuyProcurementResult) -> bool {
     result.missing_address_count == 0 && result.stock_failed_count == 0
+}
+
+struct GroupBuyActivitySpecBinding {
+    variant_id: String,
+    unit_name: String,
+}
+
+fn group_buy_activity_spec_binding(variant: &ProductVariant) -> GroupBuyActivitySpecBinding {
+    GroupBuyActivitySpecBinding {
+        variant_id: variant.id.clone(),
+        unit_name: variant.name.clone(),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -2611,6 +2621,20 @@ where
     Ok(ok("查询成功", activities))
 }
 
+async fn admin_get_group_buy<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let mut activity = fetch_group_buy_activity_payload(&state.db, &id, false)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("团购活动不存在".to_string()))?;
+    resolve_mall_image_urls(&state.storage, &mut activity).await?;
+    Ok(ok("查询成功", activity))
+}
+
 async fn admin_create_group_buy<S>(
     State(state): State<AppState<S>>,
     Json(body): Json<GroupBuyActivityRequest>,
@@ -2623,7 +2647,7 @@ where
     let variant_id = non_empty(body.variant_id);
     let variant =
         ensure_product_variant_can_sell(&state.db, &product_id, variant_id.as_deref(), 1).await?;
-    let unit_name = optional_non_empty(body.unit_name, "单位名称不能为空")?.unwrap_or(variant.name);
+    let spec_binding = group_buy_activity_spec_binding(&variant);
     let starts_at = body
         .starts_at
         .ok_or_else(|| ApiError::BadRequest("开始时间不能为空".to_string()))?;
@@ -2658,8 +2682,8 @@ where
     )
     .bind(name)
     .bind(&product_id)
-    .bind(variant_id.as_deref())
-    .bind(unit_name)
+    .bind(&spec_binding.variant_id)
+    .bind(&spec_binding.unit_name)
     .bind(starts_at)
     .bind(ends_at)
     .bind(body.balance_due_at)
@@ -2730,17 +2754,16 @@ where
         r#"
         UPDATE mall_group_buy_activities
         SET name = COALESCE($2, name),
-            unit_name = COALESCE($3, unit_name),
-            starts_at = COALESCE($4, starts_at),
-            ends_at = COALESCE($5, ends_at),
-            balance_due_at = COALESCE($6, balance_due_at),
-            min_group_quantity = COALESCE($7, min_group_quantity),
-            max_quantity_per_user = COALESCE($8, max_quantity_per_user),
-            min_credit_score = COALESCE($9, min_credit_score),
-            overdue_credit_penalty = COALESCE($10, overdue_credit_penalty),
-            deposit_type = COALESCE($11, deposit_type),
-            deposit_value = COALESCE($12, deposit_value),
-            tiers = COALESCE($13, tiers),
+            starts_at = COALESCE($3, starts_at),
+            ends_at = COALESCE($4, ends_at),
+            balance_due_at = COALESCE($5, balance_due_at),
+            min_group_quantity = COALESCE($6, min_group_quantity),
+            max_quantity_per_user = COALESCE($7, max_quantity_per_user),
+            min_credit_score = COALESCE($8, min_credit_score),
+            overdue_credit_penalty = COALESCE($9, overdue_credit_penalty),
+            deposit_type = COALESCE($10, deposit_type),
+            deposit_value = COALESCE($11, deposit_value),
+            tiers = COALESCE($12, tiers),
             updated_at = now()
         WHERE id = $1
           AND status IN ('draft', 'published', 'enrolling')
@@ -2749,7 +2772,6 @@ where
     )
     .bind(&id)
     .bind(optional_non_empty(body.name, "活动名称不能为空")?)
-    .bind(optional_non_empty(body.unit_name, "单位名称不能为空")?)
     .bind(body.starts_at)
     .bind(body.ends_at)
     .bind(body.balance_due_at)
@@ -12816,6 +12838,17 @@ fn can_offline_group_buy(status: &str, paid_subscription_count: i64) -> bool {
     matches!(status, "draft" | "published") && paid_subscription_count == 0
 }
 
+fn group_buy_balance_due_next_status(
+    remaining_paid_quantity: i32,
+    min_group_quantity: i32,
+) -> (&'static str, Option<&'static str>) {
+    if remaining_paid_quantity >= min_group_quantity {
+        ("procuring", None)
+    } else {
+        ("ops_review", Some("balance_overdue"))
+    }
+}
+
 fn parse_group_buy_tiers(value: &Value) -> ApiResult<Vec<GroupBuyTier>> {
     let tiers: Vec<GroupBuyTier> = serde_json::from_value(value.clone())
         .map_err(|err| ApiError::BadRequest(err.to_string()))?;
@@ -13804,16 +13837,27 @@ async fn close_group_buy_balance_due(pool: &PgPool, activity_id: &str) -> ApiRes
         .await?;
     }
 
-    let next_status = if overdue_subscriptions.is_empty() {
-        "procuring"
+    let remaining_paid_quantity: i32 = sqlx::query_scalar(
+        r#"
+        SELECT COALESCE(sum(quantity), 0)::integer
+        FROM mall_group_buy_subscriptions
+        WHERE activity_id = $1
+          AND status IN ('balance_paid', 'order_created')
+        "#,
+    )
+    .bind(activity_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let (next_status, ops_review_reason) = if overdue_subscriptions.is_empty() {
+        ("procuring", None)
     } else {
-        "ops_review"
+        group_buy_balance_due_next_status(remaining_paid_quantity, activity.min_group_quantity)
     };
     sqlx::query(
         r#"
         UPDATE mall_group_buy_activities
         SET status = $2,
-            ops_review_reason = CASE WHEN $2 = 'ops_review' THEN 'balance_overdue' ELSE NULL END,
+            ops_review_reason = $3,
             updated_at = now()
         WHERE id = $1
           AND status = 'formed'
@@ -13821,6 +13865,7 @@ async fn close_group_buy_balance_due(pool: &PgPool, activity_id: &str) -> ApiRes
     )
     .bind(activity_id)
     .bind(next_status)
+    .bind(ops_review_reason)
     .execute(&mut *tx)
     .await?;
     insert_group_buy_event_tx(
@@ -13831,7 +13876,11 @@ async fn close_group_buy_balance_due(pool: &PgPool, activity_id: &str) -> ApiRes
         "尾款阶段结束",
         Some("尾款截止后推进活动状态"),
         None,
-        json!({ "status": next_status, "overdueCount": overdue_subscriptions.len() }),
+        json!({
+            "status": next_status,
+            "overdueCount": overdue_subscriptions.len(),
+            "remainingPaidQuantity": remaining_paid_quantity
+        }),
     )
     .await?;
     tx.commit().await?;
@@ -14963,5 +15012,50 @@ mod tests {
         result.missing_address_count = 0;
         result.stock_failed_count = 1;
         assert!(!group_buy_procurement_can_advance(&result));
+    }
+
+    #[test]
+    fn group_buy_activity_spec_binding_uses_resolved_variant() {
+        let variant = ProductVariant {
+            id: "variant-stable".to_string(),
+            name: "5kg 箱".to_string(),
+            sku: "SKU-5KG".to_string(),
+            specification: "5kg".to_string(),
+            sale_method: "unit".to_string(),
+            price_cents: 1_200,
+            original_price_cents: None,
+            supply_price_cents: None,
+            stock: 100,
+            minimum_order_quantity: 1,
+            status: "on_sale".to_string(),
+            sort_order: 0,
+            pricing_mode: "fixed".to_string(),
+            weight_unit: "piece".to_string(),
+            weight_unit_label: "件".to_string(),
+            weight_unit_grams: 1,
+            weight_tolerance_bps: 0,
+            length_cm: None,
+            width_cm: None,
+            height_cm: None,
+            volume_liters: None,
+            weight_kg: None,
+        };
+
+        let binding = group_buy_activity_spec_binding(&variant);
+
+        assert_eq!(binding.variant_id, "variant-stable");
+        assert_eq!(binding.unit_name, "5kg 箱");
+    }
+
+    #[test]
+    fn group_buy_balance_due_review_depends_on_remaining_paid_quantity() {
+        assert_eq!(
+            group_buy_balance_due_next_status(100, 100),
+            ("procuring", None)
+        );
+        assert_eq!(
+            group_buy_balance_due_next_status(99, 100),
+            ("ops_review", Some("balance_overdue"))
+        );
     }
 }
