@@ -845,9 +845,10 @@ impl WechatPayConfig {
         business_type: PaymentBusinessType,
     ) -> ApiResult<Self> {
         let config_service = match business_type {
-            PaymentBusinessType::MallOrder
-            | PaymentBusinessType::MallGroupBuyDeposit
-            | PaymentBusinessType::MallGroupBuyBalance => crate::config::ApiService::Mall,
+            PaymentBusinessType::MallOrder => crate::config::ApiService::Mall,
+            PaymentBusinessType::MallGroupBuyDeposit | PaymentBusinessType::MallGroupBuyBalance => {
+                crate::config::ApiService::Mall
+            }
             PaymentBusinessType::OrderFare | PaymentBusinessType::OrderCommission => service,
         };
         Self::from_env_for_service(config_service)
