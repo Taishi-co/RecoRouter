@@ -12,7 +12,7 @@
 
 ## File Structure
 
-- Create `server/migrations/0039_mall_group_buy_presale.sql`: group-buy tables, indexes, JSON helpers, and seed activity.
+- Create `server/migrations/0042_mall_group_buy_presale.sql`: group-buy tables, indexes, JSON helpers, and seed activity.
 - Modify `server/src/modules/mall.rs`: public and admin routes, data structs, validators, state transitions, credit ledger helpers, order generation helper.
 - Modify `server/src/modules/payments.rs`: add `mall_group_buy_deposit` and `mall_group_buy_balance` payment business types.
 - Modify `src/services/payment.ts`: extend `PaymentBusinessType` union.
@@ -49,7 +49,7 @@ Expected: clean new worktree on `codex/mall-group-buy-presale`.
 ### Task 1: Database Schema And Static Guard
 
 **Files:**
-- Create: `server/migrations/0039_mall_group_buy_presale.sql`
+- Create: `server/migrations/0042_mall_group_buy_presale.sql`
 - Create: `scripts/check-mall-group-buy-presale.mjs`
 - Modify: `package.json`
 
@@ -72,7 +72,7 @@ const assert = (condition, message) => {
   }
 }
 
-const migration = read('server/migrations/0039_mall_group_buy_presale.sql')
+const migration = read('server/migrations/0042_mall_group_buy_presale.sql')
 const mall = read('server/src/modules/mall.rs')
 const payments = read('server/src/modules/payments.rs')
 const mallService = read('src/services/mall.ts')
@@ -144,7 +144,7 @@ Expected: FAIL lines for missing migration, routes, payment types, pages, servic
 
 - [ ] **Step 3: Add the migration**
 
-Create `server/migrations/0039_mall_group_buy_presale.sql`:
+Create `server/migrations/0042_mall_group_buy_presale.sql`:
 
 ```sql
 CREATE TABLE IF NOT EXISTS mall_group_buy_activities (
@@ -329,7 +329,7 @@ Expected: table checks and package script checks pass; route, service, payment, 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add server/migrations/0039_mall_group_buy_presale.sql scripts/check-mall-group-buy-presale.mjs package.json
+git add server/migrations/0042_mall_group_buy_presale.sql scripts/check-mall-group-buy-presale.mjs package.json
 git commit -m "Add mall group buy schema"
 ```
 

@@ -12,7 +12,7 @@ const assert = (condition, message) => {
   }
 }
 
-const migration = read('server/migrations/0039_mall_group_buy_presale.sql')
+const migration = read('server/migrations/0042_mall_group_buy_presale.sql')
 const mall = read('server/src/modules/mall.rs')
 const payments = read('server/src/modules/payments.rs')
 const mallService = read('src/services/mall.ts')
