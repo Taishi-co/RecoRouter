@@ -30,6 +30,13 @@ const files = {
 const homeCampaigns = ['开业大促', '满减活动', '新品首发', '节日福利']
 const orderTabs = ['全部', '待支付', '进行中', '售后']
 
+function extractFunction(source, name) {
+  const start = source.indexOf(`function ${name}(`)
+  if (start < 0) return ''
+  const next = source.indexOf('\nfunction ', start + 1)
+  return source.slice(start, next === -1 ? source.length : next)
+}
+
 const checks = [
   {
     name: '首页是 V7 唯一流量入口，包含固定顶部、轮播广告、滚动公告和三段核心营销',
@@ -49,13 +56,21 @@ const checks = [
       && /mallCategoryOptionsFromCategories/.test(files.home),
   },
   {
-    name: '全局商品卡展示满减后实付价、原价划线、省钱、券和积分标签、一键加购',
+    name: '全局商品卡展示活动标签来自营销中心配置，不再把券和积分派生值当活动标签',
     pass: /MallDealProductCard/.test(files.ui)
       && /discountedPriceCents/.test(files.ui)
       && /originalPriceCents/.test(files.ui)
       && /savedCents/.test(files.ui)
-      && /couponStackable/.test(files.ui)
-      && /pointsDeductibleCents/.test(files.ui)
+      && /promotionTags/.test(files.ui)
+      && /visiblePromotionTags/.test(files.ui)
+      && /promotion-tag/.test(files.ui)
+      && /更多优惠/.test(files.ui)
+      && !/券可叠加/.test(files.ui)
+      && !/product\.couponStackable \? <Text>/.test(files.ui)
+      && !/product\.pointsDeductibleCents/.test(extractFunction(files.ui, 'MallDealProductCard'))
+      && !/product\.discountLabel/.test(extractFunction(files.ui, 'MallDealProductCard'))
+      && !/fixedPriceCampaign/.test(extractFunction(files.ui, 'MallDealProductCard'))
+      && /flex-wrap: nowrap/.test(files.theme)
       && /mall-v7-add-button/.test(files.ui),
   },
   {
@@ -101,6 +116,16 @@ const checks = [
       && /售后说明/.test(files.product)
       && /minimumOrderQuantity/.test(files.product)
       && /mall-product-detail-section/.test(files.theme),
+  },
+  {
+    name: '商品详情页提供优惠活动折叠栏，展示活动标题、规则、时期和限制',
+    pass: /PromotionActivitiesSection/.test(files.product)
+      && /优惠活动/.test(files.product)
+      && /promotionTags/.test(files.product)
+      && /promotions/.test(files.product)
+      && /formatPromotionPeriod/.test(files.product)
+      && /ruleExplanation/.test(files.product)
+      && /limitText/.test(files.product),
   },
   {
     name: '商品卡一键加购按最小起订量执行，多规格商品弹窗选择规格',
@@ -232,6 +257,13 @@ const checks = [
       && /commissionRateBps/.test(files.service),
   },
   {
+    name: '服务层声明商品营销活动展示契约',
+    pass: /interface MallProductPromotionTag/.test(files.service)
+      && /interface MallProductPromotion extends MallProductPromotionTag/.test(files.service)
+      && /promotionTags\?: MallProductPromotionTag\[\]/.test(files.service)
+      && /promotions\?: MallProductPromotion\[\]/.test(files.service),
+  },
+  {
     name: '后端统一计算满减、会员折扣、积分抵扣、凑单差额和商品折后价',
     pass: /calculate_mall_price_summary/.test(files.serverMall)
       && /discount_breakdown/.test(files.serverMall)
@@ -239,6 +271,17 @@ const checks = [
       && /memberDiscountCents/.test(files.serverMall)
       && /pointsRedeemedCents/.test(files.serverMall)
       && /enrich_product_pricing/.test(files.serverMall),
+  },
+  {
+    name: '后端商品响应派生活动展示字段',
+    pass: /enrich_product_promotions/.test(files.serverMall)
+      && /build_product_promotion_from_campaign/.test(files.serverMall)
+      && /promotionTags/.test(files.serverMall)
+      && /promotions/.test(files.serverMall)
+      && /ruleExplanation/.test(files.serverMall)
+      && /limitText/.test(files.serverMall)
+      && /productIds/.test(files.serverMall)
+      && /categoryCodes/.test(files.serverMall),
   },
   {
     name: 'V7 样式包含固定首页、秒杀、商品卡、购物车底部明细、地址表单，并禁用切换动画',

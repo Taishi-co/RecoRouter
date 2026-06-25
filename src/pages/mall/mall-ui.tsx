@@ -288,28 +288,21 @@ export function MallDealProductCard({
   const originalPriceCents = product.originalPriceCents ?? product.priceCents
   const savedCents = Math.max(product.savedCents ?? originalPriceCents - discountedPriceCents, 0)
   const hasOriginal = originalPriceCents > discountedPriceCents
-  const fixedPriceCampaign = product.fixedPriceCampaign
-  const productTag = fixedPriceCampaign?.badgeText || rankLabel || product.discountLabel || product.tags?.[0] || (product.stock <= 10 ? '库存紧张' : '')
-  const badgeIconUrl = resolveMallImageUrl(fixedPriceCampaign?.badgeIconUrl)
+  const productTag = rankLabel || product.tags?.[0] || (product.stock <= 10 ? '库存紧张' : '')
   const hasQualificationReports = mallProductHasQualificationReports(product)
+  const promotionTagLimit = layout === 'list' ? 3 : 2
+  const productPromotionTags = (product.promotionTags || [])
+    .filter((tag) => tag && tag.tagText)
+  const visiblePromotionTags = productPromotionTags.length > promotionTagLimit
+    ? productPromotionTags.slice(0, Math.max(promotionTagLimit - 1, 1))
+    : productPromotionTags.slice(0, promotionTagLimit)
+  const hasMorePromotionTags = productPromotionTags.length > visiblePromotionTags.length
 
   return (
     <View className={layout === 'list' ? 'mall-v7-product-card mall-v7-product-card-list' : 'mall-v7-product-card'}>
       <View className="mall-v7-product-media" onClick={() => onOpen?.(product)}>
         <MallProductThumb product={product} />
-        {fixedPriceCampaign ? (
-          <View
-            className={`mall-v7-product-fixed-price-badge mall-v7-product-fixed-price-badge-${fixedPriceCampaign.badgePosition || 'top_left'}`}
-            style={{
-              background: fixedPriceCampaign.badgeBackgroundColor || '#FF9238',
-              color: fixedPriceCampaign.badgeTextColor || '#FFFFFF',
-            }}
-          >
-            {badgeIconUrl ? <Image className="mall-v7-product-fixed-price-icon" mode="aspectFit" src={badgeIconUrl} /> : null}
-            {!badgeIconUrl && fixedPriceCampaign.badgeIcon ? <Text>{fixedPriceCampaign.badgeIcon}</Text> : null}
-            <Text>{fixedPriceCampaign.badgeText || '一口价'}</Text>
-          </View>
-        ) : productTag ? <Text className="mall-v7-product-tag">{productTag}</Text> : null}
+        {productTag ? <Text className="mall-v7-product-tag">{productTag}</Text> : null}
       </View>
       <View className="mall-v7-product-body" onClick={() => onOpen?.(product)}>
         <Text className="mall-v7-product-name">{product.name}</Text>
@@ -323,8 +316,24 @@ export function MallDealProductCard({
               <Text>资质可查</Text>
             </View>
           ) : product.qualityGuaranteed ? <Text>品质保证</Text> : null}
-          {product.couponStackable ? <Text>券可叠加</Text> : null}
-          {(product.pointsDeductibleCents || 0) > 0 ? <Text>积分抵扣</Text> : null}
+          {visiblePromotionTags.map((tag) => {
+            const tagIconUrl = resolveMallImageUrl(tag.iconUrl)
+            return (
+              <View
+                key={`${tag.campaignId}-${tag.tagText}`}
+                className="mall-v7-promotion-tag"
+                style={{
+                  background: tag.backgroundColor || '#FFF1E5',
+                  color: tag.textColor || '#E85D04',
+                }}
+              >
+                {tagIconUrl ? <Image className="mall-v7-promotion-tag-icon" mode="aspectFit" src={tagIconUrl} /> : null}
+                {!tagIconUrl && tag.iconText ? <Text>{tag.iconText}</Text> : null}
+                <Text>{tag.tagText}</Text>
+              </View>
+            )
+          })}
+          {hasMorePromotionTags ? <Text className="mall-v7-promotion-more">更多优惠</Text> : null}
         </View>
         <View className="mall-v7-product-price-row">
           <Text className="mall-v7-pay-price">{mallYuan(discountedPriceCents)}</Text>

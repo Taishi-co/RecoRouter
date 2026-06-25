@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Image, Swiper, SwiperItem, Text, View } from '@tarojs/components'
 import Taro, { useShareAppMessage } from '@tarojs/taro'
-import { ChevronLeft, Share2, ShieldCheck, ShoppingCart } from 'lucide-react-taro'
+import { ChevronDown, ChevronLeft, Share2, ShieldCheck, ShoppingCart } from 'lucide-react-taro'
 import { Button } from '@/components/ui/button'
 import { Network } from '@/network'
 import {
@@ -36,6 +36,7 @@ export default function MallProductDetail() {
   const [selectedQuantity, setSelectedQuantity] = useState(1)
   const [loading, setLoading] = useState(false)
   const [qualificationOpen, setQualificationOpen] = useState(false)
+  const [promotionOpen, setPromotionOpen] = useState(false)
   const variants = useMemo(() => productVariants(product), [product])
   const selectedVariant = useMemo(() => {
     if (!variants.length) return null
@@ -196,6 +197,12 @@ export default function MallProductDetail() {
             ) : null}
           </View>
 
+          <PromotionActivitiesSection
+            open={promotionOpen}
+            product={product}
+            onToggle={() => setPromotionOpen((current) => !current)}
+          />
+
           <VariantSelector
             product={product}
             variants={variants}
@@ -232,6 +239,79 @@ export default function MallProductDetail() {
         </>
       )}
     </MallPage>
+  )
+}
+
+function PromotionActivitiesSection({
+  product,
+  open,
+  onToggle,
+}: {
+  product: MallProduct
+  open: boolean
+  onToggle: () => void
+}) {
+  const promotions = (product.promotions || []).filter((promotion) => promotion && promotion.title)
+  if (!promotions.length) return null
+
+  const summaryTags = ((product.promotionTags && product.promotionTags.length ? product.promotionTags : promotions) || [])
+    .filter((tag) => tag && tag.tagText)
+    .slice(0, 3)
+
+  return (
+    <View className="mall-card mall-product-promotion-panel">
+      <View className="mall-product-promotion-head" onClick={onToggle}>
+        <View>
+          <Text>优惠活动</Text>
+          <View className="mall-product-promotion-summary">
+            {summaryTags.map((tag) => (
+              <Text
+                key={`${tag.campaignId}-${tag.tagText}`}
+                style={{
+                  background: tag.backgroundColor || '#FFF1E5',
+                  color: tag.textColor || '#E85D04',
+                }}
+              >
+                {tag.tagText}
+              </Text>
+            ))}
+          </View>
+        </View>
+        <ChevronDown
+          size={18}
+          color="#657160"
+          style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.16s ease' }}
+        />
+      </View>
+      {open ? (
+        <View className="mall-product-promotion-list">
+          {promotions.map((promotion) => {
+            const iconUrl = resolveMallImageUrl(promotion.iconUrl)
+            return (
+              <View className="mall-product-promotion-item" key={promotion.campaignId}>
+                <View
+                  className="mall-product-promotion-tag"
+                  style={{
+                    background: promotion.backgroundColor || '#FFF1E5',
+                    color: promotion.textColor || '#E85D04',
+                  }}
+                >
+                  {iconUrl ? <Image mode="aspectFit" src={iconUrl} /> : null}
+                  {!iconUrl && promotion.iconText ? <Text>{promotion.iconText}</Text> : null}
+                  <Text>{promotion.tagText}</Text>
+                </View>
+                <View className="mall-product-promotion-copy">
+                  <Text className="mall-product-promotion-title">{promotion.title}</Text>
+                  <Text>{promotion.ruleExplanation}</Text>
+                  <Text>{formatPromotionPeriod(promotion.startsAt, promotion.endsAt)}</Text>
+                  {promotion.limitText ? <Text>{promotion.limitText}</Text> : null}
+                </View>
+              </View>
+            )
+          })}
+        </View>
+      ) : null}
+    </View>
   )
 }
 
@@ -473,6 +553,25 @@ function productQualificationReports(product: MallProduct): MallQualificationRep
   return (product.qualificationReports || [])
     .filter((report) => report && report.status !== 'inactive' && report.status !== 'deleted')
     .filter((report) => Boolean(report.reportUrl?.trim()))
+}
+
+function formatPromotionPeriod(startsAt?: string | null, endsAt?: string | null) {
+  const start = formatPromotionDate(startsAt)
+  const end = formatPromotionDate(endsAt)
+  if (start && end) return `活动时间：${start} 至 ${end}`
+  if (start) return `活动时间：${start} 起`
+  if (end) return `活动时间：至 ${end}`
+  return '活动时间：长期有效'
+}
+
+function formatPromotionDate(value?: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}.${month}.${day}`
 }
 
 function productSuppliers(product: MallProduct) {

@@ -2219,6 +2219,85 @@ td span {
   font-weight: 700;
 }
 
+.campaign-display-preview {
+  padding: 12px;
+  border: 1px solid #dfead9;
+  border-radius: 8px;
+  background: #fbfdf8;
+  display: grid;
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.campaign-display-preview > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.campaign-display-preview span {
+  color: #5d695f;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.campaign-display-tag {
+  width: fit-content;
+  min-height: 28px;
+  padding: 5px 9px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.campaign-display-tag img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.campaign-display-tag i {
+  font-style: normal;
+  font-weight: 900;
+}
+
+.campaign-display-warning {
+  color: #c2410c;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.campaign-display-detail {
+  padding: 10px;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px #edf5ea;
+}
+
+.campaign-display-detail b {
+  color: #1f2d1f;
+  font-size: 14px;
+}
+
+.campaign-display-detail p {
+  margin: 0;
+  color: #596957;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.campaign-display-detail small {
+  color: #7a8676;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .fixed-price-badge-preview,
 .fixed-price-badge-editor strong {
   display: inline-flex;
