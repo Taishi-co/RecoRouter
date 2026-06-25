@@ -3,7 +3,7 @@ set -euo pipefail
 
 PLATFORM="${MINIAPP_PLATFORM:-weapp}"
 DOMAIN="${PROJECT_DOMAIN:-https://car.shcxyz.site}"
-APP_PROFILE="${RECO_APP_PROFILE:-${TARO_APP_PROFILE:-all}}"
+APP_PROFILE="${RECO_APP_PROFILE:-${TARO_APP_PROFILE:-mall}}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-}"
 APP_ROOT="${APP_ROOT:-/opt/recorouter-miniapp}"
 RELEASE_TAR="${1:-/tmp/recorouter-miniapp-source.tar.gz}"
@@ -18,6 +18,53 @@ if [[ ! -f "$RELEASE_TAR" ]]; then
   echo "Miniapp source tar not found: $RELEASE_TAR" >&2
   exit 1
 fi
+
+verify_profile_dist() {
+  local app_json="$DIST_DIR/app.json"
+  if [[ ! -f "$app_json" ]]; then
+    echo "Built miniapp app.json not found: $app_json" >&2
+    exit 1
+  fi
+
+  case "$APP_PROFILE" in
+    mall)
+      node - "$app_json" <<'NODE'
+const fs = require('fs')
+const appJson = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'))
+const firstPage = Array.isArray(appJson.pages) ? appJson.pages[0] : ''
+if (firstPage !== 'pages/mall/index/index') {
+  console.error(`Mall miniapp must start at pages/mall/index/index, got ${firstPage || '<missing>'}`)
+  process.exit(1)
+}
+if (appJson.pages?.includes('pages/index/index')) {
+  console.error('Mall miniapp package must not include the RecoRouter landing page')
+  process.exit(1)
+}
+NODE
+      ;;
+    vehicle)
+      node - "$app_json" <<'NODE'
+const fs = require('fs')
+const appJson = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'))
+const firstPage = Array.isArray(appJson.pages) ? appJson.pages[0] : ''
+if (firstPage !== 'pages/index/index') {
+  console.error(`Vehicle miniapp must start at pages/index/index, got ${firstPage || '<missing>'}`)
+  process.exit(1)
+}
+if (appJson.pages?.some((page) => page.startsWith('pages/mall/'))) {
+  console.error('Vehicle miniapp package must not include mall pages')
+  process.exit(1)
+}
+NODE
+      ;;
+    admin|all)
+      ;;
+    *)
+      echo "Unsupported RECO_APP_PROFILE: $APP_PROFILE" >&2
+      exit 2
+      ;;
+  esac
+}
 
 mkdir -p "$APP_ROOT/releases"
 RELEASE_DIR="$APP_ROOT/releases/$RELEASE_ID"
@@ -79,6 +126,7 @@ NODE
     fi
 
     RECO_APP_PROFILE="$APP_PROFILE" pnpm exec taro build --type weapp
+    verify_profile_dist
 
     if command -v rg >/dev/null 2>&1; then
       rg -q "$DOMAIN" "$DIST_DIR"
