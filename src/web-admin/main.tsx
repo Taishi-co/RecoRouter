@@ -117,6 +117,7 @@ interface DashboardData {
   campaigns: JsonRecord[];
   fixedPriceCampaigns: JsonRecord[];
   promotionVenues: JsonRecord[];
+  mallGroupBuys: JsonRecord[];
   mallCoupons: JsonRecord[];
   mallHomeBanners: JsonRecord[];
   mallHomeSections: JsonRecord[];
@@ -368,6 +369,29 @@ interface PromotionVenueForm {
   items: PromotionVenueItemForm[];
 }
 
+interface GroupBuyTierForm {
+  id: string;
+  quantity: string;
+  priceYuan: string;
+}
+
+interface GroupBuyForm {
+  id: string;
+  name: string;
+  productId: string;
+  variantId: string;
+  startsAt: string;
+  endsAt: string;
+  balanceDueAt: string;
+  minGroupQuantity: string;
+  maxQuantityPerUser: string;
+  minCreditScore: string;
+  overdueCreditPenalty: string;
+  depositType: string;
+  depositValue: string;
+  tiers: GroupBuyTierForm[];
+}
+
 interface CouponForm {
   id: string;
   name: string;
@@ -564,6 +588,7 @@ type IconName =
   | 'truck'
   | 'orders'
   | 'shop'
+  | 'shopping-bag'
   | 'route'
   | 'megaphone'
   | 'support'
@@ -811,6 +836,7 @@ const adminModules: AdminModuleSpec[] = [
       designPage('mall.campaigns', '营销活动', '营销中心', '活动搜索、创建、编辑、启停和删除', 'megaphone', 'operations'),
       designPage('mall.fixedPriceCampaigns', '一口价', '营销中心', '商品一口价活动和商品图角标配置', 'megaphone', 'operations'),
       designPage('mall.promotionVenues', '大促会场', '营销中心', '会场入口、视觉配置和商品池', 'megaphone', 'operations'),
+      designPage('mall.groupBuyPresale', '集采预售', '营销中心', '集采预售活动、定金、尾款和采购确认', 'shopping-bag'),
       designPage('mall.coupons', '券中心', '营销中心', '券创建、编辑、发放量、核销状态和启停', 'megaphone'),
       designPage('mall.banners', '轮播广告位', '首页配置', '首页 3 张轮播、图片、跳转和排序', 'dashboard'),
       designPage('mall.homeNotices', '公告栏配置', '首页配置', '今日到货、配送时效、售后通知和团长招募', 'megaphone'),
@@ -892,6 +918,7 @@ const initialData: DashboardData = {
   campaigns: [],
   fixedPriceCampaigns: [],
   promotionVenues: [],
+  mallGroupBuys: [],
   mallCoupons: [],
   mallHomeBanners: [],
   mallHomeSections: [],
@@ -1122,6 +1149,12 @@ const createFixedPriceGroupForm = (overrides: Partial<FixedPriceCampaignGroupFor
   items: overrides.items || [],
 });
 
+const createGroupBuyTierForm = (overrides: Partial<GroupBuyTierForm> = {}): GroupBuyTierForm => ({
+  id: overrides.id || `tier-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`,
+  quantity: overrides.quantity || '20',
+  priceYuan: overrides.priceYuan || '19.90',
+});
+
 const initialCampaignForm: CampaignForm = {
   id: '',
   name: '鲜选满减',
@@ -1179,6 +1212,23 @@ const initialPromotionVenueForm: PromotionVenueForm = {
   entryPosition: 'home_after_banner',
   sortOrder: '10',
   items: [],
+};
+
+const emptyGroupBuyForm: GroupBuyForm = {
+  id: '',
+  name: '',
+  productId: '',
+  variantId: '',
+  startsAt: '',
+  endsAt: '',
+  balanceDueAt: '',
+  minGroupQuantity: '20',
+  maxQuantityPerUser: '',
+  minCreditScore: '80',
+  overdueCreditPenalty: '10',
+  depositType: 'percent',
+  depositValue: '20',
+  tiers: [createGroupBuyTierForm()],
 };
 
 const initialCouponForm: CouponForm = {
@@ -1523,6 +1573,7 @@ async function fetchDashboardData(
     campaigns,
     fixedPriceCampaigns,
     promotionVenues,
+    mallGroupBuys,
     mallCoupons,
     mallHomeBanners,
     mallHomeSections,
@@ -1602,6 +1653,7 @@ async function fetchDashboardData(
       campaignType: 'promotion_venue',
       limit: 200,
     })),
+    loadWithFallback('集采预售', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/group-buys')),
     loadWithFallback('优惠券', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/coupons', {
       keyword: couponFilters.keyword,
       status: couponFilters.status,
@@ -1658,6 +1710,7 @@ async function fetchDashboardData(
       campaigns,
       fixedPriceCampaigns,
       promotionVenues,
+      mallGroupBuys,
       mallCoupons,
       mallHomeBanners,
       mallHomeSections,
@@ -2842,6 +2895,261 @@ function promotionVenueRules(form: PromotionVenueForm, products: JsonRecord[]) {
   };
 }
 
+const groupBuyDepositTypeOptions = [
+  { value: 'percent', label: '按比例' },
+  { value: 'unit_fixed', label: '按单位固定' },
+  { value: 'order_fixed', label: '按单固定' },
+];
+
+const groupBuyActionOptions = [
+  { action: 'publish', label: '发布', icon: 'check' as IconName },
+  { action: 'offline', label: '下线', icon: 'x' as IconName },
+  { action: 'force-form', label: '强制成团', icon: 'check' as IconName },
+  { action: 'extend', label: '延期', icon: 'refresh' as IconName },
+  { action: 'cancel', label: '取消', icon: 'x' as IconName },
+  { action: 'confirm-procurement', label: '确认采购', icon: 'shopping-bag' as IconName },
+];
+
+function groupBuyStatusLabel(value: string) {
+  const labels: Record<string, string> = {
+    draft: '草稿',
+    published: '已发布',
+    enrolling: '报名中',
+    formed: '已成团',
+    formed_pending_balance: '已成团待尾款',
+    balance_closing: '尾款处理中',
+    ops_review: '待运营确认',
+    procuring: '采购中',
+    completed: '已完成',
+    offline: '已下线',
+    failed_refunding: '未成团退款中',
+    failed_refunded: '未成团已退款',
+    cancelled_refunding: '取消退款中',
+    cancelled: '已取消',
+    pending_deposit: '待付定金',
+    deposit_paid: '已付定金',
+    pending_balance: '待付尾款',
+    balance_paid: '已付尾款',
+    order_created: '已生成订单',
+    deposit_refunding: '定金退款中',
+    deposit_refunded: '定金已退',
+    balance_overdue_cancelled: '尾款逾期取消',
+    activity_cancel_refunding: '活动取消退款中',
+    refunded: '已退款',
+  };
+  return labels[value] || statusLabel(value);
+}
+
+function groupBuyDepositTypeLabel(value: string) {
+  return groupBuyDepositTypeOptions.find(option => option.value === value)?.label || value || '-';
+}
+
+function groupBuyDepositValueToForm(depositType: string, depositValue: number) {
+  if (depositType === 'unit_fixed' || depositType === 'order_fixed') {
+    return (depositValue / 100).toFixed(2);
+  }
+  return String(depositValue);
+}
+
+function groupBuyDepositValueFromForm(depositType: string, depositValue: string) {
+  if (depositType === 'unit_fixed' || depositType === 'order_fixed') {
+    return moneyFromYuan(depositValue);
+  }
+  return Number(depositValue) || 0;
+}
+
+function groupBuyDepositValueLabel(depositType: string) {
+  if (depositType === 'unit_fixed') return '每单位定金（元）';
+  if (depositType === 'order_fixed') return '每单定金（元）';
+  return '定金比例（%）';
+}
+
+function groupBuyDepositSummary(groupBuy: JsonRecord) {
+  const depositType = stringValue(groupBuy, 'depositType', 'percent');
+  const depositValue = numberValue(groupBuy, 'depositValue');
+  if (depositType === 'unit_fixed') return `每单位 ${yuan(depositValue)}`;
+  if (depositType === 'order_fixed') return `每单 ${yuan(depositValue)}`;
+  return `${depositValue}%`;
+}
+
+function groupBuyTiersFromRecord(groupBuy: JsonRecord): GroupBuyTierForm[] {
+  const tiers = arrayValue(groupBuy, 'tiers')
+    .filter((item): item is JsonRecord => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+    .map((tier, index) => createGroupBuyTierForm({
+      id: stringValue(tier, 'id', `tier-${index + 1}`),
+      quantity: String(numberValue(tier, 'quantity', index === 0 ? numberValue(groupBuy, 'minGroupQuantity', 20) : 0)),
+      priceYuan: (numberValue(tier, 'priceCents', numberValue(tier, 'unitPriceCents')) / 100).toFixed(2),
+    }))
+    .filter(tier => Number(tier.quantity) > 0);
+  return tiers.length ? tiers : [createGroupBuyTierForm({
+    quantity: String(numberValue(groupBuy, 'minGroupQuantity', 20)),
+    priceYuan: (numberValue(groupBuy, 'finalUnitPriceCents', numberValue(groupBuy, 'priceCents')) / 100 || 19.9).toFixed(2),
+  })];
+}
+
+function groupBuyToForm(groupBuy: JsonRecord): GroupBuyForm {
+  const depositType = stringValue(groupBuy, 'depositType', 'percent');
+  return {
+    id: stringValue(groupBuy, 'id'),
+    name: stringValue(groupBuy, 'name'),
+    productId: stringValue(groupBuy, 'productId'),
+    variantId: stringValue(groupBuy, 'variantId'),
+    startsAt: datetimeLocalValue(stringValue(groupBuy, 'startsAt')),
+    endsAt: datetimeLocalValue(stringValue(groupBuy, 'endsAt')),
+    balanceDueAt: datetimeLocalValue(stringValue(groupBuy, 'balanceDueAt')),
+    minGroupQuantity: String(numberValue(groupBuy, 'minGroupQuantity', 20)),
+    maxQuantityPerUser: numberValue(groupBuy, 'maxQuantityPerUser') ? String(numberValue(groupBuy, 'maxQuantityPerUser')) : '',
+    minCreditScore: String(numberValue(groupBuy, 'minCreditScore', 80)),
+    overdueCreditPenalty: String(numberValue(groupBuy, 'overdueCreditPenalty', 10)),
+    depositType,
+    depositValue: groupBuyDepositValueToForm(depositType, numberValue(groupBuy, 'depositValue', 20)),
+    tiers: groupBuyTiersFromRecord(groupBuy),
+  };
+}
+
+function groupBuyProduct(groupBuy: JsonRecord, products: JsonRecord[]) {
+  const embeddedProduct = recordValue(groupBuy, 'product');
+  if (stringValue(embeddedProduct, 'id')) return embeddedProduct;
+  const productId = stringValue(groupBuy, 'productId');
+  return products.find(product => stringValue(product, 'id') === productId);
+}
+
+function groupBuyProductName(groupBuy: JsonRecord, products: JsonRecord[]) {
+  const product = groupBuyProduct(groupBuy, products);
+  return stringValue(groupBuy, 'productName', product ? stringValue(product, 'name', '未命名商品') : '未命名商品');
+}
+
+function groupBuyVariantName(groupBuy: JsonRecord, products: JsonRecord[]) {
+  const variantId = stringValue(groupBuy, 'variantId');
+  const product = groupBuyProduct(groupBuy, products);
+  if (!product) return stringValue(groupBuy, 'variantName', stringValue(groupBuy, 'unitName', '-'));
+  const variant = productVariantsFromRecord(product).find(item => item.id === variantId);
+  return stringValue(groupBuy, 'variantName', variant?.specification || variant?.name || stringValue(groupBuy, 'unitName', stringValue(product, 'specification', '-')));
+}
+
+function groupBuyCurrentQuantity(groupBuy: JsonRecord) {
+  return numberValue(groupBuy, 'currentQuantity', numberValue(groupBuy, 'formedQuantity', numberValue(groupBuy, 'subscriptionQuantity', numberValue(groupBuy, 'subscribedQuantity'))));
+}
+
+function groupBuyFinalTierSummary(groupBuy: JsonRecord) {
+  const finalQuantity = numberValue(groupBuy, 'finalTierQuantity');
+  const finalPriceCents = numberValue(groupBuy, 'finalUnitPriceCents');
+  const unitName = stringValue(groupBuy, 'unitName', '件');
+  if (finalQuantity > 0 && finalPriceCents > 0) {
+    return `${finalQuantity}${unitName}档 / ${yuan(finalPriceCents)}`;
+  }
+  const tiers = arrayValue(groupBuy, 'tiers')
+    .filter((item): item is JsonRecord => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
+  if (!tiers.length) return '-';
+  const currentQuantity = groupBuyCurrentQuantity(groupBuy);
+  const matched = tiers
+    .map(tier => ({
+      quantity: numberValue(tier, 'quantity'),
+      priceCents: numberValue(tier, 'priceCents', numberValue(tier, 'unitPriceCents')),
+    }))
+    .filter(tier => tier.quantity > 0 && tier.priceCents > 0 && tier.quantity <= currentQuantity)
+    .sort((a, b) => b.quantity - a.quantity)[0];
+  return matched ? `${matched.quantity}${unitName}档 / ${yuan(matched.priceCents)}` : '未成档';
+}
+
+function groupBuyBalanceSummary(groupBuy: JsonRecord) {
+  const paid = numberValue(groupBuy, 'balancePaidQuantity', numberValue(groupBuy, 'balancePaidCount'));
+  const due = numberValue(groupBuy, 'balanceDueQuantity', numberValue(groupBuy, 'formedQuantity'));
+  if (!paid && !due) return '-';
+  return `尾款 ${paid}/${due || groupBuyCurrentQuantity(groupBuy)}`;
+}
+
+function groupBuyPaymentProgressSummary(groupBuy: JsonRecord) {
+  const depositPaidCount = numberValue(groupBuy, 'depositPaidCount');
+  const subscriptionCount = numberValue(groupBuy, 'subscriptionCount');
+  const balancePaidCount = numberValue(groupBuy, 'balancePaidCount');
+  const balanceBase = Math.max(depositPaidCount, subscriptionCount, balancePaidCount, 1);
+  const balanceRate = Math.round((balancePaidCount / balanceBase) * 100);
+  return `定金 ${depositPaidCount} 人 · 尾款 ${balanceRate}%`;
+}
+
+function groupBuyPayload(form: GroupBuyForm) {
+  const tiers = form.tiers
+    .map(tier => ({
+      quantity: Number(tier.quantity) || 0,
+      priceCents: moneyFromYuan(tier.priceYuan),
+    }))
+    .filter(tier => tier.quantity > 0 && tier.priceCents > 0)
+    .sort((a, b) => a.quantity - b.quantity);
+  if (!form.name.trim()) throw new Error('活动名称不能为空');
+  if (!form.productId) throw new Error('请选择商品');
+  if (!form.startsAt || !form.endsAt || !form.balanceDueAt) throw new Error('请填写活动开始、结束和尾款截止时间');
+  if ((Number(form.minGroupQuantity) || 0) <= 0) throw new Error('成团门槛必须大于0');
+  if ((Number(form.minCreditScore) || 0) < 0) throw new Error('最低信用分不能为空');
+  if ((Number(form.overdueCreditPenalty) || 0) < 0) throw new Error('逾期扣分不能为空');
+  if (!form.depositType || !form.depositValue.trim()) throw new Error('定金方式和数值不能为空');
+  if (!tiers.length) throw new Error('请至少配置一档阶梯价');
+  return {
+    name: form.name.trim(),
+    productId: form.productId,
+    variantId: form.variantId || undefined,
+    startsAt: datetimeLocalToIso(form.startsAt),
+    endsAt: datetimeLocalToIso(form.endsAt),
+    balanceDueAt: datetimeLocalToIso(form.balanceDueAt),
+    minGroupQuantity: Number(form.minGroupQuantity) || 0,
+    maxQuantityPerUser: form.maxQuantityPerUser.trim() ? Number(form.maxQuantityPerUser) || undefined : undefined,
+    minCreditScore: Number(form.minCreditScore) || 0,
+    overdueCreditPenalty: Number(form.overdueCreditPenalty) || 0,
+    depositType: form.depositType,
+    depositValue: groupBuyDepositValueFromForm(form.depositType, form.depositValue),
+    tiers,
+  };
+}
+
+function datetimeLocalToIso(value: string) {
+  if (!value) return value;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toISOString();
+}
+
+function groupBuyActionResultActivity(result: JsonRecord) {
+  if (stringValue(result, 'id')) return result;
+  const activity = recordValue(result, 'activity');
+  return stringValue(activity, 'id') ? activity : null;
+}
+
+function groupBuyActionUnavailableReason(groupBuy: JsonRecord, action: string) {
+  const status = stringValue(groupBuy, 'status');
+  if (action === 'publish' && status !== 'draft') return '只有草稿活动可以发布';
+  if (action === 'offline') {
+    if (!['draft', 'published'].includes(status)) return '当前状态不能直接下线';
+    if (numberValue(groupBuy, 'depositPaidCount') > 0) return '已有用户支付定金，请走取消退款流程';
+  }
+  if (action === 'force-form' && !['published', 'enrolling'].includes(status)) return '当前状态不能强制成团';
+  if (action === 'extend' && !['published', 'enrolling', 'formed', 'ops_review'].includes(status)) return '当前状态不能延期';
+  if (action === 'confirm-procurement' && !['formed', 'ops_review', 'procuring'].includes(status)) return '当前状态不能确认采购';
+  if (action === 'cancel' && ['offline', 'cancelled', 'cancelled_refunding', 'procuring', 'completed', 'failed_refunded'].includes(status)) {
+    return '当前状态不能取消';
+  }
+  return '';
+}
+
+function groupBuyActionConfirmText(groupBuy: JsonRecord, action: string) {
+  const name = stringValue(groupBuy, 'name', '该集采活动');
+  const texts: Record<string, string> = {
+    offline: `确认下线「${name}」？下线后用户端将不可见。`,
+    'force-form': `确认将「${name}」强制成团？系统会锁定当前档位并进入尾款流程。`,
+    cancel: `确认取消「${name}」并进入退款流程？该操作会影响已支付用户。`,
+    'confirm-procurement': `确认「${name}」继续采购？系统会为已付尾款用户生成普通商城订单。`,
+  };
+  return texts[action] || '';
+}
+
+function groupBuyProcurementMessage(result: JsonRecord) {
+  const summary = recordValue(result, 'orderCreation');
+  if (!Object.keys(summary).length) return '集采活动确认采购成功';
+  const created = numberValue(summary, 'createdCount');
+  const existing = numberValue(summary, 'existingCount');
+  const missingAddress = numberValue(summary, 'missingAddressCount');
+  const stockFailed = numberValue(summary, 'stockFailedCount');
+  return `确认采购完成：新建 ${created} 单，已有 ${existing} 单，缺地址 ${missingAddress} 单，库存不足 ${stockFailed} 单`;
+}
+
 function couponToForm(coupon: JsonRecord): CouponForm {
   return {
     id: stringValue(coupon, 'id'),
@@ -3729,6 +4037,13 @@ function Icon({ name }: { name: IconName }) {
         <path d="M4 10h16l-2-6H6z" />
         <path d="M6 10v10h12V10" />
         <path d="M9 20v-6h6v6" />
+      </>
+    ),
+    'shopping-bag': (
+      <>
+        <path d="M6 8h12l-1 12H7z" />
+        <path d="M9 8a3 3 0 0 1 6 0" />
+        <path d="M9 13h6" />
       </>
     ),
     route: (
@@ -10416,6 +10731,362 @@ function MallPromotionVenuesSection({
   );
 }
 
+function MallGroupBuyPresaleSection({
+  groupBuys,
+  products,
+  form,
+  modalOpen,
+  subscriptions,
+  detailOpen,
+  detailActivity,
+  onAction,
+  onChange,
+  onCloseDetail,
+  onEdit,
+  onModalOpenChange,
+  onOpenDetail,
+  onReset,
+  onSubmit,
+  onTiersChange,
+}: {
+  groupBuys: JsonRecord[];
+  products: JsonRecord[];
+  form: GroupBuyForm;
+  modalOpen: boolean;
+  subscriptions: JsonRecord[];
+  detailOpen: boolean;
+  detailActivity: JsonRecord | null;
+  onAction: (groupBuy: JsonRecord, action: string) => Promise<void>;
+  onChange: (patch: Partial<GroupBuyForm>) => void;
+  onCloseDetail: () => void;
+  onEdit: (groupBuy: JsonRecord) => void;
+  onModalOpenChange: (open: boolean) => void;
+  onOpenDetail: (groupBuy: JsonRecord) => Promise<void>;
+  onReset: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onTiersChange: (updater: (tiers: GroupBuyTierForm[]) => GroupBuyTierForm[]) => void;
+}) {
+  const selectedProduct = products.find(product => stringValue(product, 'id') === form.productId);
+  const productVariants = selectedProduct ? productVariantsFromRecord(selectedProduct) : [];
+  const hasExplicitVariants = selectedProduct ? arrayValue(selectedProduct, 'variants').length > 0 : false;
+  const updateTier = (id: string, patch: Partial<GroupBuyTierForm>) => {
+    onTiersChange(tiers => tiers.map(tier => tier.id === id ? { ...tier, ...patch } : tier));
+  };
+  const removeTier = (id: string) => {
+    onTiersChange(tiers => tiers.filter(tier => tier.id !== id));
+  };
+  const openCreate = () => {
+    onReset();
+    onModalOpenChange(true);
+  };
+  const openEdit = (groupBuy: JsonRecord) => {
+    onEdit(groupBuy);
+    onModalOpenChange(true);
+  };
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    if (hasExplicitVariants && !form.variantId) {
+      event.preventDefault();
+      return;
+    }
+    await onSubmit(event);
+    onModalOpenChange(false);
+  };
+
+  return (
+    <div className="page-grid">
+      <div className="mall-admin-toolbar">
+        <button className="mall-admin-submit" type="button" onClick={openCreate}>
+          新建集采预售
+        </button>
+      </div>
+
+      <Panel title="集采预售">
+        <div className="table-wrap group-buy-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>活动</th>
+                <th>商品规格</th>
+                <th>数量进度</th>
+                <th>档位/尾款</th>
+                <th>状态</th>
+                <th>活动时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groupBuys.map(groupBuy => {
+                const id = stringValue(groupBuy, 'id');
+                const status = stringValue(groupBuy, 'status', 'draft');
+                const currentQuantity = groupBuyCurrentQuantity(groupBuy);
+                const minQuantity = numberValue(groupBuy, 'minGroupQuantity', 1);
+                const unitName = stringValue(groupBuy, 'unitName', '件');
+                const progress = Math.min(100, Math.round((currentQuantity / Math.max(minQuantity, 1)) * 100));
+                return (
+                  <tr key={id}>
+                    <td>
+                      <strong>{stringValue(groupBuy, 'name', '未命名集采')}</strong>
+                      <small>{shortId(id)}</small>
+                      <small>定金：{groupBuyDepositTypeLabel(stringValue(groupBuy, 'depositType', 'percent'))} · {groupBuyDepositSummary(groupBuy)}</small>
+                    </td>
+                    <td>
+                      <strong>{groupBuyProductName(groupBuy, products)}</strong>
+                      <small>{groupBuyVariantName(groupBuy, products)}</small>
+                    </td>
+                    <td>
+                      <div className="group-buy-progress">
+                        <span>{currentQuantity}/{minQuantity} {unitName}</span>
+                        <i><b style={{ width: `${progress}%` }} /></i>
+                      </div>
+                    </td>
+                    <td>
+                      <strong>{groupBuyFinalTierSummary(groupBuy)}</strong>
+                      <small>{groupBuyBalanceSummary(groupBuy)}</small>
+                      <small>{groupBuyPaymentProgressSummary(groupBuy)}</small>
+                    </td>
+                    <td>
+                      <span className={`${badgeClass(status)} group-buy-status`}>{groupBuyStatusLabel(status)}</span>
+                    </td>
+                    <td>
+                      <small>{formatDate(stringValue(groupBuy, 'startsAt'))}</small>
+                      <small>{formatDate(stringValue(groupBuy, 'endsAt'))}</small>
+                    </td>
+                    <td>
+                      <div className="actions group-buy-actions">
+                        <button className="ghost-button" type="button" onClick={() => openEdit(groupBuy)}>
+                          <Icon name="save" />
+                          编辑
+                        </button>
+                        <button className="ghost-button" type="button" onClick={() => void onOpenDetail(groupBuy)}>
+                          <Icon name="orders" />
+                          详情
+                        </button>
+                        {groupBuyActionOptions.map(option => {
+                          const disabledReason = groupBuyActionUnavailableReason(groupBuy, option.action);
+                          return (
+                            <button
+                              className={option.action === 'cancel' || option.action === 'offline' ? 'ghost-button danger' : 'ghost-button'}
+                              disabled={Boolean(disabledReason)}
+                              key={option.action}
+                              title={disabledReason}
+                              type="button"
+                              onClick={() => void onAction(groupBuy, option.action)}
+                            >
+                              <Icon name={option.icon} />
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {!groupBuys.length ? (
+                <tr>
+                  <td colSpan={7}>暂无集采预售活动</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+
+      {modalOpen ? (
+        <div className="modal-backdrop">
+          <form className="modal-panel group-buy-modal" onSubmit={submit}>
+            <div className="modal-title-row">
+              <div>
+                <h2>{form.id ? '编辑集采预售' : '新建集采预售'}</h2>
+              </div>
+              <button className="ghost-button" type="button" onClick={() => onModalOpenChange(false)}>
+                <Icon name="x" />
+                关闭
+              </button>
+            </div>
+
+            <div className="form-grid">
+              <label>
+                活动名称
+                <input required value={form.name} onChange={event => onChange({ name: event.target.value })} />
+              </label>
+              <label>
+                商品
+                <select required value={form.productId} onChange={event => onChange({ productId: event.target.value, variantId: '' })}>
+                  <option value="">请选择商品</option>
+                  {products.map(product => {
+                    const productId = stringValue(product, 'id');
+                    return (
+                      <option key={productId} value={productId}>
+                        {stringValue(product, 'name', '未命名商品')}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+              <label>
+                售卖规格
+                <select
+                  required={hasExplicitVariants}
+                  value={form.variantId}
+                  onChange={event => onChange({ variantId: event.target.value })}
+                >
+                  <option value="">{hasExplicitVariants ? '请选择规格' : '默认规格'}</option>
+                  {productVariants.map(variant => (
+                    <option key={variant.id} value={variant.id}>
+                      {variant.specification || variant.name || variant.sku || variant.id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                活动开始
+                <input required type="datetime-local" value={form.startsAt} onChange={event => onChange({ startsAt: event.target.value })} />
+              </label>
+              <label>
+                活动结束
+                <input required type="datetime-local" value={form.endsAt} onChange={event => onChange({ endsAt: event.target.value })} />
+              </label>
+              <label>
+                尾款截止
+                <input required type="datetime-local" value={form.balanceDueAt} onChange={event => onChange({ balanceDueAt: event.target.value })} />
+              </label>
+              <label>
+                成团门槛
+                <input required min="1" type="number" value={form.minGroupQuantity} onChange={event => onChange({ minGroupQuantity: event.target.value })} />
+              </label>
+              <label>
+                每人上限
+                <input min="1" type="number" value={form.maxQuantityPerUser} onChange={event => onChange({ maxQuantityPerUser: event.target.value })} />
+              </label>
+              <label>
+                最低信用分
+                <input required min="0" type="number" value={form.minCreditScore} onChange={event => onChange({ minCreditScore: event.target.value })} />
+              </label>
+              <label>
+                逾期扣分
+                <input required min="0" type="number" value={form.overdueCreditPenalty} onChange={event => onChange({ overdueCreditPenalty: event.target.value })} />
+              </label>
+              <label>
+                定金方式
+                <select value={form.depositType} onChange={event => onChange({ depositType: event.target.value })}>
+                  {groupBuyDepositTypeOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                {groupBuyDepositValueLabel(form.depositType)}
+                <input
+                  required
+                  min="0"
+                  step={form.depositType === 'percent' ? '1' : '0.01'}
+                  type="number"
+                  value={form.depositValue}
+                  onChange={event => onChange({ depositValue: event.target.value })}
+                />
+              </label>
+            </div>
+
+            <section className="campaign-rule-card">
+              <div className="campaign-rule-card-head">
+                <strong>阶梯价</strong>
+                <button className="ghost-button" type="button" onClick={() => onTiersChange(tiers => [...tiers, createGroupBuyTierForm()])}>
+                  <Icon name="plus" />
+                  新增档位
+                </button>
+              </div>
+              <div className="group-buy-tier-list">
+                {form.tiers.map(tier => (
+                  <div className="group-buy-tier-row" key={tier.id}>
+                    <label>
+                      件数
+                      <input required min="1" type="number" value={tier.quantity} onChange={event => updateTier(tier.id, { quantity: event.target.value })} />
+                    </label>
+                    <label>
+                      单价
+                      <input required min="0.01" step="0.01" type="number" value={tier.priceYuan} onChange={event => updateTier(tier.id, { priceYuan: event.target.value })} />
+                    </label>
+                    <button className="ghost-button danger" disabled={form.tiers.length <= 1} type="button" onClick={() => removeTier(tier.id)}>
+                      删除
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <div className="modal-actions">
+              <button className="ghost-button" type="button" onClick={() => onModalOpenChange(false)}>取消</button>
+              <button className="primary-button" type="submit">
+                <Icon name="save" />
+                保存集采
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      {detailOpen ? (
+        <div className="modal-backdrop">
+          <div className="modal-panel group-buy-detail-modal">
+            <div className="modal-title-row">
+              <div>
+                <h2>{detailActivity ? stringValue(detailActivity, 'name', '集采详情') : '集采详情'}</h2>
+              </div>
+              <button className="ghost-button" type="button" onClick={onCloseDetail}>
+                <Icon name="x" />
+                关闭
+              </button>
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>用户</th>
+                    <th>数量</th>
+                    <th>定金</th>
+                    <th>尾款</th>
+                    <th>扣分</th>
+                    <th>退款/取消</th>
+                    <th>商城订单</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {subscriptions.map(subscription => {
+                    const user = recordValue(subscription, 'user');
+                    const userName = stringValue(subscription, 'userName', stringValue(user, 'name', stringValue(user, 'nickname', '-')));
+                    const userPhone = stringValue(subscription, 'userPhone', stringValue(user, 'phone'));
+                    const cancelText = stringValue(subscription, 'cancelReason') || groupBuyStatusLabel(stringValue(subscription, 'refundStatus', stringValue(subscription, 'status')));
+                    return (
+                      <tr key={stringValue(subscription, 'id')}>
+                        <td>
+                          <strong>{userName}</strong>
+                          <small>{userPhone || '-'}</small>
+                        </td>
+                        <td>{numberValue(subscription, 'quantity')}</td>
+                        <td>{groupBuyStatusLabel(stringValue(subscription, 'depositStatus', stringValue(subscription, 'status')))} · {yuan(numberValue(subscription, 'depositCents'))}</td>
+                        <td>{groupBuyStatusLabel(stringValue(subscription, 'balanceStatus', stringValue(subscription, 'status')))} · {yuan(numberValue(subscription, 'balanceCents'))}</td>
+                        <td>{numberValue(subscription, 'creditPenaltyPoints', numberValue(subscription, 'creditPenalty'))}</td>
+                        <td>{cancelText}</td>
+                        <td>{stringValue(subscription, 'mallOrderId') || '-'}</td>
+                      </tr>
+                    );
+                  })}
+                  {!subscriptions.length ? (
+                    <tr>
+                      <td colSpan={7}>暂无订阅记录</td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function MallPermissionsSection({
   permissions,
   filters,
@@ -11657,6 +12328,7 @@ function App() {
   const [messageHistory, setMessageHistory] = useState<AdminMessageItem[]>([]);
   const [messageBoxOpen, setMessageBoxOpen] = useState(false);
   const messageTimers = useRef<Record<string, number>>({});
+  const groupBuyDetailRequest = useRef('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [moduleSwitcherCollapsed, setModuleSwitcherCollapsed] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
@@ -11667,6 +12339,11 @@ function App() {
   const [campaignForm, setCampaignForm] = useState<CampaignForm>(initialCampaignForm);
   const [fixedPriceCampaignForm, setFixedPriceCampaignForm] = useState<FixedPriceCampaignForm>(initialFixedPriceCampaignForm);
   const [promotionVenueForm, setPromotionVenueForm] = useState<PromotionVenueForm>(initialPromotionVenueForm);
+  const [groupBuyForm, setGroupBuyForm] = useState<GroupBuyForm>(emptyGroupBuyForm);
+  const [groupBuyModalOpen, setGroupBuyModalOpen] = useState(false);
+  const [groupBuySubscriptions, setGroupBuySubscriptions] = useState<JsonRecord[]>([]);
+  const [groupBuyDetailOpen, setGroupBuyDetailOpen] = useState(false);
+  const [groupBuyDetailActivity, setGroupBuyDetailActivity] = useState<JsonRecord | null>(null);
   const [couponForm, setCouponForm] = useState<CouponForm>(initialCouponForm);
   const [homeBannerForm, setHomeBannerForm] = useState<HomeBannerForm>(initialHomeBannerForm);
   const [homeSectionForm, setHomeSectionForm] = useState<HomeSectionForm>(initialHomeSectionForm);
@@ -11787,6 +12464,11 @@ function App() {
     setCampaignForm(initialCampaignForm);
     setFixedPriceCampaignForm(initialFixedPriceCampaignForm);
     setPromotionVenueForm(initialPromotionVenueForm);
+    setGroupBuyForm(emptyGroupBuyForm);
+    setGroupBuyModalOpen(false);
+    setGroupBuySubscriptions([]);
+    setGroupBuyDetailOpen(false);
+    setGroupBuyDetailActivity(null);
     setCouponForm(initialCouponForm);
     setHomeBannerForm(initialHomeBannerForm);
     setHomeSectionForm(initialHomeSectionForm);
@@ -12648,6 +13330,10 @@ function App() {
     setPromotionVenueForm(initialPromotionVenueForm);
   };
 
+  const resetGroupBuyForm = () => {
+    setGroupBuyForm(emptyGroupBuyForm);
+  };
+
   const saveCampaign = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const isEditing = Boolean(campaignForm.id);
@@ -12780,6 +13466,129 @@ function App() {
       setPromotionVenueForm(initialPromotionVenueForm);
     }
     setActivePageKey('mall.promotionVenues');
+  };
+
+  const saveGroupBuy = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      const selectedProduct = data.mallProducts.find(product => stringValue(product, 'id') === groupBuyForm.productId);
+      if (selectedProduct && arrayValue(selectedProduct, 'variants').length > 0 && !groupBuyForm.variantId) {
+        throw new Error('请选择售卖规格');
+      }
+      const payload = groupBuyPayload(groupBuyForm);
+      const groupBuy = groupBuyForm.id
+        ? await apiPut<JsonRecord>(`/api/admin/mall/group-buys/${groupBuyForm.id}`, payload)
+        : await apiPost<JsonRecord>('/api/admin/mall/group-buys', payload);
+      setData(current => ({
+        ...current,
+        mallGroupBuys: upsertRecordList(current.mallGroupBuys, groupBuy),
+      }));
+      setGroupBuyForm(emptyGroupBuyForm);
+      showMessage('success', '集采活动已保存');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      showMessage('error', message || '集采活动保存失败');
+      throw error;
+    }
+  };
+
+  const editGroupBuy = (groupBuy: JsonRecord) => {
+    setGroupBuyForm(groupBuyToForm(groupBuy));
+  };
+
+  const groupBuyActionFallbackStatus = (action: string) => {
+    const statuses: Record<string, string> = {
+      publish: 'published',
+      offline: 'offline',
+      'force-form': 'formed',
+      cancel: 'cancelled',
+      'confirm-procurement': 'procuring',
+    };
+    return statuses[action];
+  };
+
+  const buildGroupBuyActionPayload = (groupBuy: JsonRecord, action: string): JsonRecord => {
+    if (action !== 'extend') return {};
+    const currentEndsAt = datetimeLocalValue(stringValue(groupBuy, 'endsAt'));
+    const currentBalanceDueAt = datetimeLocalValue(stringValue(groupBuy, 'balanceDueAt'));
+    const nextEndsAt = window.prompt('新的活动结束时间', currentEndsAt);
+    if (nextEndsAt === null) {
+      throw new Error('已取消延期');
+    }
+    const nextBalanceDueAt = window.prompt('新的尾款截止时间', currentBalanceDueAt || nextEndsAt);
+    if (nextBalanceDueAt === null) {
+      throw new Error('已取消延期');
+    }
+    return {
+      endsAt: datetimeLocalToIso(nextEndsAt || currentEndsAt),
+      balanceDueAt: datetimeLocalToIso(nextBalanceDueAt || currentBalanceDueAt || nextEndsAt || currentEndsAt),
+    };
+  };
+
+  const handleGroupBuyAction = async (groupBuy: JsonRecord, action: string) => {
+    const id = stringValue(groupBuy, 'id');
+    try {
+      const unavailableReason = groupBuyActionUnavailableReason(groupBuy, action);
+      if (unavailableReason) {
+        showMessage('warning', unavailableReason);
+        return;
+      }
+      const confirmText = groupBuyActionConfirmText(groupBuy, action);
+      if (confirmText && !window.confirm(confirmText)) {
+        return;
+      }
+      const result = await apiPost<JsonRecord>(`/api/admin/mall/group-buys/${id}/${action}`, buildGroupBuyActionPayload(groupBuy, action));
+      const updatedActivity = groupBuyActionResultActivity(result);
+      setData(current => ({
+        ...current,
+        mallGroupBuys: updatedActivity
+          ? upsertRecordList(current.mallGroupBuys, updatedActivity)
+          : updateRecordList(current.mallGroupBuys, id, {
+              status: groupBuyActionFallbackStatus(action) || stringValue(current.mallGroupBuys.find(item => stringValue(item, 'id') === id), 'status'),
+              updatedAt: new Date().toISOString(),
+            }),
+      }));
+      const label = groupBuyActionOptions.find(option => option.action === action)?.label || '操作';
+      if (action === 'confirm-procurement') {
+        const orderCreation = recordValue(result, 'orderCreation');
+        const hasProcurementWarning = numberValue(orderCreation, 'missingAddressCount') > 0 || numberValue(orderCreation, 'stockFailedCount') > 0;
+        showMessage(hasProcurementWarning ? 'warning' : 'success', groupBuyProcurementMessage(result));
+      } else {
+        showMessage('success', `集采活动${label}成功`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (message === '已取消延期') return;
+      showMessage('error', message || '集采活动操作失败');
+    }
+  };
+
+  const openGroupBuyDetail = async (groupBuy: JsonRecord) => {
+    setGroupBuyDetailActivity(groupBuy);
+    setGroupBuyDetailOpen(true);
+    setGroupBuySubscriptions([]);
+    const requestId = `${stringValue(groupBuy, 'id')}-${Date.now()}`;
+    groupBuyDetailRequest.current = requestId;
+    try {
+      const id = stringValue(groupBuy, 'id');
+      const result = await apiGet<JsonRecord[] | JsonRecord>(`/api/admin/mall/group-buys/${id}/subscriptions`);
+      if (groupBuyDetailRequest.current !== requestId) return;
+      const subscriptions = Array.isArray(result)
+        ? result
+        : arrayValue(result, 'subscriptions').filter((item): item is JsonRecord => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
+      setGroupBuySubscriptions(subscriptions);
+    } catch (error) {
+      if (groupBuyDetailRequest.current !== requestId) return;
+      const message = error instanceof Error ? error.message : '集采订阅加载失败';
+      showMessage('error', message);
+    }
+  };
+
+  const closeGroupBuyDetail = () => {
+    setGroupBuyDetailOpen(false);
+    setGroupBuyDetailActivity(null);
+    setGroupBuySubscriptions([]);
+    groupBuyDetailRequest.current = '';
   };
 
   const updateCampaignStatus = async (id: string, status: string) => {
@@ -13593,6 +14402,28 @@ function App() {
           onReset={resetPromotionVenueForm}
           onSubmit={savePromotionVenue}
           onUploadImage={uploadProductImage}
+        />
+      );
+    }
+    if (activePageKey === 'mall.groupBuyPresale') {
+      return (
+        <MallGroupBuyPresaleSection
+          detailActivity={groupBuyDetailActivity}
+          detailOpen={groupBuyDetailOpen}
+          form={groupBuyForm}
+          groupBuys={data.mallGroupBuys}
+          modalOpen={groupBuyModalOpen}
+          products={data.mallProducts}
+          subscriptions={groupBuySubscriptions}
+          onAction={handleGroupBuyAction}
+          onChange={patch => setGroupBuyForm(current => ({ ...current, ...patch }))}
+          onCloseDetail={closeGroupBuyDetail}
+          onEdit={editGroupBuy}
+          onModalOpenChange={setGroupBuyModalOpen}
+          onOpenDetail={openGroupBuyDetail}
+          onReset={resetGroupBuyForm}
+          onSubmit={saveGroupBuy}
+          onTiersChange={updater => setGroupBuyForm(current => ({ ...current, tiers: updater(current.tiers) }))}
         />
       );
     }

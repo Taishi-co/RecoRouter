@@ -2542,6 +2542,81 @@ td span {
   font-weight: 900;
 }
 
+.group-buy-modal {
+  width: min(920px, calc(100vw - 48px));
+}
+
+.group-buy-detail-modal {
+  width: min(1100px, calc(100vw - 48px));
+}
+
+.group-buy-table-wrap table {
+  min-width: 1040px;
+}
+
+.group-buy-table-wrap td {
+  vertical-align: top;
+}
+
+.group-buy-table-wrap td strong,
+.group-buy-table-wrap td small {
+  display: block;
+  max-width: 220px;
+  overflow-wrap: anywhere;
+}
+
+.group-buy-actions {
+  max-width: 360px;
+  flex-wrap: wrap;
+}
+
+.group-buy-tier-list {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.group-buy-tier-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(140px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  min-width: 0;
+}
+
+.group-buy-tier-row label {
+  min-width: 0;
+}
+
+.group-buy-progress {
+  display: grid;
+  gap: 6px;
+  min-width: 120px;
+  color: #253047;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.group-buy-progress i {
+  display: block;
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  background: #e7ece5;
+  border-radius: 999px;
+}
+
+.group-buy-progress b {
+  display: block;
+  height: 100%;
+  background: #4f8f5a;
+  border-radius: inherit;
+}
+
+.group-buy-status {
+  white-space: nowrap;
+}
+
 .campaign-product-picker {
   max-height: 360px;
   overflow: auto;
@@ -4252,6 +4327,19 @@ textarea:focus {
   .modal-panel,
   .order-detail-modal {
     width: min(100%, calc(100vw - 24px));
+  }
+
+  .group-buy-modal,
+  .group-buy-detail-modal {
+    width: min(100%, calc(100vw - 24px));
+  }
+
+  .group-buy-tier-row {
+    grid-template-columns: 1fr;
+  }
+
+  .group-buy-actions {
+    max-width: 100%;
   }
 
   .order-detail-head,
