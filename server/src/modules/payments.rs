@@ -72,6 +72,8 @@ enum PaymentBusinessType {
     OrderFare,
     OrderCommission,
     MallOrder,
+    MallGroupBuyDeposit,
+    MallGroupBuyBalance,
 }
 
 impl PaymentBusinessType {
@@ -80,6 +82,8 @@ impl PaymentBusinessType {
             Self::OrderFare => "order_fare",
             Self::OrderCommission => "order_commission",
             Self::MallOrder => "mall_order",
+            Self::MallGroupBuyDeposit => "mall_group_buy_deposit",
+            Self::MallGroupBuyBalance => "mall_group_buy_balance",
         }
     }
 }
@@ -92,6 +96,8 @@ impl FromStr for PaymentBusinessType {
             "" | "order_fare" | "fare" => Ok(Self::OrderFare),
             "order_commission" | "commission" => Ok(Self::OrderCommission),
             "mall_order" | "mall" => Ok(Self::MallOrder),
+            "mall_group_buy_deposit" | "group_buy_deposit" => Ok(Self::MallGroupBuyDeposit),
+            "mall_group_buy_balance" | "group_buy_balance" => Ok(Self::MallGroupBuyBalance),
             _ => Err(ApiError::BadRequest("不支持的支付业务类型".to_string())),
         }
     }
@@ -464,6 +470,52 @@ async fn fetch_payable_order(
         .fetch_optional(pool)
         .await?
         .ok_or_else(|| ApiError::NotFound("商城订单不存在".to_string())),
+        PaymentBusinessType::MallGroupBuyDeposit => sqlx::query_as::<_, PayableOrderRow>(
+            r#"
+            SELECT
+                subscription.id,
+                subscription.status,
+                CASE
+                    WHEN subscription.deposit_paid_at IS NULL THEN 'pending'
+                    ELSE 'paid'
+                END::text AS payment_status,
+                NULL::text AS commission_payment_status,
+                NULL::float8 AS fare_price,
+                NULL::float8 AS commission_amount,
+                subscription.deposit_cents AS payable_cents,
+                activity.name AS cargo_name
+            FROM mall_group_buy_subscriptions subscription
+            JOIN mall_group_buy_activities activity ON activity.id = subscription.activity_id
+            WHERE subscription.id = $1
+            "#,
+        )
+        .bind(order_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("集采认购单不存在".to_string())),
+        PaymentBusinessType::MallGroupBuyBalance => sqlx::query_as::<_, PayableOrderRow>(
+            r#"
+            SELECT
+                subscription.id,
+                subscription.status,
+                CASE
+                    WHEN subscription.balance_paid_at IS NULL THEN 'pending'
+                    ELSE 'paid'
+                END::text AS payment_status,
+                NULL::text AS commission_payment_status,
+                NULL::float8 AS fare_price,
+                NULL::float8 AS commission_amount,
+                subscription.balance_cents AS payable_cents,
+                activity.name AS cargo_name
+            FROM mall_group_buy_subscriptions subscription
+            JOIN mall_group_buy_activities activity ON activity.id = subscription.activity_id
+            WHERE subscription.id = $1
+            "#,
+        )
+        .bind(order_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("集采认购单不存在".to_string())),
     }
 }
 
@@ -529,6 +581,22 @@ fn validate_payable_order(
                 return Err(ApiError::BadRequest("商城订单已支付".to_string()));
             }
         }
+        PaymentBusinessType::MallGroupBuyDeposit => {
+            if order.status.as_deref() != Some("pending_deposit") {
+                return Err(ApiError::BadRequest("当前认购单不可支付定金".to_string()));
+            }
+            if order.payment_status.as_deref() == Some("paid") {
+                return Err(ApiError::BadRequest("定金已支付".to_string()));
+            }
+        }
+        PaymentBusinessType::MallGroupBuyBalance => {
+            if order.status.as_deref() != Some("pending_balance") {
+                return Err(ApiError::BadRequest("当前认购单不可支付尾款".to_string()));
+            }
+            if order.payment_status.as_deref() == Some("paid") {
+                return Err(ApiError::BadRequest("尾款已支付".to_string()));
+            }
+        }
     }
     Ok(())
 }
@@ -540,7 +608,9 @@ fn payable_amount_cents(
     let amount = match business_type {
         PaymentBusinessType::OrderFare => order.fare_price.unwrap_or(0.0),
         PaymentBusinessType::OrderCommission => order.commission_amount.unwrap_or(0.0),
-        PaymentBusinessType::MallOrder => {
+        PaymentBusinessType::MallOrder
+        | PaymentBusinessType::MallGroupBuyDeposit
+        | PaymentBusinessType::MallGroupBuyBalance => {
             let cents = order.payable_cents.unwrap_or_default();
             if cents <= 0 {
                 return Err(ApiError::BadRequest("支付金额必须大于0".to_string()));
@@ -600,6 +670,20 @@ async fn mark_payment_success(
             crate::modules::mall::settle_mall_order_payment_success(pool, &payment.business_id)
                 .await?;
         }
+        PaymentBusinessType::MallGroupBuyDeposit => {
+            crate::modules::mall::settle_group_buy_deposit_payment_success(
+                pool,
+                &payment.business_id,
+            )
+            .await?;
+        }
+        PaymentBusinessType::MallGroupBuyBalance => {
+            crate::modules::mall::settle_group_buy_balance_payment_success(
+                pool,
+                &payment.business_id,
+            )
+            .await?;
+        }
     }
 
     Ok(())
@@ -643,6 +727,14 @@ async fn wechat_create_jsapi_prepay(
         PaymentBusinessType::MallOrder => format!(
             "RecoRouter商城-{}",
             order.cargo_name.as_deref().unwrap_or("本地鲜选")
+        ),
+        PaymentBusinessType::MallGroupBuyDeposit => format!(
+            "叁友甄选集采定金-{}",
+            order.cargo_name.as_deref().unwrap_or("集采")
+        ),
+        PaymentBusinessType::MallGroupBuyBalance => format!(
+            "叁友甄选集采尾款-{}",
+            order.cargo_name.as_deref().unwrap_or("集采")
         ),
     };
     let description = truncate_chars(&description, 127);
@@ -753,7 +845,9 @@ impl WechatPayConfig {
         business_type: PaymentBusinessType,
     ) -> ApiResult<Self> {
         let config_service = match business_type {
-            PaymentBusinessType::MallOrder => crate::config::ApiService::Mall,
+            PaymentBusinessType::MallOrder
+            | PaymentBusinessType::MallGroupBuyDeposit
+            | PaymentBusinessType::MallGroupBuyBalance => crate::config::ApiService::Mall,
             PaymentBusinessType::OrderFare | PaymentBusinessType::OrderCommission => service,
         };
         Self::from_env_for_service(config_service)
@@ -785,8 +879,8 @@ impl fmt::Display for PaymentProvider {
 #[cfg(test)]
 mod tests {
     use super::{
-        decrypt_wechat_notification, new_out_trade_no, with_wechat_json_headers, PaymentProvider,
-        WechatJsapiClientPayload, WECHAT_JSAPI_URL,
+        decrypt_wechat_notification, new_out_trade_no, with_wechat_json_headers,
+        PaymentBusinessType, PaymentProvider, WechatJsapiClientPayload, WECHAT_JSAPI_URL,
     };
     use crate::wechat_pay::WechatNotifyResource;
 
@@ -805,6 +899,21 @@ mod tests {
             PaymentProvider::Douyin
         );
         assert!("bank".parse::<PaymentProvider>().is_err());
+    }
+
+    #[test]
+    fn parses_group_buy_payment_business_types() {
+        let deposit = "mall_group_buy_deposit"
+            .parse::<PaymentBusinessType>()
+            .unwrap();
+        assert_eq!(deposit, PaymentBusinessType::MallGroupBuyDeposit);
+        assert_eq!(deposit.as_str(), "mall_group_buy_deposit");
+
+        let balance = "mall_group_buy_balance"
+            .parse::<PaymentBusinessType>()
+            .unwrap();
+        assert_eq!(balance, PaymentBusinessType::MallGroupBuyBalance);
+        assert_eq!(balance.as_str(), "mall_group_buy_balance");
     }
 
     #[test]

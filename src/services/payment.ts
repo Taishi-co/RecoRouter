@@ -2,7 +2,12 @@ import Taro from '@tarojs/taro'
 import { Network } from '@/network'
 
 export type PaymentProvider = 'wechat' | 'alipay' | 'douyin'
-export type PaymentBusinessType = 'order_fare' | 'order_commission' | 'mall_order'
+export type PaymentBusinessType =
+  | 'order_fare'
+  | 'order_commission'
+  | 'mall_order'
+  | 'mall_group_buy_deposit'
+  | 'mall_group_buy_balance'
 
 interface StartPaymentOptions {
   orderId: string
