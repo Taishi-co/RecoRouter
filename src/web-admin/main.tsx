@@ -378,8 +378,18 @@ interface GroupBuyTierForm {
 interface GroupBuyForm {
   id: string;
   name: string;
+  productMode: 'existing' | 'new';
   productId: string;
   variantId: string;
+  newProductName: string;
+  newProductSku: string;
+  newProductCategoryCode: string;
+  newProductSpecification: string;
+  newProductSaleMethod: string;
+  newProductPriceYuan: string;
+  newProductSupplyPriceYuan: string;
+  newProductStock: string;
+  newProductDescription: string;
   startsAt: string;
   endsAt: string;
   balanceDueAt: string;
@@ -1217,8 +1227,18 @@ const initialPromotionVenueForm: PromotionVenueForm = {
 const emptyGroupBuyForm: GroupBuyForm = {
   id: '',
   name: '',
+  productMode: 'existing',
   productId: '',
   variantId: '',
+  newProductName: '',
+  newProductSku: '',
+  newProductCategoryCode: 'fruit',
+  newProductSpecification: '1份',
+  newProductSaleMethod: '按份',
+  newProductPriceYuan: '19.90',
+  newProductSupplyPriceYuan: '12.80',
+  newProductStock: '100',
+  newProductDescription: '',
   startsAt: '',
   endsAt: '',
   balanceDueAt: '',
@@ -2992,8 +3012,18 @@ function groupBuyToForm(groupBuy: JsonRecord): GroupBuyForm {
   return {
     id: stringValue(groupBuy, 'id'),
     name: stringValue(groupBuy, 'name'),
+    productMode: 'existing',
     productId: stringValue(groupBuy, 'productId'),
     variantId: stringValue(groupBuy, 'variantId'),
+    newProductName: '',
+    newProductSku: '',
+    newProductCategoryCode: 'fruit',
+    newProductSpecification: '1份',
+    newProductSaleMethod: '按份',
+    newProductPriceYuan: '19.90',
+    newProductSupplyPriceYuan: '12.80',
+    newProductStock: '100',
+    newProductDescription: '',
     startsAt: datetimeLocalValue(stringValue(groupBuy, 'startsAt')),
     endsAt: datetimeLocalValue(stringValue(groupBuy, 'endsAt')),
     balanceDueAt: datetimeLocalValue(stringValue(groupBuy, 'balanceDueAt')),
@@ -3098,6 +3128,47 @@ function groupBuyPayload(form: GroupBuyForm) {
     depositType: form.depositType,
     depositValue: groupBuyDepositValueFromForm(form.depositType, form.depositValue),
     tiers,
+  };
+}
+
+function groupBuyInlineProductToProductForm(form: GroupBuyForm, fallbackCategoryCode: string): ProductForm {
+  const productName = form.newProductName.trim();
+  const specification = form.newProductSpecification.trim() || '1份';
+  const saleMethod = form.newProductSaleMethod.trim() || '按份';
+  const priceYuan = form.newProductPriceYuan.trim() || form.tiers[0]?.priceYuan || '19.90';
+  const supplyPriceYuan = form.newProductSupplyPriceYuan.trim() || '1.00';
+  const stock = form.newProductStock.trim() || form.minGroupQuantity || '100';
+  const sku = form.newProductSku.trim() || `GBUY-${Date.now()}`;
+  return {
+    ...initialProductForm,
+    name: productName,
+    sku,
+    categoryCode: form.newProductCategoryCode.trim() || fallbackCategoryCode || 'fruit',
+    subtitle: specification,
+    description: form.newProductDescription.trim() || `${productName || form.name}集采预售商品`,
+    specification,
+    saleMethod,
+    priceYuan,
+    supplyPriceYuan,
+    stock,
+    stockAlertThreshold: '10',
+    minimumOrderQuantity: '1',
+    tags: '',
+    status: 'on_sale',
+    variants: [{
+      ...createDefaultProductVariantForm(),
+      id: 'default',
+      name: specification,
+      sku,
+      specification,
+      saleMethod,
+      priceYuan,
+      supplyPriceYuan,
+      stock,
+      minimumOrderQuantity: '1',
+      status: 'on_sale',
+      sortOrder: '1',
+    }],
   };
 }
 
@@ -10732,6 +10803,7 @@ function MallPromotionVenuesSection({
 }
 
 function MallGroupBuyPresaleSection({
+  categories,
   groupBuys,
   products,
   form,
@@ -10749,6 +10821,7 @@ function MallGroupBuyPresaleSection({
   onSubmit,
   onTiersChange,
 }: {
+  categories: JsonRecord[];
   groupBuys: JsonRecord[];
   products: JsonRecord[];
   form: GroupBuyForm;
@@ -10766,9 +10839,22 @@ function MallGroupBuyPresaleSection({
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onTiersChange: (updater: (tiers: GroupBuyTierForm[]) => GroupBuyTierForm[]) => void;
 }) {
+  const [groupBuyProductKeyword, setGroupBuyProductKeyword] = useState('');
   const selectedProduct = products.find(product => stringValue(product, 'id') === form.productId);
   const productVariants = selectedProduct ? productVariantsFromRecord(selectedProduct) : [];
   const hasExplicitVariants = selectedProduct ? arrayValue(selectedProduct, 'variants').length > 0 : false;
+  const visibleProducts = products
+    .filter(product => {
+      const keyword = groupBuyProductKeyword.trim().toLowerCase();
+      if (!keyword) return true;
+      return [
+        stringValue(product, 'name'),
+        stringValue(product, 'sku'),
+        stringValue(product, 'categoryName'),
+        stringValue(product, 'categoryCode'),
+      ].some(value => value.toLowerCase().includes(keyword));
+    })
+    .slice(0, 80);
   const updateTier = (id: string, patch: Partial<GroupBuyTierForm>) => {
     onTiersChange(tiers => tiers.map(tier => tier.id === id ? { ...tier, ...patch } : tier));
   };
@@ -10777,14 +10863,16 @@ function MallGroupBuyPresaleSection({
   };
   const openCreate = () => {
     onReset();
+    setGroupBuyProductKeyword('');
     onModalOpenChange(true);
   };
   const openEdit = (groupBuy: JsonRecord) => {
     onEdit(groupBuy);
+    setGroupBuyProductKeyword('');
     onModalOpenChange(true);
   };
   const submit = async (event: FormEvent<HTMLFormElement>) => {
-    if (hasExplicitVariants && !form.variantId) {
+    if (form.productMode === 'existing' && hasExplicitVariants && !form.variantId) {
       event.preventDefault();
       return;
     }
@@ -10910,35 +10998,114 @@ function MallGroupBuyPresaleSection({
                 活动名称
                 <input required value={form.name} onChange={event => onChange({ name: event.target.value })} />
               </label>
-              <label>
-                商品
-                <select required value={form.productId} onChange={event => onChange({ productId: event.target.value, variantId: '' })}>
-                  <option value="">请选择商品</option>
-                  {products.map(product => {
-                    const productId = stringValue(product, 'id');
-                    return (
-                      <option key={productId} value={productId}>
-                        {stringValue(product, 'name', '未命名商品')}
-                      </option>
-                    );
-                  })}
-                </select>
-              </label>
-              <label>
-                售卖规格
-                <select
-                  required={hasExplicitVariants}
-                  value={form.variantId}
-                  onChange={event => onChange({ variantId: event.target.value })}
-                >
-                  <option value="">{hasExplicitVariants ? '请选择规格' : '默认规格'}</option>
-                  {productVariants.map(variant => (
-                    <option key={variant.id} value={variant.id}>
-                      {variant.specification || variant.name || variant.sku || variant.id}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <section className="campaign-rule-card wide gbuy-product-source">
+                <div className="campaign-rule-card-head">
+                  <strong>集采商品</strong>
+                  <div className="segmented-control">
+                    <button
+                      className={form.productMode === 'existing' ? 'active' : ''}
+                      type="button"
+                      onClick={() => onChange({ productMode: 'existing' })}
+                    >
+                      选择已有商品
+                    </button>
+                    <button
+                      className={form.productMode === 'new' ? 'active' : ''}
+                      type="button"
+                      onClick={() => onChange({ productMode: 'new', productId: '', variantId: '' })}
+                    >
+                      现场新建商品
+                    </button>
+                  </div>
+                </div>
+                {form.productMode === 'existing' ? (
+                  <>
+                    <input
+                      value={groupBuyProductKeyword}
+                      onChange={event => setGroupBuyProductKeyword(event.target.value)}
+                      placeholder="搜索商品名称、类目、SKU"
+                    />
+                    <div className="campaign-product-picker gbuy-product-picker">
+                      {visibleProducts.map(product => {
+                        const productId = stringValue(product, 'id');
+                        return (
+                          <label className={form.productId === productId ? 'selected' : ''} key={productId}>
+                            <input
+                              checked={form.productId === productId}
+                              type="radio"
+                              onChange={() => onChange({ productId, variantId: '' })}
+                            />
+                            <ProductImage record={product} />
+                          </label>
+                        );
+                      })}
+                      {!visibleProducts.length ? <EmptyState text="没有匹配商品" /> : null}
+                    </div>
+                    <label className="wide">
+                      售卖规格
+                      <select
+                        disabled={!selectedProduct}
+                        required={hasExplicitVariants}
+                        value={form.variantId}
+                        onChange={event => onChange({ variantId: event.target.value })}
+                      >
+                        <option value="">{hasExplicitVariants ? '请选择规格' : '默认规格'}</option>
+                        {productVariants.map(variant => (
+                          <option key={variant.id} value={variant.id}>
+                            {variant.specification || variant.name || variant.sku || variant.id}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </>
+                ) : (
+                  <div className="form-grid gbuy-inline-product-form">
+                    <label>
+                      商品名称
+                      <input required value={form.newProductName} onChange={event => onChange({ newProductName: event.target.value })} />
+                    </label>
+                    <label>
+                      SKU
+                      <input value={form.newProductSku} onChange={event => onChange({ newProductSku: event.target.value })} placeholder="不填自动生成" />
+                    </label>
+                    <label>
+                      类目
+                      <select value={form.newProductCategoryCode} onChange={event => onChange({ newProductCategoryCode: event.target.value })}>
+                        {!categories.length ? <option value="fruit">生鲜水果</option> : null}
+                        {categories.map(category => (
+                          <option key={stringValue(category, 'code')} value={stringValue(category, 'code')}>
+                            {stringValue(category, 'name', stringValue(category, 'code'))}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      规格
+                      <input required value={form.newProductSpecification} onChange={event => onChange({ newProductSpecification: event.target.value })} placeholder="100斤 / 1箱 / 1份" />
+                    </label>
+                    <label>
+                      售卖方式
+                      <input required value={form.newProductSaleMethod} onChange={event => onChange({ newProductSaleMethod: event.target.value })} placeholder="按斤 / 按箱 / 按份" />
+                    </label>
+                    <label>
+                      售价
+                      <input min="0.01" required step="0.01" type="number" value={form.newProductPriceYuan} onChange={event => onChange({ newProductPriceYuan: event.target.value })} />
+                    </label>
+                    <label>
+                      进货价
+                      <input min="0.01" required step="0.01" type="number" value={form.newProductSupplyPriceYuan} onChange={event => onChange({ newProductSupplyPriceYuan: event.target.value })} />
+                    </label>
+                    <label>
+                      库存
+                      <input min="0" required type="number" value={form.newProductStock} onChange={event => onChange({ newProductStock: event.target.value })} />
+                    </label>
+                    <label className="wide">
+                      商品说明
+                      <textarea required value={form.newProductDescription} onChange={event => onChange({ newProductDescription: event.target.value })} />
+                    </label>
+                  </div>
+                )}
+              </section>
               <label>
                 活动开始
                 <input required type="datetime-local" value={form.startsAt} onChange={event => onChange({ startsAt: event.target.value })} />
@@ -13471,13 +13638,68 @@ function App() {
   const saveGroupBuy = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     try {
-      const selectedProduct = data.mallProducts.find(product => stringValue(product, 'id') === groupBuyForm.productId);
-      if (selectedProduct && arrayValue(selectedProduct, 'variants').length > 0 && !groupBuyForm.variantId) {
+      let formForSave = groupBuyForm;
+      let productsForValidation = data.mallProducts;
+      if (groupBuyForm.productMode === 'new') {
+        const inlineProductForm = groupBuyInlineProductToProductForm(
+          groupBuyForm,
+          stringValue(data.mallCategories[0], 'code', 'fruit'),
+        );
+        validateProductForm(inlineProductForm);
+        const tags = inlineProductForm.tags
+          .split(',')
+          .map(tag => tag.trim())
+          .filter(Boolean);
+        const images = productFormImages(inlineProductForm);
+        const variants = productVariantPayload(inlineProductForm);
+        const compatibility = productCompatibilityFields(inlineProductForm);
+        const product = await apiPost<JsonRecord>('/api/admin/mall/products', {
+          name: inlineProductForm.name,
+          sku: inlineProductForm.sku,
+          categoryCode: inlineProductForm.categoryCode,
+          subtitle: inlineProductForm.subtitle,
+          description: inlineProductForm.description,
+          imageUrl: images[0] || '',
+          images,
+          variants,
+          specification: compatibility.specification,
+          saleMethod: compatibility.saleMethod,
+          priceCents: moneyFromYuan(compatibility.priceYuan),
+          supplyPriceCents: moneyFromYuan(compatibility.supplyPriceYuan),
+          stock: Number(compatibility.stock) || 0,
+          stockAlertThreshold: Number(inlineProductForm.stockAlertThreshold) || 10,
+          minimumOrderQuantity: Number(compatibility.minimumOrderQuantity) || 1,
+          lengthCm: optionalNumber(compatibility.lengthCm),
+          widthCm: optionalNumber(compatibility.widthCm),
+          heightCm: optionalNumber(compatibility.heightCm),
+          volumeLiters: optionalNumber(compatibility.volumeLiters),
+          weightKg: optionalNumber(compatibility.weightKg),
+          status: inlineProductForm.status,
+          tags,
+          deliveryMinutes: Number(inlineProductForm.deliveryMinutes) || 18,
+          coldChainRequired: inlineProductForm.coldChainRequired,
+          procurementBuyerIds: inlineProductForm.procurementBuyerIds,
+          qualificationReports: productQualificationReportsPayload(inlineProductForm),
+          hideSupplier: inlineProductForm.hideSupplier,
+        });
+        formForSave = {
+          ...groupBuyForm,
+          productId: stringValue(product, 'id'),
+          variantId: productVariantsFromRecord(product)[0]?.id || '',
+        };
+        productsForValidation = upsertRecordList(data.mallProducts, product);
+        setData(current => ({
+          ...current,
+          mallProducts: upsertRecordList(current.mallProducts, product),
+        }));
+      }
+      const selectedProduct = productsForValidation.find(product => stringValue(product, 'id') === formForSave.productId);
+      if (selectedProduct && arrayValue(selectedProduct, 'variants').length > 0 && !formForSave.variantId) {
         throw new Error('请选择售卖规格');
       }
-      const payload = groupBuyPayload(groupBuyForm);
-      const groupBuy = groupBuyForm.id
-        ? await apiPut<JsonRecord>(`/api/admin/mall/group-buys/${groupBuyForm.id}`, payload)
+      const payload = groupBuyPayload(formForSave);
+      const groupBuy = formForSave.id
+        ? await apiPut<JsonRecord>(`/api/admin/mall/group-buys/${formForSave.id}`, payload)
         : await apiPost<JsonRecord>('/api/admin/mall/group-buys', payload);
       setData(current => ({
         ...current,
@@ -14408,6 +14630,7 @@ function App() {
     if (activePageKey === 'mall.groupBuyPresale') {
       return (
         <MallGroupBuyPresaleSection
+          categories={data.mallCategories}
           detailActivity={groupBuyDetailActivity}
           detailOpen={groupBuyDetailOpen}
           form={groupBuyForm}
