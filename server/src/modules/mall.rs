@@ -1440,6 +1440,13 @@ fn can_confirm_group_buy_procurement(status: &str, pending_balance_count: i64) -
     status != "formed" || pending_balance_count == 0
 }
 
+pub fn is_public_group_buy_status(status: &str) -> bool {
+    matches!(
+        status,
+        "published" | "enrolling" | "formed" | "ops_review" | "procuring"
+    )
+}
+
 struct GroupBuyActivitySpecBinding {
     variant_id: String,
     unit_name: String,
@@ -1457,6 +1464,18 @@ fn group_buy_spec_rebind_requested(product_id: Option<&str>, variant_id: Option<
 }
 
 fn can_rebind_group_buy_spec(active_subscription_count: i64) -> bool {
+    active_subscription_count == 0
+}
+
+fn group_buy_price_rule_update_requested(
+    tiers_present: bool,
+    deposit_type_present: bool,
+    deposit_value_present: bool,
+) -> bool {
+    tiers_present || deposit_type_present || deposit_value_present
+}
+
+fn can_update_group_buy_price_rules(active_subscription_count: i64) -> bool {
     active_subscription_count == 0
 }
 
@@ -2271,7 +2290,7 @@ where
                 'refunded'
               )
           ) subscription_totals ON true
-          WHERE activity.status IN ('published', 'enrolling', 'formed')
+          WHERE activity.status IN ('published', 'enrolling', 'formed', 'ops_review', 'procuring')
             AND product.status = 'on_sale'
         ) rows
         "#,
@@ -2411,14 +2430,16 @@ where
     let estimate_tier = select_group_buy_tier(&tiers, target_quantity)
         .or_else(|| tiers.first().cloned())
         .ok_or_else(|| ApiError::BadRequest("阶梯价格不能为空".to_string()))?;
+    let minimum_tier_price_cents = group_buy_minimum_tier_price_cents(&tiers)
+        .ok_or_else(|| ApiError::BadRequest("阶梯价格不能为空".to_string()))?;
     let estimated_total_cents = i64::from(user_quantity) * estimate_tier.price_cents;
-    let deposit_cents = calculate_group_buy_deposit_cents(
+    let deposit_cents = calculate_group_buy_capped_deposit_cents(
         &activity.deposit_type,
         activity.deposit_value,
         user_quantity,
         estimate_tier.price_cents,
-    )
-    .clamp(0, estimated_total_cents);
+        minimum_tier_price_cents,
+    );
     let balance_cents = (estimated_total_cents - deposit_cents).max(0);
 
     let subscription = if let Some(existing) = existing {
@@ -2734,21 +2755,54 @@ async fn admin_update_group_buy<S>(
 where
     S: Storage,
 {
-    let existing = fetch_group_buy_activity_row(&state.db, &id).await?;
+    let requested_name = optional_non_empty(body.name, "活动名称不能为空")?;
+    let requested_product_id = optional_non_empty(body.product_id, "商品ID不能为空")?;
+    let requested_variant_id = optional_non_empty(body.variant_id, "商品规格不能为空")?;
+    let starts_at = body.starts_at;
+    let ends_at = body.ends_at;
+    let balance_due_at = body.balance_due_at;
+    let min_group_quantity = body.min_group_quantity;
+    let max_quantity_per_user = body.max_quantity_per_user;
+    let min_credit_score = body.min_credit_score;
+    let overdue_credit_penalty = body.overdue_credit_penalty;
+    let deposit_value = body.deposit_value;
+    let tiers_present = body.tiers.is_some();
+    let raw_tiers = body.tiers;
+    let deposit_type_present = body.deposit_type.is_some();
+    let raw_deposit_type = body.deposit_type;
+    if let Some(value) = min_group_quantity {
+        validate_positive_i32(value, "成团数量必须大于 0")?;
+    }
+    validate_optional_positive_i32(max_quantity_per_user, "单人限购数量必须大于 0")?;
+    validate_optional_non_negative_i32(min_credit_score, "最低信用分不能为负数")?;
+    validate_optional_non_negative_i32(overdue_credit_penalty, "逾期扣分不能为负数")?;
+
+    let spec_rebind_requested = group_buy_spec_rebind_requested(
+        requested_product_id.as_deref(),
+        requested_variant_id.as_deref(),
+    );
+    let price_rule_update_requested = group_buy_price_rule_update_requested(
+        tiers_present,
+        deposit_type_present,
+        deposit_value.is_some(),
+    );
+
+    let mut tx = state.db.begin().await?;
+    let existing = fetch_group_buy_activity_row_for_update_tx(&mut tx, &id).await?;
     if !matches!(
         existing.status.as_str(),
         "draft" | "published" | "enrolling"
     ) {
         return Err(ApiError::BadRequest("当前状态不可编辑".to_string()));
     }
-    let requested_product_id = optional_non_empty(body.product_id, "商品ID不能为空")?;
-    let requested_variant_id = optional_non_empty(body.variant_id, "商品规格不能为空")?;
-    let spec_rebind_requested = group_buy_spec_rebind_requested(
-        requested_product_id.as_deref(),
-        requested_variant_id.as_deref(),
-    );
-    let spec_rebind = if spec_rebind_requested {
-        let active_subscription_count: i64 = sqlx::query_scalar(
+    validate_group_buy_time_window(
+        starts_at.unwrap_or(existing.starts_at),
+        ends_at.unwrap_or(existing.ends_at),
+        balance_due_at.or(existing.balance_due_at),
+    )?;
+
+    let active_subscription_count = if spec_rebind_requested || price_rule_update_requested {
+        sqlx::query_scalar::<_, i64>(
             r#"
             SELECT count(*)
             FROM mall_group_buy_subscriptions
@@ -2762,13 +2816,33 @@ where
             "#,
         )
         .bind(&id)
-        .fetch_one(&state.db)
-        .await?;
-        if !can_rebind_group_buy_spec(active_subscription_count) {
-            return Err(ApiError::BadRequest(
-                "已有用户认购，不能修改商品规格".to_string(),
-            ));
-        }
+        .fetch_one(&mut *tx)
+        .await?
+    } else {
+        0
+    };
+    if spec_rebind_requested && !can_rebind_group_buy_spec(active_subscription_count) {
+        return Err(ApiError::BadRequest(
+            "已有用户认购，不能修改商品规格".to_string(),
+        ));
+    }
+    if price_rule_update_requested && !can_update_group_buy_price_rules(active_subscription_count) {
+        return Err(ApiError::BadRequest(
+            "已有用户认购，不能修改价格或订金规则".to_string(),
+        ));
+    }
+    let tiers = match raw_tiers {
+        Some(tiers) => Some(normalize_group_buy_tiers(tiers)?),
+        None => None,
+    };
+    let deposit_type = match raw_deposit_type.as_deref() {
+        Some(value) => Some(normalize_group_buy_deposit_type(Some(value))?),
+        None => None,
+    };
+    if let Some(value) = deposit_value {
+        validate_non_negative_i32(value, "订金数值不能为负数")?;
+    }
+    let spec_rebind = if spec_rebind_requested {
         let resolved_product_id = requested_product_id
             .as_deref()
             .unwrap_or(existing.product_id.as_str());
@@ -2779,8 +2853,8 @@ where
         } else {
             existing.variant_id.as_deref()
         };
-        let variant = ensure_product_variant_can_sell(
-            &state.db,
+        let variant = ensure_product_variant_can_sell_tx(
+            &mut tx,
             resolved_product_id,
             variant_id_for_resolution,
             1,
@@ -2791,28 +2865,6 @@ where
     } else {
         None
     };
-    validate_group_buy_time_window(
-        body.starts_at.unwrap_or(existing.starts_at),
-        body.ends_at.unwrap_or(existing.ends_at),
-        body.balance_due_at.or(existing.balance_due_at),
-    )?;
-    let tiers = match body.tiers {
-        Some(tiers) => Some(normalize_group_buy_tiers(tiers)?),
-        None => None,
-    };
-    let deposit_type = match body.deposit_type.as_deref() {
-        Some(value) => Some(normalize_group_buy_deposit_type(Some(value))?),
-        None => None,
-    };
-    if let Some(value) = body.deposit_value {
-        validate_non_negative_i32(value, "订金数值不能为负数")?;
-    }
-    if let Some(value) = body.min_group_quantity {
-        validate_positive_i32(value, "成团数量必须大于 0")?;
-    }
-    validate_optional_positive_i32(body.max_quantity_per_user, "单人限购数量必须大于 0")?;
-    validate_optional_non_negative_i32(body.min_credit_score, "最低信用分不能为负数")?;
-    validate_optional_non_negative_i32(body.overdue_credit_penalty, "逾期扣分不能为负数")?;
 
     let activity = sqlx::query_scalar::<_, Value>(
         r#"
@@ -2838,7 +2890,7 @@ where
         "#,
     )
     .bind(&id)
-    .bind(optional_non_empty(body.name, "活动名称不能为空")?)
+    .bind(requested_name)
     .bind(
         spec_rebind
             .as_ref()
@@ -2854,21 +2906,21 @@ where
             .as_ref()
             .map(|(_, binding)| binding.unit_name.as_str()),
     )
-    .bind(body.starts_at)
-    .bind(body.ends_at)
-    .bind(body.balance_due_at)
-    .bind(body.min_group_quantity)
-    .bind(body.max_quantity_per_user)
-    .bind(body.min_credit_score)
-    .bind(body.overdue_credit_penalty)
+    .bind(starts_at)
+    .bind(ends_at)
+    .bind(balance_due_at)
+    .bind(min_group_quantity)
+    .bind(max_quantity_per_user)
+    .bind(min_credit_score)
+    .bind(overdue_credit_penalty)
     .bind(deposit_type)
-    .bind(body.deposit_value)
+    .bind(deposit_value)
     .bind(tiers.map(|tiers| json!(tiers)))
-    .fetch_optional(&state.db)
+    .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| ApiError::NotFound("团购活动不存在或状态已变化".to_string()))?;
-    insert_group_buy_event(
-        &state.db,
+    insert_group_buy_event_tx(
+        &mut tx,
         Some(&id),
         None,
         "updated",
@@ -2878,6 +2930,7 @@ where
         json!({}),
     )
     .await?;
+    tx.commit().await?;
     Ok(ok("团购活动更新成功", activity))
 }
 
@@ -3080,9 +3133,21 @@ where
         }
     }
 
-    repair_group_buy_order_fulfillment_codes(&state.db, &id).await?;
+    if let Err(err) = repair_group_buy_order_fulfillment_codes(&state.db, &id).await {
+        tracing::warn!(
+            ?err,
+            activity_id = %id,
+            "failed to repair group buy fulfillment codes before procurement confirmation"
+        );
+    }
     let procurement = create_group_buy_orders_for_activity(&state.db, &id).await?;
-    repair_group_buy_order_fulfillment_codes(&state.db, &id).await?;
+    if let Err(err) = repair_group_buy_order_fulfillment_codes(&state.db, &id).await {
+        tracing::warn!(
+            ?err,
+            activity_id = %id,
+            "failed to repair group buy fulfillment codes after procurement confirmation"
+        );
+    }
     let advanced_to_procuring = group_buy_procurement_can_advance(&procurement);
 
     let activity = sqlx::query_scalar::<_, Value>(
@@ -12928,6 +12993,28 @@ pub fn calculate_group_buy_deposit_cents(
     }
 }
 
+pub fn group_buy_minimum_tier_price_cents(tiers: &[GroupBuyTier]) -> Option<i64> {
+    tiers.iter().map(|tier| tier.price_cents).min()
+}
+
+pub fn calculate_group_buy_capped_deposit_cents(
+    deposit_type: &str,
+    deposit_value: i32,
+    quantity: i32,
+    estimated_unit_price_cents: i64,
+    minimum_unit_price_cents: i64,
+) -> i64 {
+    let estimated_total_cents = i64::from(quantity.max(0)) * estimated_unit_price_cents.max(0);
+    let minimum_total_cents = i64::from(quantity.max(0)) * minimum_unit_price_cents.max(0);
+    calculate_group_buy_deposit_cents(
+        deposit_type,
+        deposit_value,
+        quantity,
+        estimated_unit_price_cents,
+    )
+    .clamp(0, estimated_total_cents.min(minimum_total_cents))
+}
+
 fn desired_group_buy_subscription_quantity(
     _existing_quantity: Option<i32>,
     requested_quantity: i32,
@@ -13020,6 +13107,81 @@ async fn fetch_group_buy_activity_row(
     .ok_or_else(|| ApiError::NotFound("团购活动不存在".to_string()))
 }
 
+async fn fetch_group_buy_activity_row_for_update_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    activity_id: &str,
+) -> ApiResult<GroupBuyActivityRow> {
+    sqlx::query_as::<_, GroupBuyActivityRow>(
+        r#"
+        SELECT
+          id, product_id, variant_id, unit_name, status, starts_at, ends_at, balance_due_at,
+          min_group_quantity, max_quantity_per_user, min_credit_score,
+          overdue_credit_penalty, deposit_type, deposit_value, tiers
+        FROM mall_group_buy_activities
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+    )
+    .bind(activity_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("团购活动不存在".to_string()))
+}
+
+async fn ensure_product_variant_can_sell_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    product_id: &str,
+    variant_id: Option<&str>,
+    quantity: i32,
+) -> ApiResult<ProductVariant> {
+    let product = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT product_json(p, c.name)
+        FROM mall_products p
+        LEFT JOIN mall_categories c ON c.code = p.category_code
+        WHERE p.id = $1
+        "#,
+    )
+    .bind(product_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("商品不存在".to_string()))?;
+    if product.get("status").and_then(Value::as_str) != Some("on_sale") {
+        return Err(ApiError::NotFound("商品不存在或已下架".to_string()));
+    }
+    let variants_value = product
+        .get("variants")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let variants: Vec<ProductVariant> = serde_json::from_value(variants_value)
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+    let fallback_variant_id = product
+        .get("defaultVariantId")
+        .and_then(Value::as_str)
+        .or_else(|| variants.first().map(|variant| variant.id.as_str()));
+    let variant_id = variant_id
+        .and_then(|value| normalize_product_image_value(Some(value)))
+        .or_else(|| fallback_variant_id.map(str::to_string))
+        .ok_or_else(|| ApiError::BadRequest("商品规格不存在".to_string()))?;
+    let variant = variants
+        .into_iter()
+        .find(|variant| variant.id == variant_id)
+        .ok_or_else(|| ApiError::BadRequest("商品规格不存在".to_string()))?;
+    if variant.status != "on_sale" {
+        return Err(ApiError::NotFound("商品规格不存在或已下架".to_string()));
+    }
+    if quantity < variant.minimum_order_quantity {
+        return Err(ApiError::BadRequest(format!(
+            "{} 起订量为 {}",
+            variant.name, variant.minimum_order_quantity
+        )));
+    }
+    if variant.stock < quantity {
+        return Err(ApiError::BadRequest(format!("{} 库存不足", variant.name)));
+    }
+    Ok(variant)
+}
+
 async fn fetch_group_buy_activity_payload(
     pool: &PgPool,
     activity_id: &str,
@@ -13050,7 +13212,7 @@ async fn fetch_group_buy_activity_payload(
           AND (
             $2::boolean = false
             OR (
-              activity.status IN ('published', 'enrolling', 'formed')
+              activity.status IN ('published', 'enrolling', 'formed', 'ops_review', 'procuring')
               AND product.status = 'on_sale'
             )
           )
@@ -13769,7 +13931,15 @@ async fn create_group_buy_order_for_subscription(
     )
     .await?;
     tx.commit().await?;
-    ensure_fulfillment_code(pool, &order_id, address.pickup_point_id.as_deref(), None).await?;
+    if let Err(err) =
+        ensure_fulfillment_code(pool, &order_id, address.pickup_point_id.as_deref(), None).await
+    {
+        tracing::warn!(
+            ?err,
+            order_id = %order_id,
+            "failed to create group buy fulfillment code after order commit"
+        );
+    }
     Ok(GroupBuyOrderCreationOutcome::Created(order_id))
 }
 
@@ -15071,6 +15241,27 @@ mod tests {
     }
 
     #[test]
+    fn group_buy_deposit_is_capped_by_lowest_possible_final_total() {
+        let tiers = vec![
+            GroupBuyTier {
+                quantity: 100,
+                price_cents: 300,
+            },
+            GroupBuyTier {
+                quantity: 200,
+                price_cents: 200,
+            },
+        ];
+        let min_price = group_buy_minimum_tier_price_cents(&tiers).expect("min price");
+
+        assert_eq!(min_price, 200);
+        assert_eq!(
+            calculate_group_buy_capped_deposit_cents("percent", 100, 30, 300, min_price),
+            6_000
+        );
+    }
+
+    #[test]
     fn group_buy_force_form_uses_lowest_tier_below_first_threshold() {
         let tiers = vec![
             GroupBuyTier {
@@ -15164,6 +15355,28 @@ mod tests {
 
         assert!(can_rebind_group_buy_spec(0));
         assert!(!can_rebind_group_buy_spec(1));
+    }
+
+    #[test]
+    fn group_buy_price_rule_updates_require_no_active_subscription() {
+        assert!(!group_buy_price_rule_update_requested(false, false, false));
+        assert!(group_buy_price_rule_update_requested(true, false, false));
+        assert!(group_buy_price_rule_update_requested(false, true, false));
+        assert!(group_buy_price_rule_update_requested(false, false, true));
+
+        assert!(can_update_group_buy_price_rules(0));
+        assert!(!can_update_group_buy_price_rules(1));
+    }
+
+    #[test]
+    fn group_buy_public_visibility_includes_post_form_visible_states() {
+        assert!(is_public_group_buy_status("published"));
+        assert!(is_public_group_buy_status("enrolling"));
+        assert!(is_public_group_buy_status("formed"));
+        assert!(is_public_group_buy_status("ops_review"));
+        assert!(is_public_group_buy_status("procuring"));
+        assert!(!is_public_group_buy_status("offline"));
+        assert!(!is_public_group_buy_status("cancelled_refunding"));
     }
 
     #[test]
