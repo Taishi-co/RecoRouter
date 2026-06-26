@@ -1533,6 +1533,13 @@ export async function listSupportMessages(sessionId: string): Promise<SupportMes
   return apiGet(`/api/support/sessions/${sessionId}/messages`)
 }
 
+export async function updateSupportSessionStatus(
+  sessionId: string,
+  data: { status: 'open' | 'resolved' | 'closed'; lastMessage?: string; assignedAgentId?: string },
+): Promise<SupportSession> {
+  return apiPut(`/api/support/sessions/${sessionId}`, data)
+}
+
 export async function createSupportMessage(sessionId: string, data: {
   senderId?: string
   senderRole: string

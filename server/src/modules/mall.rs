@@ -133,6 +133,10 @@ where
             get(list_support_sessions::<S>).post(create_support_session::<S>),
         )
         .route(
+            "/api/support/sessions/:id",
+            put(update_support_session::<S>),
+        )
+        .route(
             "/api/support/sessions/:id/messages",
             get(list_support_messages::<S>).post(create_support_message::<S>),
         )
@@ -1504,6 +1508,16 @@ struct CreateSupportSessionRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct UpdateSupportSessionRequest {
+    status: Option<String>,
+    #[serde(alias = "assigned_agent_id")]
+    assigned_agent_id: Option<String>,
+    #[serde(alias = "last_message")]
+    last_message: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CreateSupportMessageRequest {
     #[serde(alias = "sender_id")]
     sender_id: Option<String>,
@@ -2304,15 +2318,10 @@ where
             SELECT COALESCE(sum(subscription.quantity), 0)::integer AS current_quantity
             FROM mall_group_buy_subscriptions subscription
             WHERE subscription.activity_id = activity.id
-              AND subscription.status NOT IN (
-                'deposit_refunded',
-                'balance_overdue_cancelled',
-                'activity_cancel_refunding',
-                'refunded'
-              )
+              AND subscription.status IN ('deposit_paid', 'pending_balance', 'balance_paid', 'order_created')
           ) subscription_totals ON true
           WHERE activity.status IN ('published', 'enrolling', 'formed', 'ops_review', 'procuring')
-            AND product.status = 'on_sale'
+            AND product.status IN ('on_sale', 'group_buy_only')
         ) rows
         "#,
     )
@@ -2421,7 +2430,11 @@ where
         ));
     }
 
-    let previous_quantity = existing.as_ref().map(|row| row.quantity).unwrap_or(0);
+    let previous_quantity = existing
+        .as_ref()
+        .filter(|row| is_group_buy_progress_status(row.status.as_str()))
+        .map(|row| row.quantity)
+        .unwrap_or(0);
     let user_quantity = desired_group_buy_subscription_quantity(
         existing.as_ref().map(|row| row.quantity),
         body.quantity,
@@ -2440,7 +2453,7 @@ where
         SELECT COALESCE(sum(quantity), 0)::integer
         FROM mall_group_buy_subscriptions
         WHERE activity_id = $1
-          AND status NOT IN ('deposit_refunded', 'balance_overdue_cancelled', 'activity_cancel_refunding', 'refunded')
+          AND status IN ('deposit_paid', 'pending_balance', 'balance_paid', 'order_created')
         "#,
     )
     .bind(&activity_id)
@@ -2668,13 +2681,16 @@ where
         LEFT JOIN mall_categories category ON category.code = product.category_code
         LEFT JOIN LATERAL (
           SELECT
-            COALESCE(sum(subscription.quantity), 0)::integer AS current_quantity,
-            count(*)::integer AS subscription_count,
+            COALESCE(sum(subscription.quantity) FILTER (
+              WHERE subscription.status IN ('deposit_paid', 'pending_balance', 'balance_paid', 'order_created')
+            ), 0)::integer AS current_quantity,
+            count(*) FILTER (
+              WHERE subscription.status NOT IN ('deposit_refunded', 'balance_overdue_cancelled', 'activity_cancel_refunding', 'refunded')
+            )::integer AS subscription_count,
             count(*) FILTER (WHERE subscription.status IN ('deposit_paid', 'pending_balance', 'balance_paid', 'order_created'))::integer AS deposit_paid_count,
             count(*) FILTER (WHERE subscription.status IN ('balance_paid', 'order_created'))::integer AS balance_paid_count
           FROM mall_group_buy_subscriptions subscription
           WHERE subscription.activity_id = activity.id
-            AND subscription.status NOT IN ('deposit_refunded', 'balance_overdue_cancelled', 'activity_cancel_refunding', 'refunded')
         ) subscription_totals ON true
         WHERE 1 = 1
         "#,
@@ -2718,7 +2734,8 @@ where
     let product_id = require_non_empty(body.product_id, "商品ID不能为空")?;
     let variant_id = non_empty(body.variant_id);
     let variant =
-        ensure_product_variant_can_sell(&state.db, &product_id, variant_id.as_deref(), 1).await?;
+        ensure_group_buy_product_variant_can_sell(&state.db, &product_id, variant_id.as_deref(), 1)
+            .await?;
     let spec_binding = group_buy_activity_spec_binding(&variant);
     let starts_at = body
         .starts_at
@@ -2890,7 +2907,7 @@ where
         } else {
             existing.variant_id.as_deref()
         };
-        let variant = ensure_product_variant_can_sell_tx(
+        let variant = ensure_group_buy_product_variant_can_sell_tx(
             &mut tx,
             resolved_product_id,
             variant_id_for_resolution,
@@ -5698,7 +5715,7 @@ where
         SELECT mall_after_sale_json(sale)
         FROM mall_after_sales sale
         WHERE sale.order_id = $1
-          AND sale.status IN ('approved', 'refunding', 'refunded', 'resolved')
+          AND sale.status NOT IN ('rejected', 'closed')
         ORDER BY sale.created_at DESC
         LIMIT 1
         "#,
@@ -5706,8 +5723,82 @@ where
     .bind(&id)
     .fetch_optional(&state.db)
     .await?;
-    if let Some(after_sale) = existing_after_sale {
-        return Ok(ok("退款记录已存在", after_sale));
+    if let Some(existing_after_sale) = existing_after_sale {
+        let after_sale_id = existing_after_sale
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| ApiError::BadRequest("售后记录缺少ID".to_string()))?
+            .to_string();
+        let existing_amount = existing_after_sale
+            .get("approvedAmountCents")
+            .and_then(Value::as_i64)
+            .or_else(|| {
+                existing_after_sale
+                    .get("amountCents")
+                    .and_then(Value::as_i64)
+            })
+            .unwrap_or(amount_cents)
+            .max(0);
+        let refund_amount = if amount_cents > 0 {
+            amount_cents.min(existing_amount)
+        } else {
+            existing_amount
+        };
+        create_mall_platform_refund_order(
+            &state.db,
+            &id,
+            Some(&after_sale_id),
+            refund_amount,
+            &reason,
+            Some("admin"),
+        )
+        .await?;
+        let after_sale = sqlx::query_scalar::<_, Value>(
+            r#"
+            UPDATE mall_after_sales
+            SET status = 'refunding',
+                handling_method = COALESCE($2, handling_method),
+                approved_amount_cents = COALESCE(approved_amount_cents, $3),
+                negotiation_status = 'agreed',
+                timeline = timeline || jsonb_build_array(jsonb_build_object(
+                  'status', 'refunding',
+                  'title', '退款处理中',
+                  'description', $4,
+                  'createdAt', now()
+                )),
+                updated_at = now()
+            WHERE id = $1
+            RETURNING mall_after_sale_json(mall_after_sales)
+            "#,
+        )
+        .bind(&after_sale_id)
+        .bind(&handling_method)
+        .bind(refund_amount)
+        .bind(&reason)
+        .fetch_one(&state.db)
+        .await?;
+        sqlx::query(
+            r#"
+            UPDATE mall_orders
+            SET refund_status = 'approved',
+                after_sale_status = 'refunding',
+                updated_at = now()
+            WHERE id = $1
+            "#,
+        )
+        .bind(&id)
+        .execute(&state.db)
+        .await?;
+        insert_order_event(
+            &state.db,
+            &id,
+            "refund_approved",
+            "退款处理中",
+            "原支付渠道退回",
+            "active",
+        )
+        .await?;
+        return Ok(ok("退款处理成功", after_sale));
     }
     create_mall_platform_refund_order(&state.db, &id, None, amount_cents, &reason, Some("admin"))
         .await?;
@@ -8114,6 +8205,72 @@ where
     Ok(ok("查询成功", sessions))
 }
 
+async fn update_support_session<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<UpdateSupportSessionRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let status = body
+        .status
+        .as_deref()
+        .map(normalize_support_session_status)
+        .transpose()?;
+    let last_message = non_empty(body.last_message).or_else(|| {
+        status.map(|value| match value {
+            "resolved" => "客服已处理完成".to_string(),
+            "closed" => "会话已关闭".to_string(),
+            _ => "会话已重新打开".to_string(),
+        })
+    });
+    let session = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE support_sessions
+        SET status = COALESCE($2, status),
+            assigned_agent_id = COALESCE($3, assigned_agent_id),
+            last_message = COALESCE($4, last_message),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING support_session_json(support_sessions)
+        "#,
+    )
+    .bind(&id)
+    .bind(status)
+    .bind(body.assigned_agent_id)
+    .bind(last_message.as_deref())
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("客服会话不存在".to_string()))?;
+
+    if let (Some(status), Some(user_id)) = (status, session.get("userId").and_then(Value::as_str)) {
+        if matches!(status, "resolved" | "closed") {
+            insert_mall_notification(
+                &state.db,
+                user_id,
+                "mall_support_message",
+                if status == "resolved" {
+                    "客服已处理完成"
+                } else {
+                    "客服会话已关闭"
+                },
+                last_message.as_deref().unwrap_or(if status == "resolved" {
+                    "客服已处理完成"
+                } else {
+                    "会话已关闭"
+                }),
+                None,
+                Some("support_session"),
+                Some(&id),
+            )
+            .await?;
+        }
+    }
+
+    Ok(ok("客服会话已更新", session))
+}
+
 async fn create_support_message<S>(
     State(state): State<AppState<S>>,
     Path(session_id): Path<String>,
@@ -9920,7 +10077,7 @@ async fn fetch_member_order_counts(pool: &PgPool, user_id: &str) -> ApiResult<Va
           'completed', count(*) FILTER (WHERE status = 'completed'),
           'cancelled', count(*) FILTER (WHERE status = 'cancelled'),
           'afterSales', (
-            SELECT count(*)
+            SELECT count(DISTINCT sale.order_id)
             FROM mall_after_sales sale
             WHERE sale.user_id = $1
               AND sale.status IN ('submitted', 'approved', 'refunding')
@@ -10009,7 +10166,7 @@ async fn fetch_member_support_counts(pool: &PgPool, user_id: &str) -> ApiResult<
         SELECT jsonb_build_object(
           'openSessions', (SELECT count(*) FROM support_sessions WHERE user_id = $1 AND status = 'open'),
           'openTickets', (SELECT count(*) FROM support_tickets WHERE user_id = $1 AND status = 'open'),
-          'afterSales', (SELECT count(*) FROM mall_after_sales WHERE user_id = $1 AND status IN ('submitted', 'approved', 'refunding'))
+          'afterSales', (SELECT count(DISTINCT sale.order_id) FROM mall_after_sales sale WHERE sale.user_id = $1 AND sale.status IN ('submitted', 'approved', 'refunding'))
         )
         "#,
     )
@@ -13287,15 +13444,71 @@ async fn ensure_product_variant_can_sell(
     Ok(variant)
 }
 
+fn is_regular_product_status(status: Option<&str>) -> bool {
+    status == Some("on_sale")
+}
+
+fn is_group_buy_product_status(status: Option<&str>) -> bool {
+    matches!(status, Some("on_sale") | Some("group_buy_only"))
+}
+
+fn is_group_buy_progress_status(status: &str) -> bool {
+    matches!(
+        status,
+        "deposit_paid" | "pending_balance" | "balance_paid" | "order_created"
+    )
+}
+
+async fn ensure_group_buy_product_variant_can_sell(
+    pool: &PgPool,
+    product_id: &str,
+    variant_id: Option<&str>,
+    quantity: i32,
+) -> ApiResult<ProductVariant> {
+    let variant = fetch_group_buy_product_variant_snapshot(pool, product_id, variant_id).await?;
+    if variant.status != "on_sale" {
+        return Err(ApiError::NotFound("商品规格不存在或已下架".to_string()));
+    }
+    if quantity < variant.minimum_order_quantity {
+        return Err(ApiError::BadRequest(format!(
+            "{} 起订量为 {}",
+            variant.name, variant.minimum_order_quantity
+        )));
+    }
+    if variant.stock < quantity {
+        return Err(ApiError::BadRequest(format!("{} 库存不足", variant.name)));
+    }
+    Ok(variant)
+}
+
 async fn fetch_product_variant_snapshot(
     pool: &PgPool,
     product_id: &str,
     variant_id: Option<&str>,
 ) -> ApiResult<ProductVariant> {
     let product = fetch_product_json(pool, product_id).await?;
-    if product.get("status").and_then(Value::as_str) != Some("on_sale") {
+    if !is_regular_product_status(product.get("status").and_then(Value::as_str)) {
         return Err(ApiError::NotFound("商品不存在或已下架".to_string()));
     }
+    resolve_product_variant_from_json(&product, variant_id)
+}
+
+async fn fetch_group_buy_product_variant_snapshot(
+    pool: &PgPool,
+    product_id: &str,
+    variant_id: Option<&str>,
+) -> ApiResult<ProductVariant> {
+    let product = fetch_product_json(pool, product_id).await?;
+    if !is_group_buy_product_status(product.get("status").and_then(Value::as_str)) {
+        return Err(ApiError::NotFound("商品不存在或已下架".to_string()));
+    }
+    resolve_product_variant_from_json(&product, variant_id)
+}
+
+fn resolve_product_variant_from_json(
+    product: &Value,
+    variant_id: Option<&str>,
+) -> ApiResult<ProductVariant> {
     let variants_value = product
         .get("variants")
         .cloned()
@@ -13847,7 +14060,14 @@ pub fn calculate_group_buy_deposit_cents(
 ) -> i64 {
     let total_cents = i64::from(quantity.max(0)) * unit_price_cents.max(0);
     match deposit_type {
-        "percent" => total_cents * i64::from(deposit_value.max(0)) / 100,
+        "percent" => {
+            let percent = i64::from(deposit_value.max(0));
+            if total_cents <= 0 || percent <= 0 {
+                0
+            } else {
+                (total_cents * percent + 99) / 100
+            }
+        }
         "unit_fixed" => i64::from(quantity.max(0)) * i64::from(deposit_value.max(0)),
         "order_fixed" => i64::from(deposit_value.max(0)),
         _ => 0,
@@ -13998,7 +14218,7 @@ async fn fetch_group_buy_activity_row_for_update_tx(
     .ok_or_else(|| ApiError::NotFound("团购活动不存在".to_string()))
 }
 
-async fn ensure_product_variant_can_sell_tx(
+async fn ensure_group_buy_product_variant_can_sell_tx(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     product_id: &str,
     variant_id: Option<&str>,
@@ -14016,7 +14236,7 @@ async fn ensure_product_variant_can_sell_tx(
     .fetch_optional(&mut **tx)
     .await?
     .ok_or_else(|| ApiError::NotFound("商品不存在".to_string()))?;
-    if product.get("status").and_then(Value::as_str) != Some("on_sale") {
+    if !is_group_buy_product_status(product.get("status").and_then(Value::as_str)) {
         return Err(ApiError::NotFound("商品不存在或已下架".to_string()));
     }
     let variants_value = product
@@ -14071,19 +14291,14 @@ async fn fetch_group_buy_activity_payload(
           SELECT COALESCE(sum(subscription.quantity), 0)::integer AS current_quantity
           FROM mall_group_buy_subscriptions subscription
           WHERE subscription.activity_id = activity.id
-            AND subscription.status NOT IN (
-              'deposit_refunded',
-              'balance_overdue_cancelled',
-              'activity_cancel_refunding',
-              'refunded'
-            )
+            AND subscription.status IN ('deposit_paid', 'pending_balance', 'balance_paid', 'order_created')
         ) subscription_totals ON true
         WHERE activity.id = $1
           AND (
             $2::boolean = false
             OR (
               activity.status IN ('published', 'enrolling', 'formed', 'ops_review', 'procuring')
-              AND product.status = 'on_sale'
+              AND product.status IN ('on_sale', 'group_buy_only')
             )
           )
         "#,
@@ -14814,7 +15029,7 @@ async fn create_group_buy_order_for_subscription(
 }
 
 fn group_buy_order_variant(seed: &GroupBuyOrderSeedRow) -> ApiResult<ProductVariant> {
-    if seed.product.get("status").and_then(Value::as_str) != Some("on_sale") {
+    if !is_group_buy_product_status(seed.product.get("status").and_then(Value::as_str)) {
         return Err(ApiError::BadRequest("商品不存在或已下架".to_string()));
     }
     let variants_value = seed
@@ -15500,7 +15715,7 @@ fn normalize_product_status(status: &str) -> ApiResult<String> {
     let normalized = status.trim().to_ascii_lowercase();
     if matches!(
         normalized.as_str(),
-        "on_sale" | "off_sale" | "draft" | "inactive"
+        "on_sale" | "off_sale" | "draft" | "inactive" | "group_buy_only"
     ) {
         Ok(normalized)
     } else {
@@ -15545,6 +15760,15 @@ fn normalize_delivery_sheet_status(status: &str) -> ApiResult<String> {
         Ok(normalized)
     } else {
         Err(ApiError::BadRequest("配送单状态不正确".to_string()))
+    }
+}
+
+fn normalize_support_session_status(status: &str) -> ApiResult<&'static str> {
+    match status.trim() {
+        "open" => Ok("open"),
+        "resolved" => Ok("resolved"),
+        "closed" => Ok("closed"),
+        _ => Err(ApiError::BadRequest("客服会话状态不正确".to_string())),
     }
 }
 
@@ -16107,6 +16331,15 @@ mod tests {
         assert_eq!(
             calculate_group_buy_deposit_cents("order_fixed", 1_000, 30, 300),
             1_000
+        );
+    }
+
+    #[test]
+    fn group_buy_percent_deposit_rounds_positive_fraction_to_one_cent() {
+        assert_eq!(calculate_group_buy_deposit_cents("percent", 20, 1, 1), 1);
+        assert_eq!(
+            calculate_group_buy_capped_deposit_cents("percent", 20, 1, 1, 1),
+            1
         );
     }
 

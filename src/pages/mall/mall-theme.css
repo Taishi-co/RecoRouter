@@ -59,6 +59,63 @@ body.reco-mall-h5 .taro_page {
   line-height: 1;
 }
 
+.mall-notification-float {
+  position: fixed;
+  left: 18PX;
+  right: 18PX;
+  top: calc(var(--mall-sticky-top, 20PX) + 6PX);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 10PX;
+  min-height: 46PX;
+  padding: 8PX 10PX;
+  box-sizing: border-box;
+  border-radius: 12PX;
+  border: 1PX solid #cbe6c4;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10PX 28PX rgba(32, 65, 33, 0.14);
+}
+
+.mall-notification-float-icon,
+.mall-notification-float-close {
+  width: 28PX;
+  height: 28PX;
+  flex: 0 0 28PX;
+  border-radius: 999PX;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eef9eb;
+}
+
+.mall-notification-float-copy {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 2PX;
+}
+
+.mall-notification-float-title {
+  color: #1f2d1f;
+  font-size: 13PX;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.mall-notification-float-content {
+  color: #657160;
+  font-size: 11PX;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mall-notification-float-close {
+  background: #f4f7f1;
+}
+
 .mall-page-title {
   display: block;
   color: #1f2d1f;

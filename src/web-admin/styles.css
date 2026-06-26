@@ -4076,6 +4076,14 @@ textarea:focus {
   border-top: 1px solid #e6ebf2;
 }
 
+.support-session-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .send-form textarea {
   min-height: 56px;
 }

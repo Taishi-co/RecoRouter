@@ -75,7 +75,7 @@ export default function MallSupportCenter() {
     if (!selectedSession?.id) return undefined
     const timer = setInterval(() => {
       loadMessages(selectedSession, true)
-    }, 4000)
+    }, 1000)
     return () => clearInterval(timer)
   }, [selectedSession?.id])
 

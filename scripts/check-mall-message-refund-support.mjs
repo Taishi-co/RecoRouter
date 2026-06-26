@@ -16,6 +16,10 @@ const cartPage = read('src/pages/mall/cart/index.tsx')
 const afterSalePage = read('src/pages/mall/after-sale/index.tsx')
 const supportPage = read('src/pages/mall/support/index.tsx')
 const profilePage = read('src/pages/mall/profile/index.tsx')
+const mallUi = read('src/pages/mall/mall-ui.tsx')
+const appConfig = read('src/app.config.ts')
+const notificationsPage = read('src/pages/notifications/index.tsx')
+const webAdmin = read('src/web-admin/main.tsx')
 const service = read('src/services/mall.ts')
 
 expect(
@@ -73,6 +77,17 @@ expect(
 )
 
 expect(
+  /setInterval\(\(\)\s*=>\s*\{[\s\S]*loadMessages\(selectedSession,\s*true\)[\s\S]*\},\s*1000\)/.test(supportPage),
+  '小程序客服聊天需要 1 秒级轮询刷新。',
+)
+
+expect(
+  /setInterval\(\(\)\s*=>\s*\{[\s\S]*refreshSupportRealtime\(\)[\s\S]*\},\s*1000\)/.test(webAdmin)
+    && /updateSupportSessionStatus/.test(webAdmin),
+  '管理端客服会话需要 1 秒级刷新，并支持完成/关闭会话。',
+)
+
+expect(
   /selectedItems/.test(supportPage)
     && /order\.items\.map/.test(supportPage)
     && /mall-support-item/.test(supportPage),
@@ -84,6 +99,25 @@ expect(
     && /getUnreadNotificationCount/.test(service)
     && /markNotificationRead/.test(service),
   '商城端需要通知列表、未读数和已读服务方法。',
+)
+
+expect(
+  /'pages\/notifications\/index'/.test(appConfig.match(/const mallPages = \[[\s\S]*?\]/)?.[0] || ''),
+  '商城小程序 profile 必须注册通知页，否则消息提醒点不进去。',
+)
+
+expect(
+  /MallNotificationFloat/.test(mallUi)
+    && /listNotifications\(/.test(mallUi)
+    && /mall-notification-float/.test(mallUi),
+  '商城页面需要顶部悬浮栏展示新消息提醒。',
+)
+
+expect(
+  /relatedTypeOf/.test(notificationsPage)
+    && /relatedIdOf/.test(notificationsPage)
+    && /relatedOrderIdOf/.test(notificationsPage),
+  '通知点击跳转需要兼容 snake_case 和 camelCase 关联字段。',
 )
 
 expect(
@@ -99,6 +133,17 @@ expect(
     && /mall_after_sale_processed/.test(mallBackend)
     && /mall_support_message/.test(mallBackend),
   '商城订单、售后和客服事件需要写入用户消息提醒。',
+)
+
+expect(
+  /count\(DISTINCT sale\.order_id\)/.test(mallBackend),
+  '我的页售后数量需要按订单去重，不能一张订单多个售后记录显示多单。',
+)
+
+expect(
+  /admin_refund_order[\s\S]*existing_after_sale[\s\S]*status NOT IN \('rejected', 'closed'\)/.test(mallBackend)
+    && /UPDATE mall_after_sales[\s\S]*SET status = 'refunding'[\s\S]*WHERE id = \$1/.test(mallBackend),
+  '管理端退款遇到已有未完结售后时必须复用记录并更新为退款中，不能重复插入售后。',
 )
 
 console.log('Mall message/refund/support checks passed.')

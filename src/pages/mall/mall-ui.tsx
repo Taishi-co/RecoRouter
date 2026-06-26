@@ -3,6 +3,7 @@ import { Image, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import {
   Apple,
+  Bell,
   Check,
   ChevronRight,
   Grid2x2,
@@ -16,7 +17,7 @@ import {
   X,
 } from 'lucide-react-taro'
 import sanyouLogo from '@/assets/brand/sanyou.png'
-import { resolveMallImageUrl, type MallProduct, yuan } from '@/services/mall'
+import { listNotifications, resolveMallImageUrl, type MallNotification, type MallProduct, yuan } from '@/services/mall'
 import { Input } from '@/components/ui/input'
 import {
   getHomePageBodyPaddingTop,
@@ -80,7 +81,8 @@ export function MallPage({
   children,
   noTab,
   homeTightTop,
-}: PropsWithChildren<{ active?: MallTabKey; noTab?: boolean; homeTightTop?: boolean }>) {
+  hideNotificationBanner,
+}: PropsWithChildren<{ active?: MallTabKey; noTab?: boolean; homeTightTop?: boolean; hideNotificationBanner?: boolean }>) {
   useMallH5BodyClass()
   const shellStyle = {
     paddingTop: `${homeTightTop ? getHomePageBodyPaddingTop() : getPageBodyPaddingTop()}px`,
@@ -89,10 +91,91 @@ export function MallPage({
 
   return (
     <View className={homeTightTop ? 'mall-shell mall-shell-home' : 'mall-shell'} style={shellStyle}>
+      {!hideNotificationBanner ? <MallNotificationFloat /> : null}
       {children}
       {!noTab && <MallBottomNav active={active || 'home'} />}
     </View>
   )
+}
+
+function MallNotificationFloat() {
+  const [latest, setLatest] = useState<MallNotification | null>(null)
+  const [dismissedId, setDismissedId] = useState('')
+
+  useEffect(() => {
+    let mounted = true
+    const loadLatest = async () => {
+      const userId = getStoredMallUserId()
+      if (!userId) {
+        if (mounted) setLatest(null)
+        return
+      }
+      try {
+        const nextNotifications = await listNotifications(userId, { page: 1, limit: 1, unreadOnly: true })
+        const next = nextNotifications.find(isMallNotificationForFloat) || null
+        if (!mounted) return
+        if (next && next.id !== dismissedId) {
+          setLatest(next)
+        } else if (!next) {
+          setLatest(null)
+        }
+      } catch {
+        if (mounted) setLatest(null)
+      }
+    }
+
+    loadLatest()
+    const timer = setInterval(() => {
+      loadLatest()
+    }, 8000)
+    return () => {
+      mounted = false
+      clearInterval(timer)
+    }
+  }, [dismissedId])
+
+  if (!latest || latest.id === dismissedId) return null
+
+  return (
+    <View
+      className="mall-notification-float"
+      onClick={() => Taro.navigateTo({ url: '/pages/notifications/index?source=mall' })}
+    >
+      <View className="mall-notification-float-icon">
+        <Bell size={16} color="#2F7E43" />
+      </View>
+      <View className="mall-notification-float-copy">
+        <Text className="mall-notification-float-title">{latest.title || '有新的消息提醒'}</Text>
+        <Text className="mall-notification-float-content">{latest.content || '点击查看详情'}</Text>
+      </View>
+      <View
+        className="mall-notification-float-close"
+        onClick={(event) => {
+          event.stopPropagation()
+          setDismissedId(latest.id)
+          setLatest(null)
+        }}
+      >
+        <X size={14} color="#6f7a6a" />
+      </View>
+    </View>
+  )
+}
+
+function getStoredMallUserId() {
+  try {
+    return (Taro.getStorageSync('userInfo') as { id?: string } | undefined)?.id || ''
+  } catch {
+    return ''
+  }
+}
+
+function isMallNotificationForFloat(notification: MallNotification) {
+  const relatedType = notification.relatedType || notification.related_type
+  return notification.type?.startsWith('mall_')
+    || relatedType === 'mall_order'
+    || relatedType === 'mall_after_sale'
+    || relatedType === 'support_session'
 }
 
 function useMallH5BodyClass() {

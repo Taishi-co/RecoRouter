@@ -390,6 +390,8 @@ interface GroupBuyForm {
   newProductSupplyPriceYuan: string;
   newProductStock: string;
   newProductDescription: string;
+  newProductImageUrl: string;
+  newProductImages: string[];
   startsAt: string;
   endsAt: string;
   balanceDueAt: string;
@@ -399,6 +401,7 @@ interface GroupBuyForm {
   overdueCreditPenalty: string;
   depositType: string;
   depositValue: string;
+  useTierPricing: boolean;
   tiers: GroupBuyTierForm[];
 }
 
@@ -1242,6 +1245,8 @@ const emptyGroupBuyForm: GroupBuyForm = {
   newProductSupplyPriceYuan: '12.80',
   newProductStock: '100',
   newProductDescription: '',
+  newProductImageUrl: '',
+  newProductImages: [],
   startsAt: '',
   endsAt: '',
   balanceDueAt: '',
@@ -1251,6 +1256,7 @@ const emptyGroupBuyForm: GroupBuyForm = {
   overdueCreditPenalty: '10',
   depositType: 'percent',
   depositValue: '20',
+  useTierPricing: true,
   tiers: [createGroupBuyTierForm()],
 };
 
@@ -3030,6 +3036,8 @@ function groupBuyToForm(groupBuy: JsonRecord): GroupBuyForm {
     newProductSupplyPriceYuan: '12.80',
     newProductStock: '100',
     newProductDescription: '',
+    newProductImageUrl: '',
+    newProductImages: [],
     startsAt: datetimeLocalValue(stringValue(groupBuy, 'startsAt')),
     endsAt: datetimeLocalValue(stringValue(groupBuy, 'endsAt')),
     balanceDueAt: datetimeLocalValue(stringValue(groupBuy, 'balanceDueAt')),
@@ -3039,6 +3047,7 @@ function groupBuyToForm(groupBuy: JsonRecord): GroupBuyForm {
     overdueCreditPenalty: String(numberValue(groupBuy, 'overdueCreditPenalty', 10)),
     depositType,
     depositValue: groupBuyDepositValueToForm(depositType, numberValue(groupBuy, 'depositValue', 20)),
+    useTierPricing: arrayValue(groupBuy, 'tiers').length > 1,
     tiers: groupBuyTiersFromRecord(groupBuy),
   };
 }
@@ -3104,8 +3113,17 @@ function groupBuyPaymentProgressSummary(groupBuy: JsonRecord) {
   return `定金 ${depositPaidCount} 人 · 尾款 ${balanceRate}%`;
 }
 
+function groupBuyDefaultTier(form: GroupBuyForm): GroupBuyTierForm {
+  return createGroupBuyTierForm({
+    id: form.tiers[0]?.id || 'default',
+    quantity: form.minGroupQuantity || '1',
+    priceYuan: form.newProductPriceYuan || form.tiers[0]?.priceYuan || '19.90',
+  });
+}
+
 function groupBuyPayload(form: GroupBuyForm) {
-  const tiers = form.tiers
+  const sourceTiers = form.useTierPricing ? form.tiers : [groupBuyDefaultTier(form)];
+  const tiers = sourceTiers
     .map(tier => ({
       quantity: Number(tier.quantity) || 0,
       priceCents: moneyFromYuan(tier.priceYuan),
@@ -3119,7 +3137,7 @@ function groupBuyPayload(form: GroupBuyForm) {
   if ((Number(form.minCreditScore) || 0) < 0) throw new Error('最低信用分不能为空');
   if ((Number(form.overdueCreditPenalty) || 0) < 0) throw new Error('逾期扣分不能为空');
   if (!form.depositType || !form.depositValue.trim()) throw new Error('定金方式和数值不能为空');
-  if (!tiers.length) throw new Error('请至少配置一档阶梯价');
+  if (form.useTierPricing && !tiers.length) throw new Error('请至少配置一档阶梯价');
   return {
     name: form.name.trim(),
     productId: form.productId,
@@ -3152,6 +3170,8 @@ function groupBuyInlineProductToProductForm(form: GroupBuyForm, fallbackCategory
     categoryCode: form.newProductCategoryCode.trim() || fallbackCategoryCode || 'fruit',
     subtitle: specification,
     description: form.newProductDescription.trim() || `${productName || form.name}集采预售商品`,
+    imageUrl: form.newProductImageUrl,
+    images: form.newProductImages,
     specification,
     saleMethod,
     priceYuan,
@@ -3159,8 +3179,8 @@ function groupBuyInlineProductToProductForm(form: GroupBuyForm, fallbackCategory
     stock,
     stockAlertThreshold: '10',
     minimumOrderQuantity: '1',
-    tags: '',
-    status: 'on_sale',
+    tags: '集采预售',
+    status: 'group_buy_only',
     variants: [{
       ...createDefaultProductVariantForm(),
       id: 'default',
@@ -3282,6 +3302,7 @@ function statusLabel(value: string) {
     approved: '已通过',
     rejected: '已拒绝',
     on_sale: '在售',
+    group_buy_only: '仅集采',
     off_sale: '下架',
     draft: '草稿',
     paid: '已支付',
@@ -3343,7 +3364,7 @@ function badgeClass(status: string) {
   if (['pending', 'pending_payment', 'dispatching', 'delivering', 'generated', 'shipping', 'open', 'submitted', 'negotiating', 'processing', 'return_pending', 'returning', 'exchange_processing', 'replacement_sent', 'refunding', 'refund_pending', 'commission_pending'].includes(status)) {
     return 'badge badge-blue';
   }
-  if (['rejected', 'cancelled', 'off_sale', 'inactive', 'closed', 'expired', 'failed', 'deleted'].includes(status)) {
+  if (['rejected', 'cancelled', 'off_sale', 'inactive', 'closed', 'expired', 'failed', 'deleted', 'group_buy_only'].includes(status)) {
     return 'badge badge-gray';
   }
   return 'badge badge-amber';
@@ -5685,6 +5706,7 @@ function ProductFormFields({
           <span className="field-label">状态<span className="required-mark">*</span></span>
           <select required value={form.status} onChange={event => onChange({ status: event.target.value })}>
             <option value="on_sale">在售</option>
+            <option value="group_buy_only">仅集采</option>
             <option value="off_sale">下架</option>
             <option value="draft">草稿</option>
           </select>
@@ -10826,6 +10848,7 @@ function MallGroupBuyPresaleSection({
   onReset,
   onSubmit,
   onTiersChange,
+  onUploadImage,
 }: {
   categories: JsonRecord[];
   groupBuys: JsonRecord[];
@@ -10844,8 +10867,10 @@ function MallGroupBuyPresaleSection({
   onReset: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onTiersChange: (updater: (tiers: GroupBuyTierForm[]) => GroupBuyTierForm[]) => void;
+  onUploadImage: (file: File) => Promise<string>;
 }) {
   const [groupBuyProductKeyword, setGroupBuyProductKeyword] = useState('');
+  const [saving, setSaving] = useState(false);
   const selectedProduct = products.find(product => stringValue(product, 'id') === form.productId);
   const productVariants = selectedProduct ? productVariantsFromRecord(selectedProduct) : [];
   const hasExplicitVariants = selectedProduct ? arrayValue(selectedProduct, 'variants').length > 0 : false;
@@ -10867,6 +10892,12 @@ function MallGroupBuyPresaleSection({
   const removeTier = (id: string) => {
     onTiersChange(tiers => tiers.filter(tier => tier.id !== id));
   };
+  const inlineProductImageForm: ProductForm = {
+    ...initialProductForm,
+    name: form.newProductName,
+    imageUrl: form.newProductImageUrl,
+    images: form.newProductImages,
+  };
   const openCreate = () => {
     onReset();
     setGroupBuyProductKeyword('');
@@ -10878,12 +10909,18 @@ function MallGroupBuyPresaleSection({
     onModalOpenChange(true);
   };
   const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (saving) return;
     if (form.productMode === 'existing' && hasExplicitVariants && !form.variantId) {
-      event.preventDefault();
       return;
     }
-    await onSubmit(event);
-    onModalOpenChange(false);
+    setSaving(true);
+    try {
+      await onSubmit(event);
+      onModalOpenChange(false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -11085,6 +11122,15 @@ function MallGroupBuyPresaleSection({
                         ))}
                       </select>
                     </label>
+                    <ProductImageGalleryInput
+                      className="wide"
+                      form={inlineProductImageForm}
+                      onChange={patch => onChange({
+                        newProductImageUrl: patch.imageUrl ?? form.newProductImageUrl,
+                        newProductImages: patch.images ?? form.newProductImages,
+                      })}
+                      onUploadImage={onUploadImage}
+                    />
                     <label>
                       规格
                       <input required value={form.newProductSpecification} onChange={event => onChange({ newProductSpecification: event.target.value })} placeholder="100斤 / 1箱 / 1份" />
@@ -11163,36 +11209,45 @@ function MallGroupBuyPresaleSection({
 
             <section className="campaign-rule-card">
               <div className="campaign-rule-card-head">
-                <strong>阶梯价</strong>
-                <button className="ghost-button" type="button" onClick={() => onTiersChange(tiers => [...tiers, createGroupBuyTierForm()])}>
-                  <Icon name="plus" />
-                  新增档位
-                </button>
+                <label className="toggle-line compact-toggle">
+                  <input checked={form.useTierPricing} type="checkbox" onChange={event => onChange({ useTierPricing: event.target.checked })} />
+                  <strong>启用阶梯价</strong>
+                </label>
+                {form.useTierPricing ? (
+                  <button className="ghost-button" type="button" onClick={() => onTiersChange(tiers => [...tiers, createGroupBuyTierForm()])}>
+                    <Icon name="plus" />
+                    新增档位
+                  </button>
+                ) : null}
               </div>
-              <div className="gbuy-tier-list">
-                {form.tiers.map(tier => (
-                  <div className="gbuy-tier-row" key={tier.id}>
-                    <label>
-                      件数
-                      <input required min="1" type="number" value={tier.quantity} onChange={event => updateTier(tier.id, { quantity: event.target.value })} />
-                    </label>
-                    <label>
-                      单价
-                      <input required min="0.01" step="0.01" type="number" value={tier.priceYuan} onChange={event => updateTier(tier.id, { priceYuan: event.target.value })} />
-                    </label>
-                    <button className="ghost-button danger" disabled={form.tiers.length <= 1} type="button" onClick={() => removeTier(tier.id)}>
-                      删除
-                    </button>
-                  </div>
-                ))}
-              </div>
+              {form.useTierPricing ? (
+                <div className="gbuy-tier-list">
+                  {form.tiers.map(tier => (
+                    <div className="gbuy-tier-row" key={tier.id}>
+                      <label>
+                        件数
+                        <input required min="1" type="number" value={tier.quantity} onChange={event => updateTier(tier.id, { quantity: event.target.value })} />
+                      </label>
+                      <label>
+                        单价
+                        <input required min="0.01" step="0.01" type="number" value={tier.priceYuan} onChange={event => updateTier(tier.id, { priceYuan: event.target.value })} />
+                      </label>
+                      <button className="ghost-button danger" disabled={form.tiers.length <= 1} type="button" onClick={() => removeTier(tier.id)}>
+                        删除
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="form-hint">未启用时，系统按商品售价生成一档集采价，不在前台展示阶梯价格。</p>
+              )}
             </section>
 
             <div className="modal-actions">
-              <button className="ghost-button" type="button" onClick={() => onModalOpenChange(false)}>取消</button>
-              <button className="primary-button" type="submit">
+              <button className="ghost-button" disabled={saving} type="button" onClick={() => onModalOpenChange(false)}>取消</button>
+              <button className="primary-button" disabled={saving} type="submit">
                 <Icon name="save" />
-                保存集采
+                {saving ? '保存中' : '保存集采'}
               </button>
             </div>
           </form>
@@ -11835,6 +11890,7 @@ function SupportSection({
   onSelectSession,
   onCreateSession,
   onSendMessage,
+  onUpdateSessionStatus,
 }: {
   metrics: JsonRecord;
   sessions: JsonRecord[];
@@ -11848,8 +11904,10 @@ function SupportSection({
   onSelectSession: (id: string) => Promise<void>;
   onCreateSession: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onSendMessage: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onUpdateSessionStatus: (id: string, status: 'open' | 'resolved' | 'closed') => Promise<void>;
 }) {
   const selectedSession = sessions.find(session => stringValue(session, 'id') === selectedSessionId);
+  const selectedStatus = selectedSession ? stringValue(selectedSession, 'status') : '';
   const quickReplies = [
     '您好，已收到反馈，我先核实订单和配送记录。',
     '这边已经为您标记优先处理，会在 10 分钟内给出处理方案。',
@@ -11913,7 +11971,26 @@ function SupportSection({
           <Panel
             title={selectedSession ? stringValue(selectedSession, 'topic') : '当前会话'}
             description={selectedSession ? `用户 ${shortId(stringValue(selectedSession, 'userId'))} · ${formatDate(stringValue(selectedSession, 'updatedAt'))}` : '从左侧选择会话后查看上下文并回复'}
-            action={selectedSession ? <span className={badgeClass(stringValue(selectedSession, 'status'))}>{statusLabel(stringValue(selectedSession, 'status'))}</span> : null}
+            action={selectedSession ? (
+              <div className="support-session-actions">
+                <span className={badgeClass(selectedStatus)}>{statusLabel(selectedStatus)}</span>
+                {selectedStatus !== 'resolved' ? (
+                  <button className="ghost-button small" type="button" onClick={() => onUpdateSessionStatus(selectedSessionId, 'resolved')}>
+                    处理完成
+                  </button>
+                ) : null}
+                {selectedStatus !== 'closed' ? (
+                  <button className="ghost-button small" type="button" onClick={() => onUpdateSessionStatus(selectedSessionId, 'closed')}>
+                    关闭会话
+                  </button>
+                ) : null}
+                {selectedStatus !== 'open' ? (
+                  <button className="ghost-button small" type="button" onClick={() => onUpdateSessionStatus(selectedSessionId, 'open')}>
+                    重开
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           >
             <div className="message-list">
               {messages.map(message => {
@@ -12801,6 +12878,31 @@ function App() {
       setBusy('');
     }
   };
+
+  const refreshSupportRealtime = useCallback(async () => {
+    const [nextSessions, nextMetrics] = await Promise.all([
+      apiGet<JsonRecord[]>('/api/support/sessions'),
+      apiGet<JsonRecord>('/api/support/metrics'),
+    ]);
+    setData(current => ({
+      ...current,
+      supportSessions: nextSessions,
+      supportMetrics: nextMetrics,
+    }));
+    if (selectedSessionId) {
+      const nextMessages = await apiGet<JsonRecord[]>(`/api/support/sessions/${selectedSessionId}/messages`);
+      setSupportMessages(nextMessages);
+    }
+  }, [selectedSessionId]);
+
+  useEffect(() => {
+    if (activePageKey !== 'mall.support' && activePageKey !== 'vehicle.support') return undefined;
+    void refreshSupportRealtime().catch(() => undefined);
+    const timer = window.setInterval(() => {
+      void refreshSupportRealtime().catch(() => undefined);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [activePageKey, refreshSupportRealtime]);
 
   const searchMallOpsData = async () => {
     await runAction('商城运营数据查询', async () => {
@@ -14193,6 +14295,28 @@ function App() {
     });
   };
 
+  const updateSupportSessionStatus = async (id: string, status: 'open' | 'resolved' | 'closed') => {
+    const actionLabel = status === 'resolved' ? '客服会话处理完成' : status === 'closed' ? '客服会话关闭' : '客服会话重开';
+    await runAction(actionLabel, async () => {
+      const supportSession = await apiPut<JsonRecord>(`/api/support/sessions/${id}`, {
+        status,
+        lastMessage: status === 'resolved'
+          ? '客服已处理完成'
+          : status === 'closed'
+            ? '会话已关闭'
+            : '会话已重新打开',
+      });
+      setData(current => ({
+        ...current,
+        supportSessions: upsertRecordList(current.supportSessions, supportSession),
+      }));
+      if (selectedSessionId === id) {
+        const nextMessages = await apiGet<JsonRecord[]>(`/api/support/sessions/${id}/messages`);
+        setSupportMessages(nextMessages);
+      }
+    });
+  };
+
   const createSupportTicket = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     await runAction('客服工单创建', async () => {
@@ -14672,6 +14796,7 @@ function App() {
           onReset={resetGroupBuyForm}
           onSubmit={saveGroupBuy}
           onTiersChange={updater => setGroupBuyForm(current => ({ ...current, tiers: updater(current.tiers) }))}
+          onUploadImage={uploadProductImage}
         />
       );
     }
@@ -14743,6 +14868,7 @@ function App() {
           onFormChange={patch => setSupportForm(current => ({ ...current, ...patch }))}
           onSelectSession={selectSession}
           onSendMessage={sendSupportMessage}
+          onUpdateSessionStatus={updateSupportSessionStatus}
         />
       );
     }
