@@ -10,9 +10,13 @@ use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
 
 use crate::{
     app::AppState,
+    config::ApiService,
     error::{ApiError, ApiResult},
     response::{ok, ApiEnvelope},
     storage::Storage,
+    wechat_pay::{
+        truncate_chars, wechat_authorization, with_wechat_json_headers, WechatPayMerchantConfig,
+    },
 };
 
 const MAX_MALL_PRODUCT_IMAGE_BYTES: usize = 5 * 1024 * 1024;
@@ -1338,6 +1342,14 @@ struct RefundRequest {
     handling_method: Option<String>,
 }
 
+#[derive(Debug, FromRow)]
+struct MallRefundPaymentRow {
+    id: String,
+    out_trade_no: String,
+    amount_cents: i64,
+    provider_transaction_id: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AfterSaleRequest {
@@ -1633,6 +1645,7 @@ struct MallPriceSummary {
 struct MallMarketingContext {
     eligible_full_reduction_subtotal_cents: i64,
     eligible_delivery_subtotal_cents: i64,
+    all_items_delivery_campaign_eligible: bool,
     full_reduction_campaign_ids: Vec<String>,
     delivery_campaign_ids: Vec<String>,
 }
@@ -4944,6 +4957,12 @@ where
     let selected_items =
         normalize_after_sale_selected_items(&state.db, &order.id, body.selected_items.as_ref())
             .await?;
+    let mut tx = state.db.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
+        .bind(format!("mall_after_sale:{}", order.id))
+        .execute(&mut *tx)
+        .await?;
+    ensure_no_active_after_sale_for_items(&state.db, &order.id, &selected_items).await?;
     let requested_amount_cents = body
         .requested_amount_cents
         .or(body.amount_cents)
@@ -4965,7 +4984,7 @@ where
     .bind(&body.user_id)
     .bind(&topic)
     .bind(format!("用户已提交{type_label}申请"))
-    .fetch_one(&state.db)
+    .fetch_one(&mut *tx)
     .await?;
     let timeline = json!([{
         "status": "submitted",
@@ -5012,13 +5031,51 @@ where
     .bind(after_sale_type)
     .bind(body.reason)
     .bind(body.description)
-    .bind(selected_items)
+    .bind(&selected_items)
     .bind(amount_cents)
     .bind(evidence_images)
     .bind(type_label)
     .bind(&support_session_id)
     .bind(timeline)
-    .fetch_one(&state.db)
+    .fetch_one(&mut *tx)
+    .await?;
+    let after_sale_id = after_sale
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+
+    let initial_message = "我的订单售后需要协助，请帮我查看进度。";
+    sqlx::query(
+        r#"
+        INSERT INTO support_messages (session_id, sender_id, sender_role, content, metadata)
+        VALUES ($1, $2, 'user', $3, $4)
+        "#,
+    )
+    .bind(&support_session_id)
+    .bind(&body.user_id)
+    .bind(initial_message)
+    .bind(json!({
+        "orderId": order.id,
+        "orderNo": order.order_no,
+        "afterSaleId": after_sale_id,
+        "afterSaleType": after_sale_type,
+        "selectedItems": selected_items
+    }))
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        UPDATE support_sessions
+        SET last_message = $2,
+            updated_at = now()
+        WHERE id = $1
+        "#,
+    )
+    .bind(&support_session_id)
+    .bind(initial_message)
+    .execute(&mut *tx)
     .await?;
 
     sqlx::query(
@@ -5030,10 +5087,10 @@ where
         "#,
     )
     .bind(&order.id)
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?;
-    insert_order_event(
-        &state.db,
+    insert_order_event_tx(
+        &mut tx,
         &order.id,
         "after_sale_submitted",
         "已提交申请",
@@ -5041,6 +5098,7 @@ where
         "done",
     )
     .await?;
+    tx.commit().await?;
 
     Ok(ok("售后已提交", after_sale))
 }
@@ -5112,11 +5170,7 @@ async fn normalize_after_sale_selected_items(
     order_id: &str,
     selected_items: Option<&Value>,
 ) -> ApiResult<Value> {
-    if let Some(Value::Array(items)) = selected_items {
-        if !items.is_empty() {
-            return Ok(Value::Array(items.clone()));
-        }
-    }
+    let requested_item_ids = extract_after_sale_order_item_ids(selected_items);
 
     let items = sqlx::query_scalar::<_, Value>(
         r#"
@@ -5134,13 +5188,83 @@ async fn normalize_after_sale_selected_items(
         ) ORDER BY item.created_at ASC), '[]'::jsonb)
         FROM mall_order_items item
         WHERE item.order_id = $1
+          AND (cardinality($2::text[]) = 0 OR item.id = ANY($2::text[]))
         "#,
     )
     .bind(order_id)
+    .bind(&requested_item_ids)
     .fetch_one(pool)
     .await?;
+    let normalized_count = items.as_array().map(Vec::len).unwrap_or_default();
+    if !requested_item_ids.is_empty() && normalized_count != requested_item_ids.len() {
+        return Err(ApiError::BadRequest("售后商品不属于该订单".to_string()));
+    }
+    if normalized_count == 0 {
+        return Err(ApiError::BadRequest("请选择售后商品".to_string()));
+    }
 
     Ok(items)
+}
+
+fn extract_after_sale_order_item_ids(selected_items: Option<&Value>) -> Vec<String> {
+    let mut ids = Vec::new();
+    let Some(Value::Array(items)) = selected_items else {
+        return ids;
+    };
+    for item in items {
+        let Some(id) = item
+            .get("orderItemId")
+            .or_else(|| item.get("order_item_id"))
+            .or_else(|| item.get("id"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        if !ids.iter().any(|current| current == id) {
+            ids.push(id.to_string());
+        }
+    }
+    ids
+}
+
+async fn ensure_no_active_after_sale_for_items(
+    pool: &PgPool,
+    order_id: &str,
+    selected_items: &Value,
+) -> ApiResult<()> {
+    let requested_item_ids = extract_after_sale_order_item_ids(Some(selected_items));
+    if requested_item_ids.is_empty() {
+        return Err(ApiError::BadRequest("请选择售后商品".to_string()));
+    }
+    let existing: Option<String> = sqlx::query_scalar(
+        r#"
+        SELECT selected_item.value->>'productName'
+        FROM mall_after_sales sale
+        JOIN LATERAL jsonb_array_elements(COALESCE(sale.selected_items, '[]'::jsonb)) AS selected_item(value) ON true
+        WHERE sale.order_id = $1
+          AND sale.status NOT IN ('rejected', 'closed')
+          AND (
+            selected_item.value->>'orderItemId' = ANY($2::text[])
+            OR selected_item.value->>'id' = ANY($2::text[])
+          )
+        ORDER BY sale.created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(order_id)
+    .bind(&requested_item_ids)
+    .fetch_optional(pool)
+    .await?;
+    if let Some(product_name) = existing {
+        let name = product_name.trim();
+        return Err(ApiError::BadRequest(format!(
+            "{}已有售后记录，不能重复申请",
+            if name.is_empty() { "该商品" } else { name }
+        )));
+    }
+    Ok(())
 }
 
 async fn admin_create_product<S>(
@@ -5478,6 +5602,14 @@ where
         "done",
     )
     .await?;
+    insert_mall_order_notification(
+        &state.db,
+        &id,
+        "mall_order_dispatching",
+        "订单开始配送",
+        "您的订单已开始配送，请留意手机和收货地址。",
+    )
+    .await?;
     Ok(ok("派车成功", order))
 }
 
@@ -5521,6 +5653,16 @@ where
         },
     )
     .await?;
+    if body.status == "completed" {
+        insert_mall_order_notification(
+            &state.db,
+            &id,
+            "mall_order_completed",
+            "订单已完成",
+            "您的订单已完成，如有问题可在订单详情中申请售后。",
+        )
+        .await?;
+    }
 
     Ok(ok("状态更新成功", order))
 }
@@ -5549,6 +5691,26 @@ where
 {
     ensure_order_exists(&state.db, &id).await?;
     let amount_cents = body.amount_cents.unwrap_or_default().max(0);
+    let reason = non_empty(body.reason).unwrap_or_else(|| "平台退款处理".to_string());
+    let handling_method = non_empty(body.handling_method).unwrap_or_else(|| "原路退款".to_string());
+    let existing_after_sale = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT mall_after_sale_json(sale)
+        FROM mall_after_sales sale
+        WHERE sale.order_id = $1
+          AND sale.status IN ('approved', 'refunding', 'refunded', 'resolved')
+        ORDER BY sale.created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(&id)
+    .fetch_optional(&state.db)
+    .await?;
+    if let Some(after_sale) = existing_after_sale {
+        return Ok(ok("退款记录已存在", after_sale));
+    }
+    create_mall_platform_refund_order(&state.db, &id, None, amount_cents, &reason, Some("admin"))
+        .await?;
     sqlx::query(
         r#"
         UPDATE mall_orders
@@ -5569,11 +5731,11 @@ where
           status, handling_method, solution_type, negotiation_status, timeline
         )
         SELECT id, user_id, 'refund_only', COALESCE($2, '平台退款处理'), $3,
-               $4, $4, $4, 'approved', COALESCE($5, '极速退款'), 'refund_only', 'agreed',
+               $4, $4, $4, 'refunding', COALESCE($5, '原路退款'), 'refund_only', 'agreed',
                jsonb_build_array(jsonb_build_object(
-                 'status', 'approved',
-                 'title', '退款已审核',
-                 'description', '管理端已发起退款',
+                 'status', 'refunding',
+                 'title', '退款处理中',
+                 'description', '管理端已发起原路退款处理',
                  'createdAt', now()
                ))
         FROM mall_orders
@@ -5594,10 +5756,10 @@ where
         "#,
     )
     .bind(&id)
-    .bind(body.reason)
+    .bind(&reason)
     .bind("管理端已发起退款")
     .bind(amount_cents)
-    .bind(body.handling_method)
+    .bind(&handling_method)
     .fetch_one(&state.db)
     .await?;
 
@@ -5612,6 +5774,191 @@ where
     .await?;
 
     Ok(ok("退款处理成功", after_sale))
+}
+
+async fn create_mall_platform_refund_order(
+    pool: &PgPool,
+    order_id: &str,
+    after_sale_id: Option<&str>,
+    amount_cents: i64,
+    reason: &str,
+    requested_by: Option<&str>,
+) -> ApiResult<Value> {
+    if amount_cents <= 0 {
+        return Err(ApiError::BadRequest("退款金额必须大于0".to_string()));
+    }
+    let business_id = after_sale_id.unwrap_or(order_id);
+    let business_type = if after_sale_id.is_some() {
+        "mall_after_sale"
+    } else {
+        "mall_order"
+    };
+    let idempotency_key = format!("{business_type}:{business_id}:wechat_refund");
+
+    if let Some(existing) = sqlx::query_scalar::<_, Value>(
+        "SELECT to_jsonb(platform_refund_orders) FROM platform_refund_orders WHERE idempotency_key = $1",
+    )
+    .bind(&idempotency_key)
+    .fetch_optional(pool)
+    .await?
+    {
+        let status = existing
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if !matches!(status, "failed" | "abnormal") {
+            return Ok(existing);
+        }
+    }
+
+    let payment = sqlx::query_as::<_, MallRefundPaymentRow>(
+        r#"
+        SELECT id, out_trade_no, amount_cents, provider_transaction_id
+        FROM payments
+        WHERE business_type = 'mall_order'
+          AND business_id = $1
+          AND status = 'paid'
+        ORDER BY paid_at DESC NULLS LAST, created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(order_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| ApiError::BadRequest("订单没有可退款的已支付记录".to_string()))?;
+
+    let refund_cents = amount_cents.min(payment.amount_cents);
+    let out_refund_no = format!("mall_refund_{}", uuid::Uuid::new_v4().simple().to_string());
+    let metadata = json!({
+        "orderId": order_id,
+        "afterSaleId": after_sale_id,
+        "source": "mall_after_sale_refund"
+    });
+    let refund_order = sqlx::query_scalar::<_, Value>(
+        r#"
+        INSERT INTO platform_refund_orders (
+          business_type, business_id, payment_order_id, provider, out_refund_no,
+          amount_cents, currency, reason, status, requested_by, idempotency_key, metadata
+        )
+        VALUES ($1, $2, $3, 'wechat', $4, $5, 'CNY', $6, 'submitted', $7, $8, $9)
+        ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL
+        DO UPDATE SET updated_at = now()
+        RETURNING to_jsonb(platform_refund_orders)
+        "#,
+    )
+    .bind(business_type)
+    .bind(business_id)
+    .bind(&payment.id)
+    .bind(&out_refund_no)
+    .bind(refund_cents)
+    .bind(reason)
+    .bind(requested_by)
+    .bind(&idempotency_key)
+    .bind(metadata)
+    .fetch_one(pool)
+    .await?;
+
+    let out_refund_no = refund_order
+        .get("out_refund_no")
+        .and_then(Value::as_str)
+        .unwrap_or(&out_refund_no)
+        .to_string();
+    let config = WechatPayMerchantConfig::from_env_for_service(ApiService::Mall)?;
+    let path = "/v3/refund/domestic/refunds";
+    let mut request_body = json!({
+        "out_refund_no": out_refund_no,
+        "reason": truncate_chars(reason, 80),
+        "amount": {
+            "refund": refund_cents,
+            "total": payment.amount_cents,
+            "currency": "CNY"
+        }
+    });
+    if let Some(transaction_id) = payment.provider_transaction_id.as_deref() {
+        request_body["transaction_id"] = json!(transaction_id);
+    } else {
+        request_body["out_trade_no"] = json!(payment.out_trade_no);
+    }
+    let body_text = request_body.to_string();
+    let authorization = wechat_authorization(&config, "POST", path, &body_text)?;
+    let response = with_wechat_json_headers(
+        reqwest::Client::new().post(format!("https://api.mch.weixin.qq.com{path}")),
+        &authorization,
+    )
+    .body(body_text)
+    .send()
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("微信退款请求失败: {err}")))?;
+    let status_code = response.status();
+    let response_text = response
+        .text()
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("微信退款响应读取失败: {err}")))?;
+    let provider_payload = serde_json::from_str::<Value>(&response_text)
+        .unwrap_or_else(|_| json!({ "raw": response_text }));
+
+    if !status_code.is_success() {
+        sqlx::query(
+            r#"
+            UPDATE platform_refund_orders
+            SET status = 'failed',
+                provider_payload = $2,
+                updated_at = now()
+            WHERE idempotency_key = $1
+            "#,
+        )
+        .bind(&idempotency_key)
+        .bind(json!({
+            "httpStatus": status_code.as_u16(),
+            "response": provider_payload
+        }))
+        .execute(pool)
+        .await?;
+        return Err(ApiError::BadRequest(format!(
+            "微信退款申请失败: {}",
+            provider_payload
+                .get("message")
+                .and_then(Value::as_str)
+                .or_else(|| provider_payload.get("code").and_then(Value::as_str))
+                .unwrap_or("请稍后重试")
+        )));
+    }
+
+    let provider_status = provider_payload
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("PROCESSING");
+    let refund_status = match provider_status {
+        "SUCCESS" => "success",
+        "PROCESSING" => "processing",
+        "ABNORMAL" => "abnormal",
+        "CLOSED" => "closed",
+        _ => "processing",
+    };
+    let provider_refund_id = provider_payload
+        .get("refund_id")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let updated = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE platform_refund_orders
+        SET status = $2,
+            provider_refund_id = COALESCE($3, provider_refund_id),
+            provider_payload = $4,
+            completed_at = CASE WHEN $2 = 'success' THEN now() ELSE completed_at END,
+            updated_at = now()
+        WHERE idempotency_key = $1
+        RETURNING to_jsonb(platform_refund_orders)
+        "#,
+    )
+    .bind(&idempotency_key)
+    .bind(refund_status)
+    .bind(provider_refund_id)
+    .bind(provider_payload)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(updated)
 }
 
 async fn admin_list_after_sales<S>(
@@ -5743,6 +6090,14 @@ where
         validate_after_sale_negotiation_status(negotiation_status)?;
     }
 
+    let previous_status = if body.status.as_deref() == Some("refunding") {
+        sqlx::query_scalar::<_, String>("SELECT status FROM mall_after_sales WHERE id = $1")
+            .bind(&id)
+            .fetch_optional(&state.db)
+            .await?
+    } else {
+        None
+    };
     let handling_method = non_empty(body.handling_method);
     let resolution = non_empty(body.resolution);
     let timeline_event = body.status.as_deref().map(|status| {
@@ -5848,6 +6203,54 @@ where
         .execute(&state.db)
         .await?;
 
+        if status == "refunding" {
+            let refund_amount = after_sale
+                .get("approvedAmountCents")
+                .and_then(Value::as_i64)
+                .or_else(|| after_sale.get("amountCents").and_then(Value::as_i64))
+                .unwrap_or_default();
+            if let Err(refund_error) = create_mall_platform_refund_order(
+                &state.db,
+                &order_id,
+                after_sale.get("id").and_then(Value::as_str),
+                refund_amount,
+                resolution.as_deref().unwrap_or("售后原路退款"),
+                Some("admin"),
+            )
+            .await
+            {
+                if let Some(previous_status) = previous_status.as_deref() {
+                    sqlx::query(
+                        r#"
+                        UPDATE mall_after_sales
+                        SET status = $2,
+                            updated_at = now()
+                        WHERE id = $1
+                        "#,
+                    )
+                    .bind(&id)
+                    .bind(previous_status)
+                    .execute(&state.db)
+                    .await?;
+                    sqlx::query(
+                        r#"
+                        UPDATE mall_orders
+                        SET refund_status = $2,
+                            after_sale_status = $3,
+                            updated_at = now()
+                        WHERE id = $1
+                        "#,
+                    )
+                    .bind(&order_id)
+                    .bind(refund_status_for_after_sale(previous_status))
+                    .bind(order_after_sale_status(previous_status))
+                    .execute(&state.db)
+                    .await?;
+                }
+                return Err(refund_error);
+            }
+        }
+
         insert_order_event(
             &state.db,
             &order_id,
@@ -5863,6 +6266,21 @@ where
             },
         )
         .await?;
+        if let Some(user_id) = after_sale.get("userId").and_then(Value::as_str) {
+            insert_mall_notification(
+                &state.db,
+                user_id,
+                "mall_after_sale_processed",
+                after_sale_status_title(status),
+                resolution
+                    .as_deref()
+                    .unwrap_or_else(|| after_sale_status_title(status)),
+                Some(&order_id),
+                Some("mall_after_sale"),
+                after_sale.get("id").and_then(Value::as_str),
+            )
+            .await?;
+        }
     }
 
     Ok(ok("售后申请处理成功", after_sale))
@@ -6726,7 +7144,10 @@ where
             "deliveryFeeCents": 600,
             "freeDeliveryThresholdCents": 9900,
             "coldChainRequired": true,
-            "refundReviewMinutes": 10
+            "refundReviewMinutes": 10,
+            "supportName": "叁友甄选客服",
+            "supportPhone": "18888888888",
+            "supportHours": "09:00-21:00"
           }'::jsonb),
           COALESCE($9, '{
             "leaderCommissionRate": 8,
@@ -7712,10 +8133,10 @@ where
         "#,
     )
     .bind(&session_id)
-    .bind(body.sender_id)
-    .bind(body.sender_role)
+    .bind(&body.sender_id)
+    .bind(&body.sender_role)
     .bind(&body.content)
-    .bind(metadata)
+    .bind(&metadata)
     .fetch_one(&state.db)
     .await?;
 
@@ -7727,10 +8148,34 @@ where
         WHERE id = $1
         "#,
     )
-    .bind(session_id)
-    .bind(body.content)
+    .bind(&session_id)
+    .bind(&body.content)
     .execute(&state.db)
     .await?;
+    if matches!(
+        body.sender_role.as_str(),
+        "agent" | "admin" | "support" | "operator"
+    ) {
+        if let Some(user_id) =
+            sqlx::query_scalar::<_, String>("SELECT user_id FROM support_sessions WHERE id = $1")
+                .bind(&session_id)
+                .fetch_optional(&state.db)
+                .await?
+        {
+            let order_id = metadata.get("orderId").and_then(Value::as_str);
+            insert_mall_notification(
+                &state.db,
+                &user_id,
+                "mall_support_message",
+                "客服有新消息",
+                &body.content,
+                order_id,
+                Some("support_session"),
+                Some(&session_id),
+            )
+            .await?;
+        }
+    }
 
     Ok(ok("消息发送成功", message))
 }
@@ -8330,6 +8775,14 @@ pub async fn settle_mall_order_payment_success(pool: &PgPool, order_id: &str) ->
         "done",
     )
     .await?;
+    insert_mall_order_notification(
+        pool,
+        order_id,
+        "mall_order_paid",
+        "订单已支付",
+        "您的商城订单已支付成功，正在安排备货配送。",
+    )
+    .await?;
     ensure_fulfillment_code(pool, order_id, None, None).await?;
     Ok(())
 }
@@ -8748,8 +9201,8 @@ fn normalize_product_activity_type(value: &str) -> ApiResult<String> {
         "fixedPrice" | "fixed_price" | "onePrice" | "one_price" | "fixed" | "一口价" => {
             Ok("fixed_price".to_string())
         }
-        "freeDelivery" | "free_delivery" | "freeShipping" | "free_shipping" | "包邮"
-        | "免运" | "免运费" => Ok("free_delivery".to_string()),
+        "freeDelivery" | "free_delivery" | "freeShipping" | "free_shipping" | "包邮" | "免运"
+        | "免运费" => Ok("free_delivery".to_string()),
         "promotionVenue" | "promotion_venue" | "venue" | "festival" | "大促" | "会场"
         | "大促会场" => Ok("promotion_venue".to_string()),
         "newArrival" | "new_arrival" | "new" | "新品" | "上新" => Ok("new_arrival".to_string()),
@@ -11280,14 +11733,17 @@ async fn fetch_mall_marketing_context(
     .await?;
 
     let mut context = MallMarketingContext::default();
+    let mut selected_subtotal_cents = 0_i64;
+    let mut delivery_campaign_intersection: Option<Vec<String>> = None;
     for item in items {
         let line_total_cents = (item.price_cents * i64::from(item.quantity)).max(0);
         if line_total_cents <= 0 {
             continue;
         }
+        selected_subtotal_cents += line_total_cents;
         let category_code = item.category_code.as_deref().unwrap_or_default();
         let mut matched_full_reduction = false;
-        let mut matched_delivery = false;
+        let mut item_delivery_campaign_ids = Vec::new();
 
         for campaign in &campaigns {
             let campaign_type = campaign
@@ -11298,7 +11754,10 @@ async fn fetch_mall_marketing_context(
                 continue;
             }
 
-            if matches!(campaign_type, "discount" | "full_reduction" | "full_discount") {
+            if matches!(
+                campaign_type,
+                "discount" | "full_reduction" | "full_discount"
+            ) {
                 matched_full_reduction = true;
                 push_unique_campaign_id(&mut context.full_reduction_campaign_ids, campaign);
             }
@@ -11306,17 +11765,32 @@ async fn fetch_mall_marketing_context(
                 campaign_type,
                 "free_delivery" | "delivery_reduction" | "delivery_subsidy"
             ) {
-                matched_delivery = true;
-                push_unique_campaign_id(&mut context.delivery_campaign_ids, campaign);
+                push_unique_campaign_id(&mut item_delivery_campaign_ids, campaign);
             }
         }
 
         if matched_full_reduction {
             context.eligible_full_reduction_subtotal_cents += line_total_cents;
         }
-        if matched_delivery {
-            context.eligible_delivery_subtotal_cents += line_total_cents;
-        }
+        delivery_campaign_intersection = Some(match delivery_campaign_intersection {
+            Some(mut current_ids) => {
+                current_ids.retain(|id| {
+                    item_delivery_campaign_ids
+                        .iter()
+                        .any(|item_id| item_id == id)
+                });
+                current_ids
+            }
+            None => item_delivery_campaign_ids,
+        });
+    }
+
+    let shared_delivery_campaign_ids = delivery_campaign_intersection.unwrap_or_default();
+    context.all_items_delivery_campaign_eligible =
+        selected_subtotal_cents > 0 && !shared_delivery_campaign_ids.is_empty();
+    if context.all_items_delivery_campaign_eligible {
+        context.eligible_delivery_subtotal_cents = selected_subtotal_cents;
+        context.delivery_campaign_ids = shared_delivery_campaign_ids;
     }
 
     Ok(context)
@@ -11995,7 +12469,13 @@ async fn calculate_mall_price_summary(
     };
     let coupon = calculate_mall_coupon_discount_cents(pool, subtotal_cents).await?;
     let delivery_campaign_subtotal_cents = marketing_context
-        .map(|context| context.eligible_delivery_subtotal_cents)
+        .map(|context| {
+            if context.all_items_delivery_campaign_eligible {
+                context.eligible_delivery_subtotal_cents
+            } else {
+                0
+            }
+        })
         .unwrap_or(subtotal_cents)
         .clamp(0, subtotal_cents);
     let delivery_campaign = calculate_mall_delivery_campaign_discount_cents(
@@ -13203,6 +13683,67 @@ async fn insert_order_event(
     .bind(status)
     .execute(pool)
     .await?;
+    Ok(())
+}
+
+async fn insert_mall_notification(
+    pool: &PgPool,
+    user_id: &str,
+    notification_type: &str,
+    title: &str,
+    content: &str,
+    related_order_id: Option<&str>,
+    related_type: Option<&str>,
+    related_id: Option<&str>,
+) -> ApiResult<()> {
+    if user_id.trim().is_empty() {
+        return Ok(());
+    }
+    sqlx::query(
+        r#"
+        INSERT INTO notifications (
+          user_id, type, title, content, related_order_id, related_type, related_id, is_read
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, false)
+        "#,
+    )
+    .bind(user_id)
+    .bind(notification_type)
+    .bind(title)
+    .bind(content)
+    .bind(related_order_id)
+    .bind(related_type)
+    .bind(related_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+async fn insert_mall_order_notification(
+    pool: &PgPool,
+    order_id: &str,
+    notification_type: &str,
+    title: &str,
+    content: &str,
+) -> ApiResult<()> {
+    if let Some(user_id) =
+        sqlx::query_scalar::<_, String>("SELECT user_id FROM mall_orders WHERE id = $1")
+            .bind(order_id)
+            .fetch_optional(pool)
+            .await?
+    {
+        insert_mall_notification(
+            pool,
+            &user_id,
+            notification_type,
+            title,
+            content,
+            Some(order_id),
+            Some("mall_order"),
+            Some(order_id),
+        )
+        .await?;
+    }
     Ok(())
 }
 

@@ -432,7 +432,7 @@ function buildCartDiscountDetail(cart: MallCart, payableCents: number, savedCent
     0,
   )
   const originalDeliveryFeeCents = Math.max(
-    cartWithDeliveryDiscount.originalDeliveryFeeCents ?? deliveryFeeCents + freeDeliveryDiscountCents,
+    cartWithDeliveryDiscount.originalDeliveryFeeCents ?? deliveryFeeCents,
     0,
   )
 
@@ -444,7 +444,7 @@ function buildCartDiscountDetail(cart: MallCart, payableCents: number, savedCent
     pointsRedeemedCents,
     originalDeliveryFeeCents,
     freeDeliveryDiscountCents,
-    savedCents: Math.max(savedCents + freeDeliveryDiscountCents, 0),
+    savedCents: Math.max(savedCents, 0),
     payableCents,
   }
 }

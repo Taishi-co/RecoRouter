@@ -464,6 +464,9 @@ interface SettingsForm {
   pickupWindowStart: string;
   pickupWindowEnd: string;
   deliveryBatchTimes: string;
+  supportName: string;
+  supportPhone: string;
+  supportHours: string;
   leaderCommissionRate: string;
   platformServiceRate: string;
   supplierSettlementCycle: string;
@@ -1373,6 +1376,9 @@ const initialSettingsForm: SettingsForm = {
   pickupWindowStart: '16:00',
   pickupWindowEnd: '20:00',
   deliveryBatchTimes: '10:00,14:00,18:00',
+  supportName: '叁友甄选客服',
+  supportPhone: '18888888888',
+  supportHours: '09:00-21:00',
   leaderCommissionRate: '8',
   platformServiceRate: '3',
   supplierSettlementCycle: 'T+7',
@@ -11497,6 +11503,7 @@ function MallDeliveryRulesSection({
     { label: '阶梯运费', value: `${deliveryFeeTierCount(settingsForm.deliveryFeeTiersText)} 档`, note: deliveryFeeTierSummary(settingsForm.deliveryFeeTiersText) },
     { label: '履约承诺', value: `${settingsForm.deliveryPromiseMinutes || '0'} 分钟`, note: '用于订单履约时效展示' },
     { label: '退款审核', value: `${settingsForm.refundReviewMinutes || '0'} 分钟`, note: '售后进入人工审核的时限' },
+    { label: '客服电话', value: settingsForm.supportPhone || '-', note: `${settingsForm.supportName || '客服'} · ${settingsForm.supportHours || '-'}` },
     { label: '冷链配送', value: settingsForm.coldChainEnabled ? '启用' : '停用', note: '影响冷链商品履约配置' },
   ];
 
@@ -11575,6 +11582,18 @@ function MallDeliveryRulesSection({
             <label>
               退款审核分钟
               <input value={draft.refundReviewMinutes} type="number" min="1" onChange={event => updateDraft({ refundReviewMinutes: event.target.value })} />
+            </label>
+            <label>
+              客服名称
+              <input value={draft.supportName} placeholder="叁友甄选客服" onChange={event => updateDraft({ supportName: event.target.value })} />
+            </label>
+            <label>
+              客服电话
+              <input value={draft.supportPhone} placeholder="运营客服电话" onChange={event => updateDraft({ supportPhone: event.target.value })} />
+            </label>
+            <label>
+              服务时间
+              <input value={draft.supportHours} placeholder="09:00-21:00" onChange={event => updateDraft({ supportHours: event.target.value })} />
             </label>
             <label className="toggle-line">
               <input checked={draft.coldChainEnabled} type="checkbox" onChange={event => updateDraft({ coldChainEnabled: event.target.checked })} />
@@ -12758,6 +12777,9 @@ function App() {
       pickupWindowStart: stringValue(deliveryRules, 'pickupWindowStart', '16:00'),
       pickupWindowEnd: stringValue(deliveryRules, 'pickupWindowEnd', '20:00'),
       deliveryBatchTimes: stringValue(deliveryRules, 'deliveryBatchTimes', '10:00,14:00,18:00'),
+      supportName: stringValue(deliveryRules, 'supportName', stringValue(data.mallSettings, 'supportName', '叁友甄选客服')),
+      supportPhone: stringValue(deliveryRules, 'supportPhone', stringValue(data.mallSettings, 'supportPhone', '18888888888')),
+      supportHours: stringValue(deliveryRules, 'supportHours', stringValue(data.mallSettings, 'supportHours', '09:00-21:00')),
       leaderCommissionRate: String(numberValue(paymentSplitRules, 'leaderCommissionRate', 8)),
       platformServiceRate: String(numberValue(paymentSplitRules, 'platformServiceRate', 3)),
       supplierSettlementCycle: stringValue(paymentSplitRules, 'supplierSettlementCycle', 'T+7'),
@@ -14052,6 +14074,9 @@ function App() {
           rangePolygon: deliveryRangePolygon,
           feeTiers: deliveryFeeTiers,
           outOfRangeBlocked: form.deliveryRangeEnabled,
+          supportName: form.supportName.trim(),
+          supportPhone: form.supportPhone.trim(),
+          supportHours: form.supportHours.trim(),
         },
         paymentSplitRules: {
           leaderCommissionRate: Number(form.leaderCommissionRate) || 0,

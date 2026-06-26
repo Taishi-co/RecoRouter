@@ -8,6 +8,7 @@ import { AppPageShell } from '@/components/layout/app-page-shell'
 import { BottomNav } from '@/components/layout/bottom-nav'
 import { Bell, CircleX, DollarSign, ShieldCheck, CircleCheck } from 'lucide-react-taro'
 import { Network } from '@/network'
+import { MallPage } from '../mall/mall-ui'
 
 const PAGE_SIZE = 20
 
@@ -19,6 +20,8 @@ interface Notification {
   content: string
   related_order_id?: string
   related_demand_id?: string
+  related_type?: string
+  related_id?: string
   is_read: boolean
   created_at: string
 }
@@ -181,6 +184,22 @@ export default function Notifications() {
     const userInfo = Taro.getStorageSync('userInfo')
     if (!userInfo) return
 
+    if (isMallNotification(notification)) {
+      if (notification.related_type === 'support_session' && notification.related_id) {
+        const orderQuery = notification.related_order_id ? `&orderId=${notification.related_order_id}` : ''
+        Taro.navigateTo({ url: `/pages/mall/support/index?sessionId=${notification.related_id}${orderQuery}` })
+        return
+      }
+      if (notification.related_type === 'mall_after_sale' && notification.related_order_id) {
+        Taro.navigateTo({ url: `/pages/mall/after-sale/index?orderId=${notification.related_order_id}` })
+        return
+      }
+      if (notification.related_order_id) {
+        Taro.navigateTo({ url: `/pages/mall/order-detail/index?id=${notification.related_order_id}` })
+        return
+      }
+    }
+
     if (notification.related_order_id) {
       // 跳转到订单详情（根据用户角色）
       if (userInfo.role === 'owner') {
@@ -217,6 +236,12 @@ export default function Notifications() {
         return { icon: ShieldCheck, color: '#8b5cf6', bgColor: '#ede9fe' }
       case 'order_completed':
         return { icon: CircleCheck, color: '#10b981', bgColor: '#d1fae5' }
+      case 'mall_order_paid':
+      case 'mall_order_dispatching':
+      case 'mall_order_completed':
+      case 'mall_support_message':
+      case 'mall_after_sale_processed':
+        return { icon: Bell, color: '#2F7E43', bgColor: '#EAF8E7' }
       default:
         return { icon: Bell, color: '#6b7280', bgColor: '#f3f4f6' }
     }
@@ -253,10 +278,61 @@ export default function Notifications() {
   const displayNotifications = notifications
   const displayUnreadCount = unreadCount
   const currentRole = Taro.getStorageSync('userInfo')?.role
+  const isMallSource = Taro.getCurrentInstance().router?.params?.source === 'mall'
   const bottomNav =
     currentRole === 'merchant'
       ? <BottomNav type="merchant" active="messages" />
       : <BottomNav type="common" active="messages" />
+
+  if (isMallSource) {
+    return (
+      <MallPage active="mine">
+        <View className="mall-back-row">
+          <View>
+            <Text className="mall-breadcrumb">叁友甄选</Text>
+            <Text className="mall-page-title">消息提醒</Text>
+          </View>
+          {displayUnreadCount > 0 ? (
+            <View className="mall-small-button" onClick={handleMarkAllAsRead}>
+              <Text>全部已读</Text>
+            </View>
+          ) : null}
+        </View>
+        <View className="mall-card">
+          {loading && notifications.length === 0 ? (
+            <Text className="mall-empty-copy">加载中...</Text>
+          ) : null}
+          {displayNotifications.map((notification) => {
+            const timeText = formatTime(notification.created_at)
+            return (
+              <View
+                key={notification.id}
+                className={notification.is_read ? 'mall-link-card' : 'mall-link-card mall-notification-unread'}
+                onClick={() => handleNotificationClick(notification)}
+              >
+                <View className="mall-link-icon">
+                  <Bell size={18} color="#2F7E43" />
+                </View>
+                <View className="mall-link-copy">
+                  <Text className="mall-link-title">{notification.title}</Text>
+                  <Text className="mall-link-subtitle">{notification.content}</Text>
+                  <Text className="mall-breadcrumb">{timeText}</Text>
+                </View>
+                {!notification.is_read ? <Text className="mall-status-pill">未读</Text> : null}
+              </View>
+            )
+          })}
+          {!loading && !displayNotifications.length ? (
+            <View className="mall-empty">
+              <Bell size={40} color="#9CA89A" />
+              <Text className="mall-empty-title">{authMissing ? '请先登录' : '暂无消息提醒'}</Text>
+              <Text className="mall-empty-copy">订单、售后、客服和活动消息会在这里展示。</Text>
+            </View>
+          ) : null}
+        </View>
+      </MallPage>
+    )
+  }
 
   return (
     <AppPageShell
@@ -381,6 +457,13 @@ export default function Notifications() {
       </View>
     </AppPageShell>
   )
+}
+
+function isMallNotification(notification: Notification) {
+  return notification.type?.startsWith('mall_')
+    || notification.related_type === 'mall_order'
+    || notification.related_type === 'mall_after_sale'
+    || notification.related_type === 'support_session'
 }
 
 // 格式化时间

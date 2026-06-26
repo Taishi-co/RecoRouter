@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Text, View } from '@tarojs/components'
+import { Image, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
-import { Camera, ChevronLeft, Headphones, PackageCheck, RefreshCw, RotateCcw } from 'lucide-react-taro'
+import { Camera, ChevronLeft, Headphones, PackageCheck, RefreshCw, RotateCcw, X } from 'lucide-react-taro'
 import { Textarea } from '@/components/ui/textarea'
-import { createMallAfterSale, getMallOrder, type MallAfterSale, type MallOrder } from '@/services/mall'
+import { createMallAfterSale, getMallOrder, resolveMallImageUrl, type MallAfterSale, type MallOrder } from '@/services/mall'
 import { MallPage, MallPrimaryButton, mallYuan } from '../mall-ui'
 import { redirectToMallAuth } from '../auth-route'
 
@@ -12,18 +12,41 @@ interface StoredUser {
 }
 
 type AfterSaleType = 'return_refund' | 'exchange' | 'refund_only'
+type MallOrderItem = MallOrder['items'][number]
 
 const afterSaleTypes: Array<{
   key: AfterSaleType
   title: string
   description: string
+  scene: string
 }> = [
-  { key: 'return_refund', title: '退货退款', description: '商品需要退回，客服确认后退款' },
-  { key: 'exchange', title: '换货', description: '破损、错发等需要重新配送' },
-  { key: 'refund_only', title: '仅退款', description: '少件、坏果、差价等无需退回' },
+  {
+    key: 'return_refund',
+    title: '退货退款',
+    description: '已收到商品，需要寄回后退款',
+    scene: '适用于破损、错发、品质问题等需要退回商品的情况',
+  },
+  {
+    key: 'exchange',
+    title: '换货',
+    description: '保留订单，为您重新安排商品',
+    scene: '适用于错发、破损但仍希望重新配送同款商品的情况',
+  },
+  {
+    key: 'refund_only',
+    title: '仅退款',
+    description: '无需寄回商品，审核后原路退回',
+    scene: '适用于少件、坏果、差价、称重调整等无需退货的情况',
+  },
 ]
 
 const reasonOptions = ['商品破损/坏果', '少件/漏发', '错发商品', '重量或价格有误', '其他问题']
+const processSteps = [
+  { title: '提交申请', description: '请确认商品、金额和问题说明后提交。' },
+  { title: '客服审核', description: '客服会结合订单、凭证和配送记录核实。' },
+  { title: '寄回或补发', description: '需要退货或换货时，会在会话中告知处理方式。' },
+  { title: '退款完成', description: '通过后按支付方式原路退回，到账时间以支付渠道为准。' },
+]
 
 export default function MallAfterSalePage() {
   const [order, setOrder] = useState<MallOrder | null>(null)
@@ -54,8 +77,18 @@ export default function MallAfterSalePage() {
     setLoading(true)
     try {
       const nextOrder = await getMallOrder(orderId)
+      const existingAfterSale = nextOrder.afterSales?.[0]
+      const existingItemIds = existingAfterSale?.selectedItems
+        ?.map((item) => item.orderItemId || item.id || '')
+        .filter(Boolean) || []
+      if (existingAfterSale) {
+        setAfterSaleType((existingAfterSale.afterSaleType as AfterSaleType) || 'refund_only')
+        setReason(existingAfterSale.reason || reasonOptions[0])
+        setDescription(existingAfterSale.description || '')
+        setEvidenceImages(existingAfterSale.evidenceImages || [])
+      }
       setOrder(nextOrder)
-      setSelectedOrderItemIds(nextOrder.items.map((item) => item.id))
+      setSelectedOrderItemIds(existingItemIds.length ? existingItemIds : nextOrder.items.map((item) => item.id))
     } catch (error) {
       Taro.showToast({
         title: error instanceof Error ? error.message : '订单加载失败',
@@ -71,12 +104,18 @@ export default function MallAfterSalePage() {
     [order, selectedOrderItemIds],
   )
   const requestedAmountCents = useMemo(
-    () => selectedItems.reduce((sum, item) => sum + (item.lineTotalCents || item.unitPriceCents * item.quantity || 0), 0),
+    () => selectedItems.reduce((sum, item) => sum + orderItemAmountCents(item), 0),
     [selectedItems],
   )
+  const totalItemQuantity = useMemo(
+    () => order?.items.reduce((sum, item) => sum + Math.max(Number(item.quantity || 0), 0), 0) || 0,
+    [order],
+  )
   const latestAfterSale = order?.afterSales?.[0]
+  const isAfterSaleLocked = Boolean(latestAfterSale)
 
   const toggleItem = (itemId: string) => {
+    if (isAfterSaleLocked) return
     setSelectedOrderItemIds((current) => {
       if (current.includes(itemId)) {
         return current.length > 1 ? current.filter((id) => id !== itemId) : current
@@ -86,6 +125,7 @@ export default function MallAfterSalePage() {
   }
 
   const addEvidence = async () => {
+    if (isAfterSaleLocked) return
     try {
       const result = await Taro.chooseImage({ count: Math.max(1, 6 - evidenceImages.length) })
       setEvidenceImages((current) => [...current, ...result.tempFilePaths].slice(0, 6))
@@ -94,8 +134,25 @@ export default function MallAfterSalePage() {
     }
   }
 
+  const previewEvidenceImage = (imageUrl: string) => {
+    const images = (evidenceImages.length ? evidenceImages : latestAfterSale?.evidenceImages || []).map(resolveMallImageUrl)
+    Taro.previewImage({
+      urls: images,
+      current: resolveMallImageUrl(imageUrl),
+    })
+  }
+
+  const removeEvidenceImage = (imageUrl: string) => {
+    if (isAfterSaleLocked) return
+    setEvidenceImages((current) => current.filter((item) => item !== imageUrl))
+  }
+
   const submit = async () => {
     if (!order || submitting) return
+    if (isAfterSaleLocked) {
+      Taro.showToast({ title: '售后提交后不可修改', icon: 'none' })
+      return
+    }
     if (!selectedItems.length) {
       Taro.showToast({ title: '请选择售后商品', icon: 'none' })
       return
@@ -145,8 +202,8 @@ export default function MallAfterSalePage() {
       <View className="mall-back-row">
         <ChevronLeft size={24} color="#1F2D1F" onClick={() => Taro.navigateBack()} />
         <View>
-          <Text className="mall-breadcrumb">我的 / 售后服务</Text>
-          <Text className="mall-page-title">申请售后</Text>
+          <Text className="mall-breadcrumb">我的 / 订单售后</Text>
+          <Text className="mall-page-title">售后服务</Text>
         </View>
       </View>
 
@@ -161,27 +218,38 @@ export default function MallAfterSalePage() {
         <>
           <View className="mall-card">
             <View className="mall-list-row" style={{ marginTop: 0 }}>
-              <Text className="mall-list-title">订单 {order.orderNo}</Text>
+              <Text className="mall-list-title">订单摘要</Text>
               <Text className="mall-status-pill">{statusLabel(latestAfterSale?.status || order.afterSaleStatus || '可申请')}</Text>
             </View>
-            <Text className="mall-product-subtitle">{order.addressText || '送货地址待确认'}</Text>
-            <Text className="mall-product-name">实付 {mallYuan(order.payableCents)}</Text>
+            <Text className="mall-product-name">订单号 {order.orderNo}</Text>
+            <Text className="mall-product-subtitle">共 {totalItemQuantity || order.items.length} 件商品 · 实付 {mallYuan(order.payableCents)}</Text>
+            <Text className="mall-product-subtitle">收货信息：{order.addressText || '送货地址待确认'}</Text>
           </View>
 
           <View className="mall-card">
-            <Text className="mall-list-title">售后类型</Text>
-            <View className="mall-after-sale-type-grid">
+            <Text className="mall-list-title">选择售后服务</Text>
+            {isAfterSaleLocked ? (
+              <Text className="mall-product-subtitle">提交后不可修改。如需补充说明或更换处理方案，请联系客服协商。</Text>
+            ) : null}
+            <View className="mall-after-sale-method-list">
               {afterSaleTypes.map((item) => {
                 const Icon = item.key === 'return_refund' ? RotateCcw : item.key === 'exchange' ? RefreshCw : PackageCheck
+                const active = afterSaleType === item.key
                 return (
                   <View
                     key={item.key}
-                    className={afterSaleType === item.key ? 'mall-after-sale-type mall-after-sale-type-active' : 'mall-after-sale-type'}
-                    onClick={() => setAfterSaleType(item.key)}
+                    className={active ? 'mall-after-sale-type mall-after-sale-type-active' : 'mall-after-sale-type'}
+                    onClick={() => {
+                      if (!isAfterSaleLocked) setAfterSaleType(item.key)
+                    }}
                   >
-                    <Icon size={18} color={afterSaleType === item.key ? '#63BF54' : '#64725F'} />
-                    <Text className="mall-link-title">{item.title}</Text>
-                    <Text className="mall-link-subtitle">{item.description}</Text>
+                    <Icon size={18} color={active ? '#63BF54' : '#64725F'} />
+                    <View className="mall-link-copy">
+                      <Text className="mall-link-title">{item.title}</Text>
+                      <Text className="mall-link-subtitle">{item.description}</Text>
+                      <Text className="mall-product-subtitle">{item.scene}</Text>
+                    </View>
+                  <Text className="mall-status-pill">{active ? '已选择' : '选择'}</Text>
                   </View>
                 )
               })}
@@ -190,34 +258,59 @@ export default function MallAfterSalePage() {
 
           <View className="mall-card">
             <View className="mall-list-row" style={{ marginTop: 0 }}>
-              <Text className="mall-list-title">选择商品</Text>
-              <Text className="mall-section-action">预计 {mallYuan(requestedAmountCents)}</Text>
+              <Text className="mall-list-title">选择售后商品</Text>
+              <Text className="mall-section-action">已选 {selectedItems.length} 件</Text>
             </View>
             {order.items.map((item) => {
               const active = selectedOrderItemIds.includes(item.id)
+              const imageUrl = resolveMallImageUrl(item.imageUrl)
               return (
                 <View key={item.id} className={active ? 'mall-after-sale-item mall-after-sale-item-active' : 'mall-after-sale-item'} onClick={() => toggleItem(item.id)}>
                   <View className="mall-after-sale-check">
                     <Text>{active ? '✓' : ''}</Text>
                   </View>
+                  {imageUrl ? (
+                    <Image className="mall-orders-thumb" mode="aspectFill" src={imageUrl} />
+                  ) : (
+                    <View className="mall-orders-thumb mall-orders-thumb-empty" />
+                  )}
                   <View className="mall-link-copy">
-                    <Text className="mall-link-title">{item.productName}{item.variantName ? ` · ${item.variantName}` : ''}</Text>
-                    <Text className="mall-link-subtitle">数量 {item.quantity} · 单价 {mallYuan(item.unitPriceCents)}</Text>
+                    <Text className="mall-link-title">{item.productName}</Text>
+                    <Text className="mall-link-subtitle">{orderItemSpecText(item)}</Text>
+                    <Text className="mall-link-subtitle">数量 x{item.quantity} · 单价 {mallYuan(item.unitPriceCents)}</Text>
                   </View>
-                  <Text className="mall-summary-value">{mallYuan(item.lineTotalCents)}</Text>
+                  <View>
+                    <Text className="mall-summary-value">{mallYuan(orderItemAmountCents(item))}</Text>
+                    <Text className="mall-link-subtitle">{active ? '本次处理' : '不处理'}</Text>
+                  </View>
                 </View>
               )
             })}
           </View>
 
           <View className="mall-card">
-            <Text className="mall-list-title">售后原因</Text>
+            <View className="mall-list-row" style={{ marginTop: 0 }}>
+              <Text className="mall-list-title">退款金额</Text>
+              <Text className="mall-summary-value">{mallYuan(requestedAmountCents)}</Text>
+            </View>
+            <View className="mall-list-row">
+              <Text className="mall-link-subtitle">预计处理金额</Text>
+              <Text className="mall-section-action">{mallYuan(requestedAmountCents)}</Text>
+            </View>
+            <Text className="mall-product-subtitle">最终金额以客服审核、商品寄回状态和订单计价结果为准。</Text>
+          </View>
+
+          <View className="mall-card">
+            <Text className="mall-list-title">问题描述</Text>
+            <Text className="mall-product-subtitle">请选择最符合的售后原因，并补充问题细节。</Text>
             <View className="mall-reason-grid">
               {reasonOptions.map((item) => (
                 <View
                   key={item}
                   className={reason === item ? 'mall-reason mall-reason-active' : 'mall-reason'}
-                  onClick={() => setReason(item)}
+                  onClick={() => {
+                    if (!isAfterSaleLocked) setReason(item)
+                  }}
                 >
                   <Text>{item}</Text>
                 </View>
@@ -226,29 +319,89 @@ export default function MallAfterSalePage() {
             <Textarea
               className="mall-textarea"
               value={description}
-              onInput={(event) => setDescription(String(event.detail.value || ''))}
-              placeholder="请说明问题、期望处理方式，客服会在会话里继续沟通"
+              disabled={isAfterSaleLocked}
+              onInput={(event) => {
+                if (!isAfterSaleLocked) setDescription(String(event.detail.value || ''))
+              }}
+              placeholder="请填写商品问题、发现时间、期望处理方式等信息"
             />
           </View>
 
-          <View className="mall-total-bar">
-            <View>
-              <Text className="mall-total-label">凭证照片 {evidenceImages.length} 张</Text>
-              <Text className="mall-total-value" style={{ fontSize: 13 }}>最多 6 张，建议拍清商品和外包装</Text>
+          <View className="mall-card">
+            <View className="mall-list-row" style={{ marginTop: 0 }}>
+              <Text className="mall-list-title">凭证上传</Text>
+              <Text className="mall-section-action">{(isAfterSaleLocked ? latestAfterSale?.evidenceImages?.length || 0 : evidenceImages.length)}/6</Text>
             </View>
-            <View className="mall-total-button" style={{ background: '#63BF54' }} onClick={addEvidence}>
-              <Camera size={16} color="#FFFFFF" />
-              <Text style={{ marginLeft: 4 }}>上传</Text>
+            <Text className="mall-product-subtitle">{isAfterSaleLocked ? '已提交的凭证只可查看，不可直接修改。' : '可上传商品、外包装、配送单等照片，便于客服核实。'}</Text>
+            {(isAfterSaleLocked ? latestAfterSale?.evidenceImages?.length : evidenceImages.length) ? (
+              <View className="mall-orders-images">
+                {(isAfterSaleLocked ? latestAfterSale?.evidenceImages || [] : evidenceImages).map((imageUrl, index) => (
+                  <View key={`${imageUrl}-${index}`} className="mall-evidence-thumb">
+                    <Image
+                      className="mall-orders-thumb"
+                      mode="aspectFill"
+                      src={resolveMallImageUrl(imageUrl)}
+                      onClick={() => previewEvidenceImage(imageUrl)}
+                    />
+                    {!isAfterSaleLocked ? (
+                      <View className="mall-evidence-delete" onClick={() => removeEvidenceImage(imageUrl)}>
+                        <X size={12} color="#FFFFFF" />
+                      </View>
+                    ) : null}
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            {!isAfterSaleLocked ? (
+              <View className="mall-total-bar">
+                <View>
+                  <Text className="mall-total-label">售后凭证</Text>
+                  <Text className="mall-total-value" style={{ fontSize: 13 }}>最多 6 张，建议拍清商品和外包装</Text>
+                </View>
+                <View className="mall-total-button" style={{ background: '#63BF54' }} onClick={addEvidence}>
+                  <Camera size={16} color="#FFFFFF" />
+                  <Text style={{ marginLeft: 4 }}>上传照片</Text>
+                </View>
+              </View>
+            ) : null}
+          </View>
+
+          <View className="mall-card">
+            <Text className="mall-list-title">处理流程</Text>
+            <View className="mall-after-sale-flow">
+              {processSteps.map((step, index) => (
+                <View key={step.title} className="mall-after-sale-step">
+                  <View className="mall-after-sale-dot" />
+                  <View className="mall-link-copy">
+                    <Text className="mall-link-title">{index + 1}. {step.title}</Text>
+                    <Text className="mall-link-subtitle">{step.description}</Text>
+                  </View>
+                </View>
+              ))}
             </View>
           </View>
 
-          {latestAfterSale ? <AfterSaleProgress afterSale={latestAfterSale} /> : null}
+          {latestAfterSale ? (
+            <AfterSaleProgress afterSale={latestAfterSale} />
+          ) : (
+            <View className="mall-card">
+              <Text className="mall-list-title">已有售后进度</Text>
+              <Text className="mall-product-subtitle">当前订单暂无进行中的售后申请。</Text>
+            </View>
+          )}
 
-          <View style={{ marginTop: 18 }}>
-            <MallPrimaryButton onClick={submit}>
-              <Text>{submitting ? '提交中...' : '提交售后申请'}</Text>
-            </MallPrimaryButton>
-          </View>
+          {!isAfterSaleLocked ? (
+            <View style={{ marginTop: 18 }}>
+              <MallPrimaryButton onClick={submit}>
+                <Text>{submitting ? '提交中...' : '提交售后申请'}</Text>
+              </MallPrimaryButton>
+            </View>
+          ) : (
+            <View className="mall-after-sale-readonly">
+              <Text>提交后不可修改</Text>
+              <Text>如需补充凭证、沟通退款或换货方案，请联系客服处理。</Text>
+            </View>
+          )}
           <View style={{ marginTop: 10 }}>
             <MallPrimaryButton subtle onClick={() => Taro.navigateTo({ url: `/pages/mall/support/index?orderId=${order.id}${latestAfterSale?.supportSessionId ? `&sessionId=${latestAfterSale.supportSessionId}` : ''}` })}>
               <Headphones size={18} color="#2F7E43" />
@@ -261,6 +414,19 @@ export default function MallAfterSalePage() {
   )
 }
 
+function orderItemAmountCents(item: MallOrderItem) {
+  return item.lineTotalCents || item.unitPriceCents * item.quantity || 0
+}
+
+function orderItemSpecText(item: MallOrderItem) {
+  const details = [
+    item.variantName ? `规格：${item.variantName}` : '',
+    item.sku ? `货号：${item.sku}` : '',
+    item.weightUnitLabel ? `单位：${item.weightUnitLabel}` : '',
+  ].filter(Boolean)
+  return details.join(' · ') || '默认规格'
+}
+
 function AfterSaleProgress({ afterSale }: { afterSale: MallAfterSale }) {
   const timeline = afterSale.timeline?.length
     ? afterSale.timeline
@@ -269,7 +435,7 @@ function AfterSaleProgress({ afterSale }: { afterSale: MallAfterSale }) {
   return (
     <View className="mall-card">
       <View className="mall-list-row" style={{ marginTop: 0 }}>
-        <Text className="mall-list-title">售后进度</Text>
+        <Text className="mall-list-title">已有售后进度</Text>
         <Text className="mall-status-pill">{afterSaleTypeLabel(afterSale.afterSaleType)}</Text>
       </View>
       {timeline.map((event, index) => (

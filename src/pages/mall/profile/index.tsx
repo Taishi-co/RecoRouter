@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { Gift, Headphones, LogOut, MapPin, PackageCheck, Pencil, Phone, Settings, Users } from 'lucide-react-taro'
+import { Bell, Gift, Headphones, LogOut, MapPin, PackageCheck, Pencil, Phone, Settings, Users } from 'lucide-react-taro'
 import { Input } from '@/components/ui/input'
 import {
   getMallProfile,
+  getUnreadNotificationCount,
   listMallOrders,
   updateMallProfile,
   type MallOrder,
@@ -34,6 +35,7 @@ export default function MallProfilePage() {
   const [editProfile, setEditProfile] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileForm, setProfileForm] = useState<ProfileForm>({ nickname: '', phone: '' })
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0)
 
   useDidShow(() => {
     loadProfile()
@@ -47,20 +49,24 @@ export default function MallProfilePage() {
     if (!storedUser.id) {
       setProfile(null)
       setOrders([])
+      setUnreadNotificationCount(0)
       return
     }
 
     setLoading(true)
     try {
-      const [nextProfile, nextOrders] = await Promise.all([
+      const [nextProfile, nextOrders, nextUnreadCount] = await Promise.all([
         getMallProfile(storedUser.id),
         listMallOrders(storedUser.id),
+        getUnreadNotificationCount(storedUser.id).catch(() => 0),
       ])
       setProfile(nextProfile)
       setOrders(nextOrders)
+      setUnreadNotificationCount(nextUnreadCount)
     } catch (error) {
       setProfile(null)
       setOrders([])
+      setUnreadNotificationCount(0)
       const message = error instanceof Error ? error.message : '会员信息加载失败'
       setLoadError(message)
       Taro.showToast({ title: message, icon: 'none' })
@@ -75,6 +81,7 @@ export default function MallProfilePage() {
     setUser({})
     setProfile(null)
     setOrders([])
+    setUnreadNotificationCount(0)
     Taro.showToast({ title: '已退出登录', icon: 'success' })
   }
 
@@ -203,6 +210,13 @@ export default function MallProfilePage() {
         </View>
       </View>
 
+      <ProfileLink
+        icon={<Bell size={20} color="#2F7E43" />}
+        title="消息提醒"
+        subtitle={unreadNotificationCount > 0 ? `${unreadNotificationCount} 条未读消息` : '订单、售后、客服和活动提醒'}
+        action="查看"
+        onClick={() => Taro.navigateTo({ url: '/pages/notifications/index?source=mall' })}
+      />
       <ProfileLink
         icon={<PackageCheck size={20} color="#2F7E43" />}
         title="卡包优惠券"

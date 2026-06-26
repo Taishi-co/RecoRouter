@@ -181,7 +181,7 @@ export interface MallQualificationReport {
 }
 
 export interface MallDiscountBreakdown {
-  type: 'full_reduction' | 'coupon' | 'member' | 'points' | string
+  type: 'full_reduction' | 'coupon' | 'delivery' | 'member' | 'points' | string
   label: string
   amountCents: number
 }
@@ -436,6 +436,9 @@ export interface MallOrder {
   addressText: string
   recipientName?: string | null
   recipientPhone?: string | null
+  supportName?: string | null
+  supportPhone?: string | null
+  supportHours?: string | null
   deliveryMethod: string
   pickupMethod: string
   expectedDeliveryWindow?: string | null
@@ -788,6 +791,9 @@ export interface MallDeliveryRules {
   freeDeliveryThresholdCents?: number
   coldChainRequired?: boolean
   refundReviewMinutes?: number
+  supportName?: string
+  supportPhone?: string
+  supportHours?: string
 }
 
 export interface MallPaymentSplitRules {
@@ -806,6 +812,9 @@ export interface MallSettings {
   refundReviewMinutes: number
   deliveryRules: MallDeliveryRules
   paymentSplitRules: MallPaymentSplitRules
+  supportName?: string | null
+  supportPhone?: string | null
+  supportHours?: string | null
   roles: Record<string, unknown>
   riskThresholds: Record<string, unknown>
 }
@@ -948,6 +957,25 @@ export interface SupportMessage {
   senderRole: string
   content: string
   metadata?: Record<string, unknown>
+  createdAt?: string
+}
+
+export interface MallNotification {
+  id: string
+  user_id?: string
+  userId?: string
+  type: string
+  title: string
+  content: string
+  related_order_id?: string | null
+  relatedOrderId?: string | null
+  related_type?: string | null
+  relatedType?: string | null
+  related_id?: string | null
+  relatedId?: string | null
+  is_read?: boolean
+  isRead?: boolean
+  created_at?: string
   createdAt?: string
 }
 
@@ -1460,6 +1488,32 @@ export async function updateMallNotificationPreferences(
   data: Partial<Omit<MallNotificationPreferences, 'id' | 'userId' | 'updatedAt'>>,
 ): Promise<MallNotificationPreferences> {
   return apiPut('/api/mall/notification-preferences', { userId, ...data })
+}
+
+export async function listNotifications(userId: string, options?: {
+  page?: number
+  limit?: number
+  unreadOnly?: boolean
+}): Promise<MallNotification[]> {
+  return apiGet('/api/notifications', {
+    user_id: userId,
+    page: options?.page,
+    limit: options?.limit,
+    unread_only: options?.unreadOnly ? 'true' : undefined,
+  })
+}
+
+export async function getUnreadNotificationCount(userId: string): Promise<number> {
+  const result = await apiGet<{ unreadCount?: number }>('/api/notifications/unread-count', { user_id: userId })
+  return Number(result.unreadCount || 0)
+}
+
+export async function markNotificationRead(userId: string, notificationId: string): Promise<MallNotification> {
+  return apiPut(`/api/notifications/${notificationId}/mark-read`, { user_id: userId })
+}
+
+export async function markAllNotificationsRead(userId: string): Promise<void> {
+  await apiPut('/api/notifications/mark-all-read', { user_id: userId })
 }
 
 export async function listSupportSessions(userId?: string): Promise<SupportSession[]> {
