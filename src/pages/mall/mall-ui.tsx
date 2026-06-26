@@ -288,7 +288,7 @@ export function MallDealProductCard({
   const originalPriceCents = product.originalPriceCents ?? product.priceCents
   const savedCents = Math.max(product.savedCents ?? originalPriceCents - discountedPriceCents, 0)
   const hasOriginal = originalPriceCents > discountedPriceCents
-  const productTag = rankLabel || product.tags?.[0] || (product.stock <= 10 ? '库存紧张' : '')
+  const imageBadge = mallProductImageBadge(product, rankLabel)
   const hasQualificationReports = mallProductHasQualificationReports(product)
   const promotionTagLimit = layout === 'list' ? 3 : 2
   const productPromotionTags = (product.promotionTags || [])
@@ -302,7 +302,14 @@ export function MallDealProductCard({
     <View className={layout === 'list' ? 'mall-v7-product-card mall-v7-product-card-list' : 'mall-v7-product-card'}>
       <View className="mall-v7-product-media" onClick={() => onOpen?.(product)}>
         <MallProductThumb product={product} />
-        {productTag ? <Text className="mall-v7-product-tag">{productTag}</Text> : null}
+        {imageBadge ? (
+          <Text
+            className="mall-v7-product-tag"
+            style={{ background: imageBadge.backgroundColor, color: imageBadge.textColor }}
+          >
+            {imageBadge.text}
+          </Text>
+        ) : null}
       </View>
       <View className="mall-v7-product-body" onClick={() => onOpen?.(product)}>
         <Text className="mall-v7-product-name">{product.name}</Text>
@@ -349,6 +356,27 @@ export function MallDealProductCard({
       </View>
     </View>
   )
+}
+
+function mallProductImageBadge(product: MallProduct, rankLabel?: string) {
+  if (rankLabel) {
+    return { text: rankLabel, backgroundColor: '#FF9238', textColor: '#FFFFFF' }
+  }
+  const fixedPriceCampaign = product.fixedPriceCampaign
+  if (fixedPriceCampaign?.badgeText) {
+    return {
+      text: fixedPriceCampaign.badgeText,
+      backgroundColor: fixedPriceCampaign.badgeBackgroundColor || '#FF9238',
+      textColor: fixedPriceCampaign.badgeTextColor || '#FFFFFF',
+    }
+  }
+  const promotionTag = (product.promotionTags || []).find((tag) => tag?.tagText && tag.campaignType !== 'coupon')
+  if (!promotionTag?.tagText) return null
+  return {
+    text: promotionTag.tagText,
+    backgroundColor: promotionTag.backgroundColor || '#FFF1E5',
+    textColor: promotionTag.textColor || '#E85D04',
+  }
 }
 
 export function MallProductSpecPicker({

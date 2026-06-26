@@ -1534,7 +1534,7 @@ struct KnowledgeMutationRequest {
     status: Option<String>,
 }
 
-#[derive(Debug, FromRow)]
+#[derive(Debug, Clone, FromRow)]
 struct CartProductRow {
     product_id: String,
     variant_id: String,
@@ -1627,6 +1627,14 @@ struct MallPriceSummary {
     available_points: i32,
     member_level: Option<Value>,
     discount_breakdown: Vec<Value>,
+}
+
+#[derive(Debug, Default)]
+struct MallMarketingContext {
+    eligible_full_reduction_subtotal_cents: i64,
+    eligible_delivery_subtotal_cents: i64,
+    full_reduction_campaign_ids: Vec<String>,
+    delivery_campaign_ids: Vec<String>,
 }
 
 #[derive(Debug, FromRow)]
@@ -4558,7 +4566,7 @@ where
         pickup_point_id.as_deref(),
     )
     .await?;
-    let cart_items = match checkout.as_ref() {
+    let mut cart_items = match checkout.as_ref() {
         Some(checkout) => checkout_products(&state.db, checkout).await?,
         None => fetch_selected_cart_products(&state.db, &body.user_id).await?,
     };
@@ -4570,6 +4578,7 @@ where
             return Err(ApiError::BadRequest(format!("{} 库存不足", item.name)));
         }
     }
+    apply_fixed_price_to_cart_rows(&state.db, &mut cart_items).await?;
 
     let settings = fetch_mall_settings(&state.db).await?;
     let subtotal_cents: i64 = cart_items
@@ -4578,11 +4587,13 @@ where
         .sum();
     let delivery_quote = mall_delivery_fee_cents(subtotal_cents, &settings, Some(&address))?;
     let delivery_fee_cents = delivery_quote.fee_cents;
+    let marketing_context = fetch_mall_marketing_context(&state.db, &cart_items).await?;
     let summary = calculate_mall_price_summary(
         &state.db,
         Some(&body.user_id),
         subtotal_cents,
         delivery_fee_cents,
+        Some(&marketing_context),
     )
     .await?;
     let coupon_cents = summary.total_discount_cents;
@@ -8737,6 +8748,8 @@ fn normalize_product_activity_type(value: &str) -> ApiResult<String> {
         "fixedPrice" | "fixed_price" | "onePrice" | "one_price" | "fixed" | "一口价" => {
             Ok("fixed_price".to_string())
         }
+        "freeDelivery" | "free_delivery" | "freeShipping" | "free_shipping" | "包邮"
+        | "免运" | "免运费" => Ok("free_delivery".to_string()),
         "promotionVenue" | "promotion_venue" | "venue" | "festival" | "大促" | "会场"
         | "大促会场" => Ok("promotion_venue".to_string()),
         "newArrival" | "new_arrival" | "new" | "新品" | "上新" => Ok("new_arrival".to_string()),
@@ -8843,6 +8856,79 @@ fn push_product_activity_filter(builder: &mut QueryBuilder<Postgres>, activity_t
                   NULLIF(campaign.rules->>'fixedPriceCents', '')::bigint,
                   0
                 ) > 0
+            )
+            "#,
+            );
+        }
+        "free_delivery" => {
+            builder.push(
+                r#"
+            AND EXISTS (
+              SELECT 1
+              FROM mall_campaigns campaign
+              WHERE campaign.status = 'active'
+                AND campaign.campaign_type IN ('free_delivery', 'delivery_reduction', 'delivery_subsidy')
+                AND (campaign.starts_at IS NULL OR campaign.starts_at <= now())
+                AND (campaign.ends_at IS NULL OR campaign.ends_at >= now())
+                AND (
+                  COALESCE(
+                    NULLIF(campaign.rules #>> '{scope,type}', ''),
+                    CASE
+                      WHEN campaign.rules ? 'items'
+                        OR campaign.rules ? 'productIds'
+                        OR campaign.rules ? 'product_ids'
+                        OR campaign.rules ? 'categoryCodes'
+                        OR campaign.rules ? 'category_codes'
+                        OR campaign.rules ? 'productGroups'
+                      THEN 'partial'
+                      ELSE 'all'
+                    END
+                  ) = 'all'
+                  OR EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(COALESCE(campaign.rules->'items', '[]'::jsonb)) AS item(value)
+                    WHERE item.value #>> '{}' = p.id::text
+                       OR item.value #>> '{}' = p.sku
+                       OR item.value->>'productId' = p.id::text
+                       OR item.value->>'id' = p.id::text
+                       OR item.value->>'sku' = p.sku
+                  )
+                  OR EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(COALESCE(campaign.rules->'productIds', campaign.rules->'product_ids', campaign.rules->'scope'->'productIds', '[]'::jsonb)) AS product_id(value)
+                    WHERE product_id.value #>> '{}' = p.id::text
+                       OR product_id.value #>> '{}' = p.sku
+                       OR product_id.value->>'productId' = p.id::text
+                       OR product_id.value->>'id' = p.id::text
+                       OR product_id.value->>'sku' = p.sku
+                  )
+                  OR EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(COALESCE(campaign.rules->'categoryCodes', campaign.rules->'category_codes', campaign.rules->'scope'->'categoryCodes', '[]'::jsonb)) AS category(value)
+                    WHERE category.value #>> '{}' = p.category_code
+                       OR category.value->>'code' = p.category_code
+                       OR category.value->>'categoryCode' = p.category_code
+                  )
+                  OR EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(COALESCE(campaign.rules->'productGroups', campaign.rules->'scope'->'productGroups', '[]'::jsonb)) AS product_group(value)
+                    WHERE EXISTS (
+                      SELECT 1
+                      FROM jsonb_array_elements(COALESCE(product_group.value->'productIds', product_group.value->'product_ids', '[]'::jsonb)) AS group_product_id(value)
+                      WHERE group_product_id.value #>> '{}' = p.id::text
+                         OR group_product_id.value #>> '{}' = p.sku
+                    )
+                    OR EXISTS (
+                      SELECT 1
+                      FROM jsonb_array_elements(COALESCE(product_group.value->'products', '[]'::jsonb)) AS group_product(value)
+                      WHERE group_product.value #>> '{}' = p.id::text
+                         OR group_product.value #>> '{}' = p.sku
+                         OR group_product.value->>'productId' = p.id::text
+                         OR group_product.value->>'id' = p.id::text
+                         OR group_product.value->>'sku' = p.sku
+                    )
+                  )
+                )
             )
             "#,
             );
@@ -10786,9 +10872,17 @@ async fn cart_payload(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
     let settings = fetch_mall_settings(pool).await?;
     let delivery_quote = mall_delivery_fee_cents(subtotal_cents, &settings, None)?;
     let delivery_fee_cents = delivery_quote.fee_cents;
-    let summary =
-        calculate_mall_price_summary(pool, Some(user_id), subtotal_cents, delivery_fee_cents)
-            .await?;
+    let mut selected_rows = fetch_selected_cart_products(pool, user_id).await?;
+    apply_fixed_price_to_cart_rows(pool, &mut selected_rows).await?;
+    let marketing_context = fetch_mall_marketing_context(pool, &selected_rows).await?;
+    let summary = calculate_mall_price_summary(
+        pool,
+        Some(user_id),
+        subtotal_cents,
+        delivery_fee_cents,
+        Some(&marketing_context),
+    )
+    .await?;
     apply_cart_item_pricing(&mut items, &summary);
     Ok(json!({
         "items": items,
@@ -10841,11 +10935,13 @@ async fn checkout_payload(pool: &PgPool, checkout_id: &str) -> ApiResult<Value> 
     };
     let delivery_quote = mall_delivery_fee_cents(subtotal_cents, &settings, address.as_ref())?;
     let delivery_fee_cents = delivery_quote.fee_cents;
+    let marketing_context = fetch_mall_marketing_context(pool, &items).await?;
     let summary = calculate_mall_price_summary(
         pool,
         Some(&checkout.user_id),
         subtotal_cents,
         delivery_fee_cents,
+        Some(&marketing_context),
     )
     .await?;
     let item_values = checkout_item_values(&items, &summary);
@@ -11159,6 +11255,87 @@ fn checkout_subtotal_cents(items: &[CartProductRow]) -> i64 {
         .sum()
 }
 
+async fn fetch_mall_marketing_context(
+    pool: &PgPool,
+    items: &[CartProductRow],
+) -> ApiResult<MallMarketingContext> {
+    if items.is_empty() {
+        return Ok(MallMarketingContext::default());
+    }
+
+    let campaigns = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT campaign_json(c)
+        FROM mall_campaigns c
+        WHERE c.status = 'active'
+          AND c.campaign_type IN (
+            'discount', 'full_reduction', 'full_discount',
+            'free_delivery', 'delivery_reduction', 'delivery_subsidy'
+          )
+          AND (c.starts_at IS NULL OR c.starts_at <= now())
+          AND (c.ends_at IS NULL OR c.ends_at >= now())
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut context = MallMarketingContext::default();
+    for item in items {
+        let line_total_cents = (item.price_cents * i64::from(item.quantity)).max(0);
+        if line_total_cents <= 0 {
+            continue;
+        }
+        let category_code = item.category_code.as_deref().unwrap_or_default();
+        let mut matched_full_reduction = false;
+        let mut matched_delivery = false;
+
+        for campaign in &campaigns {
+            let campaign_type = campaign
+                .get("campaignType")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if !campaign_applies_to_product(campaign, &item.product_id, &item.sku, category_code) {
+                continue;
+            }
+
+            if matches!(campaign_type, "discount" | "full_reduction" | "full_discount") {
+                matched_full_reduction = true;
+                push_unique_campaign_id(&mut context.full_reduction_campaign_ids, campaign);
+            }
+            if matches!(
+                campaign_type,
+                "free_delivery" | "delivery_reduction" | "delivery_subsidy"
+            ) {
+                matched_delivery = true;
+                push_unique_campaign_id(&mut context.delivery_campaign_ids, campaign);
+            }
+        }
+
+        if matched_full_reduction {
+            context.eligible_full_reduction_subtotal_cents += line_total_cents;
+        }
+        if matched_delivery {
+            context.eligible_delivery_subtotal_cents += line_total_cents;
+        }
+    }
+
+    Ok(context)
+}
+
+fn push_unique_campaign_id(ids: &mut Vec<String>, campaign: &Value) {
+    let Some(id) = campaign
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return;
+    };
+    if !ids.iter().any(|current| current == id) {
+        ids.push(id.to_string());
+    }
+}
+
 async fn fetch_selected_cart_products(
     pool: &PgPool,
     user_id: &str,
@@ -11416,6 +11593,17 @@ fn delivery_fee_for_distance_cents(
         .map(|tier| (distance_km * tier.fee_cents_per_km as f64).ceil() as i64)
 }
 
+fn empty_mall_discount() -> MallDiscount {
+    MallDiscount {
+        discount_cents: 0,
+        description: None,
+        threshold_cents: None,
+        rule_discount_cents: None,
+        next_discount_cents: None,
+        next_gap_cents: None,
+    }
+}
+
 fn haversine_distance_km(
     origin_latitude: f64,
     origin_longitude: f64,
@@ -11464,15 +11652,36 @@ async fn calculate_mall_discount_cents(
     pool: &PgPool,
     subtotal_cents: i64,
 ) -> ApiResult<MallDiscount> {
-    let rules = sqlx::query_as::<_, CampaignDiscountRow>(
+    calculate_mall_discount_cents_for_campaigns(pool, subtotal_cents, None).await
+}
+
+async fn calculate_mall_discount_cents_for_campaigns(
+    pool: &PgPool,
+    subtotal_cents: i64,
+    campaign_ids: Option<&[String]>,
+) -> ApiResult<MallDiscount> {
+    if campaign_ids.is_some_and(|ids| ids.is_empty()) {
+        return Ok(empty_mall_discount());
+    }
+
+    let mut builder = QueryBuilder::<Postgres>::new(
         r#"
         WITH active_campaigns AS (
-          SELECT name, campaign_type, rules
+          SELECT id, name, campaign_type, rules
           FROM mall_campaigns
           WHERE status = 'active'
             AND campaign_type IN ('discount', 'full_reduction', 'full_discount')
             AND (starts_at IS NULL OR starts_at <= now())
             AND (ends_at IS NULL OR ends_at >= now())
+        "#,
+    );
+    if let Some(ids) = campaign_ids {
+        builder.push(" AND id = ANY(");
+        builder.push_bind(ids.to_vec());
+        builder.push(")");
+    }
+    builder.push(
+        r#"
         ),
         tier_rules AS (
           SELECT
@@ -11495,8 +11704,18 @@ async fn calculate_mall_discount_cents(
             NULLIF(rule->>'discountCents', '')::bigint,
             CASE
               WHEN campaign_type = 'full_discount' THEN GREATEST(
-                $1 - (
-                  $1 * COALESCE(
+        "#,
+    );
+    builder.push_bind(subtotal_cents);
+    builder.push(
+        r#"
+                - (
+        "#,
+    );
+    builder.push_bind(subtotal_cents);
+    builder.push(
+        r#"
+                  * COALESCE(
                     NULLIF(rule->>'discountRateBps', '')::bigint,
                     NULLIF(rule->>'discountBps', '')::bigint,
                     10000
@@ -11512,10 +11731,11 @@ async fn calculate_mall_discount_cents(
         ORDER BY COALESCE(NULLIF(rule->>'thresholdCents', '')::bigint, 0) ASC,
                  COALESCE(NULLIF(rule->>'discountCents', '')::bigint, 0) DESC
         "#,
-    )
-    .bind(subtotal_cents)
-    .fetch_all(pool)
-    .await?;
+    );
+    let rules = builder
+        .build_query_as::<CampaignDiscountRow>()
+        .fetch_all(pool)
+        .await?;
 
     let mut next_rule: Option<&CampaignDiscountRow> = None;
     let mut best_rule: Option<&CampaignDiscountRow> = None;
@@ -11633,29 +11853,32 @@ async fn calculate_mall_coupon_discount_cents(
 
 async fn calculate_mall_delivery_campaign_discount_cents(
     pool: &PgPool,
-    subtotal_cents: i64,
+    eligible_subtotal_cents: i64,
     delivery_fee_cents: i64,
+    campaign_ids: Option<&[String]>,
 ) -> ApiResult<MallDiscount> {
-    if delivery_fee_cents <= 0 {
-        return Ok(MallDiscount {
-            discount_cents: 0,
-            description: None,
-            threshold_cents: None,
-            rule_discount_cents: None,
-            next_discount_cents: None,
-            next_gap_cents: None,
-        });
+    if delivery_fee_cents <= 0 || campaign_ids.is_some_and(|ids| ids.is_empty()) {
+        return Ok(empty_mall_discount());
     }
 
-    let rules = sqlx::query_as::<_, CampaignDiscountRow>(
+    let mut builder = QueryBuilder::<Postgres>::new(
         r#"
         WITH active_campaigns AS (
-          SELECT name, campaign_type, rules
+          SELECT id, name, campaign_type, rules
           FROM mall_campaigns
           WHERE status = 'active'
             AND campaign_type IN ('free_delivery', 'delivery_reduction', 'delivery_subsidy')
             AND (starts_at IS NULL OR starts_at <= now())
             AND (ends_at IS NULL OR ends_at >= now())
+        "#,
+    );
+    if let Some(ids) = campaign_ids {
+        builder.push(" AND id = ANY(");
+        builder.push_bind(ids.to_vec());
+        builder.push(")");
+    }
+    builder.push(
+        r#"
         ),
         tier_rules AS (
           SELECT
@@ -11675,26 +11898,37 @@ async fn calculate_mall_delivery_campaign_discount_cents(
           name,
           COALESCE(NULLIF(rule->>'thresholdCents', '')::bigint, 0) AS threshold_cents,
           CASE
-            WHEN campaign_type = 'free_delivery' THEN $1
+            WHEN campaign_type = 'free_delivery' THEN
+        "#,
+    );
+    builder.push_bind(delivery_fee_cents);
+    builder.push(
+        r#"
             ELSE COALESCE(NULLIF(rule->>'discountCents', '')::bigint, 0)
           END AS discount_cents
         FROM tier_rules
         WHERE COALESCE(NULLIF(rule->>'thresholdCents', '')::bigint, 0) >= 0
         ORDER BY COALESCE(NULLIF(rule->>'thresholdCents', '')::bigint, 0) ASC,
                  CASE
-                   WHEN campaign_type = 'free_delivery' THEN $1
+                   WHEN campaign_type = 'free_delivery' THEN
+        "#,
+    );
+    builder.push_bind(delivery_fee_cents);
+    builder.push(
+        r#"
                    ELSE COALESCE(NULLIF(rule->>'discountCents', '')::bigint, 0)
                  END DESC
         "#,
-    )
-    .bind(delivery_fee_cents)
-    .fetch_all(pool)
-    .await?;
+    );
+    let rules = builder
+        .build_query_as::<CampaignDiscountRow>()
+        .fetch_all(pool)
+        .await?;
 
     let mut next_rule: Option<&CampaignDiscountRow> = None;
     let mut best_rule: Option<&CampaignDiscountRow> = None;
     for rule in &rules {
-        if rule.threshold_cents <= subtotal_cents {
+        if rule.threshold_cents <= eligible_subtotal_cents {
             if best_rule
                 .map(|current| rule.discount_cents > current.discount_cents)
                 .unwrap_or(true)
@@ -11716,7 +11950,7 @@ async fn calculate_mall_delivery_campaign_discount_cents(
             threshold_cents: Some(rule.threshold_cents),
             rule_discount_cents: Some(rule.discount_cents),
             next_discount_cents: next_rule.map(|rule| rule.discount_cents),
-            next_gap_cents: next_rule.map(|rule| rule.threshold_cents - subtotal_cents),
+            next_gap_cents: next_rule.map(|rule| rule.threshold_cents - eligible_subtotal_cents),
         });
     }
 
@@ -11732,7 +11966,7 @@ async fn calculate_mall_delivery_campaign_discount_cents(
         threshold_cents: next_rule.map(|rule| rule.threshold_cents),
         rule_discount_cents: next_rule.map(|rule| rule.discount_cents),
         next_discount_cents: next_rule.map(|rule| rule.discount_cents),
-        next_gap_cents: next_rule.map(|rule| rule.threshold_cents - subtotal_cents),
+        next_gap_cents: next_rule.map(|rule| rule.threshold_cents - eligible_subtotal_cents),
     })
 }
 
@@ -11741,13 +11975,36 @@ async fn calculate_mall_price_summary(
     user_id: Option<&str>,
     subtotal_cents: i64,
     delivery_fee_cents: i64,
+    marketing_context: Option<&MallMarketingContext>,
 ) -> ApiResult<MallPriceSummary> {
     let subtotal_cents = subtotal_cents.max(0);
-    let full_reduction = calculate_mall_discount_cents(pool, subtotal_cents).await?;
+    let full_reduction_subtotal_cents = marketing_context
+        .map(|context| context.eligible_full_reduction_subtotal_cents)
+        .unwrap_or(subtotal_cents)
+        .clamp(0, subtotal_cents);
+    let full_reduction = match marketing_context {
+        Some(context) => {
+            calculate_mall_discount_cents_for_campaigns(
+                pool,
+                full_reduction_subtotal_cents,
+                Some(&context.full_reduction_campaign_ids),
+            )
+            .await?
+        }
+        None => calculate_mall_discount_cents(pool, subtotal_cents).await?,
+    };
     let coupon = calculate_mall_coupon_discount_cents(pool, subtotal_cents).await?;
-    let delivery_campaign =
-        calculate_mall_delivery_campaign_discount_cents(pool, subtotal_cents, delivery_fee_cents)
-            .await?;
+    let delivery_campaign_subtotal_cents = marketing_context
+        .map(|context| context.eligible_delivery_subtotal_cents)
+        .unwrap_or(subtotal_cents)
+        .clamp(0, subtotal_cents);
+    let delivery_campaign = calculate_mall_delivery_campaign_discount_cents(
+        pool,
+        delivery_campaign_subtotal_cents,
+        delivery_fee_cents,
+        marketing_context.map(|context| context.delivery_campaign_ids.as_slice()),
+    )
+    .await?;
     let member_context = fetch_member_pricing_context(pool, user_id).await?;
     let after_market_discount =
         (subtotal_cents - full_reduction.discount_cents - coupon.discount_cents).max(0);

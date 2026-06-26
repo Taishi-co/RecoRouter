@@ -1,6 +1,6 @@
 {
   "name": "coze-mini-program",
-  "version": "1.0.37",
+  "version": "1.0.38",
   "private": true,
   "description": "Coze Mini Program Application",
   "scripts": {
@@ -43,6 +43,7 @@
     "check:mall-procurement-qualifications": "node scripts/check-mall-procurement-qualifications.mjs",
     "check:mall-ops-dual-surface": "node scripts/check-mall-ops-dual-surface.mjs",
     "check:mall-group-buy-presale": "node scripts/check-mall-group-buy-presale.mjs",
+    "check:mall-marketing-scope-presale": "node scripts/check-mall-marketing-scope-presale.mjs",
     "check:no-physical-fks": "node scripts/check-no-physical-foreign-keys.mjs",
     "check:no-deprecated-wechat-api": "node scripts/check-no-deprecated-wechat-api.mjs",
     "check:mall-product-refresh": "node scripts/check-mall-product-refresh.mjs",
