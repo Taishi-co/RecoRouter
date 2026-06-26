@@ -27,13 +27,14 @@ interface StoredUser {
 }
 
 const pageSize = 12
-type MallActivityType = '' | 'flash_sale' | 'full_reduction' | 'new_arrival' | 'best_seller' | 'promotion_venue'
+type MallActivityType = '' | 'flash_sale' | 'full_reduction' | 'free_delivery' | 'new_arrival' | 'best_seller' | 'promotion_venue'
 type MallSortKey = '' | 'price_asc' | 'price_desc' | 'newest' | 'oldest' | 'sales_desc'
 
 const activityFilters: Array<{ label: string; value: MallActivityType }> = [
   { label: '全部', value: '' },
   { label: '秒杀', value: 'flash_sale' },
   { label: '满减', value: 'full_reduction' },
+  { label: '免运', value: 'free_delivery' },
   { label: '今日上新', value: 'new_arrival' },
   { label: '爆款', value: 'best_seller' },
   { label: '会场', value: 'promotion_venue' },
@@ -375,22 +376,37 @@ function applyProductListPresentation(
 ) {
   let nextProducts = [...products]
   const activityMatchedProducts = filterProductsByActivity(nextProducts, activityType)
-  if (activityMatchedProducts.length > 0) {
+  if (shouldUseActivityFilteredProducts(activityType)) {
     nextProducts = activityMatchedProducts
   }
   return sortProducts(nextProducts, sort)
 }
 
+function shouldUseActivityFilteredProducts(activityType: MallActivityType) {
+  return Boolean(activityType && activityType !== 'best_seller' && activityType !== 'promotion_venue')
+}
+
 function filterProductsByActivity(products: MallProduct[], activityType: MallActivityType) {
   if (!activityType || activityType === 'best_seller' || activityType === 'promotion_venue') return []
   return products.filter((product) => {
+    const promotionTypes = (product.promotions || product.promotionTags || [])
+      .map((promotion) => promotion.campaignType)
+      .join(',')
+    const promotionText = (product.promotions || product.promotionTags || [])
+      .map((promotion) => promotion.tagText)
+      .join('')
     const tags = product.tags?.join('') || ''
     const label = product.discountLabel || ''
     if (activityType === 'flash_sale') {
       return /秒杀|特价|爆款|限时/.test(tags)
     }
     if (activityType === 'full_reduction') {
-      return (product.savedCents || 0) > 0 || /满减|立减|优惠/.test(`${tags}${label}`)
+      return /full_reduction|discount|full_discount/.test(promotionTypes)
+        || /满减|满折|立减/.test(`${promotionText}${label}`)
+    }
+    if (activityType === 'free_delivery') {
+      return /free_delivery|delivery_reduction|delivery_subsidy/.test(promotionTypes)
+        || /免运|包邮|减运费/.test(`${promotionText}${label}`)
     }
     if (activityType === 'new_arrival') {
       return /今日|新品|新上|现货|刚到/.test(tags)
@@ -440,6 +456,11 @@ function normalizeInitialActivityType(value?: string | string[]): MallActivityTy
     case 'fullReduction':
     case 'full_reduction':
       return 'full_reduction'
+    case 'freeDelivery':
+    case 'free_delivery':
+    case 'freeShipping':
+    case 'free_shipping':
+      return 'free_delivery'
     case 'newArrival':
     case 'new_arrival':
       return 'new_arrival'

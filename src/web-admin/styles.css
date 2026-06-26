@@ -2617,6 +2617,36 @@ td span {
   white-space: nowrap;
 }
 
+.gbuy-product-source {
+  min-width: 0;
+}
+
+.segmented-control {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid #dbe7d8;
+  border-radius: 8px;
+  background: #f6faf5;
+  gap: 2px;
+}
+
+.segmented-control button {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #536151;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 900;
+  padding: 7px 11px;
+}
+
+.segmented-control button.active {
+  background: #ffffff;
+  color: #1f4f2e;
+  box-shadow: 0 1px 4px rgba(37, 72, 41, 0.12);
+}
+
 .campaign-product-picker {
   max-height: 360px;
   overflow: auto;
@@ -2641,8 +2671,21 @@ td span {
   align-items: center;
 }
 
+.campaign-product-picker > label.selected {
+  border-color: #4f8f5a;
+  box-shadow: 0 0 0 2px rgba(79, 143, 90, 0.12);
+}
+
 .campaign-product-picker .product-cell {
   min-width: 0;
+}
+
+.gbuy-product-picker {
+  max-height: 300px;
+}
+
+.gbuy-inline-product-form {
+  margin-top: 0;
 }
 
 .campaign-group-card {
