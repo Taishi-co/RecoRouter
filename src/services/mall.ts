@@ -1062,8 +1062,11 @@ export async function payMallGroupBuyBalance(id: string, userId: string): Promis
   return apiPost(`/api/mall/group-buy-subscriptions/${id}/pay-balance`, { userId })
 }
 
-export async function listMyMallGroupBuySubscriptions(userId: string): Promise<MallGroupBuySubscription[]> {
-  return apiGet('/api/mall/me/group-buy-subscriptions', { userId })
+export async function listMyMallGroupBuySubscriptions(
+  userId: string,
+  options: MallGetOptions = {},
+): Promise<MallGroupBuySubscription[]> {
+  return cachedApiGet('/api/mall/me/group-buy-subscriptions', { userId }, { ttlMs: MALL_FAST_GET_CACHE_TTL_MS, ...options })
 }
 
 export async function getMallCart(userId: string, options: MallGetOptions = {}): Promise<MallCart> {

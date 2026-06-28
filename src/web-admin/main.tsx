@@ -8720,6 +8720,7 @@ function MallFinanceOpsSection({
   onSearch: () => Promise<void>;
   onWithdrawalChange: (patch: Partial<WithdrawalForm>) => void;
 }) {
+  const [splitEstimateRatio, setSplitEstimateRatio] = useState({ tech: 3, ops: 7 });
   const records = mode === 'bills' ? bills : mode === 'settlements' ? settlements : withdrawals;
   const visibleRecords = filterMallOpsRecords(
     records,
@@ -8729,6 +8730,9 @@ function MallFinanceOpsSection({
   );
   const title = mode === 'bills' ? '账单明细' : mode === 'settlements' ? '结算记录' : '提现申请';
   const totalSettlementCents = visibleRecords.reduce((total, record) => total + numberValue(record, 'settlementAmountCents', numberValue(record, 'amountCents')), 0);
+  const splitTotal = Math.max(splitEstimateRatio.tech + splitEstimateRatio.ops, 1);
+  const techEstimateCents = Math.round(totalSettlementCents * splitEstimateRatio.tech / splitTotal);
+  const opsEstimateCents = Math.max(totalSettlementCents - techEstimateCents, 0);
 
   return (
     <div className="page-grid ops-page">
@@ -8750,6 +8754,40 @@ function MallFinanceOpsSection({
         <StatCard label="实际结算" value={yuan(totalSettlementCents)} detail="按筛选记录合计" />
         <StatCard label="退款抵扣" value={yuan(visibleRecords.reduce((total, record) => total + numberValue(record, 'refundAmountCents'), 0))} detail="账单退款金额" />
       </div>
+
+      {mode === 'bills' ? (
+        <Panel title="分摊比例估算">
+          <div className="ops-split-estimate">
+            <div className="ops-split-estimate-controls">
+              <label>
+                技术比例
+                <input
+                  value={splitEstimateRatio.tech}
+                  type="number"
+                  min="0"
+                  step="1"
+                  onChange={event => setSplitEstimateRatio(current => ({ ...current, tech: Math.max(Number(event.target.value || 0), 0) }))}
+                />
+              </label>
+              <label>
+                运营比例
+                <input
+                  value={splitEstimateRatio.ops}
+                  type="number"
+                  min="0"
+                  step="1"
+                  onChange={event => setSplitEstimateRatio(current => ({ ...current, ops: Math.max(Number(event.target.value || 0), 0) }))}
+                />
+              </label>
+              <span>仅用于展示估算，不影响实际分账和结算。</span>
+            </div>
+            <div className="ops-split-estimate-result">
+              <StatCard label="技术估算" value={yuan(techEstimateCents)} detail={`${splitEstimateRatio.tech}:${splitEstimateRatio.ops}`} />
+              <StatCard label="运营估算" value={yuan(opsEstimateCents)} detail={`${splitEstimateRatio.ops}:${splitEstimateRatio.tech}`} />
+            </div>
+          </div>
+        </Panel>
+      ) : null}
 
       {mode === 'withdrawals' ? (
         <Panel title="提交提现申请" description="填写提现金额并提交审核">

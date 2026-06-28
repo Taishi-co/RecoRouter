@@ -101,6 +101,7 @@ export function MallPage({
 function MallNotificationFloat() {
   const [latest, setLatest] = useState<MallNotification | null>(null)
   const [dismissedId, setDismissedId] = useState('')
+  const [autoHiddenIds, setAutoHiddenIds] = useState<string[]>([])
 
   useEffect(() => {
     let mounted = true
@@ -114,7 +115,7 @@ function MallNotificationFloat() {
         const nextNotifications = await listNotifications(userId, { page: 1, limit: 1, unreadOnly: true })
         const next = nextNotifications.find(isMallNotificationForFloat) || null
         if (!mounted) return
-        if (next && next.id !== dismissedId) {
+        if (next && next.id !== dismissedId && !autoHiddenIds.includes(next.id)) {
           setLatest(next)
         } else if (!next) {
           setLatest(null)
@@ -132,7 +133,16 @@ function MallNotificationFloat() {
       mounted = false
       clearInterval(timer)
     }
-  }, [dismissedId])
+  }, [autoHiddenIds, dismissedId])
+
+  useEffect(() => {
+    if (!latest?.id) return undefined
+    const timer = setTimeout(() => {
+      setAutoHiddenIds((current) => current.includes(latest.id) ? current : [...current.slice(-20), latest.id])
+      setLatest(null)
+    }, 4000)
+    return () => clearTimeout(timer)
+  }, [latest?.id])
 
   if (!latest || latest.id === dismissedId) return null
 

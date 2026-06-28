@@ -109,8 +109,9 @@ expect(
 expect(
   /MallNotificationFloat/.test(mallUi)
     && /listNotifications\(/.test(mallUi)
-    && /mall-notification-float/.test(mallUi),
-  '商城页面需要顶部悬浮栏展示新消息提醒。',
+    && /mall-notification-float/.test(mallUi)
+    && /setTimeout\(\(\)\s*=>\s*\{[\s\S]*setLatest\(null\)[\s\S]*\},\s*4000\)/.test(mallUi),
+  '商城页面需要顶部悬浮栏展示新消息提醒，并在短暂停留后自动收起。',
 )
 
 expect(

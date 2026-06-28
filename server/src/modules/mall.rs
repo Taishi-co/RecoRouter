@@ -1426,6 +1426,22 @@ struct GroupBuySubscriptionRow {
 }
 
 #[derive(Debug, FromRow)]
+struct GroupBuySubscriptionNotificationRow {
+    subscription_id: String,
+    user_id: String,
+    mall_order_id: Option<String>,
+}
+
+#[derive(Debug, FromRow)]
+struct GroupBuyBalanceNotificationRow {
+    subscription_id: String,
+    user_id: String,
+    activity_name: String,
+    balance_cents: i64,
+    balance_due_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, FromRow)]
 struct GroupBuyOrderSeedRow {
     subscription_id: String,
     activity_id: String,
@@ -8768,6 +8784,14 @@ pub async fn settle_group_buy_deposit_payment_success(
                 json!({ "quantity": subscription.quantity }),
             )
             .await?;
+            insert_group_buy_subscription_notification(
+                pool,
+                &subscription.id,
+                "mall_group_buy_deposit_paid",
+                "集采定金已支付",
+                "您的集采定金已支付成功，成团后会提醒您支付尾款。",
+            )
+            .await?;
         } else {
             insert_group_buy_event(
                 pool,
@@ -8817,6 +8841,14 @@ pub async fn settle_group_buy_balance_payment_success(
             Some("用户尾款已支付"),
             Some(&subscription.user_id),
             json!({ "quantity": subscription.quantity }),
+        )
+        .await?;
+        insert_group_buy_subscription_notification(
+            pool,
+            &subscription.id,
+            "mall_group_buy_balance_paid",
+            "集采尾款已支付",
+            "您的集采尾款已支付成功，运营确认采购后会同步订单进度。",
         )
         .await?;
     }
@@ -12883,6 +12915,10 @@ fn yuan_amount(cents: i64) -> String {
     }
 }
 
+fn yuan_cents(cents: i64) -> String {
+    format!("{}元", yuan_amount(cents))
+}
+
 fn normalize_checkout_source(source: Option<&str>) -> ApiResult<&'static str> {
     match source.unwrap_or("cart").trim() {
         "" | "cart" => Ok("cart"),
@@ -13932,6 +13968,121 @@ async fn insert_mall_notification(
     Ok(())
 }
 
+async fn insert_mall_notification_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    user_id: &str,
+    notification_type: &str,
+    title: &str,
+    content: &str,
+    related_order_id: Option<&str>,
+    related_type: Option<&str>,
+    related_id: Option<&str>,
+) -> ApiResult<()> {
+    if user_id.trim().is_empty() {
+        return Ok(());
+    }
+    sqlx::query(
+        r#"
+        INSERT INTO notifications (
+          user_id, type, title, content, related_order_id, related_type, related_id, is_read
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, false)
+        "#,
+    )
+    .bind(user_id)
+    .bind(notification_type)
+    .bind(title)
+    .bind(content)
+    .bind(related_order_id)
+    .bind(related_type)
+    .bind(related_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn insert_group_buy_subscription_notification(
+    pool: &PgPool,
+    subscription_id: &str,
+    notification_type: &str,
+    title: &str,
+    content: &str,
+) -> ApiResult<()> {
+    let row = sqlx::query_as::<_, GroupBuySubscriptionNotificationRow>(
+        r#"
+        SELECT
+          subscription.id AS subscription_id,
+          subscription.user_id,
+          subscription.mall_order_id,
+        FROM mall_group_buy_subscriptions subscription
+        JOIN mall_group_buy_activities activity ON activity.id = subscription.activity_id
+        WHERE subscription.id = $1
+        "#,
+    )
+    .bind(subscription_id)
+    .fetch_optional(pool)
+    .await?;
+    let Some(row) = row else {
+        return Ok(());
+    };
+    insert_mall_notification(
+        pool,
+        &row.user_id,
+        notification_type,
+        title,
+        content,
+        row.mall_order_id.as_deref(),
+        Some("mall_group_buy_subscription"),
+        Some(&row.subscription_id),
+    )
+    .await?;
+    Ok(())
+}
+
+async fn notify_group_buy_balance_due(pool: &PgPool, activity_id: &str) -> ApiResult<()> {
+    let rows = sqlx::query_as::<_, GroupBuyBalanceNotificationRow>(
+        r#"
+        SELECT
+          subscription.id AS subscription_id,
+          subscription.user_id,
+          subscription.balance_cents,
+          activity.name AS activity_name,
+          activity.balance_due_at
+        FROM mall_group_buy_subscriptions subscription
+        JOIN mall_group_buy_activities activity ON activity.id = subscription.activity_id
+        WHERE subscription.activity_id = $1
+          AND subscription.status = 'pending_balance'
+        ORDER BY subscription.created_at ASC
+        "#,
+    )
+    .bind(activity_id)
+    .fetch_all(pool)
+    .await?;
+    for row in rows {
+        let due_text = row
+            .balance_due_at
+            .map(|value| value.format("%m月%d日 %H:%M").to_string())
+            .unwrap_or_else(|| "截止时间前".to_string());
+        insert_mall_notification(
+            pool,
+            &row.user_id,
+            "mall_group_buy_balance_due",
+            "集采已成团，待支付尾款",
+            &format!(
+                "{} 已成团，请在 {} 支付尾款 {}。",
+                row.activity_name,
+                due_text,
+                yuan_cents(row.balance_cents)
+            ),
+            None,
+            Some("mall_group_buy_subscription"),
+            Some(&row.subscription_id),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 async fn insert_mall_order_notification(
     pool: &PgPool,
     order_id: &str,
@@ -14547,6 +14698,13 @@ async fn form_group_buy_activity(pool: &PgPool, activity_id: &str, reason: &str)
     )
     .await?;
     tx.commit().await?;
+    if let Err(err) = notify_group_buy_balance_due(pool, activity_id).await {
+        tracing::warn!(
+            ?err,
+            activity_id = %activity_id,
+            "failed to notify group-buy balance due after formation"
+        );
+    }
     Ok(())
 }
 
@@ -14655,6 +14813,13 @@ async fn force_form_group_buy_activity(pool: &PgPool, activity_id: &str) -> ApiR
     )
     .await?;
     tx.commit().await?;
+    if let Err(err) = notify_group_buy_balance_due(pool, activity_id).await {
+        tracing::warn!(
+            ?err,
+            activity_id = %activity_id,
+            "failed to notify group-buy balance due after force formation"
+        );
+    }
     Ok(())
 }
 
@@ -15025,6 +15190,14 @@ async fn create_group_buy_order_for_subscription(
             "failed to create group buy fulfillment code after order commit"
         );
     }
+    insert_group_buy_subscription_notification(
+        pool,
+        subscription_id,
+        "mall_group_buy_order_created",
+        "集采订单已生成",
+        "您的集采商品已进入商城订单，后续配送进度会在订单中同步。",
+    )
+    .await?;
     Ok(GroupBuyOrderCreationOutcome::Created(order_id))
 }
 
@@ -15189,6 +15362,17 @@ async fn close_group_buy_balance_due(pool: &PgPool, activity_id: &str) -> ApiRes
             Some("用户未在截止时间前支付尾款"),
             Some(&subscription.user_id),
             json!({ "penalty": activity.overdue_credit_penalty }),
+        )
+        .await?;
+        insert_mall_notification_tx(
+            &mut tx,
+            &subscription.user_id,
+            "mall_group_buy_balance_overdue",
+            "集采尾款超时取消",
+            "您未在截止时间前支付尾款，本次集采认购已取消。",
+            None,
+            Some("mall_group_buy_subscription"),
+            Some(&subscription.id),
         )
         .await?;
     }

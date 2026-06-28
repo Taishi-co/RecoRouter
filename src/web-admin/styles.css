@@ -3728,6 +3728,41 @@ textarea:focus {
   align-items: end;
 }
 
+.ops-split-estimate {
+  display: grid;
+  gap: 12px;
+}
+
+.ops-split-estimate-controls,
+.ops-split-estimate-result {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 180px)) minmax(220px, 1fr);
+  gap: 10px;
+  align-items: end;
+}
+
+.ops-split-estimate-controls label {
+  display: grid;
+  gap: 6px;
+  color: #526078;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ops-split-estimate-controls input {
+  min-width: 0;
+}
+
+.ops-split-estimate-controls span {
+  color: #697386;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ops-split-estimate-result {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .ops-split-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
