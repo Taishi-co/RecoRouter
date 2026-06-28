@@ -74,18 +74,31 @@ export default function MallCartPage() {
     }
   }
 
-  const loadData = async () => {
+  const loadAddresses = async ({ fresh = false }: { fresh?: boolean } = {}) => {
+    if (!userId) return []
+    return listMallAddresses(userId, { preferCache: !fresh, fresh, revalidate: !fresh })
+  }
+
+  const loadData = async ({
+    refreshAddresses = true,
+    freshCart = false,
+  }: {
+    refreshAddresses?: boolean
+    freshCart?: boolean
+  } = {}) => {
     if (!userId) return
     setLoading(true)
     try {
       const [nextCart, nextAddresses] = await Promise.all([
-        getMallCart(userId),
-        listMallAddresses(userId),
+        getMallCart(userId, { fresh: freshCart, preferCache: !freshCart }),
+        refreshAddresses ? loadAddresses() : Promise.resolve(addresses),
       ])
       setCart(nextCart)
       setSwipedCartItemId((current) => nextCart.items.some((item) => item.id === current) ? current : '')
-      setAddresses(nextAddresses)
-      setSelectedAddressId(resolveSelectedAddressId(nextAddresses, selectedAddressId))
+      if (refreshAddresses) {
+        setAddresses(nextAddresses)
+        setSelectedAddressId(resolveSelectedAddressId(nextAddresses, selectedAddressId))
+      }
     } catch (error) {
       showError(error, '加载失败')
     } finally {
@@ -100,7 +113,7 @@ export default function MallCartPage() {
       } else {
         await updateMallCartItem(id, { quantity })
       }
-      loadData()
+      loadData({ refreshAddresses: false, freshCart: true })
     } catch (error) {
       showError(error, '修改失败')
     }
@@ -109,7 +122,7 @@ export default function MallCartPage() {
   const toggleItem = async (item: MallCartItem) => {
     try {
       await updateMallCartItem(item.id, { selected: !item.selected })
-      loadData()
+      loadData({ refreshAddresses: false, freshCart: true })
     } catch (error) {
       showError(error, '修改失败')
     }
@@ -124,7 +137,7 @@ export default function MallCartPage() {
   const selectAllCartItems = async () => {
     try {
       await Promise.all(cart.items.map((item) => updateMallCartItem(item.id, { selected: !allSelected })))
-      loadData()
+      loadData({ refreshAddresses: false, freshCart: true })
     } catch (error) {
       showError(error, '全选失败')
     }
@@ -134,7 +147,7 @@ export default function MallCartPage() {
     try {
       await Promise.all(cart.items.map((item) => deleteMallCartItem(item.id)))
       setSwipedCartItemId('')
-      loadData()
+      loadData({ refreshAddresses: false, freshCart: true })
     } catch (error) {
       showError(error, '清空失败')
     }
@@ -193,7 +206,7 @@ export default function MallCartPage() {
     try {
       await deleteMallCartItem(item.id)
       setSwipedCartItemId('')
-      await loadData()
+      await loadData({ refreshAddresses: false, freshCart: true })
       Taro.showToast({ title: '已删除', icon: 'success' })
     } catch (error) {
       showError(error, '删除失败')

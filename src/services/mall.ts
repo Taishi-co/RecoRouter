@@ -1,5 +1,18 @@
 import { Network } from '@/network'
 
+export interface MallGetOptions {
+  ttlMs?: number
+  fresh?: boolean
+  preferCache?: boolean
+  revalidate?: boolean
+}
+
+const MALL_GET_CACHE_TTL_MS = 30_000
+const MALL_FAST_GET_CACHE_TTL_MS = 8_000
+const MALL_STATIC_GET_CACHE_TTL_MS = 60_000
+const mallGetCache = new Map<string, { expiresAt: number; value: unknown }>()
+const mallGetInFlight = new Map<string, Promise<unknown>>()
+
 export interface MallCategory {
   id: string
   code: string
@@ -992,8 +1005,8 @@ export interface SupportKnowledge {
 
 export const yuan = (cents?: number | null) => `¥${((cents || 0) / 100).toFixed(2)}`
 
-export async function listMallCategories(): Promise<MallCategory[]> {
-  return apiGet('/api/mall/categories')
+export async function listMallCategories(options: MallGetOptions = {}): Promise<MallCategory[]> {
+  return cachedApiGet('/api/mall/categories', undefined, { ttlMs: MALL_STATIC_GET_CACHE_TTL_MS, ...options })
 }
 
 export async function listMallProducts(params: {
@@ -1006,24 +1019,24 @@ export async function listMallProducts(params: {
   page?: number
   pageSize?: number
   limit?: number
-} = {}): Promise<MallProduct[]> {
-  return apiGet('/api/mall/products', params)
+} = {}, options: MallGetOptions = {}): Promise<MallProduct[]> {
+  return cachedApiGet('/api/mall/products', params, { ttlMs: MALL_GET_CACHE_TTL_MS, ...options })
 }
 
-export async function listMallHomeBanners(): Promise<MallHomeBanner[]> {
-  return apiGet('/api/mall/home-banners')
+export async function listMallHomeBanners(options: MallGetOptions = {}): Promise<MallHomeBanner[]> {
+  return cachedApiGet('/api/mall/home-banners', undefined, { ttlMs: MALL_STATIC_GET_CACHE_TTL_MS, ...options })
 }
 
-export async function listMallHomeSections(): Promise<MallHomeSection[]> {
-  return apiGet('/api/mall/home-sections')
+export async function listMallHomeSections(options: MallGetOptions = {}): Promise<MallHomeSection[]> {
+  return cachedApiGet('/api/mall/home-sections', undefined, { ttlMs: MALL_STATIC_GET_CACHE_TTL_MS, ...options })
 }
 
-export async function listMallPromotionVenues(): Promise<MallPromotionVenue[]> {
-  return apiGet('/api/mall/promotion-venues')
+export async function listMallPromotionVenues(options: MallGetOptions = {}): Promise<MallPromotionVenue[]> {
+  return cachedApiGet('/api/mall/promotion-venues', undefined, { ttlMs: MALL_STATIC_GET_CACHE_TTL_MS, ...options })
 }
 
-export async function getMallProduct(id: string): Promise<MallProduct> {
-  return apiGet(`/api/mall/products/${id}`)
+export async function getMallProduct(id: string, options: MallGetOptions = {}): Promise<MallProduct> {
+  return cachedApiGet(`/api/mall/products/${id}`, undefined, { ttlMs: MALL_GET_CACHE_TTL_MS, ...options })
 }
 
 export async function listMallGroupBuys(): Promise<MallGroupBuyActivity[]> {
@@ -1053,8 +1066,8 @@ export async function listMyMallGroupBuySubscriptions(userId: string): Promise<M
   return apiGet('/api/mall/me/group-buy-subscriptions', { userId })
 }
 
-export async function getMallCart(userId: string): Promise<MallCart> {
-  return apiGet('/api/mall/cart', { userId })
+export async function getMallCart(userId: string, options: MallGetOptions = {}): Promise<MallCart> {
+  return cachedApiGet('/api/mall/cart', { userId }, { ttlMs: MALL_FAST_GET_CACHE_TTL_MS, ...options })
 }
 
 export async function addMallCartItem(userId: string, productId: string, quantity: number, variantId?: string) {
@@ -1103,12 +1116,12 @@ export async function createMallCheckout(data: {
   return apiPost('/api/mall/checkouts', data)
 }
 
-export async function getMallCheckout(id: string): Promise<MallCheckout> {
-  return apiGet(`/api/mall/checkouts/${id}`)
+export async function getMallCheckout(id: string, options: MallGetOptions = {}): Promise<MallCheckout> {
+  return cachedApiGet(`/api/mall/checkouts/${id}`, undefined, { ttlMs: MALL_FAST_GET_CACHE_TTL_MS, ...options })
 }
 
-export async function listMallAddresses(userId: string): Promise<MallAddress[]> {
-  const addresses = await apiGet<MallAddress[]>('/api/mall/addresses', { userId })
+export async function listMallAddresses(userId: string, options: MallGetOptions = {}): Promise<MallAddress[]> {
+  const addresses = await cachedApiGet<MallAddress[]>('/api/mall/addresses', { userId }, { ttlMs: MALL_STATIC_GET_CACHE_TTL_MS, ...options })
   return addresses.map(normalizeMallAddress)
 }
 
@@ -1117,12 +1130,12 @@ export async function createMallAddress(data: CreateMallAddressInput): Promise<M
   return normalizeMallAddress(address)
 }
 
-export async function listMallOrders(userId: string, status?: string): Promise<MallOrder[]> {
-  return apiGet('/api/mall/orders', { userId, status })
+export async function listMallOrders(userId: string, status?: string, options: MallGetOptions = {}): Promise<MallOrder[]> {
+  return cachedApiGet('/api/mall/orders', { userId, status }, { ttlMs: MALL_FAST_GET_CACHE_TTL_MS, ...options })
 }
 
-export async function getMallOrder(id: string): Promise<MallOrder> {
-  return apiGet(`/api/mall/orders/${id}`)
+export async function getMallOrder(id: string, options: MallGetOptions = {}): Promise<MallOrder> {
+  return cachedApiGet(`/api/mall/orders/${id}`, undefined, { ttlMs: MALL_FAST_GET_CACHE_TTL_MS, ...options })
 }
 
 export async function cancelMallOrder(id: string, userId: string, reason?: string): Promise<MallOrder> {
@@ -1629,6 +1642,43 @@ async function apiGet<T>(url: string, data?: Record<string, unknown>): Promise<T
   return unwrapApiData<T>(response.statusCode, response.data)
 }
 
+async function cachedApiGet<T>(
+  url: string,
+  data?: Record<string, unknown>,
+  options: MallGetOptions = {},
+): Promise<T> {
+  const cacheKey = mallGetCacheKey(url, data)
+  const now = Date.now()
+  const ttlMs = options.ttlMs ?? MALL_GET_CACHE_TTL_MS
+  const cached = mallGetCache.get(cacheKey)
+
+  if (!options.fresh && cached && cached.expiresAt > now) {
+    return cached.value as T
+  }
+
+  if (!options.fresh && options.preferCache && cached) {
+    if (options.revalidate) {
+      void cachedApiGet<T>(url, data, { ...options, fresh: true, preferCache: false }).catch(() => undefined)
+    }
+    return cached.value as T
+  }
+
+  const inFlight = mallGetInFlight.get(cacheKey)
+  if (inFlight) return inFlight as Promise<T>
+
+  const request = apiGet<T>(url, data)
+    .then((value) => {
+      mallGetCache.set(cacheKey, { value, expiresAt: Date.now() + ttlMs })
+      return value
+    })
+    .finally(() => {
+      mallGetInFlight.delete(cacheKey)
+    })
+
+  mallGetInFlight.set(cacheKey, request)
+  return request
+}
+
 async function apiPost<T>(url: string, data: unknown): Promise<T> {
   const response = await Network.request({
     url,
@@ -1636,7 +1686,9 @@ async function apiPost<T>(url: string, data: unknown): Promise<T> {
     header: { 'content-type': 'application/json' },
     data,
   })
-  return unwrapApiData<T>(response.statusCode, response.data)
+  const value = unwrapApiData<T>(response.statusCode, response.data)
+  clearMallGetCache()
+  return value
 }
 
 async function apiPut<T>(url: string, data: unknown): Promise<T> {
@@ -1646,12 +1698,21 @@ async function apiPut<T>(url: string, data: unknown): Promise<T> {
     header: { 'content-type': 'application/json' },
     data,
   })
-  return unwrapApiData<T>(response.statusCode, response.data)
+  const value = unwrapApiData<T>(response.statusCode, response.data)
+  clearMallGetCache()
+  return value
 }
 
 async function apiDelete<T>(url: string): Promise<T> {
   const response = await Network.request({ url, method: 'DELETE' })
-  return unwrapApiData<T>(response.statusCode, response.data)
+  const value = unwrapApiData<T>(response.statusCode, response.data)
+  clearMallGetCache()
+  return value
+}
+
+export function clearMallGetCache() {
+  mallGetCache.clear()
+  mallGetInFlight.clear()
 }
 
 function unwrapApiData<T>(statusCode: number, rawData: unknown): T {
@@ -1672,6 +1733,19 @@ function cleanQueryData(data?: Record<string, unknown>) {
   if (!data) return undefined
   const entries = Object.entries(data).filter(([, value]) => value !== undefined && value !== null && value !== '')
   return entries.length > 0 ? Object.fromEntries(entries) : undefined
+}
+
+function mallGetCacheKey(url: string, data?: Record<string, unknown>) {
+  const cleaned = cleanQueryData(data)
+  if (!cleaned) return url
+  return `${url}?${stableQueryString(cleaned)}`
+}
+
+function stableQueryString(data: Record<string, unknown>) {
+  return Object.keys(data)
+    .sort()
+    .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(String(data[key]))}`)
+    .join('&')
 }
 
 function cleanObjectData(data: Record<string, unknown>) {

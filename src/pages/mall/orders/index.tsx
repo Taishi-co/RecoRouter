@@ -37,7 +37,7 @@ export default function MallOrdersPage() {
   const userId = (Taro.getStorageSync('userInfo') as StoredUser | undefined)?.id || ''
 
   useDidShow(() => {
-    loadOrders()
+    loadOrders({ preferCache: true, revalidate: true })
   })
 
   useEffect(() => {
@@ -45,18 +45,31 @@ export default function MallOrdersPage() {
     return () => clearInterval(timer)
   }, [])
 
-  const loadOrders = async () => {
+  const loadOrders = async ({
+    preferCache = false,
+    fresh = false,
+    revalidate = false,
+    silent = false,
+  }: {
+    preferCache?: boolean
+    fresh?: boolean
+    revalidate?: boolean
+    silent?: boolean
+  } = {}) => {
     if (!userId) {
       Taro.showToast({ title: '请先登录', icon: 'none' })
       redirectToMallAuth('/pages/mall/orders/index')
       return
     }
-    setLoading(true)
+    if (!silent && orders.length === 0) setLoading(true)
     try {
-      const nextOrders = await listMallOrders(userId)
+      const nextOrders = await listMallOrders(userId, undefined, { preferCache, fresh })
       setOrders(nextOrders)
+      if (revalidate && !fresh) {
+        void loadOrders({ fresh: true, silent: true })
+      }
     } catch (error) {
-      setOrders([])
+      if (!orders.length) setOrders([])
       Taro.showToast({
         title: error instanceof Error ? error.message : '订单加载失败',
         icon: 'none',
@@ -85,7 +98,7 @@ export default function MallOrdersPage() {
         title: error instanceof Error ? error.message : '支付未完成',
         icon: 'none',
       })
-      await loadOrders()
+      await loadOrders({ fresh: true })
     } finally {
       setPayingOrderId('')
     }
@@ -105,7 +118,7 @@ export default function MallOrdersPage() {
     try {
       await cancelMallOrder(order.id, userId, '用户取消订单')
       Taro.showToast({ title: '订单已取消', icon: 'success' })
-      await loadOrders()
+      await loadOrders({ fresh: true })
     } catch (error) {
       Taro.showToast({
         title: error instanceof Error ? error.message : '取消失败',

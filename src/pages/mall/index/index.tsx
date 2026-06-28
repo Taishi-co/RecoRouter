@@ -86,7 +86,7 @@ export default function MallHome() {
   const [specPickerLoading, setSpecPickerLoading] = useState(false)
 
   useDidShow(() => {
-    loadProducts()
+    loadProducts({ preferCache: true, revalidate: true })
   })
 
   useEffect(() => {
@@ -128,25 +128,40 @@ export default function MallHome() {
 
   const currentUser = () => Taro.getStorageSync('userInfo') as StoredUser | undefined
 
-  const loadProducts = async () => {
-    setLoading(true)
+  const loadProducts = async ({
+    preferCache = false,
+    fresh = false,
+    revalidate = false,
+    silent = false,
+  }: {
+    preferCache?: boolean
+    fresh?: boolean
+    revalidate?: boolean
+    silent?: boolean
+  } = {}) => {
+    if (!silent && products.length === 0) setLoading(true)
     setLoadError('')
     try {
       const [productData, bannerData, sectionData, venueData] = await Promise.all([
-        listMallProducts({}),
-        listMallHomeBanners().catch(() => []),
-        listMallHomeSections().catch(() => []),
-        listMallPromotionVenues().catch(() => []),
+        listMallProducts({}, { preferCache, fresh }),
+        listMallHomeBanners({ preferCache, fresh }).catch(() => []),
+        listMallHomeSections({ preferCache, fresh }).catch(() => []),
+        listMallPromotionVenues({ preferCache, fresh }).catch(() => []),
       ])
       setProducts(productData)
       setHomeBanners(bannerData)
       setHomeSections(sectionData)
       setPromotionVenues(venueData)
-      listMallCategories()
+      listMallCategories({ preferCache, fresh })
         .then(setCategories)
         .catch(() => setCategories([]))
+      if (revalidate && !fresh) {
+        setTimeout(() => {
+          void loadProducts({ fresh: true, silent: true })
+        }, 120)
+      }
     } catch (error) {
-      setProducts([])
+      if (!products.length) setProducts([])
       setLoadError(error instanceof Error ? error.message : '商品加载失败')
       Taro.showToast({
         title: error instanceof Error ? error.message : '商品加载失败',
@@ -379,7 +394,7 @@ export default function MallHome() {
         <View className="mall-empty">
           <Text className="mall-empty-title">商品加载失败</Text>
           <Text className="mall-empty-copy">{loadError}</Text>
-          <View className="mall-button" style={{ marginTop: 14 }} onClick={loadProducts}>
+          <View className="mall-button" style={{ marginTop: 14 }} onClick={() => loadProducts({ fresh: true })}>
             重新加载
           </View>
         </View>

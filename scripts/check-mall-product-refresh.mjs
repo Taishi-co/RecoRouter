@@ -8,7 +8,7 @@ const importsUseDidShow =
     source,
   )
 const refreshesProductsOnShow =
-  /useDidShow\s*\(\s*\(\s*\)\s*=>\s*\{[\s\S]*?loadProducts\s*\(\s*\)[\s\S]*?\}\s*\)/.test(
+  /useDidShow\s*\(\s*\(\s*\)\s*=>\s*\{[\s\S]*?loadProducts\s*\([^)]*\)[\s\S]*?\}\s*\)/.test(
     source,
   )
 

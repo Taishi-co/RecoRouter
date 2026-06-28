@@ -1469,6 +1469,15 @@ const initialSupportFilters: SupportFilterState = {
   priority: '',
 };
 
+interface AdminGetOptions {
+  ttlMs?: number;
+  fresh?: boolean;
+}
+
+const WEB_ADMIN_GET_CACHE_TTL_MS = 12_000;
+const adminGetCache = new Map<string, { expiresAt: number; value: unknown }>();
+const adminGetInFlight = new Map<string, Promise<unknown>>();
+
 function createApiUrl(pathname: string, params: JsonRecord = {}) {
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -1477,6 +1486,15 @@ function createApiUrl(pathname: string, params: JsonRecord = {}) {
   });
   const query = search.toString();
   return `${API_BASE}${pathname}${query ? `?${query}` : ''}`;
+}
+
+function adminGetCacheKey(pathname: string, params?: JsonRecord) {
+  return createApiUrl(pathname, params || {});
+}
+
+function invalidateAdminGetCache() {
+  adminGetCache.clear();
+  adminGetInFlight.clear();
 }
 
 async function apiRequest<T>(pathname: string, init: RequestInit = {}, params?: JsonRecord): Promise<T> {
@@ -1507,11 +1525,32 @@ async function apiRequest<T>(pathname: string, init: RequestInit = {}, params?: 
   return (payload.data ?? payload) as T;
 }
 
-function apiGet<T>(pathname: string, params?: JsonRecord) {
-  return apiRequest<T>(pathname, {}, params);
+function apiGet<T>(pathname: string, params?: JsonRecord, options: AdminGetOptions = {}) {
+  const cacheKey = adminGetCacheKey(pathname, params);
+  const cached = adminGetCache.get(cacheKey);
+  if (!options.fresh && cached && cached.expiresAt > Date.now()) {
+    return Promise.resolve(cached.value as T);
+  }
+  const inFlight = adminGetInFlight.get(cacheKey);
+  if (!options.fresh && inFlight) return inFlight as Promise<T>;
+
+  const request = apiRequest<T>(pathname, {}, params)
+    .then((value) => {
+      adminGetCache.set(cacheKey, {
+        value,
+        expiresAt: Date.now() + (options.ttlMs ?? WEB_ADMIN_GET_CACHE_TTL_MS),
+      });
+      return value;
+    })
+    .finally(() => {
+      adminGetInFlight.delete(cacheKey);
+    });
+  adminGetInFlight.set(cacheKey, request);
+  return request;
 }
 
 function apiPost<T>(pathname: string, body: JsonRecord = {}) {
+  invalidateAdminGetCache();
   return apiRequest<T>(pathname, {
     method: 'POST',
     body: JSON.stringify(body),
@@ -1519,6 +1558,7 @@ function apiPost<T>(pathname: string, body: JsonRecord = {}) {
 }
 
 function apiPut<T>(pathname: string, body: JsonRecord = {}) {
+  invalidateAdminGetCache();
   return apiRequest<T>(pathname, {
     method: 'PUT',
     body: JSON.stringify(body),
@@ -1526,10 +1566,12 @@ function apiPut<T>(pathname: string, body: JsonRecord = {}) {
 }
 
 function apiDelete<T>(pathname: string) {
+  invalidateAdminGetCache();
   return apiRequest<T>(pathname, { method: 'DELETE' });
 }
 
 function apiUpload<T>(pathname: string, file: File) {
+  invalidateAdminGetCache();
   const formData = new FormData();
   formData.set('file', file);
   return apiRequest<T>(pathname, {
@@ -12403,7 +12445,7 @@ function LoginScreen({
     setCaptchaLoading(true);
     setCaptchaError('');
     try {
-      const captcha = await apiGet<JsonRecord>('/api/auth/captcha');
+      const captcha = await apiGet<JsonRecord>('/api/auth/captcha', undefined, { fresh: true });
       const captchaId = stringValue(captcha, 'captchaId');
       const image = stringValue(captcha, 'image');
       if (!captchaId || !image) {
@@ -12639,6 +12681,8 @@ function App() {
   const [mallOrderSearchError, setMallOrderSearchError] = useState('');
   const [weightAdjustmentItem, setWeightAdjustmentItem] = useState<JsonRecord | null>(null);
   const [weightAdjustmentSaving, setWeightAdjustmentSaving] = useState(false);
+  const productFilterDebounceRef = useRef<number | null>(null);
+  const productFilterResolveRef = useRef<(() => void) | null>(null);
 
   const currentModule = useMemo(
     () => adminModules.find(module => module.key === activeModuleKey) || adminModules[0],
@@ -12689,6 +12733,12 @@ function App() {
   useEffect(() => () => {
     Object.values(messageTimers.current).forEach(timer => window.clearTimeout(timer));
     messageTimers.current = {};
+    if (productFilterDebounceRef.current) {
+      window.clearTimeout(productFilterDebounceRef.current);
+      productFilterDebounceRef.current = null;
+    }
+    productFilterResolveRef.current?.();
+    productFilterResolveRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -12804,7 +12854,19 @@ function App() {
   const applyProductFilters = async (patch: Partial<MallFilterState>) => {
     const nextFilters = { ...productFilters, ...patch };
     setProductFilters(nextFilters);
-    await reload({ productFilters: nextFilters });
+    if (productFilterDebounceRef.current) {
+      window.clearTimeout(productFilterDebounceRef.current);
+      productFilterDebounceRef.current = null;
+    }
+    productFilterResolveRef.current?.();
+    await new Promise<void>((resolve) => {
+      productFilterResolveRef.current = resolve;
+      productFilterDebounceRef.current = window.setTimeout(() => {
+        productFilterDebounceRef.current = null;
+        productFilterResolveRef.current = null;
+        void reload({ productFilters: nextFilters }).finally(resolve);
+      }, 220);
+    });
   };
 
   useEffect(() => {
@@ -12881,8 +12943,8 @@ function App() {
 
   const refreshSupportRealtime = useCallback(async () => {
     const [nextSessions, nextMetrics] = await Promise.all([
-      apiGet<JsonRecord[]>('/api/support/sessions'),
-      apiGet<JsonRecord>('/api/support/metrics'),
+      apiGet<JsonRecord[]>('/api/support/sessions', undefined, { fresh: true }),
+      apiGet<JsonRecord>('/api/support/metrics', undefined, { fresh: true }),
     ]);
     setData(current => ({
       ...current,
@@ -12890,7 +12952,7 @@ function App() {
       supportMetrics: nextMetrics,
     }));
     if (selectedSessionId) {
-      const nextMessages = await apiGet<JsonRecord[]>(`/api/support/sessions/${selectedSessionId}/messages`);
+      const nextMessages = await apiGet<JsonRecord[]>(`/api/support/sessions/${selectedSessionId}/messages`, undefined, { fresh: true });
       setSupportMessages(nextMessages);
     }
   }, [selectedSessionId]);
