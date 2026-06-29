@@ -1,12 +1,15 @@
 import { useState } from 'react'
 import { Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { Gift, Headphones, LogOut, MapPin, PackageCheck, Pencil, Phone, Settings, Users } from 'lucide-react-taro'
+import { Bell, Gift, Headphones, LogOut, MapPin, PackageCheck, Pencil, Phone, Settings, Users } from 'lucide-react-taro'
 import { Input } from '@/components/ui/input'
 import {
   getMallProfile,
+  getUnreadNotificationCount,
+  listMyMallGroupBuySubscriptions,
   listMallOrders,
   updateMallProfile,
+  type MallGroupBuySubscription,
   type MallOrder,
   type MallProfile,
 } from '@/services/mall'
@@ -28,12 +31,14 @@ interface ProfileForm {
 export default function MallProfilePage() {
   const [profile, setProfile] = useState<MallProfile | null>(null)
   const [orders, setOrders] = useState<MallOrder[]>([])
+  const [groupBuySubscriptions, setGroupBuySubscriptions] = useState<MallGroupBuySubscription[]>([])
   const [user, setUser] = useState<StoredUser>({})
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [editProfile, setEditProfile] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileForm, setProfileForm] = useState<ProfileForm>({ nickname: '', phone: '' })
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0)
 
   useDidShow(() => {
     loadProfile()
@@ -47,20 +52,28 @@ export default function MallProfilePage() {
     if (!storedUser.id) {
       setProfile(null)
       setOrders([])
+      setGroupBuySubscriptions([])
+      setUnreadNotificationCount(0)
       return
     }
 
     setLoading(true)
     try {
-      const [nextProfile, nextOrders] = await Promise.all([
+      const [nextProfile, nextOrders, nextGroupBuySubscriptions, nextUnreadCount] = await Promise.all([
         getMallProfile(storedUser.id),
         listMallOrders(storedUser.id),
+        listMyMallGroupBuySubscriptions(storedUser.id).catch(() => []),
+        getUnreadNotificationCount(storedUser.id).catch(() => 0),
       ])
       setProfile(nextProfile)
       setOrders(nextOrders)
+      setGroupBuySubscriptions(nextGroupBuySubscriptions)
+      setUnreadNotificationCount(nextUnreadCount)
     } catch (error) {
       setProfile(null)
       setOrders([])
+      setGroupBuySubscriptions([])
+      setUnreadNotificationCount(0)
       const message = error instanceof Error ? error.message : '会员信息加载失败'
       setLoadError(message)
       Taro.showToast({ title: message, icon: 'none' })
@@ -75,6 +88,8 @@ export default function MallProfilePage() {
     setUser({})
     setProfile(null)
     setOrders([])
+    setGroupBuySubscriptions([])
+    setUnreadNotificationCount(0)
     Taro.showToast({ title: '已退出登录', icon: 'success' })
   }
 
@@ -139,7 +154,7 @@ export default function MallProfilePage() {
   const memberLevel = member?.level?.name || profile?.memberLevel || '普通会员'
   const points = Number(member?.points || 0)
   const totalSpendCents = Number(member?.totalSpendCents || 0)
-  const orderCounts = orderCountView(profile, orders)
+  const orderCounts = orderCountView(profile, orders, groupBuySubscriptions)
   const couponWallet = profile?.couponWallet || {}
   const availableCouponCount = Number(couponWallet.availableCount || 0)
   const expiringCouponCount = Number(couponWallet.expiringCount || 0)
@@ -197,12 +212,19 @@ export default function MallProfilePage() {
         </View>
         <View className="mall-v7-order-entry-grid">
           <ProfileEntry label="全部" value={loading ? 0 : orderCounts.total} onClick={() => Taro.navigateTo({ url: '/pages/mall/orders/index' })} />
-          <ProfileEntry label="待支付" value={loading ? 0 : orderCounts.pendingPayment} onClick={() => Taro.navigateTo({ url: '/pages/mall/orders/index' })} />
-          <ProfileEntry label="待收货" value={loading ? 0 : orderCounts.pendingReceipt} onClick={() => Taro.navigateTo({ url: '/pages/mall/orders/index' })} />
-          <ProfileEntry label="售后" value={loading ? 0 : orderCounts.afterSales} onClick={() => Taro.navigateTo({ url: '/pages/mall/orders/index' })} />
+          <ProfileEntry label="待支付" value={loading ? 0 : orderCounts.pendingPayment} onClick={() => Taro.navigateTo({ url: '/pages/mall/orders/index?tab=pending_payment' })} />
+          <ProfileEntry label="进行中" value={loading ? 0 : orderCounts.processing} onClick={() => Taro.navigateTo({ url: '/pages/mall/orders/index?tab=processing' })} />
+          <ProfileEntry label="售后" value={loading ? 0 : orderCounts.afterSales} onClick={() => Taro.navigateTo({ url: '/pages/mall/orders/index?tab=after_sale' })} />
         </View>
       </View>
 
+      <ProfileLink
+        icon={<Bell size={20} color="#2F7E43" />}
+        title="消息提醒"
+        subtitle={unreadNotificationCount > 0 ? `${unreadNotificationCount} 条未读消息` : '订单、售后、客服和活动提醒'}
+        action="查看"
+        onClick={() => Taro.navigateTo({ url: '/pages/notifications/index?source=mall' })}
+      />
       <ProfileLink
         icon={<PackageCheck size={20} color="#2F7E43" />}
         title="卡包优惠券"
@@ -349,16 +371,21 @@ function ProfileLink({
   )
 }
 
-function orderCountView(profile: MallProfile | null, orders: MallOrder[]) {
+function orderCountView(profile: MallProfile | null, orders: MallOrder[], groupBuySubscriptions: MallGroupBuySubscription[]) {
   const backendCounts = profile?.orderCounts
-  const pendingPayment = Number(backendCounts?.pendingPayment ?? orders.filter((order) => order.paymentStatus !== 'paid').length)
-  const pendingReceipt = orders.filter((order) => order.paymentStatus === 'paid' && ['ready_for_pickup', 'pending_pickup', 'delivering'].some((status) => order.status.includes(status))).length
+  const groupBuyPendingPaymentCount = groupBuySubscriptions.filter((subscription) => subscription.status === 'pending_balance').length
+  const groupBuyProcessingCount = groupBuySubscriptions.filter((subscription) => (
+    ['deposit_paid', 'balance_paid'].includes(subscription.status)
+    || (subscription.status === 'order_created' && !subscription.mallOrderId)
+  )).length
+  const pendingPayment = Number(backendCounts?.pendingPayment ?? orders.filter((order) => order.paymentStatus !== 'paid').length) + groupBuyPendingPaymentCount
+  const processing = orders.filter((order) => order.paymentStatus === 'paid' && ['ready_for_pickup', 'pending_pickup', 'delivering'].some((status) => order.status.includes(status))).length + groupBuyProcessingCount
   const afterSales = Number(backendCounts?.afterSales ?? orders.filter((order) => order.afterSaleStatus || order.refundStatus).length)
-  const total = Number(backendCounts?.total ?? orders.length)
+  const total = Number(backendCounts?.total ?? orders.length) + groupBuySubscriptions.filter((subscription) => !subscription.mallOrderId).length
 
   return {
     pendingPayment,
-    pendingReceipt,
+    processing,
     afterSales,
     total,
   }

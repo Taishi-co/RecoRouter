@@ -9,7 +9,7 @@ const checks = [
     message: 'Web admin login must call /api/auth/login with phone, password, captchaId and captchaCode',
   },
   {
-    ok: /apiGet\s*<[^>]+>\s*\(\s*['"]\/api\/auth\/captcha['"]\s*\)/.test(source)
+    ok: /apiGet\s*<[^>]+>\s*\(\s*['"]\/api\/auth\/captcha['"](?:\s*,[\s\S]*?)?\)/.test(source)
       && /图形验证码/.test(source)
       && /captchaImage/.test(source)
       && /刷新验证码|换一张/.test(source),

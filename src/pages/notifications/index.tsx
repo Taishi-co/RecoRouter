@@ -8,6 +8,7 @@ import { AppPageShell } from '@/components/layout/app-page-shell'
 import { BottomNav } from '@/components/layout/bottom-nav'
 import { Bell, CircleX, DollarSign, ShieldCheck, CircleCheck } from 'lucide-react-taro'
 import { Network } from '@/network'
+import { MallPage } from '../mall/mall-ui'
 
 const PAGE_SIZE = 20
 
@@ -18,9 +19,17 @@ interface Notification {
   title: string
   content: string
   related_order_id?: string
+  relatedOrderId?: string
   related_demand_id?: string
+  relatedDemandId?: string
+  related_type?: string
+  relatedType?: string
+  related_id?: string
+  relatedId?: string
   is_read: boolean
+  isRead?: boolean
   created_at: string
+  createdAt?: string
 }
 
 export default function Notifications() {
@@ -129,7 +138,7 @@ export default function Notifications() {
         // 更新本地状态
         setNotifications(prev =>
           prev.map(notif =>
-            notif.id === id ? { ...notif, is_read: true } : notif
+            notif.id === id ? { ...notif, is_read: true, isRead: true } : notif
           )
         )
         setUnreadCount(prev => Math.max(0, prev - 1))
@@ -153,7 +162,7 @@ export default function Notifications() {
 
       if (res.data.code === 200) {
         setNotifications(prev =>
-          prev.map(notif => ({ ...notif, is_read: true }))
+          prev.map(notif => ({ ...notif, is_read: true, isRead: true }))
         )
         setUnreadCount(0)
         Taro.showToast({
@@ -173,7 +182,7 @@ export default function Notifications() {
   // 点击通知跳转
   const handleNotificationClick = (notification: Notification) => {
     // 标记为已读
-    if (!notification.is_read) {
+    if (!isNotificationRead(notification)) {
       handleMarkAsRead(notification.id)
     }
 
@@ -181,7 +190,28 @@ export default function Notifications() {
     const userInfo = Taro.getStorageSync('userInfo')
     if (!userInfo) return
 
-    if (notification.related_order_id) {
+    if (isMallNotification(notification)) {
+      const relatedType = relatedTypeOf(notification)
+      const relatedId = relatedIdOf(notification)
+      const relatedOrderId = relatedOrderIdOf(notification)
+      if (relatedType === 'support_session' && relatedId) {
+        const orderQuery = relatedOrderId ? `&orderId=${relatedOrderId}` : ''
+        Taro.navigateTo({ url: `/pages/mall/support/index?sessionId=${relatedId}${orderQuery}` })
+        return
+      }
+      if (relatedType === 'mall_after_sale' && relatedOrderId) {
+        Taro.navigateTo({ url: `/pages/mall/after-sale/index?orderId=${relatedOrderId}` })
+        return
+      }
+      if (relatedOrderId) {
+        Taro.navigateTo({ url: `/pages/mall/order-detail/index?id=${relatedOrderId}` })
+        return
+      }
+    }
+
+    const relatedOrderId = relatedOrderIdOf(notification)
+    const relatedDemandId = notification.relatedDemandId || notification.related_demand_id
+    if (relatedOrderId) {
       // 跳转到订单详情（根据用户角色）
       if (userInfo.role === 'owner') {
         Taro.navigateTo({
@@ -192,7 +222,7 @@ export default function Notifications() {
           url: `/pages/merchant/orders/index`
         })
       }
-    } else if (notification.related_demand_id) {
+    } else if (relatedDemandId) {
       // 跳转到需求列表（需求方查看自己的需求）
       if (userInfo.role === 'merchant') {
         Taro.navigateTo({
@@ -217,6 +247,12 @@ export default function Notifications() {
         return { icon: ShieldCheck, color: '#8b5cf6', bgColor: '#ede9fe' }
       case 'order_completed':
         return { icon: CircleCheck, color: '#10b981', bgColor: '#d1fae5' }
+      case 'mall_order_paid':
+      case 'mall_order_dispatching':
+      case 'mall_order_completed':
+      case 'mall_support_message':
+      case 'mall_after_sale_processed':
+        return { icon: Bell, color: '#2F7E43', bgColor: '#EAF8E7' }
       default:
         return { icon: Bell, color: '#6b7280', bgColor: '#f3f4f6' }
     }
@@ -253,10 +289,62 @@ export default function Notifications() {
   const displayNotifications = notifications
   const displayUnreadCount = unreadCount
   const currentRole = Taro.getStorageSync('userInfo')?.role
+  const isMallSource = Taro.getCurrentInstance().router?.params?.source === 'mall'
   const bottomNav =
     currentRole === 'merchant'
       ? <BottomNav type="merchant" active="messages" />
       : <BottomNav type="common" active="messages" />
+
+  if (isMallSource) {
+    return (
+      <MallPage active="mine" hideNotificationBanner>
+        <View className="mall-back-row">
+          <View>
+            <Text className="mall-breadcrumb">叁友甄选</Text>
+            <Text className="mall-page-title">消息提醒</Text>
+          </View>
+          {displayUnreadCount > 0 ? (
+            <View className="mall-small-button" onClick={handleMarkAllAsRead}>
+              <Text>全部已读</Text>
+            </View>
+          ) : null}
+        </View>
+        <View className="mall-card">
+          {loading && notifications.length === 0 ? (
+            <Text className="mall-empty-copy">加载中...</Text>
+          ) : null}
+          {displayNotifications.map((notification) => {
+            const timeText = formatTime(createdAtOf(notification))
+            const isRead = isNotificationRead(notification)
+            return (
+              <View
+                key={notification.id}
+                className={isRead ? 'mall-link-card' : 'mall-link-card mall-notification-unread'}
+                onClick={() => handleNotificationClick(notification)}
+              >
+                <View className="mall-link-icon">
+                  <Bell size={18} color="#2F7E43" />
+                </View>
+                <View className="mall-link-copy">
+                  <Text className="mall-link-title">{notification.title}</Text>
+                  <Text className="mall-link-subtitle">{notification.content}</Text>
+                  <Text className="mall-breadcrumb">{timeText}</Text>
+                </View>
+                {!isRead ? <Text className="mall-status-pill">未读</Text> : null}
+              </View>
+            )
+          })}
+          {!loading && !displayNotifications.length ? (
+            <View className="mall-empty">
+              <Bell size={40} color="#9CA89A" />
+              <Text className="mall-empty-title">{authMissing ? '请先登录' : '暂无消息提醒'}</Text>
+              <Text className="mall-empty-copy">订单、售后、客服和活动消息会在这里展示。</Text>
+            </View>
+          ) : null}
+        </View>
+      </MallPage>
+    )
+  }
 
   return (
     <AppPageShell
@@ -294,7 +382,8 @@ export default function Notifications() {
 
           {displayNotifications.map(notification => {
             const { icon: Icon, color, bgColor } = getNotificationTypeStyle(notification.type)
-            const timeText = formatTime(notification.created_at)
+            const timeText = formatTime(createdAtOf(notification))
+            const isRead = isNotificationRead(notification)
 
             return (
               <Card
@@ -319,7 +408,7 @@ export default function Notifications() {
                           <Text className="text-sm font-semibold text-gray-800 flex-1">
                             {notification.title}
                           </Text>
-                          {!notification.is_read && (
+                          {!isRead && (
                             <View className="w-2 h-2 rounded-full bg-red-500 ml-2 flex-shrink-0" />
                           )}
                         </View>
@@ -381,6 +470,34 @@ export default function Notifications() {
       </View>
     </AppPageShell>
   )
+}
+
+function isMallNotification(notification: Notification) {
+  const relatedType = relatedTypeOf(notification)
+  return notification.type?.startsWith('mall_')
+    || relatedType === 'mall_order'
+    || relatedType === 'mall_after_sale'
+    || relatedType === 'support_session'
+}
+
+function relatedTypeOf(notification: Notification) {
+  return notification.relatedType || notification.related_type || ''
+}
+
+function relatedIdOf(notification: Notification) {
+  return notification.relatedId || notification.related_id || ''
+}
+
+function relatedOrderIdOf(notification: Notification) {
+  return notification.relatedOrderId || notification.related_order_id || ''
+}
+
+function createdAtOf(notification: Notification) {
+  return notification.createdAt || notification.created_at || ''
+}
+
+function isNotificationRead(notification: Notification) {
+  return Boolean(notification.isRead ?? notification.is_read)
 }
 
 // 格式化时间

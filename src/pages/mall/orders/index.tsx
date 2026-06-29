@@ -5,8 +5,10 @@ import { ChevronLeft, Headphones, Search } from 'lucide-react-taro'
 import { Input } from '@/components/ui/input'
 import {
   cancelMallOrder,
+  listMyMallGroupBuySubscriptions,
   listMallOrders,
   resolveMallImageUrl,
+  type MallGroupBuySubscription,
   type MallOrder,
 } from '@/services/mall'
 import { startOrderPayment } from '@/services/payment'
@@ -19,6 +21,10 @@ interface StoredUser {
 
 type MallOrderTab = 'all' | 'pending_payment' | 'processing' | 'after_sale'
 
+type MallOrderListItem =
+  | { kind: 'order'; key: string; order: MallOrder }
+  | { kind: 'group_buy'; key: string; subscription: MallGroupBuySubscription }
+
 const filters: Array<{ key: MallOrderTab; label: string }> = [
   { key: 'all', label: '全部' },
   { key: 'pending_payment', label: '待支付' },
@@ -28,7 +34,8 @@ const filters: Array<{ key: MallOrderTab; label: string }> = [
 
 export default function MallOrdersPage() {
   const [orders, setOrders] = useState<MallOrder[]>([])
-  const [activeStatus, setActiveStatus] = useState<MallOrderTab>('all')
+  const [groupBuySubscriptions, setGroupBuySubscriptions] = useState<MallGroupBuySubscription[]>([])
+  const [activeStatus, setActiveStatus] = useState<MallOrderTab>(() => initialOrderTab())
   const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(false)
   const [now, setNow] = useState(Date.now())
@@ -37,7 +44,7 @@ export default function MallOrdersPage() {
   const userId = (Taro.getStorageSync('userInfo') as StoredUser | undefined)?.id || ''
 
   useDidShow(() => {
-    loadOrders()
+    loadOrders({ preferCache: true, revalidate: true })
   })
 
   useEffect(() => {
@@ -45,18 +52,36 @@ export default function MallOrdersPage() {
     return () => clearInterval(timer)
   }, [])
 
-  const loadOrders = async () => {
+  const loadOrders = async ({
+    preferCache = false,
+    fresh = false,
+    revalidate = false,
+    silent = false,
+  }: {
+    preferCache?: boolean
+    fresh?: boolean
+    revalidate?: boolean
+    silent?: boolean
+  } = {}) => {
     if (!userId) {
       Taro.showToast({ title: '请先登录', icon: 'none' })
       redirectToMallAuth('/pages/mall/orders/index')
       return
     }
-    setLoading(true)
+    if (!silent && orders.length === 0 && groupBuySubscriptions.length === 0) setLoading(true)
     try {
-      const nextOrders = await listMallOrders(userId)
+      const [nextOrders, nextGroupBuySubscriptions] = await Promise.all([
+        listMallOrders(userId, undefined, { preferCache, fresh }),
+        listMyMallGroupBuySubscriptions(userId, { preferCache, fresh }).catch(() => []),
+      ])
       setOrders(nextOrders)
+      setGroupBuySubscriptions(nextGroupBuySubscriptions)
+      if (revalidate && !fresh) {
+        void loadOrders({ fresh: true, silent: true })
+      }
     } catch (error) {
-      setOrders([])
+      if (!orders.length) setOrders([])
+      if (!groupBuySubscriptions.length) setGroupBuySubscriptions([])
       Taro.showToast({
         title: error instanceof Error ? error.message : '订单加载失败',
         icon: 'none',
@@ -66,9 +91,23 @@ export default function MallOrdersPage() {
     }
   }
 
+  const orderItems = useMemo(
+    () => mergeOrderItems(orders, groupBuySubscriptions),
+    [groupBuySubscriptions, orders],
+  )
+
+  const orderTabCounts = useMemo(
+    () => ({
+      pending_payment: orderItems.filter((item) => orderItemMatchesTab(item, 'pending_payment')).length,
+      processing: orderItems.filter((item) => orderItemMatchesTab(item, 'processing')).length,
+      after_sale: orderItems.filter((item) => orderItemMatchesTab(item, 'after_sale')).length,
+    }),
+    [orderItems],
+  )
+
   const visibleOrders = useMemo(
-    () => orders.filter((order) => orderMatchesTab(order, activeStatus)).filter((order) => orderMatchesKeyword(order, keyword)),
-    [activeStatus, keyword, orders],
+    () => orderItems.filter((item) => orderItemMatchesTab(item, activeStatus)).filter((item) => orderItemMatchesKeyword(item, keyword)),
+    [activeStatus, keyword, orderItems],
   )
 
   const payOrder = async (order: MallOrder) => {
@@ -85,7 +124,32 @@ export default function MallOrdersPage() {
         title: error instanceof Error ? error.message : '支付未完成',
         icon: 'none',
       })
-      await loadOrders()
+      await loadOrders({ fresh: true })
+    } finally {
+      setPayingOrderId('')
+    }
+  }
+
+  const payGroupBuyBalance = async (subscription: MallGroupBuySubscription) => {
+    if (payingOrderId) return
+    setPayingOrderId(subscription.id)
+    try {
+      const payment = await startOrderPayment({
+        orderId: subscription.id,
+        businessType: 'mall_group_buy_balance',
+        payerId: userId,
+      })
+      if (payment.paymentStatus !== 'paid' && payment.status !== 'paid') {
+        throw new Error('支付结果未确认，请稍后在订单中查看')
+      }
+      Taro.showToast({ title: '尾款已支付', icon: 'success' })
+      await loadOrders({ fresh: true })
+    } catch (error) {
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '支付未完成',
+        icon: 'none',
+      })
+      await loadOrders({ fresh: true })
     } finally {
       setPayingOrderId('')
     }
@@ -105,7 +169,7 @@ export default function MallOrdersPage() {
     try {
       await cancelMallOrder(order.id, userId, '用户取消订单')
       Taro.showToast({ title: '订单已取消', icon: 'success' })
-      await loadOrders()
+      await loadOrders({ fresh: true })
     } catch (error) {
       Taro.showToast({
         title: error instanceof Error ? error.message : '取消失败',
@@ -143,6 +207,9 @@ export default function MallOrdersPage() {
             onClick={() => setActiveStatus(filter.key)}
           >
             <Text>{filter.label}</Text>
+            {filter.key !== 'all' && orderTabCounts[filter.key] > 0 ? (
+              <Text className="mall-orders-tab-count">{orderTabCounts[filter.key]}</Text>
+            ) : null}
           </View>
         ))}
       </View>
@@ -165,15 +232,15 @@ export default function MallOrdersPage() {
       ) : null}
 
       <View className="mall-orders-list">
-        {visibleOrders.map((order) => (
+        {visibleOrders.map((item) => (
           <OrderCard
-            key={order.id}
-            order={order}
+            key={item.key}
+            item={item}
             now={now}
-            paying={payingOrderId === order.id}
-            cancelling={cancellingOrderId === order.id}
-            onPay={() => payOrder(order)}
-            onCancel={() => cancelOrder(order)}
+            paying={payingOrderId === orderItemId(item)}
+            cancelling={item.kind === 'order' && cancellingOrderId === item.order.id}
+            onPay={() => item.kind === 'order' ? payOrder(item.order) : payGroupBuyBalance(item.subscription)}
+            onCancel={() => item.kind === 'order' ? cancelOrder(item.order) : undefined}
           />
         ))}
       </View>
@@ -182,57 +249,60 @@ export default function MallOrdersPage() {
 }
 
 function OrderCard({
-  order,
+  item,
   now,
   paying,
   cancelling,
   onPay,
   onCancel,
 }: {
-  order: MallOrder
+  item: MallOrderListItem
   now: number
   paying: boolean
   cancelling: boolean
   onPay: () => void
   onCancel: () => void
 }) {
-  const pending = isPendingPayment(order)
-  const countdown = pending ? paymentCountdownText(order, now) : ''
-  const itemCount = order.items.reduce((sum, item) => sum + Math.max(Number(item.quantity || 0), 0), 0)
-  const imageItems = order.items.slice(0, 6)
+  const pending = isPendingPaymentItem(item)
+  const countdown = pending ? paymentCountdownText(item, now) : ''
+  const imageItems = orderItemImages(item)
+  const itemCount = orderItemQuantity(item)
+  const summaryAmount = orderItemPayableCents(item)
+  const detailUrl = orderItemDetailUrl(item)
+  const supportUrl = orderItemSupportUrl(item)
 
   return (
     <View className="mall-orders-card">
       <View className="mall-orders-card-head">
-        <Text>{formatOrderTime(order.createdAt)}</Text>
+        <Text>{formatOrderTime(orderItemCreatedAt(item))}</Text>
         <View>
-          <Text className="mall-orders-status">{statusText(order)}</Text>
+          <Text className="mall-orders-status">{statusText(item)}</Text>
           {countdown ? <Text className="mall-orders-substatus">{countdown}</Text> : null}
         </View>
       </View>
 
       <View className="mall-orders-images">
-        {imageItems.map((item) => {
-          const imageUrl = resolveMallImageUrl(item.imageUrl)
+        {imageItems.map((imageItem) => {
+          const imageUrl = resolveMallImageUrl(imageItem.imageUrl)
           return imageUrl ? (
-            <Image key={item.id} className="mall-orders-thumb" mode="aspectFill" src={imageUrl} />
+            <Image key={imageItem.id} className="mall-orders-thumb" mode="aspectFill" src={imageUrl} />
           ) : (
-            <View key={item.id} className="mall-orders-thumb mall-orders-thumb-empty" />
+            <View key={imageItem.id} className="mall-orders-thumb mall-orders-thumb-empty" />
           )
         })}
       </View>
 
       <View className="mall-orders-summary">
-        <Text>共{itemCount || order.items.length || 1}件</Text>
-        <Text>实付：</Text>
-        <Text>{mallYuan(order.payableCents)}</Text>
+        <Text>共{itemCount || 1}件</Text>
+        <Text>{item.kind === 'group_buy' && item.subscription.status === 'pending_balance' ? '待付尾款：' : '实付：'}</Text>
+        <Text>{mallYuan(summaryAmount)}</Text>
       </View>
 
       <View className="mall-orders-actions">
-        <Text onClick={() => Taro.navigateTo({ url: `/pages/mall/order-detail/index?id=${order.id}` })}>查看订单</Text>
+        <Text onClick={() => Taro.navigateTo({ url: detailUrl })}>查看订单</Text>
         {pending ? <Text onClick={onPay}>{paying ? '支付中' : '立刻支付'}</Text> : null}
-        {pending ? <Text onClick={onCancel}>{cancelling ? '取消中' : '取消订单'}</Text> : null}
-        <Text onClick={() => Taro.navigateTo({ url: `/pages/mall/support/index?orderId=${order.id}` })}>
+        {item.kind === 'order' && pending ? <Text onClick={onCancel}>{cancelling ? '取消中' : '取消订单'}</Text> : null}
+        <Text onClick={() => Taro.navigateTo({ url: supportUrl })}>
           <Headphones size={14} color="#1F2D1F" />
           联系客服
         </Text>
@@ -241,28 +311,54 @@ function OrderCard({
   )
 }
 
-function orderMatchesKeyword(order: MallOrder, keyword: string) {
+function mergeOrderItems(orders: MallOrder[], subscriptions: MallGroupBuySubscription[]): MallOrderListItem[] {
+  const orderIds = new Set(orders.map((order) => order.id))
+  const groupBuyItems = subscriptions
+    .filter((subscription) => !subscription.mallOrderId || !orderIds.has(subscription.mallOrderId))
+    .map(groupBuySubscriptionToOrderItem)
+  return [
+    ...orders.map((order): MallOrderListItem => ({ kind: 'order', key: `order:${order.id}`, order })),
+    ...groupBuyItems,
+  ].sort((left, right) => orderItemTime(right) - orderItemTime(left))
+}
+
+function groupBuySubscriptionToOrderItem(subscription: MallGroupBuySubscription): MallOrderListItem {
+  return { kind: 'group_buy', key: `group_buy:${subscription.id}`, subscription }
+}
+
+function orderItemMatchesKeyword(item: MallOrderListItem, keyword: string) {
   const value = keyword.trim().toLowerCase()
   if (!value) return true
-  const haystack = [
-    order.orderNo,
-    order.addressText,
-    ...order.items.map((item) => `${item.productName || ''} ${item.variantName || ''}`),
-  ]
+  const haystack = item.kind === 'order'
+    ? [
+      item.order.orderNo,
+      item.order.addressText,
+      ...item.order.items.map((orderItem) => `${orderItem.productName || ''} ${orderItem.variantName || ''}`),
+    ]
+    : [
+      item.subscription.activity?.name,
+      item.subscription.product?.name,
+      item.subscription.product?.categoryName,
+      item.subscription.status,
+    ]
     .join(' ')
     .toLowerCase()
   return haystack.includes(value)
 }
 
-function orderMatchesTab(order: MallOrder, tab: MallOrderTab) {
+function orderItemMatchesTab(item: MallOrderListItem, tab: MallOrderTab) {
   if (tab === 'all') return true
-  if (tab === 'pending_payment') return isPendingPayment(order)
-  if (tab === 'after_sale') return Boolean(order.afterSaleStatus || order.refundStatus || order.status.includes('after'))
-  return order.paymentStatus === 'paid' && !isCancelled(order) && !isCompleted(order) && !orderMatchesTab(order, 'after_sale')
+  if (tab === 'pending_payment') return isPendingPaymentItem(item)
+  if (tab === 'after_sale') return item.kind === 'order' && Boolean(item.order.afterSaleStatus || item.order.refundStatus || item.order.status.includes('after'))
+  if (item.kind === 'group_buy') {
+    return ['deposit_paid', 'balance_paid', 'order_created'].includes(item.subscription.status)
+  }
+  return item.order.paymentStatus === 'paid' && !isCancelled(item.order) && !isCompleted(item.order) && !orderItemMatchesTab(item, 'after_sale')
 }
 
-function isPendingPayment(order: MallOrder) {
-  return !isCancelled(order) && (order.paymentStatus !== 'paid' || order.status === 'pending_payment')
+function isPendingPaymentItem(item: MallOrderListItem) {
+  if (item.kind === 'group_buy') return item.subscription.status === 'pending_balance'
+  return !isCancelled(item.order) && (item.order.paymentStatus !== 'paid' || item.order.status === 'pending_payment')
 }
 
 function isCancelled(order: MallOrder) {
@@ -273,31 +369,104 @@ function isCompleted(order: MallOrder) {
   return order.status.includes('complete') || order.status.includes('finish')
 }
 
-function statusText(order: MallOrder) {
+function statusText(item: MallOrderListItem) {
+  if (item.kind === 'group_buy') return groupBuyStatusText(item.subscription.status)
+  const order = item.order
   if (isCancelled(order)) return '订单已取消'
-  if (isPendingPayment(order)) return '等待支付'
-  if (orderMatchesTab(order, 'after_sale')) return '售后处理中'
+  if (isPendingPaymentItem(item)) return '等待支付'
+  if (orderItemMatchesTab(item, 'after_sale')) return '售后处理中'
   if (isCompleted(order)) return '商品已送达'
   if (order.status.includes('deliver') || order.status.includes('dispatch')) return '配送中'
   return '备货中'
 }
 
-function paymentCountdownText(order: MallOrder, now: number) {
-  const deadline = paymentDeadline(order)
-  if (!deadline) return '10分钟未支付自动取消'
+function paymentCountdownText(item: MallOrderListItem, now: number) {
+  const deadline = paymentDeadline(item)
+  if (!deadline) return item.kind === 'group_buy' ? '请及时完成付款' : '10分钟未支付自动取消'
   const diff = deadline - now
-  if (diff <= 0) return '即将自动取消'
+  if (diff <= 0) return item.kind === 'group_buy' ? '尾款即将截止' : '即将自动取消'
   const minutes = Math.floor(diff / 60000)
   const seconds = Math.floor((diff % 60000) / 1000)
-  return `${pad(minutes)}:${pad(seconds)} 后自动取消`
+  return item.kind === 'group_buy' ? `${pad(minutes)}:${pad(seconds)} 后尾款截止` : `${pad(minutes)}:${pad(seconds)} 后自动取消`
 }
 
-function paymentDeadline(order: MallOrder) {
-  const expiresAt = order.paymentExpiresAt ? Date.parse(order.paymentExpiresAt) : NaN
+function paymentDeadline(item: MallOrderListItem) {
+  if (item.kind === 'group_buy') return parseDateValue(item.subscription.activity?.balanceDueAt)
+  const expiresAt = item.order.paymentExpiresAt ? Date.parse(item.order.paymentExpiresAt) : NaN
   if (Number.isFinite(expiresAt)) return expiresAt
-  const createdAt = order.createdAt ? Date.parse(order.createdAt) : NaN
+  const createdAt = item.order.createdAt ? Date.parse(item.order.createdAt) : NaN
   if (Number.isFinite(createdAt)) return createdAt + 10 * 60 * 1000
   return 0
+}
+
+function orderItemImages(item: MallOrderListItem) {
+  if (item.kind === 'order') return item.order.items.slice(0, 6)
+  const product = item.subscription.product
+  return [{
+    id: item.subscription.id,
+    imageUrl: product?.imageUrl,
+  }]
+}
+
+function orderItemQuantity(item: MallOrderListItem) {
+  if (item.kind === 'group_buy') return Math.max(Number(item.subscription.quantity || 0), 1)
+  return item.order.items.reduce((sum, orderItem) => sum + Math.max(Number(orderItem.quantity || 0), 0), 0)
+}
+
+function orderItemPayableCents(item: MallOrderListItem) {
+  if (item.kind === 'order') return item.order.payableCents
+  if (item.subscription.status === 'pending_balance') return Number(item.subscription.balanceCents || 0)
+  if (item.subscription.status === 'pending_deposit') return Number(item.subscription.depositCents || 0)
+  return Number(item.subscription.estimatedTotalCents || item.subscription.balanceCents || 0)
+}
+
+function orderItemDetailUrl(item: MallOrderListItem) {
+  if (item.kind === 'order') return `/pages/mall/order-detail/index?id=${item.order.id}`
+  if (item.subscription.mallOrderId) return `/pages/mall/order-detail/index?id=${item.subscription.mallOrderId}`
+  return `/pages/mall/group-buy/detail?id=${encodeURIComponent(item.subscription.activityId)}`
+}
+
+function orderItemSupportUrl(item: MallOrderListItem) {
+  if (item.kind === 'order') return `/pages/mall/support/index?orderId=${item.order.id}`
+  if (item.subscription.mallOrderId) return `/pages/mall/support/index?orderId=${item.subscription.mallOrderId}`
+  return `/pages/mall/support/index?topic=group_buy&subscriptionId=${encodeURIComponent(item.subscription.id)}`
+}
+
+function orderItemCreatedAt(item: MallOrderListItem) {
+  return item.kind === 'order' ? item.order.createdAt : item.subscription.activity?.startsAt || item.subscription.activity?.endsAt || ''
+}
+
+function orderItemTime(item: MallOrderListItem) {
+  return parseDateValue(orderItemCreatedAt(item))
+}
+
+function orderItemId(item: MallOrderListItem) {
+  return item.kind === 'order' ? item.order.id : item.subscription.id
+}
+
+function groupBuyStatusText(status: string) {
+  const statusMap: Record<string, string> = {
+    pending_deposit: '待付定金',
+    deposit_paid: '待成团',
+    pending_balance: '待付尾款',
+    balance_paid: '尾款已付',
+    order_created: '已转订单',
+    balance_overdue_cancelled: '尾款超时取消',
+    deposit_refunded: '定金已退',
+    refunded: '已退款',
+  }
+  return statusMap[status] || '集采进行中'
+}
+
+function initialOrderTab(): MallOrderTab {
+  const tab = Taro.getCurrentInstance().router?.params?.tab
+  return filters.some((filter) => filter.key === tab) ? tab as MallOrderTab : 'all'
+}
+
+function parseDateValue(value?: string | null) {
+  if (!value) return 0
+  const time = Date.parse(value)
+  return Number.isFinite(time) ? time : 0
 }
 
 function formatOrderTime(value?: string) {

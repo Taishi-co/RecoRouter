@@ -72,7 +72,7 @@ export default function MallCategoryPage() {
 
   useEffect(() => {
     let mounted = true
-    listMallCategories()
+    listMallCategories({ preferCache: true, revalidate: true })
       .then((data) => {
         if (mounted) setCategories(data)
       })
@@ -90,7 +90,7 @@ export default function MallCategoryPage() {
   )
 
   useEffect(() => {
-    loadProducts({ nextPage: 1, append: false })
+    loadProducts({ nextPage: 1, append: false, preferCache: true, revalidate: true })
   }, [activeCode, activityType, sort])
 
   const sortIndex = useMemo(() => {
@@ -112,6 +112,10 @@ export default function MallCategoryPage() {
     nextActiveCode = activeCode,
     nextActivityType = activityType,
     nextSort = sort,
+    preferCache = false,
+    fresh = false,
+    revalidate = false,
+    silent = false,
   }: {
     nextPage?: number
     append?: boolean
@@ -119,16 +123,22 @@ export default function MallCategoryPage() {
     nextActiveCode?: string
     nextActivityType?: MallActivityType
     nextSort?: MallSortKey
+    preferCache?: boolean
+    fresh?: boolean
+    revalidate?: boolean
+    silent?: boolean
   } = {}) => {
     if (append) {
       setLoadingMore(true)
-    } else {
+    } else if (!silent && products.length === 0) {
       setLoading(true)
+      setHasMore(true)
+    } else if (!append) {
       setHasMore(true)
     }
     setLoadError('')
     try {
-      const nextProducts = await listMallProducts({
+      const query = {
         keyword: nextKeyword.trim() || undefined,
         categoryCode: nextActiveCode || undefined,
         activityType: nextActivityType || undefined,
@@ -136,11 +146,24 @@ export default function MallCategoryPage() {
         sort: nextSort || undefined,
         page: nextPage,
         pageSize,
-      })
+      }
+      const nextProducts = await listMallProducts(query, { preferCache, fresh })
       const displayProducts = applyProductListPresentation(nextProducts, nextActivityType, nextSort)
       setProducts((current) => append ? mergeProducts(current, displayProducts) : displayProducts)
       setPage(nextPage)
       setHasMore(nextProducts.length >= pageSize)
+      if (revalidate && !fresh && !append) {
+        void loadProducts({
+          nextPage,
+          append,
+          nextKeyword,
+          nextActiveCode,
+          nextActivityType,
+          nextSort,
+          fresh: true,
+          silent: true,
+        })
+      }
     } catch (error) {
       if (!append) {
         setProducts([])

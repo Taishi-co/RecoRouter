@@ -150,6 +150,7 @@ const mallPages = [
   'pages/mall/group-leader/index',       // 商城-我的兼容跳转
   'pages/mall/community/index',          // 商城-社区动态
   'pages/mall/settings/index',           // 商城-消息与设置
+  'pages/notifications/index',           // 商城-消息提醒
 ]
 
 const adminPages = [

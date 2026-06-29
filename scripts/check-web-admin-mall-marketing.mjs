@@ -115,10 +115,10 @@ assert(/const \[modalOpen/.test(homeSectionsSection), 'Homepage section creation
 assert(homeSectionsSection.includes('<Panel title={`${title}列表`}') && homeSectionsSection.includes('{`新增${title}`}'), 'Homepage section list must expose a create button.');
 assert(homeSectionsSection.includes('modal-backdrop') && homeSectionsSection.includes('<h2>{form.id ? `编辑${title}` : `新增${title}`}</h2>'), 'Homepage section create/edit form must render inside a modal.');
 assert(!/Panel title=\{form\.id \? `编辑\$\{title\}` : `新增\$\{title\}`\}/.test(homeSectionsSection), 'Homepage section create form must not be shown as an inline page panel.');
-assert(/export async function listMallHomeBanners\(\)/.test(mallService), 'Mall app service must expose the public home banner API.');
-assert(/apiGet\('\/api\/mall\/home-banners'\)/.test(mallService), 'Mall app service must call the public home banner endpoint.');
-assert(/export async function listMallHomeSections\(\)/.test(mallService), 'Mall app service must expose the public home section API.');
-assert(/apiGet\('\/api\/mall\/home-sections'\)/.test(mallService), 'Mall app service must call the public home section endpoint.');
+assert(/export async function listMallHomeBanners\([^)]*\)/.test(mallService), 'Mall app service must expose the public home banner API.');
+assert(/cachedApiGet\('\/api\/mall\/home-banners'/.test(mallService), 'Mall app service must call the public home banner endpoint.');
+assert(/export async function listMallHomeSections\([^)]*\)/.test(mallService), 'Mall app service must expose the public home section API.');
+assert(/cachedApiGet\('\/api\/mall\/home-sections'/.test(mallService), 'Mall app service must call the public home section endpoint.');
 assert(/listMallHomeBanners/.test(mallHome), 'Mall home page must load configured home banners.');
 assert(/listMallHomeSections/.test(mallHome), 'Mall home page must load configured home sections.');
 assert(/buildAnnouncements\(homeSections\)/.test(mallHome), 'Mall home page must render configured homepage announcements.');

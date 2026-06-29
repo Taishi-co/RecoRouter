@@ -390,6 +390,8 @@ interface GroupBuyForm {
   newProductSupplyPriceYuan: string;
   newProductStock: string;
   newProductDescription: string;
+  newProductImageUrl: string;
+  newProductImages: string[];
   startsAt: string;
   endsAt: string;
   balanceDueAt: string;
@@ -399,6 +401,7 @@ interface GroupBuyForm {
   overdueCreditPenalty: string;
   depositType: string;
   depositValue: string;
+  useTierPricing: boolean;
   tiers: GroupBuyTierForm[];
 }
 
@@ -464,6 +467,9 @@ interface SettingsForm {
   pickupWindowStart: string;
   pickupWindowEnd: string;
   deliveryBatchTimes: string;
+  supportName: string;
+  supportPhone: string;
+  supportHours: string;
   leaderCommissionRate: string;
   platformServiceRate: string;
   supplierSettlementCycle: string;
@@ -1239,6 +1245,8 @@ const emptyGroupBuyForm: GroupBuyForm = {
   newProductSupplyPriceYuan: '12.80',
   newProductStock: '100',
   newProductDescription: '',
+  newProductImageUrl: '',
+  newProductImages: [],
   startsAt: '',
   endsAt: '',
   balanceDueAt: '',
@@ -1248,6 +1256,7 @@ const emptyGroupBuyForm: GroupBuyForm = {
   overdueCreditPenalty: '10',
   depositType: 'percent',
   depositValue: '20',
+  useTierPricing: true,
   tiers: [createGroupBuyTierForm()],
 };
 
@@ -1373,6 +1382,9 @@ const initialSettingsForm: SettingsForm = {
   pickupWindowStart: '16:00',
   pickupWindowEnd: '20:00',
   deliveryBatchTimes: '10:00,14:00,18:00',
+  supportName: '叁友甄选客服',
+  supportPhone: '18888888888',
+  supportHours: '09:00-21:00',
   leaderCommissionRate: '8',
   platformServiceRate: '3',
   supplierSettlementCycle: 'T+7',
@@ -1457,6 +1469,15 @@ const initialSupportFilters: SupportFilterState = {
   priority: '',
 };
 
+interface AdminGetOptions {
+  ttlMs?: number;
+  fresh?: boolean;
+}
+
+const WEB_ADMIN_GET_CACHE_TTL_MS = 12_000;
+const adminGetCache = new Map<string, { expiresAt: number; value: unknown }>();
+const adminGetInFlight = new Map<string, Promise<unknown>>();
+
 function createApiUrl(pathname: string, params: JsonRecord = {}) {
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -1465,6 +1486,15 @@ function createApiUrl(pathname: string, params: JsonRecord = {}) {
   });
   const query = search.toString();
   return `${API_BASE}${pathname}${query ? `?${query}` : ''}`;
+}
+
+function adminGetCacheKey(pathname: string, params?: JsonRecord) {
+  return createApiUrl(pathname, params || {});
+}
+
+function invalidateAdminGetCache() {
+  adminGetCache.clear();
+  adminGetInFlight.clear();
 }
 
 async function apiRequest<T>(pathname: string, init: RequestInit = {}, params?: JsonRecord): Promise<T> {
@@ -1495,11 +1525,32 @@ async function apiRequest<T>(pathname: string, init: RequestInit = {}, params?: 
   return (payload.data ?? payload) as T;
 }
 
-function apiGet<T>(pathname: string, params?: JsonRecord) {
-  return apiRequest<T>(pathname, {}, params);
+function apiGet<T>(pathname: string, params?: JsonRecord, options: AdminGetOptions = {}) {
+  const cacheKey = adminGetCacheKey(pathname, params);
+  const cached = adminGetCache.get(cacheKey);
+  if (!options.fresh && cached && cached.expiresAt > Date.now()) {
+    return Promise.resolve(cached.value as T);
+  }
+  const inFlight = adminGetInFlight.get(cacheKey);
+  if (!options.fresh && inFlight) return inFlight as Promise<T>;
+
+  const request = apiRequest<T>(pathname, {}, params)
+    .then((value) => {
+      adminGetCache.set(cacheKey, {
+        value,
+        expiresAt: Date.now() + (options.ttlMs ?? WEB_ADMIN_GET_CACHE_TTL_MS),
+      });
+      return value;
+    })
+    .finally(() => {
+      adminGetInFlight.delete(cacheKey);
+    });
+  adminGetInFlight.set(cacheKey, request);
+  return request;
 }
 
 function apiPost<T>(pathname: string, body: JsonRecord = {}) {
+  invalidateAdminGetCache();
   return apiRequest<T>(pathname, {
     method: 'POST',
     body: JSON.stringify(body),
@@ -1507,6 +1558,7 @@ function apiPost<T>(pathname: string, body: JsonRecord = {}) {
 }
 
 function apiPut<T>(pathname: string, body: JsonRecord = {}) {
+  invalidateAdminGetCache();
   return apiRequest<T>(pathname, {
     method: 'PUT',
     body: JSON.stringify(body),
@@ -1514,10 +1566,12 @@ function apiPut<T>(pathname: string, body: JsonRecord = {}) {
 }
 
 function apiDelete<T>(pathname: string) {
+  invalidateAdminGetCache();
   return apiRequest<T>(pathname, { method: 'DELETE' });
 }
 
 function apiUpload<T>(pathname: string, file: File) {
+  invalidateAdminGetCache();
   const formData = new FormData();
   formData.set('file', file);
   return apiRequest<T>(pathname, {
@@ -3024,6 +3078,8 @@ function groupBuyToForm(groupBuy: JsonRecord): GroupBuyForm {
     newProductSupplyPriceYuan: '12.80',
     newProductStock: '100',
     newProductDescription: '',
+    newProductImageUrl: '',
+    newProductImages: [],
     startsAt: datetimeLocalValue(stringValue(groupBuy, 'startsAt')),
     endsAt: datetimeLocalValue(stringValue(groupBuy, 'endsAt')),
     balanceDueAt: datetimeLocalValue(stringValue(groupBuy, 'balanceDueAt')),
@@ -3033,6 +3089,7 @@ function groupBuyToForm(groupBuy: JsonRecord): GroupBuyForm {
     overdueCreditPenalty: String(numberValue(groupBuy, 'overdueCreditPenalty', 10)),
     depositType,
     depositValue: groupBuyDepositValueToForm(depositType, numberValue(groupBuy, 'depositValue', 20)),
+    useTierPricing: arrayValue(groupBuy, 'tiers').length > 1,
     tiers: groupBuyTiersFromRecord(groupBuy),
   };
 }
@@ -3098,8 +3155,17 @@ function groupBuyPaymentProgressSummary(groupBuy: JsonRecord) {
   return `定金 ${depositPaidCount} 人 · 尾款 ${balanceRate}%`;
 }
 
+function groupBuyDefaultTier(form: GroupBuyForm): GroupBuyTierForm {
+  return createGroupBuyTierForm({
+    id: form.tiers[0]?.id || 'default',
+    quantity: form.minGroupQuantity || '1',
+    priceYuan: form.newProductPriceYuan || form.tiers[0]?.priceYuan || '19.90',
+  });
+}
+
 function groupBuyPayload(form: GroupBuyForm) {
-  const tiers = form.tiers
+  const sourceTiers = form.useTierPricing ? form.tiers : [groupBuyDefaultTier(form)];
+  const tiers = sourceTiers
     .map(tier => ({
       quantity: Number(tier.quantity) || 0,
       priceCents: moneyFromYuan(tier.priceYuan),
@@ -3113,7 +3179,7 @@ function groupBuyPayload(form: GroupBuyForm) {
   if ((Number(form.minCreditScore) || 0) < 0) throw new Error('最低信用分不能为空');
   if ((Number(form.overdueCreditPenalty) || 0) < 0) throw new Error('逾期扣分不能为空');
   if (!form.depositType || !form.depositValue.trim()) throw new Error('定金方式和数值不能为空');
-  if (!tiers.length) throw new Error('请至少配置一档阶梯价');
+  if (form.useTierPricing && !tiers.length) throw new Error('请至少配置一档阶梯价');
   return {
     name: form.name.trim(),
     productId: form.productId,
@@ -3146,6 +3212,8 @@ function groupBuyInlineProductToProductForm(form: GroupBuyForm, fallbackCategory
     categoryCode: form.newProductCategoryCode.trim() || fallbackCategoryCode || 'fruit',
     subtitle: specification,
     description: form.newProductDescription.trim() || `${productName || form.name}集采预售商品`,
+    imageUrl: form.newProductImageUrl,
+    images: form.newProductImages,
     specification,
     saleMethod,
     priceYuan,
@@ -3153,8 +3221,8 @@ function groupBuyInlineProductToProductForm(form: GroupBuyForm, fallbackCategory
     stock,
     stockAlertThreshold: '10',
     minimumOrderQuantity: '1',
-    tags: '',
-    status: 'on_sale',
+    tags: '集采预售',
+    status: 'group_buy_only',
     variants: [{
       ...createDefaultProductVariantForm(),
       id: 'default',
@@ -3276,6 +3344,7 @@ function statusLabel(value: string) {
     approved: '已通过',
     rejected: '已拒绝',
     on_sale: '在售',
+    group_buy_only: '仅集采',
     off_sale: '下架',
     draft: '草稿',
     paid: '已支付',
@@ -3337,7 +3406,7 @@ function badgeClass(status: string) {
   if (['pending', 'pending_payment', 'dispatching', 'delivering', 'generated', 'shipping', 'open', 'submitted', 'negotiating', 'processing', 'return_pending', 'returning', 'exchange_processing', 'replacement_sent', 'refunding', 'refund_pending', 'commission_pending'].includes(status)) {
     return 'badge badge-blue';
   }
-  if (['rejected', 'cancelled', 'off_sale', 'inactive', 'closed', 'expired', 'failed', 'deleted'].includes(status)) {
+  if (['rejected', 'cancelled', 'off_sale', 'inactive', 'closed', 'expired', 'failed', 'deleted', 'group_buy_only'].includes(status)) {
     return 'badge badge-gray';
   }
   return 'badge badge-amber';
@@ -5679,6 +5748,7 @@ function ProductFormFields({
           <span className="field-label">状态<span className="required-mark">*</span></span>
           <select required value={form.status} onChange={event => onChange({ status: event.target.value })}>
             <option value="on_sale">在售</option>
+            <option value="group_buy_only">仅集采</option>
             <option value="off_sale">下架</option>
             <option value="draft">草稿</option>
           </select>
@@ -8650,6 +8720,7 @@ function MallFinanceOpsSection({
   onSearch: () => Promise<void>;
   onWithdrawalChange: (patch: Partial<WithdrawalForm>) => void;
 }) {
+  const [splitEstimateRatio, setSplitEstimateRatio] = useState({ tech: 3, ops: 7 });
   const records = mode === 'bills' ? bills : mode === 'settlements' ? settlements : withdrawals;
   const visibleRecords = filterMallOpsRecords(
     records,
@@ -8659,6 +8730,9 @@ function MallFinanceOpsSection({
   );
   const title = mode === 'bills' ? '账单明细' : mode === 'settlements' ? '结算记录' : '提现申请';
   const totalSettlementCents = visibleRecords.reduce((total, record) => total + numberValue(record, 'settlementAmountCents', numberValue(record, 'amountCents')), 0);
+  const splitTotal = Math.max(splitEstimateRatio.tech + splitEstimateRatio.ops, 1);
+  const techEstimateCents = Math.round(totalSettlementCents * splitEstimateRatio.tech / splitTotal);
+  const opsEstimateCents = Math.max(totalSettlementCents - techEstimateCents, 0);
 
   return (
     <div className="page-grid ops-page">
@@ -8680,6 +8754,40 @@ function MallFinanceOpsSection({
         <StatCard label="实际结算" value={yuan(totalSettlementCents)} detail="按筛选记录合计" />
         <StatCard label="退款抵扣" value={yuan(visibleRecords.reduce((total, record) => total + numberValue(record, 'refundAmountCents'), 0))} detail="账单退款金额" />
       </div>
+
+      {mode === 'bills' ? (
+        <Panel title="分摊比例估算">
+          <div className="ops-split-estimate">
+            <div className="ops-split-estimate-controls">
+              <label>
+                技术比例
+                <input
+                  value={splitEstimateRatio.tech}
+                  type="number"
+                  min="0"
+                  step="1"
+                  onChange={event => setSplitEstimateRatio(current => ({ ...current, tech: Math.max(Number(event.target.value || 0), 0) }))}
+                />
+              </label>
+              <label>
+                运营比例
+                <input
+                  value={splitEstimateRatio.ops}
+                  type="number"
+                  min="0"
+                  step="1"
+                  onChange={event => setSplitEstimateRatio(current => ({ ...current, ops: Math.max(Number(event.target.value || 0), 0) }))}
+                />
+              </label>
+              <span>仅用于展示估算，不影响实际分账和结算。</span>
+            </div>
+            <div className="ops-split-estimate-result">
+              <StatCard label="技术估算" value={yuan(techEstimateCents)} detail={`${splitEstimateRatio.tech}:${splitEstimateRatio.ops}`} />
+              <StatCard label="运营估算" value={yuan(opsEstimateCents)} detail={`${splitEstimateRatio.ops}:${splitEstimateRatio.tech}`} />
+            </div>
+          </div>
+        </Panel>
+      ) : null}
 
       {mode === 'withdrawals' ? (
         <Panel title="提交提现申请" description="填写提现金额并提交审核">
@@ -10820,6 +10928,7 @@ function MallGroupBuyPresaleSection({
   onReset,
   onSubmit,
   onTiersChange,
+  onUploadImage,
 }: {
   categories: JsonRecord[];
   groupBuys: JsonRecord[];
@@ -10838,8 +10947,10 @@ function MallGroupBuyPresaleSection({
   onReset: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onTiersChange: (updater: (tiers: GroupBuyTierForm[]) => GroupBuyTierForm[]) => void;
+  onUploadImage: (file: File) => Promise<string>;
 }) {
   const [groupBuyProductKeyword, setGroupBuyProductKeyword] = useState('');
+  const [saving, setSaving] = useState(false);
   const selectedProduct = products.find(product => stringValue(product, 'id') === form.productId);
   const productVariants = selectedProduct ? productVariantsFromRecord(selectedProduct) : [];
   const hasExplicitVariants = selectedProduct ? arrayValue(selectedProduct, 'variants').length > 0 : false;
@@ -10861,6 +10972,12 @@ function MallGroupBuyPresaleSection({
   const removeTier = (id: string) => {
     onTiersChange(tiers => tiers.filter(tier => tier.id !== id));
   };
+  const inlineProductImageForm: ProductForm = {
+    ...initialProductForm,
+    name: form.newProductName,
+    imageUrl: form.newProductImageUrl,
+    images: form.newProductImages,
+  };
   const openCreate = () => {
     onReset();
     setGroupBuyProductKeyword('');
@@ -10872,12 +10989,18 @@ function MallGroupBuyPresaleSection({
     onModalOpenChange(true);
   };
   const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (saving) return;
     if (form.productMode === 'existing' && hasExplicitVariants && !form.variantId) {
-      event.preventDefault();
       return;
     }
-    await onSubmit(event);
-    onModalOpenChange(false);
+    setSaving(true);
+    try {
+      await onSubmit(event);
+      onModalOpenChange(false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -11079,6 +11202,15 @@ function MallGroupBuyPresaleSection({
                         ))}
                       </select>
                     </label>
+                    <ProductImageGalleryInput
+                      className="wide"
+                      form={inlineProductImageForm}
+                      onChange={patch => onChange({
+                        newProductImageUrl: patch.imageUrl ?? form.newProductImageUrl,
+                        newProductImages: patch.images ?? form.newProductImages,
+                      })}
+                      onUploadImage={onUploadImage}
+                    />
                     <label>
                       规格
                       <input required value={form.newProductSpecification} onChange={event => onChange({ newProductSpecification: event.target.value })} placeholder="100斤 / 1箱 / 1份" />
@@ -11157,36 +11289,45 @@ function MallGroupBuyPresaleSection({
 
             <section className="campaign-rule-card">
               <div className="campaign-rule-card-head">
-                <strong>阶梯价</strong>
-                <button className="ghost-button" type="button" onClick={() => onTiersChange(tiers => [...tiers, createGroupBuyTierForm()])}>
-                  <Icon name="plus" />
-                  新增档位
-                </button>
+                <label className="toggle-line compact-toggle">
+                  <input checked={form.useTierPricing} type="checkbox" onChange={event => onChange({ useTierPricing: event.target.checked })} />
+                  <strong>启用阶梯价</strong>
+                </label>
+                {form.useTierPricing ? (
+                  <button className="ghost-button" type="button" onClick={() => onTiersChange(tiers => [...tiers, createGroupBuyTierForm()])}>
+                    <Icon name="plus" />
+                    新增档位
+                  </button>
+                ) : null}
               </div>
-              <div className="gbuy-tier-list">
-                {form.tiers.map(tier => (
-                  <div className="gbuy-tier-row" key={tier.id}>
-                    <label>
-                      件数
-                      <input required min="1" type="number" value={tier.quantity} onChange={event => updateTier(tier.id, { quantity: event.target.value })} />
-                    </label>
-                    <label>
-                      单价
-                      <input required min="0.01" step="0.01" type="number" value={tier.priceYuan} onChange={event => updateTier(tier.id, { priceYuan: event.target.value })} />
-                    </label>
-                    <button className="ghost-button danger" disabled={form.tiers.length <= 1} type="button" onClick={() => removeTier(tier.id)}>
-                      删除
-                    </button>
-                  </div>
-                ))}
-              </div>
+              {form.useTierPricing ? (
+                <div className="gbuy-tier-list">
+                  {form.tiers.map(tier => (
+                    <div className="gbuy-tier-row" key={tier.id}>
+                      <label>
+                        件数
+                        <input required min="1" type="number" value={tier.quantity} onChange={event => updateTier(tier.id, { quantity: event.target.value })} />
+                      </label>
+                      <label>
+                        单价
+                        <input required min="0.01" step="0.01" type="number" value={tier.priceYuan} onChange={event => updateTier(tier.id, { priceYuan: event.target.value })} />
+                      </label>
+                      <button className="ghost-button danger" disabled={form.tiers.length <= 1} type="button" onClick={() => removeTier(tier.id)}>
+                        删除
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="form-hint">未启用时，系统按商品售价生成一档集采价，不在前台展示阶梯价格。</p>
+              )}
             </section>
 
             <div className="modal-actions">
-              <button className="ghost-button" type="button" onClick={() => onModalOpenChange(false)}>取消</button>
-              <button className="primary-button" type="submit">
+              <button className="ghost-button" disabled={saving} type="button" onClick={() => onModalOpenChange(false)}>取消</button>
+              <button className="primary-button" disabled={saving} type="submit">
                 <Icon name="save" />
-                保存集采
+                {saving ? '保存中' : '保存集采'}
               </button>
             </div>
           </form>
@@ -11497,6 +11638,7 @@ function MallDeliveryRulesSection({
     { label: '阶梯运费', value: `${deliveryFeeTierCount(settingsForm.deliveryFeeTiersText)} 档`, note: deliveryFeeTierSummary(settingsForm.deliveryFeeTiersText) },
     { label: '履约承诺', value: `${settingsForm.deliveryPromiseMinutes || '0'} 分钟`, note: '用于订单履约时效展示' },
     { label: '退款审核', value: `${settingsForm.refundReviewMinutes || '0'} 分钟`, note: '售后进入人工审核的时限' },
+    { label: '客服电话', value: settingsForm.supportPhone || '-', note: `${settingsForm.supportName || '客服'} · ${settingsForm.supportHours || '-'}` },
     { label: '冷链配送', value: settingsForm.coldChainEnabled ? '启用' : '停用', note: '影响冷链商品履约配置' },
   ];
 
@@ -11575,6 +11717,18 @@ function MallDeliveryRulesSection({
             <label>
               退款审核分钟
               <input value={draft.refundReviewMinutes} type="number" min="1" onChange={event => updateDraft({ refundReviewMinutes: event.target.value })} />
+            </label>
+            <label>
+              客服名称
+              <input value={draft.supportName} placeholder="叁友甄选客服" onChange={event => updateDraft({ supportName: event.target.value })} />
+            </label>
+            <label>
+              客服电话
+              <input value={draft.supportPhone} placeholder="运营客服电话" onChange={event => updateDraft({ supportPhone: event.target.value })} />
+            </label>
+            <label>
+              服务时间
+              <input value={draft.supportHours} placeholder="09:00-21:00" onChange={event => updateDraft({ supportHours: event.target.value })} />
             </label>
             <label className="toggle-line">
               <input checked={draft.coldChainEnabled} type="checkbox" onChange={event => updateDraft({ coldChainEnabled: event.target.checked })} />
@@ -11816,6 +11970,7 @@ function SupportSection({
   onSelectSession,
   onCreateSession,
   onSendMessage,
+  onUpdateSessionStatus,
 }: {
   metrics: JsonRecord;
   sessions: JsonRecord[];
@@ -11829,8 +11984,10 @@ function SupportSection({
   onSelectSession: (id: string) => Promise<void>;
   onCreateSession: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onSendMessage: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onUpdateSessionStatus: (id: string, status: 'open' | 'resolved' | 'closed') => Promise<void>;
 }) {
   const selectedSession = sessions.find(session => stringValue(session, 'id') === selectedSessionId);
+  const selectedStatus = selectedSession ? stringValue(selectedSession, 'status') : '';
   const quickReplies = [
     '您好，已收到反馈，我先核实订单和配送记录。',
     '这边已经为您标记优先处理，会在 10 分钟内给出处理方案。',
@@ -11894,7 +12051,26 @@ function SupportSection({
           <Panel
             title={selectedSession ? stringValue(selectedSession, 'topic') : '当前会话'}
             description={selectedSession ? `用户 ${shortId(stringValue(selectedSession, 'userId'))} · ${formatDate(stringValue(selectedSession, 'updatedAt'))}` : '从左侧选择会话后查看上下文并回复'}
-            action={selectedSession ? <span className={badgeClass(stringValue(selectedSession, 'status'))}>{statusLabel(stringValue(selectedSession, 'status'))}</span> : null}
+            action={selectedSession ? (
+              <div className="support-session-actions">
+                <span className={badgeClass(selectedStatus)}>{statusLabel(selectedStatus)}</span>
+                {selectedStatus !== 'resolved' ? (
+                  <button className="ghost-button small" type="button" onClick={() => onUpdateSessionStatus(selectedSessionId, 'resolved')}>
+                    处理完成
+                  </button>
+                ) : null}
+                {selectedStatus !== 'closed' ? (
+                  <button className="ghost-button small" type="button" onClick={() => onUpdateSessionStatus(selectedSessionId, 'closed')}>
+                    关闭会话
+                  </button>
+                ) : null}
+                {selectedStatus !== 'open' ? (
+                  <button className="ghost-button small" type="button" onClick={() => onUpdateSessionStatus(selectedSessionId, 'open')}>
+                    重开
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           >
             <div className="message-list">
               {messages.map(message => {
@@ -12307,7 +12483,7 @@ function LoginScreen({
     setCaptchaLoading(true);
     setCaptchaError('');
     try {
-      const captcha = await apiGet<JsonRecord>('/api/auth/captcha');
+      const captcha = await apiGet<JsonRecord>('/api/auth/captcha', undefined, { fresh: true });
       const captchaId = stringValue(captcha, 'captchaId');
       const image = stringValue(captcha, 'image');
       if (!captchaId || !image) {
@@ -12543,6 +12719,8 @@ function App() {
   const [mallOrderSearchError, setMallOrderSearchError] = useState('');
   const [weightAdjustmentItem, setWeightAdjustmentItem] = useState<JsonRecord | null>(null);
   const [weightAdjustmentSaving, setWeightAdjustmentSaving] = useState(false);
+  const productFilterDebounceRef = useRef<number | null>(null);
+  const productFilterResolveRef = useRef<(() => void) | null>(null);
 
   const currentModule = useMemo(
     () => adminModules.find(module => module.key === activeModuleKey) || adminModules[0],
@@ -12593,6 +12771,12 @@ function App() {
   useEffect(() => () => {
     Object.values(messageTimers.current).forEach(timer => window.clearTimeout(timer));
     messageTimers.current = {};
+    if (productFilterDebounceRef.current) {
+      window.clearTimeout(productFilterDebounceRef.current);
+      productFilterDebounceRef.current = null;
+    }
+    productFilterResolveRef.current?.();
+    productFilterResolveRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -12708,7 +12892,19 @@ function App() {
   const applyProductFilters = async (patch: Partial<MallFilterState>) => {
     const nextFilters = { ...productFilters, ...patch };
     setProductFilters(nextFilters);
-    await reload({ productFilters: nextFilters });
+    if (productFilterDebounceRef.current) {
+      window.clearTimeout(productFilterDebounceRef.current);
+      productFilterDebounceRef.current = null;
+    }
+    productFilterResolveRef.current?.();
+    await new Promise<void>((resolve) => {
+      productFilterResolveRef.current = resolve;
+      productFilterDebounceRef.current = window.setTimeout(() => {
+        productFilterDebounceRef.current = null;
+        productFilterResolveRef.current = null;
+        void reload({ productFilters: nextFilters }).finally(resolve);
+      }, 220);
+    });
   };
 
   useEffect(() => {
@@ -12758,6 +12954,9 @@ function App() {
       pickupWindowStart: stringValue(deliveryRules, 'pickupWindowStart', '16:00'),
       pickupWindowEnd: stringValue(deliveryRules, 'pickupWindowEnd', '20:00'),
       deliveryBatchTimes: stringValue(deliveryRules, 'deliveryBatchTimes', '10:00,14:00,18:00'),
+      supportName: stringValue(deliveryRules, 'supportName', stringValue(data.mallSettings, 'supportName', '叁友甄选客服')),
+      supportPhone: stringValue(deliveryRules, 'supportPhone', stringValue(data.mallSettings, 'supportPhone', '18888888888')),
+      supportHours: stringValue(deliveryRules, 'supportHours', stringValue(data.mallSettings, 'supportHours', '09:00-21:00')),
       leaderCommissionRate: String(numberValue(paymentSplitRules, 'leaderCommissionRate', 8)),
       platformServiceRate: String(numberValue(paymentSplitRules, 'platformServiceRate', 3)),
       supplierSettlementCycle: stringValue(paymentSplitRules, 'supplierSettlementCycle', 'T+7'),
@@ -12779,6 +12978,31 @@ function App() {
       setBusy('');
     }
   };
+
+  const refreshSupportRealtime = useCallback(async () => {
+    const [nextSessions, nextMetrics] = await Promise.all([
+      apiGet<JsonRecord[]>('/api/support/sessions', undefined, { fresh: true }),
+      apiGet<JsonRecord>('/api/support/metrics', undefined, { fresh: true }),
+    ]);
+    setData(current => ({
+      ...current,
+      supportSessions: nextSessions,
+      supportMetrics: nextMetrics,
+    }));
+    if (selectedSessionId) {
+      const nextMessages = await apiGet<JsonRecord[]>(`/api/support/sessions/${selectedSessionId}/messages`, undefined, { fresh: true });
+      setSupportMessages(nextMessages);
+    }
+  }, [selectedSessionId]);
+
+  useEffect(() => {
+    if (activePageKey !== 'mall.support' && activePageKey !== 'vehicle.support') return undefined;
+    void refreshSupportRealtime().catch(() => undefined);
+    const timer = window.setInterval(() => {
+      void refreshSupportRealtime().catch(() => undefined);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [activePageKey, refreshSupportRealtime]);
 
   const searchMallOpsData = async () => {
     await runAction('商城运营数据查询', async () => {
@@ -14052,6 +14276,9 @@ function App() {
           rangePolygon: deliveryRangePolygon,
           feeTiers: deliveryFeeTiers,
           outOfRangeBlocked: form.deliveryRangeEnabled,
+          supportName: form.supportName.trim(),
+          supportPhone: form.supportPhone.trim(),
+          supportHours: form.supportHours.trim(),
         },
         paymentSplitRules: {
           leaderCommissionRate: Number(form.leaderCommissionRate) || 0,
@@ -14165,6 +14392,28 @@ function App() {
       });
       setSupportMessages(current => [...current, message]);
       setSupportForm(current => ({ ...current, message: initialSupportForm.message }));
+    });
+  };
+
+  const updateSupportSessionStatus = async (id: string, status: 'open' | 'resolved' | 'closed') => {
+    const actionLabel = status === 'resolved' ? '客服会话处理完成' : status === 'closed' ? '客服会话关闭' : '客服会话重开';
+    await runAction(actionLabel, async () => {
+      const supportSession = await apiPut<JsonRecord>(`/api/support/sessions/${id}`, {
+        status,
+        lastMessage: status === 'resolved'
+          ? '客服已处理完成'
+          : status === 'closed'
+            ? '会话已关闭'
+            : '会话已重新打开',
+      });
+      setData(current => ({
+        ...current,
+        supportSessions: upsertRecordList(current.supportSessions, supportSession),
+      }));
+      if (selectedSessionId === id) {
+        const nextMessages = await apiGet<JsonRecord[]>(`/api/support/sessions/${id}/messages`);
+        setSupportMessages(nextMessages);
+      }
     });
   };
 
@@ -14647,6 +14896,7 @@ function App() {
           onReset={resetGroupBuyForm}
           onSubmit={saveGroupBuy}
           onTiersChange={updater => setGroupBuyForm(current => ({ ...current, tiers: updater(current.tiers) }))}
+          onUploadImage={uploadProductImage}
         />
       );
     }
@@ -14718,6 +14968,7 @@ function App() {
           onFormChange={patch => setSupportForm(current => ({ ...current, ...patch }))}
           onSelectSession={selectSession}
           onSendMessage={sendSupportMessage}
+          onUpdateSessionStatus={updateSupportSessionStatus}
         />
       );
     }

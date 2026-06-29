@@ -59,6 +59,63 @@ body.reco-mall-h5 .taro_page {
   line-height: 1;
 }
 
+.mall-notification-float {
+  position: fixed;
+  left: 18PX;
+  right: 18PX;
+  top: calc(var(--mall-sticky-top, 20PX) + 6PX);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 10PX;
+  min-height: 46PX;
+  padding: 8PX 10PX;
+  box-sizing: border-box;
+  border-radius: 12PX;
+  border: 1PX solid #cbe6c4;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10PX 28PX rgba(32, 65, 33, 0.14);
+}
+
+.mall-notification-float-icon,
+.mall-notification-float-close {
+  width: 28PX;
+  height: 28PX;
+  flex: 0 0 28PX;
+  border-radius: 999PX;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eef9eb;
+}
+
+.mall-notification-float-copy {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 2PX;
+}
+
+.mall-notification-float-title {
+  color: #1f2d1f;
+  font-size: 13PX;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.mall-notification-float-content {
+  color: #657160;
+  font-size: 11PX;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mall-notification-float-close {
+  background: #f4f7f1;
+}
+
 .mall-page-title {
   display: block;
   color: #1f2d1f;
@@ -2524,6 +2581,318 @@ body.reco-mall-h5 .taro_page {
   font-weight: 700;
 }
 
+.mall-order-status-hero {
+  margin-top: 14PX;
+  padding: 16PX;
+  border-radius: 14PX;
+  background: #1f341f;
+  color: #ffffff;
+  display: grid;
+  grid-template-columns: 52PX 1fr;
+  gap: 12PX;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+.mall-order-status-icon {
+  width: 52PX;
+  height: 52PX;
+  border-radius: 16PX;
+  background: #eefbea;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mall-order-status-copy {
+  min-width: 0;
+}
+
+.mall-order-status-label {
+  display: block;
+  color: #bce8b3;
+  font-size: 12PX;
+  font-weight: 900;
+}
+
+.mall-order-status-title {
+  display: block;
+  margin-top: 4PX;
+  color: #ffffff;
+  font-size: 20PX;
+  line-height: 1.15;
+  font-weight: 950;
+}
+
+.mall-order-status-subtitle,
+.mall-order-status-countdown {
+  display: block;
+  margin-top: 5PX;
+  color: #dcebd8;
+  font-size: 12PX;
+  line-height: 1.35;
+  font-weight: 750;
+}
+
+.mall-order-status-countdown {
+  color: #ffd59d;
+}
+
+.mall-order-section-title {
+  min-height: 28PX;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10PX;
+}
+
+.mall-order-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 7PX;
+  color: #1f2d1f;
+  font-size: 15PX;
+  font-weight: 950;
+}
+
+.mall-order-section-action {
+  color: #657160;
+  font-size: 12PX;
+  font-weight: 800;
+}
+
+.mall-order-info-row,
+.mall-order-fee-row {
+  min-height: 30PX;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12PX;
+  color: #64725f;
+  font-size: 13PX;
+  line-height: 1.35;
+  font-weight: 750;
+}
+
+.mall-order-info-row {
+  margin-top: 8PX;
+}
+
+.mall-order-info-row .mall-summary-value {
+  max-width: 70%;
+  text-align: right;
+  word-break: break-word;
+}
+
+.mall-order-products-card,
+.mall-order-fee-card,
+.mall-order-info-card,
+.mall-order-service-card,
+.mall-order-delivery-card {
+  box-shadow: 0 8PX 24PX rgba(25, 48, 28, 0.05);
+}
+
+.mall-order-product-row {
+  margin-top: 12PX;
+  display: grid;
+  grid-template-columns: 72PX 1fr 58PX;
+  gap: 10PX;
+  align-items: center;
+}
+
+.mall-order-product-image {
+  width: 72PX;
+  height: 72PX;
+  border-radius: 10PX;
+  background: #f4fbf1;
+}
+
+.mall-order-product-image-empty {
+  border: 1PX solid #dcebd7;
+  box-sizing: border-box;
+}
+
+.mall-order-product-copy {
+  min-width: 0;
+}
+
+.mall-order-product-name,
+.mall-order-service-title {
+  display: block;
+  color: #1f2d1f;
+  font-size: 14PX;
+  line-height: 1.25;
+  font-weight: 950;
+}
+
+.mall-order-product-spec,
+.mall-order-product-weight,
+.mall-order-service-copy {
+  display: block;
+  margin-top: 4PX;
+  color: #657160;
+  font-size: 11PX;
+  line-height: 1.35;
+  font-weight: 750;
+}
+
+.mall-order-product-price {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5PX;
+  color: #1f2d1f;
+  font-size: 13PX;
+  font-weight: 900;
+}
+
+.mall-order-product-price text:last-child,
+.mall-order-product-price span:last-child {
+  color: #8a9585;
+  font-size: 11PX;
+}
+
+.mall-order-fee-row {
+  margin-top: 8PX;
+}
+
+.mall-order-fee-row text:last-child,
+.mall-order-fee-row span:last-child {
+  color: #1f2d1f;
+  font-weight: 900;
+}
+
+.mall-order-fee-row-warm text:last-child,
+.mall-order-fee-row-warm span:last-child {
+  color: #ff7a1a;
+}
+
+.mall-order-fee-row-strong {
+  color: #1f2d1f;
+  font-size: 15PX;
+  font-weight: 950;
+}
+
+.mall-order-fee-row-strong text:last-child,
+.mall-order-fee-row-strong span:last-child {
+  color: #ff7a1a;
+  font-size: 18PX;
+}
+
+.mall-order-fee-divider {
+  height: 1PX;
+  margin: 10PX 0 2PX;
+  background: #edf2eb;
+}
+
+.mall-order-service-progress {
+  margin-top: 10PX;
+  padding: 10PX;
+  border-radius: 10PX;
+  background: #f4fbf1;
+}
+
+.mall-order-action-spacer {
+  height: 84PX;
+}
+
+.mall-order-action-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  padding: 10PX 13PX calc(10PX + env(safe-area-inset-bottom));
+  border-top: 1PX solid #dcebd7;
+  background: rgba(255, 255, 255, 0.96);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8PX;
+  box-sizing: border-box;
+}
+
+.mall-order-action-bar > view,
+.mall-order-action-bar > div {
+  min-width: 0;
+}
+
+.mall-order-action-bar > view:only-child,
+.mall-order-action-bar > div:only-child {
+  grid-column: 1 / -1;
+}
+
+.mall-order-action-bar > view:nth-child(1):nth-last-child(2),
+.mall-order-action-bar > div:nth-child(1):nth-last-child(2),
+.mall-order-action-bar > view:nth-child(2):nth-last-child(1),
+.mall-order-action-bar > div:nth-child(2):nth-last-child(1) {
+  grid-column: auto;
+}
+
+.mall-payment-success-hero {
+  text-align: center;
+  padding-top: 24PX;
+  padding-bottom: 24PX;
+  background: #f4fbf1;
+}
+
+.mall-payment-success-card {
+  box-shadow: 0 8PX 24PX rgba(25, 48, 28, 0.05);
+}
+
+.mall-payment-success-products {
+  margin-top: 12PX;
+  display: flex;
+  align-items: center;
+  gap: 8PX;
+}
+
+.mall-payment-success-thumb {
+  width: 54PX;
+  height: 54PX;
+  border-radius: 9PX;
+  background: #f4fbf1;
+  flex: 0 0 54PX;
+}
+
+.mall-payment-success-thumb-empty {
+  border: 1PX solid #dcebd7;
+  box-sizing: border-box;
+}
+
+.mall-payment-success-summary {
+  min-width: 0;
+  flex: 1;
+}
+
+.mall-payment-success-flow {
+  margin-top: 12PX;
+  display: flex;
+  flex-direction: column;
+  gap: 10PX;
+}
+
+.mall-payment-success-step {
+  display: grid;
+  grid-template-columns: 34PX 1fr;
+  gap: 10PX;
+  align-items: flex-start;
+  opacity: 0.58;
+}
+
+.mall-payment-success-step-active {
+  opacity: 1;
+}
+
+.mall-payment-success-step-icon {
+  width: 34PX;
+  height: 34PX;
+  border-radius: 10PX;
+  background: #eefbea;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .mall-reason-grid {
   margin-top: 12PX;
   display: grid;
@@ -2555,6 +2924,22 @@ body.reco-mall-h5 .taro_page {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8PX;
+}
+
+.mall-after-sale-method-list {
+  margin-top: 12PX;
+  display: flex;
+  flex-direction: column;
+  gap: 9PX;
+}
+
+.mall-after-sale-method-list .mall-after-sale-type {
+  min-height: 82PX;
+  padding: 12PX;
+  display: grid;
+  grid-template-columns: 28PX 1fr 54PX;
+  align-items: center;
+  gap: 10PX;
 }
 
 .mall-after-sale-type {
@@ -2589,9 +2974,64 @@ body.reco-mall-h5 .taro_page {
   box-sizing: border-box;
 }
 
+.mall-after-sale-item .mall-orders-thumb {
+  flex: 0 0 58PX;
+  width: 58PX;
+  height: 58PX;
+}
+
 .mall-after-sale-item-active {
   border-color: #63bf54;
   background: #f4fbf1;
+}
+
+.mall-after-sale-readonly {
+  margin-top: 18PX;
+  padding: 12PX;
+  border-radius: 10PX;
+  border: 1PX solid #cce7c7;
+  background: #f4fbf1;
+  display: flex;
+  flex-direction: column;
+  gap: 4PX;
+}
+
+.mall-after-sale-readonly text:first-child {
+  color: #1f2d1f;
+  font-size: 14PX;
+  font-weight: 900;
+}
+
+.mall-after-sale-readonly text:last-child {
+  color: #64725f;
+  font-size: 12PX;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.mall-evidence-thumb {
+  position: relative;
+  flex: 0 0 58PX;
+  width: 58PX;
+  height: 58PX;
+}
+
+.mall-evidence-delete {
+  position: absolute;
+  top: -6PX;
+  right: -6PX;
+  width: 20PX;
+  height: 20PX;
+  border-radius: 50%;
+  background: #1f2d1f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 3PX 8PX rgba(31, 45, 31, 0.18);
+}
+
+.mall-after-sale-flow {
+  margin-top: 12PX;
 }
 
 .mall-after-sale-check {
@@ -2653,6 +3093,66 @@ body.reco-mall-h5 .taro_page {
   padding: 8PX;
   border-radius: 8PX;
   background: #f4fbf1;
+}
+
+.mall-support-order-card {
+  box-shadow: 0 8PX 24PX rgba(25, 48, 28, 0.05);
+}
+
+.mall-support-order-card .mall-support-facts {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mall-support-items,
+.mall-support-selected-items {
+  margin-top: 12PX;
+  display: flex;
+  flex-direction: column;
+  gap: 8PX;
+}
+
+.mall-support-item {
+  min-height: 54PX;
+  padding: 8PX;
+  border-radius: 10PX;
+  background: #ffffff;
+  border: 1PX solid #d7ead1;
+  display: grid;
+  grid-template-columns: 42PX 1fr auto;
+  align-items: center;
+  gap: 8PX;
+}
+
+.mall-support-selected-items .mall-support-item {
+  grid-template-columns: 1fr auto;
+  background: #f4fbf1;
+}
+
+.mall-support-item-image {
+  width: 42PX;
+  height: 42PX;
+  border-radius: 8PX;
+  background: #eefbea;
+}
+
+.mall-support-item-empty {
+  border: 1PX dashed #cce7c7;
+}
+
+.mall-support-quick-replies {
+  margin-top: 12PX;
+  display: flex;
+  gap: 8PX;
+  overflow-x: auto;
+  padding-bottom: 2PX;
+}
+
+.mall-support-quick-replies .mall-small-button {
+  flex: 0 0 auto;
+  min-width: 72PX;
+  background: #fff7ed;
+  border-color: #f2d6b4;
+  color: #8b5b18;
 }
 
 .mall-chat-list {
@@ -2720,6 +3220,14 @@ body.reco-mall-h5 .taro_page {
   gap: 8PX;
 }
 
+.mall-support-keyboard {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  margin-bottom: env(safe-area-inset-bottom);
+  box-shadow: 0 -8PX 22PX rgba(25, 48, 28, 0.08);
+}
+
 .mall-chat-input {
   height: 36PX;
   min-height: 0 !important;
@@ -2740,6 +3248,11 @@ body.reco-mall-h5 .taro_page {
   justify-content: center;
   font-size: 13PX;
   font-weight: 900;
+}
+
+.mall-notification-unread {
+  border-color: #63bf54;
+  background: #f4fbf1;
 }
 
 .mall-leader-hero {

@@ -63,6 +63,12 @@ export default function MallGroupBuyDetailPage() {
     setQuantity((current) => normalizeQuantity(activity, current + delta))
   }
 
+  const openProductDetail = () => {
+    const productId = activity?.product?.id || activity?.productId
+    if (!productId) return
+    Taro.navigateTo({ url: `/pages/mall/product/index?id=${encodeURIComponent(productId)}` })
+  }
+
   const payDeposit = async () => {
     if (!activity || submitting) return
     const gate = getSubscriptionGate(activity)
@@ -117,7 +123,7 @@ export default function MallGroupBuyDetailPage() {
       ) : (
         <>
           <View className="mall-group-buy-detail-card">
-            <View className="mall-group-buy-detail-product">
+            <View className="mall-group-buy-detail-product" onClick={openProductDetail}>
               <View className="mall-group-buy-detail-thumb">
                 <MallProductThumb product={activity.product} />
               </View>
