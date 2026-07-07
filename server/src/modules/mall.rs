@@ -10,7 +10,7 @@ use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
 
 use crate::{
     app::AppState,
-    config::ApiService,
+    config::{read_trimmed, ApiService},
     error::{ApiError, ApiResult},
     response::{ok, ApiEnvelope},
     storage::Storage,
@@ -327,6 +327,10 @@ where
         .route(
             "/api/admin/mall/campaigns/:id",
             put(update_campaign::<S>).delete(delete_campaign::<S>),
+        )
+        .route(
+            "/api/admin/mall/marketing-agent",
+            post(admin_marketing_agent::<S>),
         )
         .route(
             "/api/admin/mall/coupons",
@@ -1197,6 +1201,27 @@ struct CouponMutationRequest {
     starts_at: Option<String>,
     #[serde(alias = "ends_at")]
     ends_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MarketingAgentRequest {
+    question: String,
+    mode: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MiniMaxChatRequest {
+    model: String,
+    messages: Vec<MiniMaxMessage>,
+    temperature: f32,
+}
+
+#[derive(Debug, Serialize)]
+struct MiniMaxMessage {
+    role: String,
+    content: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -6578,6 +6603,368 @@ where
     .ok_or_else(|| ApiError::NotFound("活动不存在".to_string()))?;
 
     Ok(ok("活动删除成功", campaign))
+}
+
+async fn admin_marketing_agent<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<MarketingAgentRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let question = require_non_empty(Some(body.question), "请输入要分析的营销问题")?;
+    let question = truncate_for_agent(&question, 800);
+    let mode = non_empty(body.mode).unwrap_or_else(|| "strategy".to_string());
+    let context = marketing_agent_context(&state.db).await?;
+    let suggestions = marketing_agent_rule_suggestions(&context);
+    let fallback_answer = marketing_agent_rule_answer(&question, &context);
+
+    let (provider, model, answer, model_error) =
+        match call_minimax_marketing_agent(&question, &mode, &context, &suggestions).await {
+            Ok(Some((model, answer))) => ("minimax", model, answer, None),
+            Ok(None) => (
+                "rules",
+                "local-rules".to_string(),
+                fallback_answer,
+                Some("MINIMAX_API_KEY 未配置，已返回本地规则建议".to_string()),
+            ),
+            Err(err) => (
+                "rules",
+                "local-rules".to_string(),
+                fallback_answer,
+                Some(err.to_string()),
+            ),
+        };
+
+    Ok(ok(
+        "营销 Agent 已生成建议",
+        json!({
+            "question": question,
+            "mode": mode,
+            "provider": provider,
+            "model": model,
+            "answer": answer,
+            "modelError": model_error,
+            "context": context,
+            "suggestions": suggestions,
+            "privacy": "仅使用订单、商品、券和活动的聚合指标；未向模型传输手机号、地址或用户明文身份。"
+        }),
+    ))
+}
+
+async fn marketing_agent_context(pool: &PgPool) -> ApiResult<Value> {
+    sqlx::query_scalar::<_, Value>(
+        r#"
+        WITH paid_orders AS (
+          SELECT id, user_id, payable_cents, coupon_cents, delivery_fee_cents, created_at
+          FROM mall_orders
+          WHERE payment_status = 'paid'
+            AND created_at >= now() - INTERVAL '30 days'
+        ),
+        paid_user_stats AS (
+          SELECT
+            count(*)::integer AS user_count,
+            count(*) FILTER (WHERE order_count > 1)::integer AS repeat_user_count
+          FROM (
+            SELECT user_id, count(*) AS order_count
+            FROM paid_orders
+            WHERE user_id IS NOT NULL AND user_id <> ''
+            GROUP BY user_id
+          ) users
+        ),
+        product_rows AS (
+          SELECT
+            product.id,
+            product.name,
+            COALESCE(category.name, product.category_code, '未分类') AS category_name,
+            product.price_cents,
+            product.stock,
+            product.stock_alert_threshold,
+            product.sold_count,
+            product.status
+          FROM mall_products product
+          LEFT JOIN mall_categories category ON category.code = product.category_code
+        ),
+        top_products AS (
+          SELECT COALESCE(jsonb_agg(jsonb_build_object(
+            'productId', rows.product_id,
+            'productName', rows.product_name,
+            'categoryName', rows.category_name,
+            'quantity', rows.quantity,
+            'salesCents', rows.sales_cents
+          ) ORDER BY rows.quantity DESC, rows.sales_cents DESC), '[]'::jsonb) AS rows
+          FROM (
+            SELECT
+              item.product_id,
+              item.product_name,
+              COALESCE(category.name, item.category_code, product.category_code, '未分类') AS category_name,
+              sum(item.quantity)::integer AS quantity,
+              sum(item.line_total_cents)::bigint AS sales_cents
+            FROM paid_orders paid
+            JOIN mall_order_items item ON item.order_id = paid.id
+            LEFT JOIN mall_products product ON product.id = item.product_id
+            LEFT JOIN mall_categories category ON category.code = COALESCE(item.category_code, product.category_code)
+            GROUP BY item.product_id, item.product_name, COALESCE(category.name, item.category_code, product.category_code, '未分类')
+            ORDER BY sum(item.quantity) DESC, sum(item.line_total_cents) DESC
+            LIMIT 8
+          ) rows
+        ),
+        category_rows AS (
+          SELECT COALESCE(jsonb_agg(jsonb_build_object(
+            'categoryName', rows.category_name,
+            'quantity', rows.quantity,
+            'salesCents', rows.sales_cents
+          ) ORDER BY rows.sales_cents DESC), '[]'::jsonb) AS rows
+          FROM (
+            SELECT
+              COALESCE(category.name, item.category_code, product.category_code, '未分类') AS category_name,
+              sum(item.quantity)::integer AS quantity,
+              sum(item.line_total_cents)::bigint AS sales_cents
+            FROM paid_orders paid
+            JOIN mall_order_items item ON item.order_id = paid.id
+            LEFT JOIN mall_products product ON product.id = item.product_id
+            LEFT JOIN mall_categories category ON category.code = COALESCE(item.category_code, product.category_code)
+            GROUP BY COALESCE(category.name, item.category_code, product.category_code, '未分类')
+            ORDER BY sum(item.line_total_cents) DESC
+            LIMIT 8
+          ) rows
+        ),
+        coupon_stats AS (
+          SELECT jsonb_build_object(
+            'activeCount', count(*) FILTER (WHERE status = 'active'),
+            'draftCount', count(*) FILTER (WHERE status = 'draft'),
+            'claimedCount', COALESCE(sum(claimed_count), 0),
+            'usedCount', COALESCE(sum(used_count), 0)
+          ) AS value
+          FROM mall_coupons
+          WHERE status <> 'deleted'
+        ),
+        campaign_stats AS (
+          SELECT jsonb_build_object(
+            'activeCount', count(*) FILTER (WHERE status = 'active'),
+            'draftCount', count(*) FILTER (WHERE status = 'draft'),
+            'types', COALESCE(jsonb_agg(DISTINCT campaign_type) FILTER (WHERE campaign_type IS NOT NULL), '[]'::jsonb)
+          ) AS value
+          FROM mall_campaigns
+          WHERE status <> 'deleted'
+        )
+        SELECT jsonb_build_object(
+          'windowDays', 30,
+          'summary', jsonb_build_object(
+            'paidOrders', COALESCE((SELECT count(*) FROM paid_orders), 0),
+            'gmvCents', COALESCE((SELECT sum(payable_cents) FROM paid_orders), 0),
+            'avgOrderCents', COALESCE((SELECT round(avg(payable_cents))::bigint FROM paid_orders), 0),
+            'couponDiscountCents', COALESCE((SELECT sum(coupon_cents) FROM paid_orders), 0),
+            'deliveryFeeCents', COALESCE((SELECT sum(delivery_fee_cents) FROM paid_orders), 0),
+            'activeProducts', COALESCE((SELECT count(*) FROM product_rows WHERE status = 'on_sale'), 0),
+            'lowStockProducts', COALESCE((SELECT count(*) FROM product_rows WHERE status = 'on_sale' AND stock <= stock_alert_threshold), 0),
+            'afterSales', COALESCE((SELECT count(*) FROM mall_after_sales WHERE created_at >= now() - INTERVAL '30 days'), 0),
+            'repeatUserRateBps', COALESCE((
+              SELECT CASE WHEN user_count = 0 THEN 0 ELSE round(repeat_user_count * 10000.0 / user_count)::integer END
+              FROM paid_user_stats
+            ), 0)
+          ),
+          'topProducts', (SELECT rows FROM top_products),
+          'topCategories', (SELECT rows FROM category_rows),
+          'coupons', (SELECT value FROM coupon_stats),
+          'campaigns', (SELECT value FROM campaign_stats),
+          'segments', jsonb_build_array(
+            jsonb_build_object('key', 'new_customers', 'name', '新客', 'rule', '历史付费订单数为0或首次下单用户'),
+            jsonb_build_object('key', 'repeat_customers', 'name', '复购用户', 'rule', '30天内付费订单数大于1'),
+            jsonb_build_object('key', 'sleeping_customers', 'name', '沉睡用户', 'rule', '30天未下单且历史有付费订单'),
+            jsonb_build_object('key', 'coupon_sensitive', 'name', '优惠敏感用户', 'rule', '近30天使用优惠订单占比高'),
+            jsonb_build_object('key', 'after_sale_risk', 'name', '售后风险用户', 'rule', '近90天售后次数偏高')
+          )
+        )
+        "#,
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(Into::into)
+}
+
+fn marketing_agent_rule_suggestions(context: &Value) -> Value {
+    let avg_order_cents = json_path_i64(context, &["summary", "avgOrderCents"]);
+    let low_stock_products = json_path_i64(context, &["summary", "lowStockProducts"]);
+    let repeat_rate_bps = json_path_i64(context, &["summary", "repeatUserRateBps"]);
+    let top_category = context
+        .get("topCategories")
+        .and_then(Value::as_array)
+        .and_then(|items| items.first())
+        .and_then(|item| item.get("categoryName"))
+        .and_then(Value::as_str)
+        .unwrap_or("生鲜商品");
+    let threshold_cents = if avg_order_cents >= 9900 { 9900 } else { 4900 };
+    let discount_cents = if threshold_cents >= 9900 { 1000 } else { 600 };
+    let audience = if repeat_rate_bps >= 2500 {
+        "repeat_customers"
+    } else {
+        "coupon_sensitive"
+    };
+    let inventory_reason = if low_stock_products > 0 {
+        "当前存在低库存在售商品，活动上线前先排除低库存商品，避免爆单缺货。"
+    } else {
+        "当前低库存压力较小，可以优先选择热销商品做短期活动。"
+    };
+
+    json!([
+        {
+            "kind": "coupon",
+            "title": "新客定向满减券",
+            "audience": "new_customers",
+            "reason": "降低首单决策成本，适合放在新人首单、首页弹层或领券中心。",
+            "draft": {
+                "name": "新客满49减6",
+                "code": "AGENT-NEW-49-6",
+                "couponType": "full_reduction",
+                "thresholdCents": 4900,
+                "discountCents": 600,
+                "totalQuantity": 1000,
+                "perUserLimit": 1,
+                "status": "draft",
+                "description": "新客首单专享，满足门槛自动抵扣。",
+                "rules": { "audience": "new_customers", "generatedBy": "marketing-agent" }
+            }
+        },
+        {
+            "kind": "campaign",
+            "title": format!("{}复购满减", top_category),
+            "audience": audience,
+            "reason": "围绕近期高贡献品类做定向活动，优先面向复购或优惠敏感用户。",
+            "draft": {
+                "name": format!("{}定向满减", top_category),
+                "campaignType": "full_reduction",
+                "budgetCents": 300000,
+                "status": "draft",
+                "rules": {
+                    "scope": "category",
+                    "categoryName": top_category,
+                    "audience": audience,
+                    "tiers": [{ "thresholdCents": threshold_cents, "discountCents": discount_cents }],
+                    "display": {
+                        "title": "定向满减",
+                        "tagText": format!("满{}减{}", threshold_cents / 100, discount_cents / 100),
+                        "iconText": "减",
+                        "backgroundColor": "#FFF1E5",
+                        "textColor": "#E85D04",
+                        "ruleExplanation": "活动人群内用户下单满足门槛自动优惠。",
+                        "limitText": "限指定人群和活动商品。"
+                    },
+                    "generatedBy": "marketing-agent"
+                }
+            }
+        },
+        {
+            "kind": "operation",
+            "title": "活动上线前库存检查",
+            "audience": "operations",
+            "reason": inventory_reason,
+            "draft": {
+                "lowStockProducts": low_stock_products,
+                "action": "review_inventory_before_launch"
+            }
+        }
+    ])
+}
+
+fn marketing_agent_rule_answer(question: &str, context: &Value) -> String {
+    let paid_orders = json_path_i64(context, &["summary", "paidOrders"]);
+    let gmv_cents = json_path_i64(context, &["summary", "gmvCents"]);
+    let avg_order_cents = json_path_i64(context, &["summary", "avgOrderCents"]);
+    let low_stock_products = json_path_i64(context, &["summary", "lowStockProducts"]);
+    format!(
+        "基于近30天聚合数据：已支付订单{}单，GMV ¥{:.2}，客单价约¥{:.2}，低库存在售商品{}个。建议优先做新客满49减6、围绕热销品类做定向满减，并在活动上线前排除低库存商品。问题：{}",
+        paid_orders,
+        gmv_cents as f64 / 100.0,
+        avg_order_cents as f64 / 100.0,
+        low_stock_products,
+        question
+    )
+}
+
+async fn call_minimax_marketing_agent(
+    question: &str,
+    mode: &str,
+    context: &Value,
+    suggestions: &Value,
+) -> ApiResult<Option<(String, String)>> {
+    let Some(api_key) = read_trimmed("MINIMAX_API_KEY") else {
+        return Ok(None);
+    };
+    let model = read_trimmed("MINIMAX_MODEL").unwrap_or_else(|| "MiniMax-M3".to_string());
+    let api_url = read_trimmed("MINIMAX_API_URL")
+        .unwrap_or_else(|| "https://api.minimax.io/v1/chat/completions".to_string());
+    let system_prompt = "你是叁友甄选 Web 管理端的营销运营助手。只根据提供的聚合数据给建议，不编造个人隐私或不存在的用户明细。输出要面向运营人员，包含人群、策略、券/活动配置建议、成本和风险提醒。";
+    let user_prompt = format!(
+        "运营问题：{}\n工作模式：{}\n聚合数据：{}\n候选草稿：{}",
+        question,
+        mode,
+        serde_json::to_string(context).unwrap_or_else(|_| "{}".to_string()),
+        serde_json::to_string(suggestions).unwrap_or_else(|_| "[]".to_string())
+    );
+    let request = MiniMaxChatRequest {
+        model: model.clone(),
+        temperature: 0.2,
+        messages: vec![
+            MiniMaxMessage {
+                role: "system".to_string(),
+                content: system_prompt.to_string(),
+            },
+            MiniMaxMessage {
+                role: "user".to_string(),
+                content: user_prompt,
+            },
+        ],
+    };
+    let body = serde_json::to_string(&request)
+        .map_err(|err| ApiError::BadRequest(format!("营销 Agent 请求构建失败: {err}")))?;
+    let response = reqwest::Client::new()
+        .post(api_url)
+        .header("Authorization", format!("Bearer {api_key}"))
+        .header("Content-Type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("MiniMax 请求失败: {err}")))?;
+    let status = response.status();
+    let response_text = response
+        .text()
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("MiniMax 响应读取失败: {err}")))?;
+    if !status.is_success() {
+        return Err(ApiError::BadRequest(format!(
+            "MiniMax 返回异常状态 {}",
+            status.as_u16()
+        )));
+    }
+    let payload: Value = serde_json::from_str(&response_text)
+        .map_err(|err| ApiError::BadRequest(format!("MiniMax 响应解析失败: {err}")))?;
+    let answer = payload
+        .get("choices")
+        .and_then(Value::as_array)
+        .and_then(|choices| choices.first())
+        .and_then(|choice| choice.get("message"))
+        .and_then(|message| message.get("content"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| ApiError::BadRequest("MiniMax 未返回可展示内容".to_string()))?;
+    Ok(Some((model, answer.to_string())))
+}
+
+fn truncate_for_agent(value: &str, max_chars: usize) -> String {
+    value.chars().take(max_chars).collect::<String>()
+}
+
+fn json_path_i64(value: &Value, path: &[&str]) -> i64 {
+    let mut current = value;
+    for key in path {
+        let Some(next) = current.get(*key) else {
+            return 0;
+        };
+        current = next;
+    }
+    current.as_i64().unwrap_or(0)
 }
 
 async fn admin_list_coupons<S>(

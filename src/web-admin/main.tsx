@@ -420,6 +420,12 @@ interface CouponForm {
   description: string;
 }
 
+interface MarketingAgentState {
+  prompt: string;
+  mode: string;
+  result: JsonRecord | null;
+}
+
 interface HomeBannerForm {
   id: string;
   title: string;
@@ -854,6 +860,7 @@ const adminModules: AdminModuleSpec[] = [
       designPage('mall.promotionVenues', '大促会场', '营销中心', '会场入口、视觉配置和商品池', 'megaphone', 'operations'),
       designPage('mall.groupBuyPresale', '集采预售', '营销中心', '集采预售活动、定金、尾款和采购确认', 'shopping-bag'),
       designPage('mall.coupons', '券中心', '营销中心', '券创建、编辑、发放量、核销状态和启停', 'megaphone'),
+      designPage('mall.marketingAgent', '营销 Agent', '营销中心', '人群分析、定向发券和活动策略', 'support', 'operations'),
       designPage('mall.banners', '轮播广告位', '首页配置', '首页 3 张轮播、图片、跳转和排序', 'dashboard'),
       designPage('mall.homeNotices', '公告栏配置', '首页配置', '今日到货、配送时效、售后通知和团长招募', 'megaphone'),
       designPage('mall.homeFlashSale', '秒杀专区', '首页配置', '每日两场秒杀、倒计时、库存和商品池', 'shop', 'mallProducts'),
@@ -1273,6 +1280,12 @@ const initialCouponForm: CouponForm = {
   startsAt: '',
   endsAt: '',
   description: '新用户首单可用，满足门槛自动抵扣。',
+};
+
+const initialMarketingAgentState: MarketingAgentState = {
+  prompt: '帮我分析近30天商城数据，推荐一个定向发券方案和一个营销活动草稿',
+  mode: 'strategy',
+  result: null,
 };
 
 const initialHomeBannerForm: HomeBannerForm = {
@@ -8971,6 +8984,151 @@ function MallStatsOpsSection({
   );
 }
 
+function MallMarketingAgentSection({
+  agent,
+  busy,
+  onAsk,
+  onChange,
+  onCreateDraft,
+}: {
+  agent: MarketingAgentState;
+  busy: boolean;
+  onAsk: () => Promise<void>;
+  onChange: (patch: Partial<MarketingAgentState>) => void;
+  onCreateDraft: (suggestion: JsonRecord) => Promise<void>;
+}) {
+  const result = agent.result || undefined;
+  const context = recordValue(result, 'context');
+  const summary = recordValue(context, 'summary');
+  const coupons = recordValue(context, 'coupons');
+  const campaigns = recordValue(context, 'campaigns');
+  const suggestions = arrayValue(result, 'suggestions');
+  const topCategories = arrayValue(context, 'topCategories').slice(0, 4);
+  const topProducts = arrayValue(context, 'topProducts').slice(0, 4);
+  const provider = stringValue(result, 'provider', 'rules');
+  const modelError = stringValue(result, 'modelError');
+
+  return (
+    <div className="page-grid marketing-agent-page">
+      <Panel title="营销 Agent">
+        <div className="marketing-agent-shell">
+          <div className="marketing-agent-input">
+            <label>
+              运营问题
+              <textarea value={agent.prompt} onChange={event => onChange({ prompt: event.target.value })} placeholder="例如：帮我给沉睡用户做一次召回券方案" />
+            </label>
+            <label>
+              生成类型
+              <select value={agent.mode} onChange={event => onChange({ mode: event.target.value })}>
+                <option value="strategy">策略建议</option>
+                <option value="coupon">定向发券</option>
+                <option value="campaign">活动草稿</option>
+                <option value="analysis">人群分析</option>
+              </select>
+            </label>
+            <button className="primary-button" type="button" onClick={() => void onAsk()} disabled={busy || !agent.prompt.trim()}>
+              <Icon name="send" />
+              {busy ? '生成中' : '生成建议'}
+            </button>
+          </div>
+
+          <div className="marketing-agent-metrics">
+            <StatCard label="近30天订单" value={String(numberValue(summary, 'paidOrders'))} detail={`GMV ${yuan(numberValue(summary, 'gmvCents'))}`} />
+            <StatCard label="客单价" value={yuan(numberValue(summary, 'avgOrderCents'))} detail={`优惠 ${yuan(numberValue(summary, 'couponDiscountCents'))}`} />
+            <StatCard label="在售商品" value={String(numberValue(summary, 'activeProducts'))} detail={`${numberValue(summary, 'lowStockProducts')} 个低库存`} />
+            <StatCard label="活动和券" value={`${numberValue(campaigns, 'activeCount')} / ${numberValue(coupons, 'activeCount')}`} detail="启用活动 / 启用券" />
+          </div>
+        </div>
+      </Panel>
+
+      {result ? (
+        <div className="marketing-agent-result-grid">
+          <Panel title="建议结果">
+            <div className="marketing-agent-answer">
+              <div className="marketing-agent-meta">
+                <span className={badgeClass(provider === 'minimax' ? 'active' : 'draft')}>{provider === 'minimax' ? 'MiniMax' : '规则建议'}</span>
+                <small>{stringValue(result, 'model')}</small>
+              </div>
+              {modelError ? <p className="agent-warning">{modelError}</p> : null}
+              <p>{stringValue(result, 'answer')}</p>
+            </div>
+          </Panel>
+
+          <Panel title="候选草稿">
+            <div className="marketing-agent-suggestions">
+              {suggestions.map((suggestion, index) => {
+                const kind = stringValue(suggestion, 'kind');
+                return (
+                  <article key={`${kind}-${index}`} className="marketing-agent-suggestion">
+                    <div>
+                      <strong>{stringValue(suggestion, 'title')}</strong>
+                      <small>{marketingAgentKindLabel(kind)} · {marketingAgentAudienceLabel(stringValue(suggestion, 'audience'))}</small>
+                    </div>
+                    <p>{stringValue(suggestion, 'reason')}</p>
+                    {kind === 'coupon' || kind === 'campaign' ? (
+                      <button className="ghost-button small" type="button" onClick={() => void onCreateDraft(suggestion)}>
+                        <Icon name="plus" />
+                        创建草稿
+                      </button>
+                    ) : null}
+                  </article>
+                );
+              })}
+              {!suggestions.length ? <EmptyState text="暂无候选草稿" /> : null}
+            </div>
+          </Panel>
+        </div>
+      ) : null}
+
+      <div className="marketing-agent-result-grid">
+        <Panel title="热销品类">
+          <div className="compact-rank-list">
+            {topCategories.map((category, index) => (
+              <article key={`${stringValue(category, 'categoryName')}-${index}`}>
+                <span>{index + 1}</span>
+                <strong>{stringValue(category, 'categoryName')}</strong>
+                <small>{numberValue(category, 'quantity')} 件 · {yuan(numberValue(category, 'salesCents'))}</small>
+              </article>
+            ))}
+            {!topCategories.length ? <EmptyState text="暂无品类数据" /> : null}
+          </div>
+        </Panel>
+        <Panel title="热销商品">
+          <div className="compact-rank-list">
+            {topProducts.map((product, index) => (
+              <article key={`${stringValue(product, 'productId')}-${index}`}>
+                <span>{index + 1}</span>
+                <strong>{stringValue(product, 'productName')}</strong>
+                <small>{numberValue(product, 'quantity')} 件 · {yuan(numberValue(product, 'salesCents'))}</small>
+              </article>
+            ))}
+            {!topProducts.length ? <EmptyState text="暂无商品数据" /> : null}
+          </div>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+function marketingAgentKindLabel(kind: string) {
+  if (kind === 'coupon') return '优惠券';
+  if (kind === 'campaign') return '营销活动';
+  if (kind === 'operation') return '运营动作';
+  return kind || '建议';
+}
+
+function marketingAgentAudienceLabel(audience: string) {
+  const labels: Record<string, string> = {
+    new_customers: '新客',
+    repeat_customers: '复购用户',
+    sleeping_customers: '沉睡用户',
+    coupon_sensitive: '优惠敏感用户',
+    after_sale_risk: '售后风险用户',
+    operations: '运营',
+  };
+  return labels[audience] || audience || '全部用户';
+}
+
 function MallCouponCenterSection({
   coupons,
   filters,
@@ -12688,6 +12846,7 @@ function App() {
   const [groupBuyDetailOpen, setGroupBuyDetailOpen] = useState(false);
   const [groupBuyDetailActivity, setGroupBuyDetailActivity] = useState<JsonRecord | null>(null);
   const [couponForm, setCouponForm] = useState<CouponForm>(initialCouponForm);
+  const [marketingAgent, setMarketingAgent] = useState<MarketingAgentState>(initialMarketingAgentState);
   const [homeBannerForm, setHomeBannerForm] = useState<HomeBannerForm>(initialHomeBannerForm);
   const [homeSectionForm, setHomeSectionForm] = useState<HomeSectionForm>(initialHomeSectionForm);
   const [settingsForm, setSettingsForm] = useState<SettingsForm>(initialSettingsForm);
@@ -14129,6 +14288,53 @@ function App() {
     });
   };
 
+  const askMarketingAgent = async () => {
+    await runAction('营销 Agent 生成', async () => {
+      const result = await apiPost<JsonRecord>('/api/admin/mall/marketing-agent', {
+        question: marketingAgent.prompt,
+        mode: marketingAgent.mode,
+      });
+      setMarketingAgent(current => ({ ...current, result }));
+    });
+  };
+
+  const createMarketingAgentDraft = async (suggestion: JsonRecord) => {
+    const kind = stringValue(suggestion, 'kind');
+    const draft = recordValue(suggestion, 'draft');
+    await runAction(kind === 'coupon' ? '优惠券草稿创建' : '活动草稿创建', async () => {
+      if (kind === 'coupon') {
+        const coupon = await apiPost<JsonRecord>('/api/admin/mall/coupons', {
+          name: stringValue(draft, 'name', '营销 Agent 优惠券草稿'),
+          code: `${stringValue(draft, 'code', 'AGENT-COUPON')}-${Date.now().toString().slice(-6)}`,
+          couponType: stringValue(draft, 'couponType', 'full_reduction'),
+          thresholdCents: numberValue(draft, 'thresholdCents'),
+          discountCents: numberValue(draft, 'discountCents', 100),
+          totalQuantity: numberValue(draft, 'totalQuantity', 100),
+          perUserLimit: numberValue(draft, 'perUserLimit', 1),
+          status: 'draft',
+          description: stringValue(draft, 'description', '营销 Agent 生成草稿，需运营确认后启用。'),
+          rules: recordValue(draft, 'rules'),
+        });
+        setData(current => ({ ...current, mallCoupons: upsertRecordList(current.mallCoupons, coupon) }));
+        return;
+      }
+
+      if (kind === 'campaign') {
+        const campaign = await apiPost<JsonRecord>('/api/admin/mall/campaigns', {
+          name: stringValue(draft, 'name', '营销 Agent 活动草稿'),
+          campaignType: stringValue(draft, 'campaignType', 'full_reduction'),
+          budgetCents: numberValue(draft, 'budgetCents'),
+          status: 'draft',
+          rules: recordValue(draft, 'rules'),
+        });
+        setData(current => ({ ...current, campaigns: upsertRecordList(current.campaigns, campaign) }));
+        return;
+      }
+
+      throw new Error('当前建议不能创建草稿');
+    });
+  };
+
   const saveHomeBanner = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     await runAction(homeBannerForm.id ? '首页配置更新' : '首页配置创建', async () => {
@@ -14784,6 +14990,17 @@ function App() {
           onSearch={reload}
           onStatus={updateCouponStatus}
           onSubmit={saveCoupon}
+        />
+      );
+    }
+    if (activePageKey === 'mall.marketingAgent') {
+      return (
+        <MallMarketingAgentSection
+          agent={marketingAgent}
+          busy={busy === '营销 Agent 生成'}
+          onAsk={askMarketingAgent}
+          onChange={patch => setMarketingAgent(current => ({ ...current, ...patch }))}
+          onCreateDraft={createMarketingAgentDraft}
         />
       );
     }

@@ -40,6 +40,7 @@ assert(!/designPage\('mall\.couponCreate'/.test(adminMain), 'Mall admin coupon c
 assert(/designPage\('mall\.coupons', '券中心'/.test(adminMain), 'Mall admin coupon page must be renamed to coupon center.');
 assert(!/designPage\('mall\.campaignCreate'/.test(adminMain), 'Mall admin campaign creation must be folded into campaign list, not a separate page.');
 assert(/designPage\('mall\.campaigns', '营销活动'/.test(adminMain), 'Mall admin campaign page must be a single searchable activity list.');
+assert(/designPage\('mall\.marketingAgent', '营销 Agent'/.test(adminMain), 'Mall admin must expose a web-only marketing agent page.');
 assert(/function MallCouponCenterSection\(/.test(adminMain), 'Web admin must render a real coupon center section.');
 assert(/function MallHomeBannersSection\(/.test(adminMain), 'Web admin must render a real home configuration section.');
 assert(/designPage\('mall\.banners', '轮播广告位'/.test(adminMain), 'Mall admin must expose carousel banner configuration.');
@@ -49,6 +50,7 @@ assert(/designPage\('mall\.homeNewArrivals', '新上专区'/.test(adminMain), 'M
 assert(/designPage\('mall\.homeHotProducts', '爆款推荐'/.test(adminMain), 'Mall admin must expose hot-product homepage section configuration.');
 assert(/function MallHomeSectionsSection\(/.test(adminMain), 'Web admin must render real homepage section configuration pages.');
 assert(/function MallCampaignsSection\(/.test(adminMain), 'Web admin must render a real campaign list section.');
+assert(/function MallMarketingAgentSection\(/.test(adminMain), 'Web admin must render a marketing agent workspace.');
 assert(/function CampaignBusinessFields\(/.test(adminMain), 'Campaign modal must render type-specific business fields instead of a generic rules-only editor.');
 assert(/门槛金额/.test(adminMain) && /满减金额/.test(adminMain), 'Full-reduction campaigns must expose threshold and reduction amount fields.');
 assert(/折扣力度/.test(adminMain), 'Full-discount campaigns must expose a discount input field.');
@@ -74,6 +76,7 @@ assert(/activePageKey === 'mall\.coupons'[\s\S]*<MallCouponCenterSection/.test(a
 assert(/activePageKey === 'mall\.banners'[\s\S]*<MallHomeBannersSection/.test(adminMain), 'mall.banners must route to MallHomeBannersSection.');
 assert(/homeSectionPageConfigs\[activePageKey\][\s\S]*<MallHomeSectionsSection/.test(adminMain), 'Homepage section pages must route to MallHomeSectionsSection.');
 assert(/activePageKey === 'mall\.campaigns'[\s\S]*<MallCampaignsSection/.test(adminMain), 'mall.campaigns must route to MallCampaignsSection.');
+assert(/activePageKey === 'mall\.marketingAgent'[\s\S]*<MallMarketingAgentSection/.test(adminMain), 'mall.marketingAgent must route to MallMarketingAgentSection.');
 assert(/activePageKey === 'mall\.settings'[\s\S]*<MallSettingsSection/.test(adminMain), 'mall.settings must route to MallSettingsSection.');
 assert(/activePageKey === 'mall\.deliveryRules'[\s\S]*<MallDeliveryRulesSection/.test(adminMain), 'mall.deliveryRules must route to MallDeliveryRulesSection.');
 assert(/activePageKey === 'mall\.paymentSplit'[\s\S]*<MallPaymentSplitRulesSection/.test(adminMain), 'mall.paymentSplit must route to MallPaymentSplitRulesSection.');
@@ -92,6 +95,8 @@ assert(/apiPost(?:<[^>]+>)?\('\/api\/admin\/mall\/campaigns'/.test(adminMain), '
 assert(/apiPut<JsonRecord>\(`\/api\/admin\/mall\/campaigns\/\$\{[^}]+\}`/.test(adminMain), 'Campaign edit must call the real admin campaign update API.');
 assert(/apiDelete\(`\/api\/admin\/mall\/campaigns\/\$\{[^}]+\}`/.test(adminMain), 'Campaign delete must call the real admin campaign delete API.');
 assert(/apiGet<JsonRecord\[]>\('\/api\/admin\/mall\/campaigns'/.test(adminMain), 'Campaign list must load from the real admin campaign API.');
+assert(/apiPost<JsonRecord>\('\/api\/admin\/mall\/marketing-agent'/.test(adminMain), 'Marketing agent must call the backend admin agent API.');
+assert(!/sk-cp-[A-Za-z0-9_-]+/.test(adminMain), 'Web admin must never contain a MiniMax API key.');
 assert(/keyword: campaignFilters\.keyword/.test(adminMain), 'Campaign list must support keyword search.');
 assert(/categoryCode: campaignFilters\.categoryCode/.test(adminMain), 'Campaign list must support activity type search.');
 assert(/displayTitle/.test(adminMain), 'Generic marketing campaign form must include a customer-facing display title.');
@@ -157,6 +162,11 @@ assert(/'deliveryRules'/.test(migrations), 'settings_json must expose deliveryRu
 assert(/'paymentSplitRules'/.test(migrations), 'settings_json must expose paymentSplitRules.');
 
 assert(/\/api\/admin\/mall\/coupons/.test(mallBackend), 'Backend must expose admin coupon routes.');
+assert(/\/api\/admin\/mall\/marketing-agent/.test(mallBackend), 'Backend must expose the admin marketing agent route.');
+assert(/MINIMAX_API_KEY/.test(mallBackend), 'Backend marketing agent must read the MiniMax API key from environment variables.');
+assert(!/sk-cp-[A-Za-z0-9_-]+/.test(mallBackend), 'Backend source must never hardcode a MiniMax API key.');
+assert(/marketing_agent_context/.test(mallBackend), 'Backend marketing agent must build a sanitized marketing context.');
+assert(/admin_marketing_agent/.test(mallBackend), 'Backend must implement the marketing agent handler.');
 assert(/\/api\/admin\/mall\/home-banners/.test(mallBackend), 'Backend must expose admin home banner routes.');
 assert(/\/api\/admin\/mall\/home-sections/.test(mallBackend), 'Backend must expose admin home section routes.');
 assert(/\/api\/mall\/home-banners/.test(mallBackend), 'Backend must expose public mall home banner route.');
