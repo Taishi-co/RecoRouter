@@ -949,6 +949,12 @@ export interface SupportSession {
   lastMessage?: string | null
   createdAt?: string
   updatedAt?: string
+  satisfaction?: {
+    rating: number
+    tags?: string[]
+    comment?: string | null
+    updatedAt?: string
+  } | null
 }
 
 export interface SupportTicket {
@@ -972,6 +978,8 @@ export interface SupportMessage {
   senderRole: string
   content: string
   metadata?: Record<string, unknown>
+  readAt?: string | null
+  readBy?: string | null
   createdAt?: string
 }
 
@@ -1585,6 +1593,15 @@ export async function createSupportMessage(sessionId: string, data: {
   metadata?: Record<string, unknown>
 }): Promise<SupportMessage> {
   return apiPost(`/api/support/sessions/${sessionId}/messages`, data)
+}
+
+export async function rateSupportSession(sessionId: string, data: {
+  userId: string
+  rating: number
+  tags?: string[]
+  comment?: string
+}): Promise<NonNullable<SupportSession['satisfaction']>> {
+  return apiPost(`/api/support/sessions/${sessionId}/satisfaction`, data)
 }
 
 export async function listSupportTickets(userId: string): Promise<SupportTicket[]> {

@@ -124,9 +124,13 @@ interface DashboardData {
   mallPermissions: JsonRecord[];
   mallSettings: JsonRecord;
   supportMetrics: JsonRecord;
+  supportQuality: JsonRecord;
+  supportAgents: JsonRecord[];
   supportSessions: JsonRecord[];
   supportTickets: JsonRecord[];
   supportKnowledge: JsonRecord[];
+  operationsAlerts: JsonRecord[];
+  roadshowStatus: JsonRecord;
   enterprises: JsonRecord[];
   demands: JsonRecord[];
   cancellations: JsonRecord[];
@@ -885,6 +889,7 @@ const adminModules: AdminModuleSpec[] = [
       designPage('mall.afterSales', '售后申请', '客服售后', '售后单审核、证据图片和退款流转', 'refund', 'mallOrders'),
       designPage('mall.supportTickets', '客服工单', '客服售后', '内部跟进工单、跨岗位协同和处理结果', 'check', 'support'),
       designPage('mall.knowledge', '客服知识库', '客服售后', '商城 FAQ、坏果包赔和履约话术', 'support', 'support'),
+      designPage('mall.operationsAlerts', '异常监控', '运营设置', '支付、配送、上传和退款异常告警', 'support'),
       designPage('mall.settings', '运营设置', '运营设置', '活动启停', 'save', 'operations'),
       designPage('mall.deliveryRules', '配送规则', '运营设置', '自提窗口、冷链承诺和服务费', 'route'),
       designPage('mall.paymentSplit', '分账规则', '运营设置', '商城分账、团长佣金和商户结算', 'refund'),
@@ -897,6 +902,7 @@ const adminModules: AdminModuleSpec[] = [
       designPage('mall.hotProducts', '热销商品排行', '数据', '热销商品排名和销售贡献', 'shop'),
       designPage('mall.data', '运营数据', '数据', '商城收入、订单、复购和售后指标', 'dashboard'),
       designPage('mall.permissions', '运营权限', '设置', '商品、客服、财务和团长权限', 'users'),
+      designPage('mall.roadshowSandbox', '路演数据沙箱', '设置', '一键恢复固定商品、订单、客服和售后场景', 'refresh'),
     ],
   },
 ];
@@ -962,9 +968,13 @@ const initialData: DashboardData = {
   mallPermissions: [],
   mallSettings: {},
   supportMetrics: {},
+  supportQuality: {},
+  supportAgents: [],
   supportSessions: [],
   supportTickets: [],
   supportKnowledge: [],
+  operationsAlerts: [],
+  roadshowStatus: {},
   enterprises: [],
   demands: [],
   cancellations: [],
@@ -1699,9 +1709,13 @@ async function fetchDashboardData(
     mallPermissions,
     mallSettings,
     supportMetrics,
+    supportQuality,
+    supportAgents,
     supportSessions,
     supportTickets,
     supportKnowledge,
+    operationsAlerts,
+    roadshowStatus,
     enterprises,
     demands,
     cancellations,
@@ -1790,9 +1804,13 @@ async function fetchDashboardData(
     })),
     loadWithFallback('商城设置', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/settings')),
     loadWithFallback('客服指标', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/support/metrics')),
+    loadWithFallback('客服质检', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/support/quality')),
+    loadWithFallback('客服坐席', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/support/agents')),
     loadWithFallback('客服会话', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/support/sessions')),
     loadWithFallback('客服工单', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/support/tickets')),
     loadWithFallback('知识库', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/support/knowledge')),
+    loadWithFallback('异常监控', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/operations/alerts')),
+    loadWithFallback('路演沙箱', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/roadshow/status')),
     loadWithFallback('企业列表', [], errors, () => apiGet<JsonRecord[]>('/api/enterprise', { limit: 100 }).catch(() => apiGet<JsonRecord[]>('/api/enterprise/admin/' + (getStoredAdminSession()?.user?.id || ''), { limit: 100 }))),
     loadWithFallback('需求列表', [], errors, () => apiGet<JsonRecord[]>('/api/demands', { limit: 100 })),
     loadWithFallback('取消申请', [], errors, () => apiGet<JsonRecord[]>('/api/cancellations/pending')),
@@ -1836,9 +1854,13 @@ async function fetchDashboardData(
       mallPermissions,
       mallSettings,
       supportMetrics,
+      supportQuality,
+      supportAgents,
       supportSessions,
       supportTickets,
       supportKnowledge,
+      operationsAlerts,
+      roadshowStatus,
       enterprises,
       demands,
       cancellations,
@@ -3546,6 +3568,10 @@ function supportDashboardStats(data: DashboardData, afterSales: JsonRecord[]) {
     knowledgeArticles: data.supportKnowledge.length,
     avgFirstResponseMinutes: numberValue(data.supportMetrics, 'avgFirstResponseMinutes'),
     satisfaction: numberValue(data.supportMetrics, 'satisfaction'),
+    satisfactionCount: numberValue(data.supportMetrics, 'satisfactionCount'),
+    firstResponseSlaRate: numberValue(data.supportMetrics, 'firstResponseSlaRate'),
+    resolutionRate: numberValue(data.supportMetrics, 'resolutionRate'),
+    refundRate: numberValue(data.supportMetrics, 'refundRate'),
     ticketResolutionRate: percentValue(resolvedTickets, ticketTotal),
   };
 }
@@ -12080,12 +12106,14 @@ function MallPaymentSplitRulesSection({
 
 function SupportDataSection({
   stats,
+  quality,
   sessions,
   tickets,
   afterSales,
   knowledge,
 }: {
   stats: ReturnType<typeof supportDashboardStats>;
+  quality: JsonRecord;
   sessions: JsonRecord[];
   tickets: JsonRecord[];
   afterSales: JsonRecord[];
@@ -12093,23 +12121,25 @@ function SupportDataSection({
 }) {
   const pendingTickets = tickets.filter(ticket => isOpenSupportStatus(orderStatus(ticket))).slice(0, 5);
   const pendingAfterSales = afterSales.filter(item => isOpenSupportStatus(orderStatus(item))).slice(0, 5);
+  const agentStats = arrayValue(quality, 'agentStats').filter((item): item is JsonRecord => Boolean(item && typeof item === 'object' && !Array.isArray(item)));
+  const qualityFlags = arrayValue(quality, 'qualityFlags').filter((item): item is JsonRecord => Boolean(item && typeof item === 'object' && !Array.isArray(item)));
 
   return (
     <div className="page-grid support-data-page">
       <div className="stat-grid compact">
-        <StatCard label="待响应会话" value={String(stats.openSessions)} detail={`${stats.avgFirstResponseMinutes || 0} 分钟首响`} />
-        <StatCard label="未结工单" value={String(stats.openTickets)} detail={`${stats.ticketResolutionRate}% 工单解决率`} />
-        <StatCard label="待处理售后" value={String(stats.pendingAfterSales)} detail={`${stats.refundingAfterSales} 单退款中`} />
-        <StatCard label="售后金额" value={yuan(stats.afterSalesAmountCents)} detail={`${stats.knowledgeArticles || knowledge.length} 篇知识库`} />
+        <StatCard label="待响应会话" value={String(stats.openSessions)} detail={`${stats.avgFirstResponseMinutes || 0} 分钟平均首响`} />
+        <StatCard label="5分钟首响达标" value={`${stats.firstResponseSlaRate}%`} detail="真实消息时间计算" />
+        <StatCard label="会话解决率" value={`${stats.resolutionRate}%`} detail={`${sessions.length} 个会话样本`} />
+        <StatCard label="满意度" value={`${stats.satisfaction}%`} detail={`${stats.satisfactionCount} 份真实评价`} />
       </div>
 
       <div className="support-data-grid">
         <Panel title="服务质量" description="客服售后指标">
           <div className="support-data-board">
             <article>
-              <span>满意度</span>
-              <strong>{stats.satisfaction || 0}%</strong>
-              <small>来自客服服务记录</small>
+              <span>退款率</span>
+              <strong>{stats.refundRate}%</strong>
+              <small>按真实售后结果统计</small>
             </article>
             <article>
               <span>会话总量</span>
@@ -12124,7 +12154,7 @@ function SupportDataSection({
             <article>
               <span>售后总量</span>
               <strong>{afterSales.length}</strong>
-              <small>退款、坏果包赔、缺件</small>
+              <small>退款、坏果包赔 · {knowledge.length} 篇知识库</small>
             </article>
           </div>
         </Panel>
@@ -12149,12 +12179,48 @@ function SupportDataSection({
           </div>
         </Panel>
       </div>
+
+      <div className="support-data-grid">
+        <Panel title="坐席服务质检" description="按实际分配、首响与评价统计">
+          <div className="support-agent-quality-list">
+            {agentStats.map(agent => (
+              <article key={stringValue(agent, 'agentId')}>
+                <div>
+                  <strong>{stringValue(agent, 'agentName', '客服坐席')}</strong>
+                  <span>{numberValue(agent, 'openCount')} 个进行中 · {numberValue(agent, 'sessionCount')} 个会话</span>
+                </div>
+                <div className="support-agent-quality-metrics">
+                  <span>首响 <strong>{numberValue(agent, 'avgFirstResponseMinutes')} 分钟</strong></span>
+                  <span>解决率 <strong>{numberValue(agent, 'resolutionRate')}%</strong></span>
+                  <span>满意度 <strong>{numberValue(agent, 'satisfaction')}%</strong></span>
+                </div>
+              </article>
+            ))}
+            {!agentStats.length ? <EmptyState text="暂无坐席服务样本" /> : null}
+          </div>
+        </Panel>
+
+        <Panel title="质检提醒" description="低满意度与响应超时自动识别">
+          <div className="support-priority-list">
+            {qualityFlags.slice(0, 8).map(flag => (
+              <article key={`${stringValue(flag, 'sessionId')}-${stringValue(flag, 'flagType')}`}>
+                <strong>{stringValue(flag, 'customerName', '商城用户')} · {stringValue(flag, 'topic', '客服会话')}</strong>
+                <span>{stringValue(flag, 'flagType') === 'low_satisfaction' ? `低满意度 ${numberValue(flag, 'rating')} 星` : `已等待 ${numberValue(flag, 'waitingMinutes')} 分钟`}</span>
+                <small>会话 {shortId(stringValue(flag, 'sessionId'))} · {formatDate(stringValue(flag, 'updatedAt'))}</small>
+              </article>
+            ))}
+            {!qualityFlags.length ? <EmptyState text="当前没有需要质检的异常会话" /> : null}
+          </div>
+        </Panel>
+      </div>
     </div>
   );
 }
 
 function SupportSection({
   metrics,
+  agents,
+  currentAgentId,
   sessions,
   filters,
   form,
@@ -12166,11 +12232,14 @@ function SupportSection({
   onRefresh,
   onSendMessage,
   onUpdateSessionStatus,
+  onAssignSession,
   onOpenOrder,
   onOpenAfterSales,
   onCreateTicket,
 }: {
   metrics: JsonRecord;
+  agents: JsonRecord[];
+  currentAgentId: string;
   sessions: JsonRecord[];
   filters: SupportFilterState;
   form: SupportForm;
@@ -12182,6 +12251,7 @@ function SupportSection({
   onRefresh: () => Promise<void>;
   onSendMessage: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onUpdateSessionStatus: (id: string, status: 'open' | 'resolved' | 'closed') => Promise<void>;
+  onAssignSession: (id: string, agentId: string) => Promise<void>;
   onOpenOrder: (id: string) => Promise<void>;
   onOpenAfterSales: (identifier: string) => void;
   onCreateTicket: (session: JsonRecord, order: JsonRecord) => void;
@@ -12218,6 +12288,10 @@ function SupportSection({
     return isOpenSupportStatus(stringValue(item as JsonRecord, 'status'));
   }) as JsonRecord | undefined;
   const selectedStatus = stringValue(selectedSession, 'status');
+  const assignedAgent = recordValue(selectedSession, 'assignedAgent');
+  const assignedAgentId = stringValue(selectedSession, 'assignedAgentId');
+  const assignedAgentName = stringValue(assignedAgent, 'name', assignedAgentId ? '客服坐席' : '未分配');
+  const canReply = !assignedAgentId || assignedAgentId === currentAgentId;
   const customerName = stringValue(customer, 'name', '商城用户');
   const customerPhone = stringValue(customer, 'phone', '未留手机号');
   const orderId = stringValue(recentOrder, 'id');
@@ -12285,6 +12359,7 @@ function SupportSection({
               const phone = stringValue(itemCustomer, 'phone');
               const unreadCount = numberValue(session, 'unreadCount');
               const waitingMinutes = numberValue(session, 'waitingMinutes');
+              const itemAgent = recordValue(session, 'assignedAgent');
               return (
                 <button
                   className={`support-inbox-row ${selectedSessionId === id ? 'selected' : ''}`}
@@ -12300,6 +12375,7 @@ function SupportSection({
                     </span>
                     <span className="support-inbox-row-meta">{phone || stringValue(session, 'topic', '订单咨询')}</span>
                     <span className="support-inbox-row-message">{stringValue(session, 'lastMessage', '暂无消息')}</span>
+                    <span className="support-inbox-row-order">{stringValue(itemAgent, 'name', '未分配客服')}</span>
                     {stringValue(itemOrder, 'orderNo') ? <span className="support-inbox-row-order">订单 {stringValue(itemOrder, 'orderNo')}</span> : null}
                   </span>
                   {unreadCount > 0 ? <span className="support-unread-badge">{Math.min(unreadCount, 99)}</span> : null}
@@ -12318,6 +12394,17 @@ function SupportSection({
             </div>
             {selectedSession ? (
               <div className="support-session-actions">
+                <label className="support-agent-select">
+                  <span>接待人</span>
+                  <select value={assignedAgentId} onChange={event => void onAssignSession(selectedSessionId, event.target.value)}>
+                    <option value="" disabled>未分配</option>
+                    {agents.map(agent => (
+                      <option key={stringValue(agent, 'id')} value={stringValue(agent, 'id')}>
+                        {stringValue(agent, 'name', '客服坐席')}（{numberValue(agent, 'activeSessions')}）
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <span className={badgeClass(selectedStatus)}>{statusLabel(selectedStatus)}</span>
                 {isOpenSupportStatus(selectedStatus) ? (
                   <button className="ghost-button small" type="button" onClick={() => onUpdateSessionStatus(selectedSessionId, 'resolved')}>处理完成</button>
@@ -12342,6 +12429,7 @@ function SupportSection({
                       {evidenceImages.map(url => <a href={url} key={url} target="_blank" rel="noreferrer"><img alt="用户上传的售后凭证" src={url} /></a>)}
                     </div>
                   ) : null}
+                  {isAgent ? <small className="support-message-read">{stringValue(message, 'readAt') ? '已读' : '未读'}</small> : null}
                 </article>
               );
             })}
@@ -12355,7 +12443,8 @@ function SupportSection({
           <form className="send-form support-message-composer" onSubmit={onSendMessage}>
             <textarea
               value={form.message}
-              placeholder="输入回复，Enter 发送，Shift + Enter 换行"
+              placeholder={canReply ? '输入回复，Enter 发送，Shift + Enter 换行' : `当前由${assignedAgentName}接待，请先转接给自己`}
+              disabled={!canReply}
               onChange={event => onFormChange({ message: event.target.value })}
               onKeyDown={event => {
                 if (event.key === 'Enter' && !event.shiftKey) {
@@ -12364,7 +12453,7 @@ function SupportSection({
                 }
               }}
             />
-            <button className="primary-button" type="submit" disabled={!selectedSessionId || !form.message.trim()}>
+            <button className="primary-button" type="submit" disabled={!selectedSessionId || !form.message.trim() || !canReply}>
               <Icon name="send" />
               发送
             </button>
@@ -12409,11 +12498,173 @@ function SupportSection({
             )}
           </section>
           <section className="support-service-tip">
-            <strong>接待提示</strong>
-            <p>先确认订单，再给出明确处理动作和预计时间；需要退款或补发时转入售后处理。</p>
+            <strong>当前接待：{assignedAgentName}</strong>
+            <p>{canReply ? '先确认订单，再给出明确处理动作和预计时间；需要退款或补发时转入售后处理。' : '该会话正在由其他客服处理。如需接手，请在聊天顶部将接待人转接为自己。'}</p>
           </section>
         </aside>
       </div>
+    </div>
+  );
+}
+
+function OperationsAlertsSection({
+  alerts,
+  onRefresh,
+  onUpdate,
+}: {
+  alerts: JsonRecord[];
+  onRefresh: () => Promise<void>;
+  onUpdate: (id: string, status: 'acknowledged' | 'resolved') => Promise<void>;
+}) {
+  const [statusFilter, setStatusFilter] = useState('active');
+  const activeAlerts = alerts.filter(alert => stringValue(alert, 'status') !== 'resolved');
+  const criticalCount = activeAlerts.filter(alert => stringValue(alert, 'severity') === 'critical').length;
+  const visibleAlerts = alerts.filter(alert => (
+    statusFilter === 'all'
+      ? true
+      : statusFilter === 'active'
+        ? stringValue(alert, 'status') !== 'resolved'
+        : stringValue(alert, 'alertType') === statusFilter
+  ));
+  const typeLabels: Record<string, string> = {
+    payment: '支付',
+    delivery: '配送',
+    upload: '上传',
+    refund: '退款',
+  };
+
+  return (
+    <div className="page-grid operations-alert-page">
+      <section className="support-inbox-toolbar">
+        <div>
+          <span className="support-inbox-eyebrow">自动巡检与人工闭环</span>
+          <h2>业务异常监控</h2>
+          <p>自动检查支付超时、退款失败、配送滞留和上传失败，处理过程可确认、可关闭。</p>
+        </div>
+        <button className="primary-button" type="button" onClick={() => void onRefresh()}>
+          <Icon name="refresh" />
+          立即巡检
+        </button>
+      </section>
+
+      <div className="stat-grid compact">
+        <StatCard label="待处理告警" value={String(activeAlerts.length)} detail="打开或已确认" />
+        <StatCard label="严重告警" value={String(criticalCount)} detail="建议立即处理" />
+        <StatCard label="支付 / 退款" value={String(activeAlerts.filter(alert => ['payment', 'refund'].includes(stringValue(alert, 'alertType'))).length)} detail="资金链路" />
+        <StatCard label="配送 / 上传" value={String(activeAlerts.filter(alert => ['delivery', 'upload'].includes(stringValue(alert, 'alertType'))).length)} detail="履约与凭证" />
+      </div>
+
+      <section className="support-inbox-controls operations-alert-controls">
+        <div className="support-inbox-tabs">
+          {[
+            ['active', `待处理 ${activeAlerts.length}`],
+            ['payment', '支付'],
+            ['refund', '退款'],
+            ['delivery', '配送'],
+            ['upload', '上传'],
+            ['all', `全部 ${alerts.length}`],
+          ].map(([value, label]) => (
+            <button className={statusFilter === value ? 'active' : ''} key={value} type="button" onClick={() => setStatusFilter(value)}>{label}</button>
+          ))}
+        </div>
+      </section>
+
+      <div className="operations-alert-list">
+        {visibleAlerts.map(alert => {
+          const id = stringValue(alert, 'id');
+          const status = stringValue(alert, 'status');
+          const severity = stringValue(alert, 'severity', 'warning');
+          const alertType = stringValue(alert, 'alertType');
+          return (
+            <article className={`operations-alert-card severity-${severity}`} key={id}>
+              <div className="operations-alert-marker">{typeLabels[alertType] || '业务'}</div>
+              <div className="operations-alert-copy">
+                <div>
+                  <strong>{stringValue(alert, 'title', '业务异常')}</strong>
+                  <span className={badgeClass(status)}>{status === 'open' ? '待处理' : status === 'acknowledged' ? '已确认' : '已解决'}</span>
+                </div>
+                <p>{stringValue(alert, 'description')}</p>
+                <small>最近发生 {formatDate(stringValue(alert, 'lastOccurredAt'))} · 累计 {numberValue(alert, 'occurrenceCount', 1)} 次 · 业务ID {shortId(stringValue(alert, 'businessId')) || '—'}</small>
+              </div>
+              <div className="operations-alert-actions">
+                {status === 'open' ? <button className="ghost-button small" type="button" onClick={() => void onUpdate(id, 'acknowledged')}>我已接手</button> : null}
+                {status !== 'resolved' ? <button className="primary-button small" type="button" onClick={() => void onUpdate(id, 'resolved')}>标记解决</button> : null}
+              </div>
+            </article>
+          );
+        })}
+        {!visibleAlerts.length ? <EmptyState text="当前没有匹配的异常告警" /> : null}
+      </div>
+    </div>
+  );
+}
+
+function RoadshowSandboxSection({
+  status,
+  resetting,
+  onReset,
+}: {
+  status: JsonRecord;
+  resetting: boolean;
+  onReset: () => Promise<void>;
+}) {
+  const showMessage = useAdminMessage();
+  const ready = boolValue(status, 'ready');
+  const phone = stringValue(status, 'phone', '13900009999');
+  const password = stringValue(status, 'password', 'Roadshow2026!');
+  const copyCredentials = async () => {
+    try {
+      await navigator.clipboard.writeText(`路演账号：${phone}\n密码：${password}`);
+      showMessage('success', '路演账号和密码已复制');
+    } catch {
+      showMessage('warning', '浏览器未允许复制，请手动选择账号和密码');
+    }
+  };
+
+  return (
+    <div className="page-grid roadshow-sandbox-page">
+      <section className="roadshow-sandbox-hero">
+        <div>
+          <span className="support-inbox-eyebrow">只重置固定演示记录，不影响真实数据</span>
+          <h2>路演数据沙箱</h2>
+          <p>现场开始前点一次，即可恢复固定商品、配送中订单、客服咨询、上传凭证、售后申请与客服工单。</p>
+        </div>
+        <span className={`roadshow-ready-state ${ready ? 'ready' : ''}`}>{ready ? '演示场景已就绪' : '尚未初始化'}</span>
+      </section>
+
+      <div className="roadshow-sandbox-grid">
+        <Panel title="一键恢复" description="建议每次路演开始前执行">
+          <div className="roadshow-reset-card">
+            <div className="roadshow-reset-flow">
+              {['体验账号', '真实商品', '配送订单', '客服会话', '售后申请'].map((label, index) => (
+                <span key={label}><strong>{index + 1}</strong>{label}</span>
+              ))}
+            </div>
+            <p>仅删除并重建 roadshow-demo 前缀的固定记录，不会修改正常用户、订单、商品库存或支付数据。</p>
+            <button className="primary-button" disabled={resetting} type="button" onClick={() => void onReset()}>
+              <Icon name="refresh" />
+              {resetting ? '正在恢复...' : ready ? '重新恢复演示场景' : '初始化演示场景'}
+            </button>
+          </div>
+        </Panel>
+
+        <Panel title="前台体验账号" description="用于模拟小程序登录">
+          <div className="roadshow-credentials">
+            <span>手机号<strong>{phone}</strong></span>
+            <span>密码<strong>{password}</strong></span>
+            <button className="ghost-button" type="button" onClick={() => void copyCredentials()}>复制账号密码</button>
+          </div>
+        </Panel>
+      </div>
+
+      <Panel title="固定演示场景" description={ready ? `最近恢复：${formatDate(stringValue(status, 'lastResetAt'))}` : '完成初始化后显示'}>
+        <div className="roadshow-scenario-list">
+          <article><span>商品</span><strong>{stringValue(status, 'productName', '自动选择一件真实在售商品')}</strong><small>复用真实图片、名称和价格</small></article>
+          <article><span>订单</span><strong>无人车配送中</strong><small>{shortId(stringValue(status, 'orderId')) || '固定演示订单'}</small></article>
+          <article><span>客服</span><strong>包装破损咨询</strong><small>包含已读、未读、凭证和分配坐席</small></article>
+          <article><span>售后</span><strong>5元补偿协商</strong><small>{shortId(stringValue(status, 'afterSaleId')) || '固定售后申请'}</small></article>
+        </div>
+      </Panel>
     </div>
   );
 }
@@ -13014,6 +13265,7 @@ function App() {
   const productFilterDebounceRef = useRef<number | null>(null);
   const productFilterResolveRef = useRef<(() => void) | null>(null);
   const supportRefreshInFlightRef = useRef(false);
+  const operationsCriticalRef = useRef(new Set<string>());
 
   const currentModule = useMemo(
     () => adminModules.find(module => module.key === activeModuleKey) || adminModules[0],
@@ -14758,6 +15010,90 @@ function App() {
     });
   };
 
+  const assignSupportSession = async (id: string, agentId: string) => {
+    if (!agentId) return;
+    const currentSession = data.supportSessions.find(item => stringValue(item, 'id') === id);
+    const previousAgentId = stringValue(currentSession, 'assignedAgentId');
+    const actionLabel = previousAgentId ? '客服会话转接' : '客服会话分配';
+    await runAction(actionLabel, async () => {
+      await apiPut<JsonRecord>(`/api/admin/mall/support/sessions/${id}`, {
+        assignedAgentId: agentId,
+      });
+      const nextSessions = await apiGet<JsonRecord[]>('/api/admin/mall/support/sessions', undefined, { fresh: true });
+      setData(current => ({ ...current, supportSessions: nextSessions }));
+    });
+  };
+
+  const loadOperationsAlerts = useCallback(async () => {
+    const alerts = await apiGet<JsonRecord[]>('/api/admin/mall/operations/alerts', undefined, { fresh: true });
+    setData(current => ({ ...current, operationsAlerts: alerts }));
+    return alerts;
+  }, []);
+
+  useEffect(() => {
+    if (activePageKey !== 'mall.operationsAlerts') return undefined;
+    const pollAlerts = async () => {
+      try {
+        const alerts = await loadOperationsAlerts();
+        const criticalIds = new Set(
+          alerts
+            .filter(alert => stringValue(alert, 'severity') === 'critical' && stringValue(alert, 'status') === 'open')
+            .map(alert => stringValue(alert, 'id')),
+        );
+        const hasNewCritical = Array.from(criticalIds).some(id => id && !operationsCriticalRef.current.has(id));
+        if (hasNewCritical && operationsCriticalRef.current.size > 0) {
+          showMessage('warning', '检测到新的严重业务告警，请及时处理');
+        }
+        operationsCriticalRef.current = criticalIds;
+      } catch {
+        // 后台轮询失败时保留当前列表，下一轮自动重试。
+      }
+    };
+    void pollAlerts();
+    const timer = window.setInterval(() => void pollAlerts(), 15000);
+    return () => window.clearInterval(timer);
+  }, [activePageKey, loadOperationsAlerts, showMessage]);
+
+  const refreshOperationsAlerts = async () => {
+    await runAction('业务异常巡检', async () => {
+      await loadOperationsAlerts();
+    });
+  };
+
+  const updateOperationsAlert = async (id: string, status: 'acknowledged' | 'resolved') => {
+    await runAction(status === 'acknowledged' ? '告警接手' : '告警解决', async () => {
+      const updated = await apiPut<JsonRecord>(`/api/admin/mall/operations/alerts/${id}`, { status });
+      setData(current => ({
+        ...current,
+        operationsAlerts: current.operationsAlerts.map(alert => (
+          stringValue(alert, 'id') === id ? { ...alert, ...updated } : alert
+        )),
+      }));
+    });
+  };
+
+  const resetRoadshowSandbox = async () => {
+    if (!window.confirm('确认恢复路演演示场景？只会重建固定的 roadshow-demo 数据，不影响真实业务数据。')) return;
+    await runAction('路演数据恢复', async () => {
+      const result = await apiPost<JsonRecord>('/api/admin/mall/roadshow/reset');
+      const [roadshowStatus, supportSessions, supportTickets, mallAfterSales, mallOrders] = await Promise.all([
+        apiGet<JsonRecord>('/api/admin/mall/roadshow/status', undefined, { fresh: true }),
+        apiGet<JsonRecord[]>('/api/admin/mall/support/sessions', undefined, { fresh: true }),
+        apiGet<JsonRecord[]>('/api/admin/mall/support/tickets', undefined, { fresh: true }),
+        apiGet<JsonRecord[]>('/api/admin/mall/after-sales', undefined, { fresh: true }),
+        apiGet<JsonRecord[]>('/api/admin/mall/orders', undefined, { fresh: true }),
+      ]);
+      setData(current => ({
+        ...current,
+        roadshowStatus: { ...roadshowStatus, ...result, ready: true },
+        supportSessions,
+        supportTickets,
+        mallAfterSales,
+        mallOrders,
+      }));
+    });
+  };
+
   const openSupportAfterSales = (identifier: string) => {
     setSupportFilters(current => ({ ...current, keyword: identifier, status: 'open' }));
     setActiveModuleKey('mall');
@@ -15283,6 +15619,24 @@ function App() {
         />
       );
     }
+    if (activePageKey === 'mall.operationsAlerts') {
+      return (
+        <OperationsAlertsSection
+          alerts={data.operationsAlerts}
+          onRefresh={refreshOperationsAlerts}
+          onUpdate={updateOperationsAlert}
+        />
+      );
+    }
+    if (activePageKey === 'mall.roadshowSandbox') {
+      return (
+        <RoadshowSandboxSection
+          onReset={resetRoadshowSandbox}
+          resetting={busy === '路演数据恢复'}
+          status={data.roadshowStatus}
+        />
+      );
+    }
     if (activePageKey === 'mall.deliveryRules') {
       return (
         <MallDeliveryRulesSection
@@ -15322,6 +15676,7 @@ function App() {
         <SupportDataSection
           afterSales={rawAfterSalesQueue}
           knowledge={data.supportKnowledge}
+          quality={data.supportQuality}
           sessions={data.supportSessions}
           stats={supportStats}
           tickets={data.supportTickets}
@@ -15331,6 +15686,8 @@ function App() {
     if (activePageKey === 'mall.support' || activePageKey === 'vehicle.support') {
       return (
         <SupportSection
+          agents={data.supportAgents}
+          currentAgentId={session?.user.id || ''}
           filters={supportFilters}
           form={supportForm}
           messages={supportMessages}
@@ -15346,6 +15703,7 @@ function App() {
           onSelectSession={selectSession}
           onSendMessage={sendSupportMessage}
           onUpdateSessionStatus={updateSupportSessionStatus}
+          onAssignSession={assignSupportSession}
         />
       );
     }

@@ -3292,6 +3292,64 @@ body.reco-mall-h5 .taro_page {
   font-weight: 700;
 }
 
+.mall-support-rating-card {
+  display: grid;
+  gap: 11PX;
+  margin-top: 14PX;
+  padding: 14PX;
+  background: #ffffff;
+  border: 1PX solid #cce7c7;
+  border-radius: 12PX;
+}
+
+.mall-support-rating-complete {
+  display: grid;
+  gap: 7PX;
+  text-align: center;
+}
+
+.mall-support-rating-stars {
+  display: flex;
+  gap: 4PX;
+  color: #ff9f2f;
+  font-size: 24PX;
+  letter-spacing: 1PX;
+}
+
+.mall-support-rating-complete .mall-support-rating-stars {
+  justify-content: center;
+}
+
+.mall-support-rating-stars-selectable text {
+  padding: 2PX;
+}
+
+.mall-support-rating-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7PX;
+}
+
+.mall-support-rating-tag-active {
+  color: #167b35;
+  background: #eefbea;
+  border-color: #63bf54;
+}
+
+.mall-support-rating-input {
+  min-height: 40PX;
+  padding: 0 10PX;
+  background: #f7faf6;
+  border: 1PX solid #cce7c7;
+  border-radius: 8PX;
+}
+
+.mall-support-rating-submit {
+  width: 100%;
+  color: #ffffff;
+  background: #63bf54;
+}
+
 .mall-small-button {
   min-height: 34PX;
   padding: 0 8PX;

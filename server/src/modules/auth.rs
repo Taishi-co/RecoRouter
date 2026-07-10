@@ -221,8 +221,14 @@ struct WechatBindingUserRow {
 
 #[derive(Debug, FromRow)]
 struct SessionUserRow {
+    id: String,
     role: Option<String>,
     status: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct AdminPrincipal {
+    pub id: String,
 }
 
 #[derive(Debug, FromRow)]
@@ -795,7 +801,7 @@ fn auth_response_from_row(row: AuthUserRow, token: String) -> AuthResponse {
 pub async fn admin_guard<S>(
     State(state): State<AppState<S>>,
     headers: HeaderMap,
-    request: Request<Body>,
+    mut request: Request<Body>,
     next: Next,
 ) -> ApiResult<Response>
 where
@@ -811,6 +817,10 @@ where
     if user.role.as_deref() != Some("admin") {
         return Err(ApiError::Forbidden("需要管理员权限".to_string()));
     }
+
+    request
+        .extensions_mut()
+        .insert(AdminPrincipal { id: user.id });
 
     Ok(next.run(request).await)
 }
@@ -831,7 +841,7 @@ fn bearer_token(headers: &HeaderMap) -> ApiResult<&str> {
 async fn session_user(pool: &PgPool, token: &str) -> ApiResult<SessionUserRow> {
     sqlx::query_as::<_, SessionUserRow>(
         r#"
-        SELECT u.role, u.status
+        SELECT u.id, u.role, u.status
         FROM admin_sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.token = $1

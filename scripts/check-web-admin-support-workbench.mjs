@@ -12,6 +12,8 @@ const adminStyles = read('src/web-admin/styles.css');
 const mallSupport = read('src/pages/mall/support/index.tsx');
 const mallService = read('src/services/mall.ts');
 const mallBackend = read('server/src/modules/mall.rs');
+const authBackend = read('server/src/modules/auth.rs');
+const supportMigration = read('server/migrations/0046_mall_support_operations_maturity.sql');
 const packageJson = JSON.parse(read('package.json'));
 const supportSection = adminMain.match(/function SupportSection\([\s\S]*?\nfunction AfterSalesSection\(/)?.[0] || '';
 
@@ -60,6 +62,14 @@ assert(/require_non_empty\(query\.user_id, "用户ID不能为空"\)/.test(mallBa
 assert(/ensure_support_session_owner/.test(mallBackend), 'Public support messages must verify session ownership.');
 assert(/用户端不能发送客服坐席消息/.test(mallBackend), 'Public users must not spoof agent replies.');
 assert(/upload_support_evidence/.test(mallBackend), 'Backend must persist real support evidence uploads.');
+assert(/AdminPrincipal/.test(authBackend) && /extensions_mut\(\)[\s\S]*?\.insert/.test(authBackend), 'Admin middleware must expose the authenticated agent identity.');
+assert(/admin_list_support_agents/.test(mallBackend) && /onAssignSession/.test(supportSection), 'Support workbench must support real agent assignment and transfer.');
+assert(/read_at/.test(supportMigration) && /support-message-read/.test(supportSection), 'Support messages must persist and display read state.');
+assert(/upsert_support_satisfaction/.test(mallBackend) && /rateSupportSession/.test(mallSupport), 'Resolved support sessions must accept real customer satisfaction ratings.');
+assert(!/'satisfaction',\s*96/.test(mallBackend), 'Support satisfaction must not be a hard-coded demo number.');
+assert(/admin_support_quality/.test(mallBackend) && /supportQuality/.test(adminMain), 'Admin must expose agent quality and SLA signals.');
+assert(/admin_reset_roadshow/.test(mallBackend) && /RoadshowSandboxSection/.test(adminMain), 'Admin must expose an isolated one-click roadshow reset.');
+assert(/refresh_operations_alerts/.test(mallBackend) && /OperationsAlertsSection/.test(adminMain), 'Admin must monitor payment, refund, delivery, and upload anomalies.');
 
 assert(/uploadSupportEvidence/.test(mallSupport) && /evidenceImages/.test(mallSupport), 'Customer support must upload and render real evidence images.');
 assert(/Network\.uploadFile/.test(mallService), 'Support evidence must use the shared upload transport.');
