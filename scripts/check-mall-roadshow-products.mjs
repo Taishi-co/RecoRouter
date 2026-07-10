@@ -4,8 +4,12 @@ import { join } from 'node:path'
 
 const root = process.cwd()
 const cleanupMigrationPath = join(root, 'server/migrations/0044_mall_roadshow_product_cleanup.sql')
+const campaignCleanupMigrationPath = join(root, 'server/migrations/0045_mall_roadshow_campaign_cleanup.sql')
 const categoryOptions = read('src/pages/mall/category-options.ts')
 const cleanupMigration = existsSync(cleanupMigrationPath) ? readFileSync(cleanupMigrationPath, 'utf8') : ''
+const campaignCleanupMigration = existsSync(campaignCleanupMigrationPath)
+  ? readFileSync(campaignCleanupMigrationPath, 'utf8')
+  : ''
 
 const failures = []
 
@@ -45,6 +49,13 @@ for (const categoryCode of ['goods', 'expired_milk']) {
 
 if (!/category\.status !== 'inactive' && category\.status !== 'deleted'/.test(categoryOptions)) {
   failures.push('mall category options must filter deleted categories')
+}
+
+if (!campaignCleanupMigration.includes('0826bd10-ee84-4e1d-b90b-4cd94ce2cc23')
+  || !campaignCleanupMigration.includes("status = 'inactive'")
+  || !campaignCleanupMigration.includes("= '一口价2'")
+  || !campaignCleanupMigration.includes('= 5')) {
+  failures.push('roadshow campaign cleanup must retire the malformed five-cent fixed-price campaign')
 }
 
 if (failures.length > 0) {
