@@ -10,8 +10,10 @@ export interface MallGetOptions {
 const MALL_GET_CACHE_TTL_MS = 30_000
 const MALL_FAST_GET_CACHE_TTL_MS = 8_000
 const MALL_STATIC_GET_CACHE_TTL_MS = 60_000
+const MALL_GET_CACHE_MAX_ENTRIES = 200
 const mallGetCache = new Map<string, { expiresAt: number; value: unknown }>()
 const mallGetInFlight = new Map<string, Promise<unknown>>()
+let mallGetCacheEpoch = 0
 
 export interface MallCategory {
   id: string
@@ -1669,13 +1671,19 @@ async function cachedApiGet<T>(
   const inFlight = mallGetInFlight.get(cacheKey)
   if (inFlight) return inFlight as Promise<T>
 
-  const request = apiGet<T>(url, data)
+  const requestEpoch = mallGetCacheEpoch
+  let request: Promise<T>
+  request = apiGet<T>(url, data)
     .then((value) => {
-      mallGetCache.set(cacheKey, { value, expiresAt: Date.now() + ttlMs })
+      if (requestEpoch === mallGetCacheEpoch) {
+        cacheMallGet(cacheKey, value, ttlMs)
+      }
       return value
     })
     .finally(() => {
-      mallGetInFlight.delete(cacheKey)
+      if (mallGetInFlight.get(cacheKey) === request) {
+        mallGetInFlight.delete(cacheKey)
+      }
     })
 
   mallGetInFlight.set(cacheKey, request)
@@ -1714,8 +1722,20 @@ async function apiDelete<T>(url: string): Promise<T> {
 }
 
 export function clearMallGetCache() {
+  mallGetCacheEpoch += 1
   mallGetCache.clear()
   mallGetInFlight.clear()
+}
+
+function cacheMallGet(cacheKey: string, value: unknown, ttlMs: number) {
+  if (mallGetCache.size >= MALL_GET_CACHE_MAX_ENTRIES) {
+    const oldestKey = mallGetCache.keys().next().value
+    if (oldestKey) mallGetCache.delete(oldestKey)
+  }
+  mallGetCache.set(cacheKey, {
+    expiresAt: Date.now() + ttlMs,
+    value,
+  })
 }
 
 function unwrapApiData<T>(statusCode: number, rawData: unknown): T {

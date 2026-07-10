@@ -11,11 +11,9 @@ const fallbackMallCategoryOptions: MallCategoryOption[] = [
   { code: 'vegetable', label: '蔬菜' },
   { code: 'bakery', label: '早餐烘焙' },
   { code: 'bundle', label: '家庭量贩' },
-  { code: 'goods', label: '周边' },
   { code: 'drink', label: '饮品' },
   { code: 'beverages', label: '酒水' },
   { code: 'dairy', label: '乳制品' },
-  { code: 'expired_milk', label: '临期牛奶' },
   { code: 'snack', label: '零食' },
   { code: 'daily_care', label: '日化洗护' },
   { code: 'condiment', label: '调味品' },
@@ -28,7 +26,7 @@ export function mallCategoryOptionsFromCategories(
   options: { includeAll?: boolean } = {},
 ) {
   const activeCategories = categories
-    .filter((category) => category.status !== 'inactive')
+    .filter((category) => category.status !== 'inactive' && category.status !== 'deleted')
     .sort((left, right) => (left.sortOrder || 0) - (right.sortOrder || 0))
     .map((category) => ({
       code: category.code,

@@ -18,6 +18,9 @@ const webAdmin = read('src/web-admin/main.tsx')
 
 expect(/MALL_GET_CACHE_TTL_MS/.test(mallService), 'mall service must define a short GET cache TTL')
 expect(/mallGetInFlight/.test(mallService), 'mall service must deduplicate in-flight GET requests')
+expect(/MALL_GET_CACHE_MAX_ENTRIES/.test(mallService), 'mall service must bound GET cache growth')
+expect(/mallGetCacheEpoch/.test(mallService), 'mall service must prevent pre-mutation GETs from repopulating stale cache')
+expect(/mallGetInFlight\.get\(cacheKey\) === request/.test(mallService), 'mall service must not let an old request clear a newer in-flight request')
 expect(/cachedApiGet/.test(mallService), 'mall service must route cacheable GET calls through cachedApiGet')
 expect(/clearMallGetCache/.test(mallService), 'mall service must expose cache invalidation for mutations')
 expect(/apiPost[\s\S]*clearMallGetCache/.test(mallService), 'mall POST mutations must invalidate stale GET cache')
@@ -49,8 +52,13 @@ expect(/loadData\(\{\s*refreshAddresses:\s*false/.test(cartPage), 'cart item mut
 expect(/loadAddresses/.test(cartPage), 'cart page should load addresses separately for reuse')
 
 expect(/WEB_ADMIN_GET_CACHE_TTL_MS/.test(webAdmin), 'web admin must define a GET cache TTL')
+expect(/WEB_ADMIN_GET_CACHE_MAX_ENTRIES/.test(webAdmin), 'web admin must bound GET cache growth')
 expect(/adminGetInFlight/.test(webAdmin), 'web admin must deduplicate in-flight GET requests')
 expect(/invalidateAdminGetCache/.test(webAdmin), 'web admin mutations must invalidate cached GET data')
+expect(/adminGetCacheEpoch/.test(webAdmin), 'web admin must prevent pre-mutation GETs from repopulating stale cache')
+expect(/getStoredAdminSession\(\)\?\.user\.id \|\| 'anonymous'/.test(webAdmin), 'web admin cache keys must be isolated by admin session')
+expect(/pathname\.startsWith\('\/api\/auth\/'\)/.test(webAdmin), 'web admin captcha and auth reads must bypass cache')
+expect(/adminGetInFlight\.get\(cacheKey\) === request/.test(webAdmin), 'web admin must not let an old request clear a newer in-flight request')
 expect(/apiGet<[\s\S]*options/.test(webAdmin), 'web admin apiGet should support cache/fresh options')
 expect(/productFilterDebounceRef\.current\s*=\s*window\.setTimeout/.test(webAdmin), 'web admin product filters should debounce list refreshes')
 

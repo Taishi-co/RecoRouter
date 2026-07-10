@@ -24,10 +24,12 @@ if (!/function\s+cleanQueryData\s*\(/.test(serviceSource)) {
   throw new Error('Mall services must clean optional GET query params before requesting products')
 }
 
-if (
-  !/Network\.request\s*\(\s*\{\s*url,\s*method:\s*'GET',\s*data:\s*cleanQueryData\s*\(\s*data\s*\)/.test(
-    serviceSource,
-  )
-) {
+const cleansInline = /Network\.request\s*\(\s*\{\s*url,\s*method:\s*'GET',\s*data:\s*cleanQueryData\s*\(\s*data\s*\)/.test(
+  serviceSource,
+)
+const cleansBeforeCacheLookup = /const query = cleanQueryData\(data\)/.test(serviceSource)
+  && /requestApiGet<T>\(url, query\)/.test(serviceSource)
+
+if (!cleansInline && !cleansBeforeCacheLookup) {
   throw new Error('Mall GET requests must not send undefined optional params as query strings')
 }

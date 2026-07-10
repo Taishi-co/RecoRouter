@@ -2298,6 +2298,181 @@ td span {
   line-height: 1.4;
 }
 
+.marketing-agent-page {
+  gap: 16px;
+}
+
+.marketing-agent-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.marketing-agent-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.marketing-agent-input label {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  color: #2f3a2d;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.marketing-agent-input textarea,
+.marketing-agent-input select {
+  width: 100%;
+  border: 1px solid #dfead9;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1f2d1f;
+  font: inherit;
+  font-weight: 700;
+  outline: none;
+}
+
+.marketing-agent-input textarea {
+  min-height: 96px;
+  padding: 10px 12px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.marketing-agent-input select {
+  height: 42px;
+  padding: 0 12px;
+}
+
+.marketing-agent-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.marketing-agent-result-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.75fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.marketing-agent-answer {
+  display: grid;
+  gap: 10px;
+}
+
+.marketing-agent-answer p {
+  margin: 0;
+  color: #40516a;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.marketing-agent-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.marketing-agent-meta small {
+  color: #697386;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.agent-warning {
+  padding: 10px 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  background: #fff7ed;
+  color: #9a3412 !important;
+  font-weight: 800;
+}
+
+.marketing-agent-suggestions {
+  display: grid;
+  gap: 10px;
+}
+
+.marketing-agent-suggestion {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #dfead9;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.marketing-agent-suggestion strong,
+.marketing-agent-suggestion small {
+  display: block;
+}
+
+.marketing-agent-suggestion small {
+  margin-top: 4px;
+  color: #64725f;
+  font-weight: 700;
+}
+
+.marketing-agent-suggestion p {
+  margin: 0;
+  color: #40516a;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.compact-rank-list {
+  display: grid;
+  gap: 8px;
+}
+
+.compact-rank-list article {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid #e6ebf2;
+}
+
+.compact-rank-list article:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.compact-rank-list span {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #eef8ed;
+  color: #2f8f3d;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.compact-rank-list strong {
+  min-width: 0;
+  color: #1f2d1f;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-rank-list small {
+  color: #697386;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .fixed-price-badge-preview,
 .fixed-price-badge-editor strong {
   display: inline-flex;
@@ -4330,6 +4505,10 @@ textarea:focus {
   .stat-grid,
   .stat-grid.compact,
   .login-captcha-row,
+  .marketing-agent-shell,
+  .marketing-agent-input,
+  .marketing-agent-metrics,
+  .marketing-agent-result-grid,
   .coverage-grid,
   .split-grid,
   .support-layout,
@@ -4404,6 +4583,15 @@ textarea:focus {
 
   .operations-risk-item span {
     text-align: left;
+  }
+
+  .compact-rank-list article {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+
+  .compact-rank-list small {
+    grid-column: 2;
+    white-space: normal;
   }
 
   .modal-backdrop {
