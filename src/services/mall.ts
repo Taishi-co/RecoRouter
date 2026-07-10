@@ -1534,28 +1534,48 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
   await apiPut('/api/notifications/mark-all-read', { user_id: userId })
 }
 
-export async function listSupportSessions(userId?: string): Promise<SupportSession[]> {
-  return apiGet('/api/support/sessions', userId ? { userId } : undefined)
+export async function listSupportSessions(userId: string): Promise<SupportSession[]> {
+  return apiGet('/api/support/sessions', { userId })
 }
 
 export async function createSupportSession(data: {
   userId: string
   channel: string
   topic: string
-  assignedAgentId?: string
 }): Promise<SupportSession> {
   return apiPost('/api/support/sessions', data)
 }
 
-export async function listSupportMessages(sessionId: string): Promise<SupportMessage[]> {
-  return apiGet(`/api/support/sessions/${sessionId}/messages`)
+export async function listSupportMessages(sessionId: string, userId: string): Promise<SupportMessage[]> {
+  return apiGet(`/api/support/sessions/${sessionId}/messages`, { userId })
 }
 
-export async function updateSupportSessionStatus(
+export async function uploadSupportEvidence(
   sessionId: string,
-  data: { status: 'open' | 'resolved' | 'closed'; lastMessage?: string; assignedAgentId?: string },
-): Promise<SupportSession> {
-  return apiPut(`/api/support/sessions/${sessionId}`, data)
+  userId: string,
+  filePath: string,
+): Promise<{ fileKey: string; url: string }> {
+  const upload = await Network.uploadFile({
+    url: `/api/support/sessions/${encodeURIComponent(sessionId)}/evidence?userId=${encodeURIComponent(userId)}`,
+    filePath,
+    name: 'file',
+  })
+  if (upload.statusCode < 200 || upload.statusCode >= 300) {
+    throw new Error(`凭证上传失败（${upload.statusCode}）`)
+  }
+  let payload: { code?: number; message?: string; data?: { fileKey?: string; url?: string } }
+  try {
+    payload = JSON.parse(String(upload.data || '{}'))
+  } catch {
+    throw new Error('凭证上传响应格式错误')
+  }
+  if (payload.code !== 200 || !payload.data?.url) {
+    throw new Error(payload.message || '凭证上传失败')
+  }
+  return {
+    fileKey: payload.data.fileKey || payload.data.url,
+    url: payload.data.url,
+  }
 }
 
 export async function createSupportMessage(sessionId: string, data: {
@@ -1567,8 +1587,8 @@ export async function createSupportMessage(sessionId: string, data: {
   return apiPost(`/api/support/sessions/${sessionId}/messages`, data)
 }
 
-export async function listSupportTickets(userId?: string): Promise<SupportTicket[]> {
-  return apiGet('/api/support/tickets', userId ? { userId } : undefined)
+export async function listSupportTickets(userId: string): Promise<SupportTicket[]> {
+  return apiGet('/api/support/tickets', { userId })
 }
 
 export async function createSupportTicket(data: {
@@ -1583,29 +1603,62 @@ export async function createSupportTicket(data: {
   return apiPost('/api/support/tickets', data)
 }
 
-export async function updateSupportTicket(id: string, data: Partial<SupportTicket>) {
-  return apiPut<SupportTicket>(`/api/support/tickets/${id}`, data)
-}
-
 export async function listSupportKnowledge(): Promise<SupportKnowledge[]> {
   return apiGet('/api/support/knowledge')
 }
 
-export async function createSupportKnowledge(data: {
+export async function listAdminSupportSessions(): Promise<SupportSession[]> {
+  return apiGet('/api/admin/mall/support/sessions')
+}
+
+export async function listAdminSupportMessages(sessionId: string): Promise<SupportMessage[]> {
+  return apiGet(`/api/admin/mall/support/sessions/${sessionId}/messages`)
+}
+
+export async function createAdminSupportMessage(sessionId: string, data: {
+  senderId?: string
+  senderRole: 'agent' | 'admin' | 'support' | 'operator'
+  content: string
+  metadata?: Record<string, unknown>
+}): Promise<SupportMessage> {
+  return apiPost(`/api/admin/mall/support/sessions/${sessionId}/messages`, data)
+}
+
+export async function listAdminSupportTickets(): Promise<SupportTicket[]> {
+  return apiGet('/api/admin/mall/support/tickets')
+}
+
+export async function createAdminSupportTicket(data: {
+  userId: string
+  sessionId?: string
+  orderId?: string
+  category: string
+  priority?: string
+  title: string
+  description?: string
+}): Promise<SupportTicket> {
+  return apiPost('/api/admin/mall/support/tickets', data)
+}
+
+export async function updateAdminSupportTicket(id: string, data: Partial<SupportTicket>) {
+  return apiPut<SupportTicket>(`/api/admin/mall/support/tickets/${id}`, data)
+}
+
+export async function listAdminSupportKnowledge(): Promise<SupportKnowledge[]> {
+  return apiGet('/api/admin/mall/support/knowledge')
+}
+
+export async function createAdminSupportKnowledge(data: {
   title: string
   category: string
   content: string
   status?: string
 }): Promise<SupportKnowledge> {
-  return apiPost('/api/support/knowledge', data)
+  return apiPost('/api/admin/mall/support/knowledge', data)
 }
 
-export async function updateSupportKnowledge(id: string, data: Partial<SupportKnowledge>) {
-  return apiPut<SupportKnowledge>(`/api/support/knowledge/${id}`, data)
-}
-
-export async function supportMetrics(): Promise<Record<string, number>> {
-  return apiGet('/api/support/metrics')
+export async function adminSupportMetrics(): Promise<Record<string, number>> {
+  return apiGet('/api/admin/mall/support/metrics')
 }
 
 function normalizeMallAddressInput(data: CreateMallAddressInput): Record<string, unknown> {

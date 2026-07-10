@@ -4014,6 +4014,474 @@ textarea:focus {
   gap: 14px;
 }
 
+.support-inbox-page {
+  gap: 12px;
+}
+
+.support-inbox-toolbar,
+.support-inbox-controls,
+.support-inbox-list-card,
+.support-chat-card,
+.support-customer-card {
+  background: #ffffff;
+  border: 1px solid #e1e7ef;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(20, 32, 50, 0.05);
+}
+
+.support-inbox-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+}
+
+.support-inbox-toolbar h2,
+.support-inbox-toolbar p {
+  margin: 0;
+}
+
+.support-inbox-toolbar h2 {
+  margin-top: 3px;
+  color: #172033;
+  font-size: 22px;
+}
+
+.support-inbox-toolbar p {
+  margin-top: 5px;
+  color: #697386;
+  font-size: 13px;
+}
+
+.support-inbox-eyebrow {
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.support-inbox-summary {
+  display: flex;
+  gap: 10px;
+}
+
+.support-inbox-summary span {
+  min-width: 112px;
+  padding: 9px 12px;
+  color: #526078;
+  font-size: 12px;
+  text-align: center;
+  background: #f4f8f7;
+  border-radius: 9px;
+}
+
+.support-inbox-summary strong {
+  color: #0f766e;
+  font-size: 18px;
+}
+
+.support-inbox-controls {
+  display: grid;
+  grid-template-columns: auto minmax(260px, 1fr) auto;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.support-inbox-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  background: #f2f5f8;
+  border-radius: 9px;
+}
+
+.support-inbox-tabs button {
+  padding: 8px 12px;
+  color: #526078;
+  font-size: 13px;
+  font-weight: 700;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+}
+
+.support-inbox-tabs button.active {
+  color: #0f766e;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(20, 32, 50, 0.08);
+}
+
+.support-inbox-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 12px;
+  background: #f8fafc;
+  border: 1px solid #e1e7ef;
+  border-radius: 9px;
+}
+
+.support-inbox-search input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+}
+
+.support-inbox-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(480px, 1.35fr) minmax(280px, 0.76fr);
+  gap: 12px;
+  min-height: 680px;
+}
+
+.support-inbox-list-card,
+.support-chat-card,
+.support-customer-card {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.support-inbox-list-card > header,
+.support-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 62px;
+  padding: 13px 15px;
+  border-bottom: 1px solid #e7ecf2;
+}
+
+.support-inbox-list-card > header span {
+  color: #697386;
+  font-size: 12px;
+}
+
+.support-inbox-list {
+  max-height: 680px;
+  overflow-y: auto;
+}
+
+.support-inbox-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+  padding: 13px 14px;
+  color: #172033;
+  text-align: left;
+  background: #ffffff;
+  border: 0;
+  border-bottom: 1px solid #eef1f5;
+}
+
+.support-inbox-row:hover,
+.support-inbox-row.selected {
+  background: #eff8f6;
+}
+
+.support-inbox-row.selected {
+  box-shadow: inset 3px 0 #0f766e;
+}
+
+.support-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 800;
+  background: linear-gradient(145deg, #0f766e, #2f9b82);
+  border-radius: 50%;
+}
+
+.support-avatar.large {
+  width: 46px;
+  height: 46px;
+  font-size: 18px;
+}
+
+.support-inbox-row-copy,
+.support-inbox-row-title,
+.support-inbox-row-meta,
+.support-inbox-row-message,
+.support-inbox-row-order {
+  display: block;
+  min-width: 0;
+}
+
+.support-inbox-row-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.support-inbox-row-title strong,
+.support-inbox-row-title small,
+.support-inbox-row-meta,
+.support-inbox-row-message,
+.support-inbox-row-order {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.support-inbox-row-title strong {
+  font-size: 14px;
+}
+
+.support-inbox-row-title small,
+.support-inbox-row-meta,
+.support-inbox-row-order {
+  color: #7a8598;
+  font-size: 11px;
+}
+
+.support-inbox-row-message {
+  margin-top: 5px;
+  color: #45536a;
+  font-size: 12px;
+}
+
+.support-inbox-row-order {
+  margin-top: 5px;
+}
+
+.support-unread-badge {
+  position: absolute;
+  top: 36px;
+  left: 40px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 17px;
+  text-align: center;
+  background: #ef4444;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+}
+
+.support-chat-card {
+  display: grid;
+  grid-template-rows: auto minmax(360px, 1fr) auto auto;
+}
+
+.support-chat-header > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.support-chat-header span {
+  color: #697386;
+  font-size: 12px;
+}
+
+.support-chat-messages {
+  min-height: 0;
+  max-height: 510px;
+  border: 0;
+  border-radius: 0;
+}
+
+.support-message-images {
+  display: grid;
+  grid-template-columns: repeat(3, 74px);
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.support-message-images img {
+  display: block;
+  width: 74px;
+  height: 74px;
+  object-fit: cover;
+  border-radius: 7px;
+}
+
+.support-quick-replies {
+  padding: 10px 12px 0;
+}
+
+.support-message-composer {
+  margin: 10px 12px 12px;
+}
+
+.support-customer-card {
+  display: grid;
+  align-content: start;
+}
+
+.support-customer-profile {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 16px;
+  border-bottom: 1px solid #e7ecf2;
+}
+
+.support-customer-profile div,
+.support-customer-profile strong,
+.support-customer-profile span {
+  display: block;
+  min-width: 0;
+}
+
+.support-customer-profile span {
+  margin-top: 4px;
+  color: #697386;
+  font-size: 12px;
+}
+
+.support-order-card,
+.support-service-tip {
+  margin: 13px;
+  padding: 14px;
+  background: #f8fafc;
+  border: 1px solid #e1e7ef;
+  border-radius: 10px;
+}
+
+.support-order-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: #697386;
+  font-size: 12px;
+}
+
+.support-order-card > strong,
+.support-order-card > p {
+  display: block;
+  margin: 0;
+}
+
+.support-order-card > p {
+  margin-top: 6px;
+  color: #526078;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.support-order-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.support-order-facts span {
+  display: grid;
+  gap: 3px;
+  color: #7a8598;
+  font-size: 11px;
+}
+
+.support-order-facts strong {
+  color: #172033;
+  font-size: 14px;
+}
+
+.support-after-sale-alert {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 10px;
+  color: #8a5a18;
+  font-size: 12px;
+  background: #fff7e8;
+  border: 1px solid #f1d29f;
+  border-radius: 8px;
+}
+
+.support-context-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 13px;
+}
+
+.support-service-tip {
+  margin-top: 0;
+  color: #40516a;
+  background: #f0f8f6;
+  border-color: #cfe5df;
+}
+
+.support-service-tip p {
+  margin: 7px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+@media (max-width: 1280px) {
+  .support-inbox-layout {
+    grid-template-columns: minmax(260px, 0.8fr) minmax(440px, 1.35fr);
+  }
+
+  .support-customer-card {
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(220px, 0.6fr) minmax(360px, 1fr) minmax(240px, 0.7fr);
+    align-items: start;
+  }
+
+  .support-customer-profile {
+    border-right: 1px solid #e7ecf2;
+    border-bottom: 0;
+  }
+
+  .support-order-card,
+  .support-service-tip {
+    margin: 13px 13px 13px 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .support-inbox-toolbar,
+  .support-inbox-controls {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .support-inbox-summary,
+  .support-inbox-tabs {
+    flex-wrap: wrap;
+  }
+
+  .support-inbox-layout,
+  .support-customer-card {
+    grid-template-columns: 1fr;
+  }
+
+  .support-customer-card {
+    grid-column: auto;
+  }
+
+  .support-customer-profile {
+    border-right: 0;
+    border-bottom: 1px solid #e7ecf2;
+  }
+
+  .support-order-card,
+  .support-service-tip {
+    margin: 13px;
+  }
+}
+
 .support-data-page {
   gap: 14px;
 }

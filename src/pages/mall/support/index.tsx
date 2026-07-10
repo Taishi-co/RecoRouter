@@ -10,6 +10,7 @@ import {
   listSupportMessages,
   listSupportSessions,
   resolveMallImageUrl,
+  uploadSupportEvidence,
   type MallOrder,
   type SupportMessage,
   type SupportSession,
@@ -52,6 +53,7 @@ export default function MallSupportCenter() {
   const [order, setOrder] = useState<MallSupportOrder | null>(null)
   const [error, setError] = useState('')
   const [draft, setDraft] = useState('')
+  const [uploading, setUploading] = useState(false)
   const userId = (Taro.getStorageSync('userInfo') as StoredUser | undefined)?.id || ''
   const orderId = Taro.getCurrentInstance().router?.params?.orderId
   const sessionId = Taro.getCurrentInstance().router?.params?.sessionId
@@ -75,7 +77,7 @@ export default function MallSupportCenter() {
     if (!selectedSession?.id) return undefined
     const timer = setInterval(() => {
       loadMessages(selectedSession, true)
-    }, 1000)
+    }, 4000)
     return () => clearInterval(timer)
   }, [selectedSession?.id])
 
@@ -106,7 +108,7 @@ export default function MallSupportCenter() {
 
   const loadMessages = async (session: SupportSession, silent = false) => {
     try {
-      const nextMessages = await listSupportMessages(session.id)
+      const nextMessages = await listSupportMessages(session.id, userId)
       setMessages(nextMessages)
       if (!silent) setError('')
     } catch (messageError) {
@@ -185,24 +187,37 @@ export default function MallSupportCenter() {
   }
 
   const uploadEvidence = async () => {
+    if (uploading) return
     try {
-      const result = await Taro.chooseImage({ count: 3 })
+      const result = await Taro.chooseImage({ count: 3, sizeType: ['compressed'], sourceType: ['album', 'camera'] })
       if (!result.tempFilePaths.length) return
       const session = await ensureSession(topic === '订单售后协商')
+      setUploading(true)
+      Taro.showLoading({ title: '正在上传凭证' })
+      const uploads = await Promise.all(
+        result.tempFilePaths.map((filePath) => uploadSupportEvidence(session.id, userId, filePath)),
+      )
       const message = await createSupportMessage(session.id, {
         senderId: userId,
         senderRole: 'user',
-        content: `补充售后凭证 ${result.tempFilePaths.length} 张`,
+        content: `已补充售后凭证 ${uploads.length} 张，请查收。`,
         metadata: {
           orderId: orderId ? String(orderId) : undefined,
           afterSaleId: afterSaleId ? String(afterSaleId) : undefined,
-          localImages: result.tempFilePaths,
+          evidenceImages: uploads.map((upload) => upload.url),
+          evidenceFileKeys: uploads.map((upload) => upload.fileKey),
         },
       })
       setMessages((current) => [...current, message])
       Taro.showToast({ title: '凭证已发送', icon: 'success' })
-    } catch {
-      Taro.showToast({ title: '未选择照片', icon: 'none' })
+    } catch (uploadError) {
+      Taro.showToast({
+        title: uploadError instanceof Error ? uploadError.message : '凭证上传失败',
+        icon: 'none',
+      })
+    } finally {
+      setUploading(false)
+      Taro.hideLoading()
     }
   }
 
@@ -283,12 +298,30 @@ export default function MallSupportCenter() {
       </View>
 
       <View className="mall-chat-list">
-        {messages.map((message) => (
-          <View key={message.id} className={message.senderRole === 'user' ? 'mall-chat-bubble mall-chat-bubble-user' : 'mall-chat-bubble'}>
-            <Text className="mall-chat-text">{message.content}</Text>
-            <Text className="mall-chat-time">{message.createdAt || ''}</Text>
-          </View>
-        ))}
+        {messages.map((message) => {
+          const evidenceImages = Array.isArray(message.metadata?.evidenceImages)
+            ? message.metadata.evidenceImages.filter((value): value is string => typeof value === 'string')
+            : []
+          return (
+            <View key={message.id} className={message.senderRole === 'user' ? 'mall-chat-bubble mall-chat-bubble-user' : 'mall-chat-bubble'}>
+              <Text className="mall-chat-text">{message.content}</Text>
+              {evidenceImages.length ? (
+                <View className="mall-chat-evidence-grid">
+                  {evidenceImages.map((imageUrl) => (
+                    <Image
+                      key={imageUrl}
+                      className="mall-chat-evidence-image"
+                      src={imageUrl}
+                      mode="aspectFill"
+                      onClick={() => Taro.previewImage({ current: imageUrl, urls: evidenceImages })}
+                    />
+                  ))}
+                </View>
+              ) : null}
+              <Text className="mall-chat-time">{message.createdAt || ''}</Text>
+            </View>
+          )
+        })}
         {!messages.length ? (
           <View className="mall-empty">
             <Text className="mall-empty-title">暂无客服消息</Text>
@@ -300,7 +333,7 @@ export default function MallSupportCenter() {
       <View className="mall-support-actions">
         <View className="mall-small-button" onClick={uploadEvidence}>
           <Camera size={15} color="#1F2D1F" />
-          <Text>上传照片</Text>
+          <Text>{uploading ? '上传中…' : '上传照片'}</Text>
         </View>
         <View className="mall-small-button" onClick={() => Taro.navigateTo({ url: `/pages/mall/after-sale/index?orderId=${orderId || ''}` })}>
           <Text>查看进度</Text>

@@ -133,24 +133,18 @@ where
             get(list_support_sessions::<S>).post(create_support_session::<S>),
         )
         .route(
-            "/api/support/sessions/:id",
-            put(update_support_session::<S>),
-        )
-        .route(
             "/api/support/sessions/:id/messages",
             get(list_support_messages::<S>).post(create_support_message::<S>),
+        )
+        .route(
+            "/api/support/sessions/:id/evidence",
+            post(upload_support_evidence::<S>),
         )
         .route(
             "/api/support/tickets",
             get(list_support_tickets::<S>).post(create_support_ticket::<S>),
         )
-        .route("/api/support/tickets/:id", put(update_support_ticket::<S>))
-        .route(
-            "/api/support/knowledge",
-            get(list_knowledge::<S>).post(create_knowledge::<S>),
-        )
-        .route("/api/support/knowledge/:id", put(update_knowledge::<S>))
-        .route("/api/support/metrics", get(support_metrics::<S>))
+        .route("/api/support/knowledge", get(list_public_knowledge::<S>))
 }
 
 pub fn admin_router<S>() -> Router<AppState<S>>
@@ -234,6 +228,35 @@ where
             "/api/admin/mall/uploads/qualification-file",
             post(admin_upload_qualification_file::<S>),
         )
+        .route(
+            "/api/admin/mall/support/sessions",
+            get(admin_list_support_sessions::<S>),
+        )
+        .route(
+            "/api/admin/mall/support/sessions/:id",
+            put(update_support_session::<S>),
+        )
+        .route(
+            "/api/admin/mall/support/sessions/:id/messages",
+            get(admin_list_support_messages::<S>).post(admin_create_support_message::<S>),
+        )
+        .route(
+            "/api/admin/mall/support/tickets",
+            get(admin_list_support_tickets::<S>).post(create_support_ticket::<S>),
+        )
+        .route(
+            "/api/admin/mall/support/tickets/:id",
+            put(update_support_ticket::<S>),
+        )
+        .route(
+            "/api/admin/mall/support/knowledge",
+            get(list_knowledge::<S>).post(create_knowledge::<S>),
+        )
+        .route(
+            "/api/admin/mall/support/knowledge/:id",
+            put(update_knowledge::<S>),
+        )
+        .route("/api/admin/mall/support/metrics", get(support_metrics::<S>))
         .route(
             "/api/admin/mall/procurement-buyers",
             get(admin_list_procurement_buyers::<S>).post(admin_create_procurement_buyer::<S>),
@@ -723,6 +746,20 @@ struct SupportListQuery {
     #[serde(alias = "user_id")]
     user_id: Option<String>,
     status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SupportMessageListQuery {
+    #[serde(alias = "user_id")]
+    user_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SupportEvidenceQuery {
+    #[serde(alias = "user_id")]
+    user_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1543,8 +1580,6 @@ struct CreateSupportSessionRequest {
     user_id: String,
     channel: String,
     topic: String,
-    #[serde(alias = "assigned_agent_id")]
-    assigned_agent_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -8555,7 +8590,7 @@ where
         "#,
     )
     .bind(body.user_id)
-    .bind(body.assigned_agent_id)
+    .bind(Option::<String>::None)
     .bind(body.channel)
     .bind(body.topic)
     .fetch_one(&state.db)
@@ -8571,17 +8606,12 @@ async fn list_support_sessions<S>(
 where
     S: Storage,
 {
+    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
     let mut builder = QueryBuilder::<Postgres>::new(
         "SELECT support_session_json(support_sessions) FROM support_sessions WHERE 1 = 1",
     );
-    if let Some(user_id) = query
-        .user_id
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        builder.push(" AND user_id = ");
-        builder.push_bind(user_id);
-    }
+    builder.push(" AND user_id = ");
+    builder.push_bind(user_id);
     if let Some(status) = query
         .status
         .as_deref()
@@ -8591,6 +8621,110 @@ where
         builder.push_bind(status);
     }
     builder.push(" ORDER BY updated_at DESC LIMIT 100");
+    let sessions = builder
+        .build_query_scalar::<Value>()
+        .fetch_all(&state.db)
+        .await?;
+    Ok(ok("查询成功", sessions))
+}
+
+async fn admin_list_support_sessions<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<SupportListQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT support_session_json(session) || jsonb_build_object(
+          'customer', jsonb_build_object(
+            'id', session.user_id,
+            'name', COALESCE(
+              NULLIF(customer.name, ''),
+              NULLIF(customer.nickname, ''),
+              NULLIF(customer.username, ''),
+              '商城用户'
+            ),
+            'phone', customer.phone,
+            'avatarUrl', COALESCE(NULLIF(customer.avatar_url, ''), NULLIF(customer.avatar, ''))
+          ),
+          'recentOrder', recent_order.payload,
+          'lastSenderRole', latest_message.sender_role,
+          'unreadCount', (
+            SELECT count(*)
+            FROM support_messages unread_message
+            WHERE unread_message.session_id = session.id
+              AND unread_message.sender_role IN ('user', 'customer', 'member')
+              AND (
+                latest_agent.created_at IS NULL
+                OR unread_message.created_at > latest_agent.created_at
+              )
+          ),
+          'waitingMinutes', CASE
+            WHEN latest_customer.created_at IS NOT NULL
+              AND (
+                latest_agent.created_at IS NULL
+                OR latest_customer.created_at > latest_agent.created_at
+              )
+              THEN GREATEST(
+                0,
+                floor(extract(epoch FROM (now() - latest_customer.created_at)) / 60)::integer
+              )
+            ELSE 0
+          END
+        )
+        FROM support_sessions session
+        LEFT JOIN users customer ON customer.id = session.user_id
+        LEFT JOIN LATERAL (
+          SELECT message.sender_role, message.metadata, message.created_at
+          FROM support_messages message
+          WHERE message.session_id = session.id
+          ORDER BY message.created_at DESC, message.id DESC
+          LIMIT 1
+        ) latest_message ON true
+        LEFT JOIN LATERAL (
+          SELECT message.created_at
+          FROM support_messages message
+          WHERE message.session_id = session.id
+            AND message.sender_role IN ('user', 'customer', 'member')
+          ORDER BY message.created_at DESC, message.id DESC
+          LIMIT 1
+        ) latest_customer ON true
+        LEFT JOIN LATERAL (
+          SELECT message.created_at
+          FROM support_messages message
+          WHERE message.session_id = session.id
+            AND message.sender_role IN ('agent', 'admin', 'support', 'operator')
+          ORDER BY message.created_at DESC, message.id DESC
+          LIMIT 1
+        ) latest_agent ON true
+        LEFT JOIN LATERAL (
+          SELECT order_detail_json(mall_order) AS payload
+          FROM mall_orders mall_order
+          WHERE mall_order.user_id = session.user_id
+          ORDER BY
+            CASE
+              WHEN mall_order.id = latest_message.metadata->>'orderId' THEN 0
+              ELSE 1
+            END,
+            mall_order.created_at DESC
+          LIMIT 1
+        ) recent_order ON true
+        WHERE 1 = 1
+        "#,
+    );
+    if let Some(status) = query
+        .status
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        builder.push(" AND session.status = ");
+        builder.push_bind(status);
+    }
+    builder.push(
+        " ORDER BY CASE WHEN session.status = 'open' THEN 0 ELSE 1 END, session.updated_at DESC LIMIT 200",
+    );
     let sessions = builder
         .build_query_scalar::<Value>()
         .fetch_all(&state.db)
@@ -8674,6 +8808,48 @@ where
 {
     validate_required(&body.sender_role, "发送者角色不能为空")?;
     validate_required(&body.content, "消息内容不能为空")?;
+    if !matches!(body.sender_role.as_str(), "user" | "customer" | "member") {
+        return Err(ApiError::Forbidden(
+            "用户端不能发送客服坐席消息".to_string(),
+        ));
+    }
+    let sender_id = body
+        .sender_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| ApiError::BadRequest("发送者ID不能为空".to_string()))?;
+    ensure_support_session_owner(&state.db, &session_id, sender_id).await?;
+    persist_support_message(&state.db, &session_id, body)
+        .await
+        .map(|message| ok("消息发送成功", message))
+}
+
+async fn admin_create_support_message<S>(
+    State(state): State<AppState<S>>,
+    Path(session_id): Path<String>,
+    Json(body): Json<CreateSupportMessageRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    validate_required(&body.sender_role, "发送者角色不能为空")?;
+    validate_required(&body.content, "消息内容不能为空")?;
+    if !matches!(
+        body.sender_role.as_str(),
+        "agent" | "admin" | "support" | "operator"
+    ) {
+        return Err(ApiError::BadRequest("客服坐席角色不正确".to_string()));
+    }
+    persist_support_message(&state.db, &session_id, body)
+        .await
+        .map(|message| ok("消息发送成功", message))
+}
+
+async fn persist_support_message(
+    pool: &PgPool,
+    session_id: &str,
+    body: CreateSupportMessageRequest,
+) -> ApiResult<Value> {
     let metadata = body.metadata.unwrap_or_else(|| json!({}));
     let message = sqlx::query_scalar::<_, Value>(
         r#"
@@ -8687,7 +8863,7 @@ where
     .bind(&body.sender_role)
     .bind(&body.content)
     .bind(&metadata)
-    .fetch_one(&state.db)
+    .fetch_one(pool)
     .await?;
 
     sqlx::query(
@@ -8700,7 +8876,7 @@ where
     )
     .bind(&session_id)
     .bind(&body.content)
-    .execute(&state.db)
+    .execute(pool)
     .await?;
     if matches!(
         body.sender_role.as_str(),
@@ -8709,12 +8885,12 @@ where
         if let Some(user_id) =
             sqlx::query_scalar::<_, String>("SELECT user_id FROM support_sessions WHERE id = $1")
                 .bind(&session_id)
-                .fetch_optional(&state.db)
+                .fetch_optional(pool)
                 .await?
         {
             let order_id = metadata.get("orderId").and_then(Value::as_str);
             insert_mall_notification(
-                &state.db,
+                pool,
                 &user_id,
                 "mall_support_message",
                 "客服有新消息",
@@ -8727,23 +8903,124 @@ where
         }
     }
 
-    Ok(ok("消息发送成功", message))
+    Ok(message)
 }
 
 async fn list_support_messages<S>(
+    State(state): State<AppState<S>>,
+    Path(session_id): Path<String>,
+    Query(query): Query<SupportMessageListQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
+    ensure_support_session_owner(&state.db, &session_id, &user_id).await?;
+    support_messages_for_session(&state.db, &session_id)
+        .await
+        .map(|messages| ok("查询成功", messages))
+}
+
+async fn admin_list_support_messages<S>(
     State(state): State<AppState<S>>,
     Path(session_id): Path<String>,
 ) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
 where
     S: Storage,
 {
+    support_messages_for_session(&state.db, &session_id)
+        .await
+        .map(|messages| ok("查询成功", messages))
+}
+
+async fn support_messages_for_session(pool: &PgPool, session_id: &str) -> ApiResult<Vec<Value>> {
     let messages = sqlx::query_scalar::<_, Value>(
         "SELECT support_message_json(support_messages) FROM support_messages WHERE session_id = $1 ORDER BY created_at ASC",
     )
     .bind(session_id)
-    .fetch_all(&state.db)
+    .fetch_all(pool)
     .await?;
-    Ok(ok("查询成功", messages))
+    Ok(messages)
+}
+
+async fn ensure_support_session_owner(
+    pool: &PgPool,
+    session_id: &str,
+    user_id: &str,
+) -> ApiResult<()> {
+    let owns_session = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM support_sessions WHERE id = $1 AND user_id = $2)",
+    )
+    .bind(session_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    if owns_session {
+        Ok(())
+    } else {
+        Err(ApiError::Forbidden("无权访问该客服会话".to_string()))
+    }
+}
+
+async fn upload_support_evidence<S>(
+    State(state): State<AppState<S>>,
+    Path(session_id): Path<String>,
+    Query(query): Query<SupportEvidenceQuery>,
+    mut multipart: Multipart,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    validate_required(&query.user_id, "用户ID不能为空")?;
+    ensure_support_session_owner(&state.db, &session_id, &query.user_id).await?;
+    let mut ignored_field_bytes = 0usize;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?
+    {
+        if field.name() != Some("file") {
+            read_ignored_multipart_field(field, &mut ignored_field_bytes).await?;
+            continue;
+        }
+        let content_type = field.content_type().map(str::to_string);
+        if !content_type
+            .as_deref()
+            .is_some_and(|value| ALLOWED_MALL_PRODUCT_IMAGE_TYPES.contains(&value))
+        {
+            return Err(ApiError::BadRequest(
+                "请上传 JPG、PNG、WebP 或 GIF 凭证图片".to_string(),
+            ));
+        }
+        let extension = extension_for_product_image(content_type.as_deref())
+            .ok_or_else(|| ApiError::BadRequest("请上传有效的凭证图片".to_string()))?;
+        let bytes = read_mall_product_image_bytes(field).await?;
+        if bytes.is_empty() {
+            return Err(ApiError::BadRequest("凭证图片不能为空".to_string()));
+        }
+        if bytes.len() > MAX_MALL_PRODUCT_IMAGE_BYTES {
+            return Err(ApiError::BadRequest("单张凭证图片不能超过5MB".to_string()));
+        }
+        let key = format!(
+            "support-evidence/{}/{}-{}.{}",
+            session_id,
+            chrono::Utc::now().timestamp_millis(),
+            &uuid::Uuid::new_v4().simple().to_string()[..8],
+            extension
+        );
+        let file_key = state
+            .storage
+            .put_key(bytes, &key, content_type.as_deref())
+            .await?;
+        let url = state.storage.public_url(&file_key).await?;
+        return Ok(ok(
+            "凭证图片上传成功",
+            json!({ "fileKey": file_key, "url": url }),
+        ));
+    }
+
+    Err(ApiError::BadRequest("请选择凭证图片".to_string()))
 }
 
 async fn create_support_ticket<S>(
@@ -8756,6 +9033,21 @@ where
     validate_required(&body.user_id, "用户ID不能为空")?;
     validate_required(&body.category, "工单分类不能为空")?;
     validate_required(&body.title, "工单标题不能为空")?;
+    if let Some(session_id) = body.session_id.as_deref() {
+        ensure_support_session_owner(&state.db, session_id, &body.user_id).await?;
+    }
+    if let Some(order_id) = body.order_id.as_deref() {
+        let owns_order = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM mall_orders WHERE id = $1 AND user_id = $2)",
+        )
+        .bind(order_id)
+        .bind(&body.user_id)
+        .fetch_one(&state.db)
+        .await?;
+        if !owns_order {
+            return Err(ApiError::Forbidden("订单不属于当前用户".to_string()));
+        }
+    }
     let ticket = sqlx::query_scalar::<_, Value>(
         r#"
         INSERT INTO support_tickets (
@@ -8784,17 +9076,12 @@ async fn list_support_tickets<S>(
 where
     S: Storage,
 {
+    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
     let mut builder = QueryBuilder::<Postgres>::new(
         "SELECT support_ticket_json(support_tickets) FROM support_tickets WHERE 1 = 1",
     );
-    if let Some(user_id) = query
-        .user_id
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        builder.push(" AND user_id = ");
-        builder.push_bind(user_id);
-    }
+    builder.push(" AND user_id = ");
+    builder.push_bind(user_id);
     if let Some(status) = query
         .status
         .as_deref()
@@ -8804,6 +9091,32 @@ where
         builder.push_bind(status);
     }
     builder.push(" ORDER BY created_at DESC LIMIT 100");
+    let tickets = builder
+        .build_query_scalar::<Value>()
+        .fetch_all(&state.db)
+        .await?;
+    Ok(ok("查询成功", tickets))
+}
+
+async fn admin_list_support_tickets<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<SupportListQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let mut builder = QueryBuilder::<Postgres>::new(
+        "SELECT support_ticket_json(support_tickets) FROM support_tickets WHERE 1 = 1",
+    );
+    if let Some(status) = query
+        .status
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        builder.push(" AND status = ");
+        builder.push_bind(status);
+    }
+    builder.push(" ORDER BY created_at DESC LIMIT 200");
     let tickets = builder
         .build_query_scalar::<Value>()
         .fetch_all(&state.db)
@@ -8874,6 +9187,20 @@ where
 {
     let articles = sqlx::query_scalar::<_, Value>(
         "SELECT knowledge_json(support_knowledge_articles) FROM support_knowledge_articles ORDER BY updated_at DESC LIMIT 100",
+    )
+    .fetch_all(&state.db)
+    .await?;
+    Ok(ok("查询成功", articles))
+}
+
+async fn list_public_knowledge<S>(
+    State(state): State<AppState<S>>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let articles = sqlx::query_scalar::<_, Value>(
+        "SELECT knowledge_json(support_knowledge_articles) FROM support_knowledge_articles WHERE status = 'published' ORDER BY updated_at DESC LIMIT 100",
     )
     .fetch_all(&state.db)
     .await?;

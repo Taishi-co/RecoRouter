@@ -1084,6 +1084,7 @@ async fn support_sessions_tickets_knowledge_and_metrics_are_backed_by_api() {
 
     let user_id = insert_user(&context.pool, "13950002001", "merchant", "客服用户").await;
     let agent_id = insert_user(&context.pool, "13950002002", "admin", "客服坐席").await;
+    let admin_token = insert_session(&context.pool, &agent_id, "support-admin-session").await;
 
     let (session_status, session_body) = post_json(
         &context.app,
@@ -1100,13 +1101,26 @@ async fn support_sessions_tickets_knowledge_and_metrics_are_backed_by_api() {
         .as_str()
         .expect("session id should exist");
 
-    let (message_status, message_body) = post_json(
+    let (user_message_status, _) = post_json(
         &context.app,
         &format!("/api/support/sessions/{session_id}/messages"),
         json!({
+            "senderId": user_id,
+            "senderRole": "user",
+            "content": "鲜奶包装破损，请客服帮忙处理。"
+        }),
+    )
+    .await;
+    assert_eq!(user_message_status, StatusCode::OK);
+
+    let (message_status, message_body) = post_json_with_auth(
+        &context.app,
+        &format!("/api/admin/mall/support/sessions/{session_id}/messages"),
+        &admin_token,
+        json!({
             "senderId": agent_id,
             "senderRole": "agent",
-            "content": "车辆已接近目的地，若温控异常将自动触发退款或补送。"
+            "content": "已收到凭证，我们会按售后规则退款或补送。"
         }),
     )
     .await;
@@ -1136,6 +1150,17 @@ async fn support_sessions_tickets_knowledge_and_metrics_are_backed_by_api() {
     .await;
     assert_eq!(user_sessions_body["data"][0]["userId"], user_id);
 
+    let (missing_user_status, _) = get_json(&context.app, "/api/support/sessions").await;
+    assert_eq!(missing_user_status, StatusCode::BAD_REQUEST);
+
+    let (messages_status, messages_body) = get_json(
+        &context.app,
+        &format!("/api/support/sessions/{session_id}/messages?userId={user_id}"),
+    )
+    .await;
+    assert_eq!(messages_status, StatusCode::OK);
+    assert_eq!(messages_body["data"].as_array().map(Vec::len), Some(2));
+
     let (_, user_tickets_body) = get_json(
         &context.app,
         &format!("/api/support/tickets?userId={user_id}"),
@@ -1143,9 +1168,10 @@ async fn support_sessions_tickets_knowledge_and_metrics_are_backed_by_api() {
     .await;
     assert_eq!(user_tickets_body["data"][0]["userId"], user_id);
 
-    let (knowledge_status, knowledge_body) = post_json(
+    let (knowledge_status, knowledge_body) = post_json_with_auth(
         &context.app,
-        "/api/support/knowledge",
+        "/api/admin/mall/support/knowledge",
+        &admin_token,
         json!({
             "title": "冷链破损极速退款",
             "category": "after_sales",
@@ -1157,7 +1183,24 @@ async fn support_sessions_tickets_knowledge_and_metrics_are_backed_by_api() {
     assert_eq!(knowledge_status, StatusCode::OK);
     assert_eq!(knowledge_body["data"]["title"], "冷链破损极速退款");
 
-    let (metrics_status, metrics_body) = get_json(&context.app, "/api/support/metrics").await;
+    let (admin_sessions_status, admin_sessions_body) = get_json_with_auth(
+        &context.app,
+        "/api/admin/mall/support/sessions",
+        &admin_token,
+    )
+    .await;
+    assert_eq!(admin_sessions_status, StatusCode::OK);
+    assert_eq!(
+        admin_sessions_body["data"][0]["customer"]["name"],
+        "客服用户"
+    );
+
+    let (metrics_status, metrics_body) = get_json_with_auth(
+        &context.app,
+        "/api/admin/mall/support/metrics",
+        &admin_token,
+    )
+    .await;
     assert_eq!(metrics_status, StatusCode::OK);
     assert!(
         metrics_body["data"]["openTickets"]

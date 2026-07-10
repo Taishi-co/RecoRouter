@@ -625,6 +625,7 @@ type IconName =
   | 'route'
   | 'megaphone'
   | 'support'
+  | 'search'
   | 'refresh'
   | 'check'
   | 'x'
@@ -1788,10 +1789,10 @@ async function fetchDashboardData(
       module: permissionFilters.module,
     })),
     loadWithFallback('商城设置', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/settings')),
-    loadWithFallback('客服指标', {}, errors, () => apiGet<JsonRecord>('/api/support/metrics')),
-    loadWithFallback('客服会话', [], errors, () => apiGet<JsonRecord[]>('/api/support/sessions')),
-    loadWithFallback('客服工单', [], errors, () => apiGet<JsonRecord[]>('/api/support/tickets')),
-    loadWithFallback('知识库', [], errors, () => apiGet<JsonRecord[]>('/api/support/knowledge')),
+    loadWithFallback('客服指标', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/support/metrics')),
+    loadWithFallback('客服会话', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/support/sessions')),
+    loadWithFallback('客服工单', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/support/tickets')),
+    loadWithFallback('知识库', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/support/knowledge')),
     loadWithFallback('企业列表', [], errors, () => apiGet<JsonRecord[]>('/api/enterprise', { limit: 100 }).catch(() => apiGet<JsonRecord[]>('/api/enterprise/admin/' + (getStoredAdminSession()?.user?.id || ''), { limit: 100 }))),
     loadWithFallback('需求列表', [], errors, () => apiGet<JsonRecord[]>('/api/demands', { limit: 100 })),
     loadWithFallback('取消申请', [], errors, () => apiGet<JsonRecord[]>('/api/cancellations/pending')),
@@ -4249,6 +4250,12 @@ function Icon({ name }: { name: IconName }) {
         <path d="M8 12v4H5v-4z" />
         <path d="M19 12v4h-3v-4z" />
         <path d="M11 19h4" />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="11" cy="11" r="6" />
+        <path d="m16 16 4 4" />
       </>
     ),
     refresh: (
@@ -12154,12 +12161,14 @@ function SupportSection({
   selectedSessionId,
   messages,
   onFiltersChange,
-  onClearFilters,
   onFormChange,
   onSelectSession,
-  onCreateSession,
+  onRefresh,
   onSendMessage,
   onUpdateSessionStatus,
+  onOpenOrder,
+  onOpenAfterSales,
+  onCreateTicket,
 }: {
   metrics: JsonRecord;
   sessions: JsonRecord[];
@@ -12168,149 +12177,242 @@ function SupportSection({
   selectedSessionId: string;
   messages: JsonRecord[];
   onFiltersChange: (patch: Partial<SupportFilterState>) => void;
-  onClearFilters: () => void;
   onFormChange: (patch: Partial<SupportForm>) => void;
   onSelectSession: (id: string) => Promise<void>;
-  onCreateSession: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onRefresh: () => Promise<void>;
   onSendMessage: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onUpdateSessionStatus: (id: string, status: 'open' | 'resolved' | 'closed') => Promise<void>;
+  onOpenOrder: (id: string) => Promise<void>;
+  onOpenAfterSales: (identifier: string) => void;
+  onCreateTicket: (session: JsonRecord, order: JsonRecord) => void;
 }) {
-  const selectedSession = sessions.find(session => stringValue(session, 'id') === selectedSessionId);
-  const selectedStatus = selectedSession ? stringValue(selectedSession, 'status') : '';
   const quickReplies = [
-    '您好，已收到反馈，我先核实订单和配送记录。',
-    '这边已经为您标记优先处理，会在 10 分钟内给出处理方案。',
-    '如果商品有破损、坏果或少件，请补充照片，我们会按售后规则处理。',
+    '您好，我已经看到您的问题，正在核对订单信息。',
+    '麻烦补充一下商品照片，我收到后马上为您处理。',
+    '这笔订单已经为您优先跟进，有结果我会在这里同步。',
+    '已为您登记售后，后续进度可以在订单售后页查看。',
   ];
+  const keyword = filters.keyword.trim().toLowerCase();
+  const visibleSessions = sessions.filter(session => {
+    const status = stringValue(session, 'status');
+    if (filters.status === 'open' && !isOpenSupportStatus(status)) return false;
+    if (filters.status && filters.status !== 'open' && status !== filters.status) return false;
+    if (!keyword) return true;
+    const customer = recordValue(session, 'customer');
+    const order = recordValue(session, 'recentOrder');
+    return [
+      stringValue(session, 'topic'),
+      stringValue(session, 'lastMessage'),
+      stringValue(customer, 'name'),
+      stringValue(customer, 'phone'),
+      stringValue(order, 'orderNo'),
+    ].join(' ').toLowerCase().includes(keyword);
+  });
+  const selectedSession = sessions.find(session => stringValue(session, 'id') === selectedSessionId);
+  const customer = recordValue(selectedSession, 'customer');
+  const recentOrder = recordValue(selectedSession, 'recentOrder');
+  const orderItems = arrayValue(recentOrder, 'items');
+  const afterSales = arrayValue(recentOrder, 'afterSales');
+  const activeAfterSale = afterSales.find(item => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+    return isOpenSupportStatus(stringValue(item as JsonRecord, 'status'));
+  }) as JsonRecord | undefined;
+  const selectedStatus = stringValue(selectedSession, 'status');
+  const customerName = stringValue(customer, 'name', '商城用户');
+  const customerPhone = stringValue(customer, 'phone', '未留手机号');
+  const orderId = stringValue(recentOrder, 'id');
+  const orderNo = stringValue(recentOrder, 'orderNo', shortId(orderId));
+  const openCount = sessions.filter(session => isOpenSupportStatus(stringValue(session, 'status'))).length;
+  const resolvedCount = sessions.filter(session => stringValue(session, 'status') === 'resolved').length;
 
   return (
-    <div className="page-grid support-workbench">
-      <Panel title="客服会话筛选" description="用户咨询和消息回复">
-        <div className="support-filterbar support-filterbar-sessions">
-          <label>
-            关键词
-            <input value={filters.keyword} onChange={event => onFiltersChange({ keyword: event.target.value })} placeholder="用户编号 / 主题 / 最近消息" />
-          </label>
-          <label>
-            状态
-            <select value={filters.status} onChange={event => onFiltersChange({ status: event.target.value })}>
-              <option value="open">待处理</option>
-              <option value="">全部</option>
-              <option value="resolved">已解决</option>
-              <option value="closed">已关闭</option>
-            </select>
-          </label>
-          <button className="ghost-button" type="button" onClick={onClearFilters}>
-            <Icon name="refresh" />
-            重置
-          </button>
+    <div className="page-grid support-inbox-page">
+      <section className="support-inbox-toolbar">
+        <div>
+          <span className="support-inbox-eyebrow">实时接待工作台</span>
+          <h2>在线客服</h2>
+          <p>会话、客户、订单和售后放在一个页面，按等待时间处理即可。</p>
         </div>
-      </Panel>
+        <div className="support-inbox-summary">
+          <span><strong>{openCount}</strong> 待接待</span>
+          <span><strong>{metricValue(metrics, ['avgFirstResponseMinutes'])}</strong> 分钟平均首响</span>
+        </div>
+      </section>
 
-      <div className="support-session-shell">
-        <Panel title="会话队列" description="按最近更新时间排序，客服先看用户、主题和最后一句话">
-          <form className="inline-form support-create-session" onSubmit={onCreateSession}>
-            <input value={form.userId} onChange={event => onFormChange({ userId: event.target.value })} placeholder="用户编号" />
-            <input value={form.topic} onChange={event => onFormChange({ topic: event.target.value })} placeholder="会话主题" />
-            <button className="primary-button small" type="submit">
-              <Icon name="plus" />
-              新建
+      <section className="support-inbox-controls">
+        <div className="support-inbox-tabs" role="tablist" aria-label="客服会话状态">
+          {[
+            { value: 'open', label: `待接待 ${openCount}` },
+            { value: 'resolved', label: `已完成 ${resolvedCount}` },
+            { value: '', label: `全部 ${sessions.length}` },
+          ].map(tab => (
+            <button
+              className={filters.status === tab.value ? 'active' : ''}
+              key={tab.value || 'all'}
+              type="button"
+              onClick={() => onFiltersChange({ status: tab.value })}
+            >
+              {tab.label}
             </button>
-          </form>
-          <div className="support-session-list">
-            {sessions.map(session => {
+          ))}
+        </div>
+        <div className="support-inbox-search">
+          <Icon name="search" />
+          <input
+            value={filters.keyword}
+            onChange={event => onFiltersChange({ keyword: event.target.value })}
+            placeholder="搜索客户、手机号、订单号或消息"
+          />
+        </div>
+        <button className="ghost-button" type="button" onClick={() => void onRefresh()}>
+          <Icon name="refresh" />
+          刷新
+        </button>
+      </section>
+
+      <div className="support-inbox-layout">
+        <aside className="support-inbox-list-card">
+          <header>
+            <strong>最近会话</strong>
+            <span>{visibleSessions.length} 条</span>
+          </header>
+          <div className="support-inbox-list">
+            {visibleSessions.map(session => {
               const id = stringValue(session, 'id');
-              const status = stringValue(session, 'status');
+              const itemCustomer = recordValue(session, 'customer');
+              const itemOrder = recordValue(session, 'recentOrder');
+              const name = stringValue(itemCustomer, 'name', '商城用户');
+              const phone = stringValue(itemCustomer, 'phone');
+              const unreadCount = numberValue(session, 'unreadCount');
+              const waitingMinutes = numberValue(session, 'waitingMinutes');
               return (
-                <button className={`session-row ${selectedSessionId === id ? 'selected' : ''}`} key={id} type="button" onClick={() => onSelectSession(id)}>
-                  <div>
-                    <strong>{stringValue(session, 'topic', '未命名咨询')}</strong>
-                    <span className={badgeClass(status)}>{statusLabel(status)}</span>
-                  </div>
-                  <p>{stringValue(session, 'lastMessage', '暂无消息')}</p>
-                  <small>{shortId(stringValue(session, 'userId'))} · {stringValue(session, 'channel', 'web')} · {formatDate(stringValue(session, 'updatedAt'))}</small>
+                <button
+                  className={`support-inbox-row ${selectedSessionId === id ? 'selected' : ''}`}
+                  key={id}
+                  type="button"
+                  onClick={() => onSelectSession(id)}
+                >
+                  <span className="support-avatar">{name.slice(0, 1)}</span>
+                  <span className="support-inbox-row-copy">
+                    <span className="support-inbox-row-title">
+                      <strong>{name}</strong>
+                      <small>{waitingMinutes > 0 ? `等待 ${waitingMinutes} 分钟` : formatDate(stringValue(session, 'updatedAt'))}</small>
+                    </span>
+                    <span className="support-inbox-row-meta">{phone || stringValue(session, 'topic', '订单咨询')}</span>
+                    <span className="support-inbox-row-message">{stringValue(session, 'lastMessage', '暂无消息')}</span>
+                    {stringValue(itemOrder, 'orderNo') ? <span className="support-inbox-row-order">订单 {stringValue(itemOrder, 'orderNo')}</span> : null}
+                  </span>
+                  {unreadCount > 0 ? <span className="support-unread-badge">{Math.min(unreadCount, 99)}</span> : null}
                 </button>
               );
             })}
-            {!sessions.length ? <EmptyState text="暂无匹配会话" /> : null}
+            {!visibleSessions.length ? <EmptyState text="暂无匹配会话" /> : null}
           </div>
-        </Panel>
+        </aside>
 
-        <div className="support-conversation">
-          <Panel
-            title={selectedSession ? stringValue(selectedSession, 'topic') : '当前会话'}
-            description={selectedSession ? `用户 ${shortId(stringValue(selectedSession, 'userId'))} · ${formatDate(stringValue(selectedSession, 'updatedAt'))}` : '从左侧选择会话后查看上下文并回复'}
-            action={selectedSession ? (
+        <main className="support-chat-card">
+          <header className="support-chat-header">
+            <div>
+              <strong>{selectedSession ? customerName : '请选择一个会话'}</strong>
+              <span>{selectedSession ? `${stringValue(selectedSession, 'topic', '订单咨询')} · ${customerPhone}` : '左侧会话按最新消息排序'}</span>
+            </div>
+            {selectedSession ? (
               <div className="support-session-actions">
                 <span className={badgeClass(selectedStatus)}>{statusLabel(selectedStatus)}</span>
-                {selectedStatus !== 'resolved' ? (
-                  <button className="ghost-button small" type="button" onClick={() => onUpdateSessionStatus(selectedSessionId, 'resolved')}>
-                    处理完成
-                  </button>
-                ) : null}
-                {selectedStatus !== 'closed' ? (
-                  <button className="ghost-button small" type="button" onClick={() => onUpdateSessionStatus(selectedSessionId, 'closed')}>
-                    关闭会话
-                  </button>
-                ) : null}
-                {selectedStatus !== 'open' ? (
-                  <button className="ghost-button small" type="button" onClick={() => onUpdateSessionStatus(selectedSessionId, 'open')}>
-                    重开
-                  </button>
-                ) : null}
+                {isOpenSupportStatus(selectedStatus) ? (
+                  <button className="ghost-button small" type="button" onClick={() => onUpdateSessionStatus(selectedSessionId, 'resolved')}>处理完成</button>
+                ) : (
+                  <button className="ghost-button small" type="button" onClick={() => onUpdateSessionStatus(selectedSessionId, 'open')}>重新接待</button>
+                )}
               </div>
             ) : null}
-          >
-            <div className="message-list">
-              {messages.map(message => {
-                const senderRole = stringValue(message, 'senderRole');
-                const isAgent = ['agent', 'admin', 'support'].includes(senderRole);
-                return (
-                  <article className={`message ${isAgent ? 'agent' : 'customer'}`} key={stringValue(message, 'id')}>
-                    <span>{roleLabel(senderRole)} · {formatDate(stringValue(message, 'createdAt'))}</span>
-                    <p>{stringValue(message, 'content')}</p>
-                  </article>
-                );
-              })}
-              {!messages.length ? <EmptyState text="选择会话后显示消息" /> : null}
-            </div>
-            <div className="quick-replies">
-              {quickReplies.map(reply => (
-                <button className="ghost-button small" key={reply} type="button" onClick={() => onFormChange({ message: reply })}>
-                  {reply}
-                </button>
-              ))}
-            </div>
-            <form className="send-form support-message-composer" onSubmit={onSendMessage}>
-              <textarea value={form.message} placeholder="输入给用户的回复" onChange={event => onFormChange({ message: event.target.value })} />
-              <button className="primary-button" type="submit" disabled={!selectedSessionId || !form.message.trim()}>
-                <Icon name="send" />
-                发送
-              </button>
-            </form>
-          </Panel>
-        </div>
-
-        <Panel title="用户上下文" description="客服回复前需要先看用户、渠道和 SLA">
-          <div className="support-context-panel">
-            <article>
-              <span>用户</span>
-              <strong>{selectedSession ? shortId(stringValue(selectedSession, 'userId')) : '-'}</strong>
-            </article>
-            <article>
-              <span>渠道</span>
-              <strong>{selectedSession ? stringValue(selectedSession, 'channel', 'web') : '-'}</strong>
-            </article>
-            <article>
-              <span>首响 SLA</span>
-              <strong>{metricValue(metrics, ['avgFirstResponseMinutes'])} 分钟</strong>
-            </article>
-            <article>
-              <span>最近更新</span>
-              <strong>{selectedSession ? formatDate(stringValue(selectedSession, 'updatedAt')) : '-'}</strong>
-            </article>
+          </header>
+          <div className="message-list support-chat-messages">
+            {messages.map(message => {
+              const senderRole = stringValue(message, 'senderRole');
+              const isAgent = ['agent', 'admin', 'support', 'operator'].includes(senderRole);
+              const metadata = recordValue(message, 'metadata');
+              const evidenceImages = arrayValue(metadata, 'evidenceImages').filter((value): value is string => typeof value === 'string');
+              return (
+                <article className={`message ${isAgent ? 'agent' : 'customer'}`} key={stringValue(message, 'id')}>
+                  <span>{isAgent ? '客服' : customerName} · {formatDate(stringValue(message, 'createdAt'))}</span>
+                  <p>{stringValue(message, 'content')}</p>
+                  {evidenceImages.length ? (
+                    <div className="support-message-images">
+                      {evidenceImages.map(url => <a href={url} key={url} target="_blank" rel="noreferrer"><img alt="用户上传的售后凭证" src={url} /></a>)}
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })}
+            {!messages.length ? <EmptyState text={selectedSession ? '还没有消息，可以直接开始回复' : '选择会话后显示聊天记录'} /> : null}
           </div>
-        </Panel>
+          <div className="quick-replies support-quick-replies">
+            {quickReplies.map(reply => (
+              <button className="ghost-button small" key={reply} type="button" onClick={() => onFormChange({ message: reply })}>{reply}</button>
+            ))}
+          </div>
+          <form className="send-form support-message-composer" onSubmit={onSendMessage}>
+            <textarea
+              value={form.message}
+              placeholder="输入回复，Enter 发送，Shift + Enter 换行"
+              onChange={event => onFormChange({ message: event.target.value })}
+              onKeyDown={event => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  event.currentTarget.form?.requestSubmit();
+                }
+              }}
+            />
+            <button className="primary-button" type="submit" disabled={!selectedSessionId || !form.message.trim()}>
+              <Icon name="send" />
+              发送
+            </button>
+          </form>
+        </main>
+
+        <aside className="support-customer-card">
+          <section className="support-customer-profile">
+            <span className="support-avatar large">{customerName.slice(0, 1)}</span>
+            <div>
+              <strong>{selectedSession ? customerName : '客户信息'}</strong>
+              <span>{selectedSession ? customerPhone : '选择会话后自动显示'}</span>
+            </div>
+          </section>
+          <section className="support-order-card">
+            <header>
+              <span>最近关联订单</span>
+              {orderId ? <span className={badgeClass(orderStatus(recentOrder))}>{statusLabel(orderStatus(recentOrder))}</span> : null}
+            </header>
+            {orderId ? (
+              <>
+                <strong>{orderNo}</strong>
+                <p>{orderItems.slice(0, 2).map(item => item && typeof item === 'object' ? stringValue(item as JsonRecord, 'productName') : '').filter(Boolean).join('、') || '订单商品'}</p>
+                <div className="support-order-facts">
+                  <span>实付 <strong>{yuan(numberValue(recentOrder, 'payableCents'))}</strong></span>
+                  <span>商品 <strong>{orderItems.length} 项</strong></span>
+                </div>
+                {activeAfterSale ? (
+                  <div className="support-after-sale-alert">
+                    <strong>正在售后：{statusLabel(stringValue(activeAfterSale, 'status'))}</strong>
+                    <span>{stringValue(activeAfterSale, 'reason', '用户已提交售后申请')}</span>
+                  </div>
+                ) : null}
+                <div className="support-context-actions">
+                  <button className="primary-button small" type="button" onClick={() => void onOpenOrder(orderId)}>查看订单</button>
+                  <button className="ghost-button small" type="button" onClick={() => onOpenAfterSales(orderNo || orderId)}>售后处理</button>
+                  <button className="ghost-button small" type="button" onClick={() => selectedSession && onCreateTicket(selectedSession, recentOrder)}>创建工单</button>
+                </div>
+              </>
+            ) : (
+              <EmptyState text="该会话暂未关联订单" />
+            )}
+          </section>
+          <section className="support-service-tip">
+            <strong>接待提示</strong>
+            <p>先确认订单，再给出明确处理动作和预计时间；需要退款或补发时转入售后处理。</p>
+          </section>
+        </aside>
       </div>
     </div>
   );
@@ -12911,6 +13013,7 @@ function App() {
   const [weightAdjustmentSaving, setWeightAdjustmentSaving] = useState(false);
   const productFilterDebounceRef = useRef<number | null>(null);
   const productFilterResolveRef = useRef<(() => void) | null>(null);
+  const supportRefreshInFlightRef = useRef(false);
 
   const currentModule = useMemo(
     () => adminModules.find(module => module.key === activeModuleKey) || adminModules[0],
@@ -12931,10 +13034,6 @@ function App() {
   const supportStats = useMemo(
     () => supportDashboardStats(data, rawAfterSalesQueue),
     [data, rawAfterSalesQueue],
-  );
-  const filteredSupportSessions = useMemo(
-    () => filterSupportRecords(data.supportSessions, supportFilters, ['topic', 'lastMessage', 'userId', 'channel']),
-    [data.supportSessions, supportFilters],
   );
   const filteredSupportTickets = useMemo(
     () => filterSupportRecords(data.supportTickets, supportFilters, ['title', 'description', 'category', 'priority', 'userId', 'orderId']),
@@ -13170,18 +13269,24 @@ function App() {
   };
 
   const refreshSupportRealtime = useCallback(async () => {
-    const [nextSessions, nextMetrics] = await Promise.all([
-      apiGet<JsonRecord[]>('/api/support/sessions', undefined, { fresh: true }),
-      apiGet<JsonRecord>('/api/support/metrics', undefined, { fresh: true }),
-    ]);
-    setData(current => ({
-      ...current,
-      supportSessions: nextSessions,
-      supportMetrics: nextMetrics,
-    }));
-    if (selectedSessionId) {
-      const nextMessages = await apiGet<JsonRecord[]>(`/api/support/sessions/${selectedSessionId}/messages`, undefined, { fresh: true });
-      setSupportMessages(nextMessages);
+    if (document.visibilityState === 'hidden' || supportRefreshInFlightRef.current) return;
+    supportRefreshInFlightRef.current = true;
+    try {
+      const [nextSessions, nextMetrics] = await Promise.all([
+        apiGet<JsonRecord[]>('/api/admin/mall/support/sessions', undefined, { fresh: true }),
+        apiGet<JsonRecord>('/api/admin/mall/support/metrics', undefined, { fresh: true }),
+      ]);
+      setData(current => ({
+        ...current,
+        supportSessions: nextSessions,
+        supportMetrics: nextMetrics,
+      }));
+      if (selectedSessionId) {
+        const nextMessages = await apiGet<JsonRecord[]>(`/api/admin/mall/support/sessions/${selectedSessionId}/messages`, undefined, { fresh: true });
+        setSupportMessages(nextMessages);
+      }
+    } finally {
+      supportRefreshInFlightRef.current = false;
     }
   }, [selectedSessionId]);
 
@@ -13190,9 +13295,20 @@ function App() {
     void refreshSupportRealtime().catch(() => undefined);
     const timer = window.setInterval(() => {
       void refreshSupportRealtime().catch(() => undefined);
-    }, 1000);
+    }, 5000);
     return () => window.clearInterval(timer);
   }, [activePageKey, refreshSupportRealtime]);
+
+  useEffect(() => {
+    if (activePageKey !== 'mall.support' && activePageKey !== 'vehicle.support') return;
+    if (selectedSessionId || !data.supportSessions.length) return;
+    const firstSessionId = stringValue(data.supportSessions[0], 'id');
+    if (!firstSessionId) return;
+    setSelectedSessionId(firstSessionId);
+    void apiGet<JsonRecord[]>(`/api/admin/mall/support/sessions/${firstSessionId}/messages`, undefined, { fresh: true })
+      .then(setSupportMessages)
+      .catch(() => undefined);
+  }, [activePageKey, data.supportSessions, selectedSessionId]);
 
   const searchMallOpsData = async () => {
     await runAction('商城运营数据查询', async () => {
@@ -14596,33 +14712,19 @@ function App() {
 
   const selectSession = async (id: string) => {
     setSelectedSessionId(id);
-    await runAction('会话消息加载', async () => {
-      const sessionMessages = await apiGet<JsonRecord[]>(`/api/support/sessions/${id}/messages`);
+    try {
+      const sessionMessages = await apiGet<JsonRecord[]>(`/api/admin/mall/support/sessions/${id}/messages`);
       setSupportMessages(sessionMessages);
-    });
-  };
-
-  const createSupportSession = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    await runAction('客服会话创建', async () => {
-      const supportSession = await apiPost<JsonRecord>('/api/support/sessions', {
-        userId: supportForm.userId || stringValue(data.users[0], 'id'),
-        channel: 'web',
-        topic: supportForm.topic,
-      });
-      await reload();
-      const id = stringValue(supportSession, 'id');
-      if (id) {
-        setSelectedSessionId(id);
-      }
-    });
+    } catch (error) {
+      showMessage('error', error instanceof Error ? error.message : '会话消息加载失败');
+    }
   };
 
   const sendSupportMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedSessionId) return;
     await runAction('客服消息发送', async () => {
-      const message = await apiPost<JsonRecord>(`/api/support/sessions/${selectedSessionId}/messages`, {
+      const message = await apiPost<JsonRecord>(`/api/admin/mall/support/sessions/${selectedSessionId}/messages`, {
         senderRole: 'agent',
         content: supportForm.message,
         metadata: { source: 'web-admin' },
@@ -14635,7 +14737,7 @@ function App() {
   const updateSupportSessionStatus = async (id: string, status: 'open' | 'resolved' | 'closed') => {
     const actionLabel = status === 'resolved' ? '客服会话处理完成' : status === 'closed' ? '客服会话关闭' : '客服会话重开';
     await runAction(actionLabel, async () => {
-      const supportSession = await apiPut<JsonRecord>(`/api/support/sessions/${id}`, {
+      const supportSession = await apiPut<JsonRecord>(`/api/admin/mall/support/sessions/${id}`, {
         status,
         lastMessage: status === 'resolved'
           ? '客服已处理完成'
@@ -14645,19 +14747,44 @@ function App() {
       });
       setData(current => ({
         ...current,
-        supportSessions: upsertRecordList(current.supportSessions, supportSession),
+        supportSessions: current.supportSessions.map(item => (
+          stringValue(item, 'id') === id ? { ...item, ...supportSession } : item
+        )),
       }));
       if (selectedSessionId === id) {
-        const nextMessages = await apiGet<JsonRecord[]>(`/api/support/sessions/${id}/messages`);
+        const nextMessages = await apiGet<JsonRecord[]>(`/api/admin/mall/support/sessions/${id}/messages`);
         setSupportMessages(nextMessages);
       }
     });
   };
 
+  const openSupportAfterSales = (identifier: string) => {
+    setSupportFilters(current => ({ ...current, keyword: identifier, status: 'open' }));
+    setActiveModuleKey('mall');
+    setActivePageKey('mall.afterSales');
+    writeAdminRouteToLocation('mall.afterSales');
+  };
+
+  const prepareSupportTicket = (supportSession: JsonRecord, order: JsonRecord) => {
+    const orderNo = stringValue(order, 'orderNo', shortId(stringValue(order, 'id')));
+    setSupportForm(current => ({
+      ...current,
+      userId: stringValue(supportSession, 'userId'),
+      ticketOrderId: stringValue(order, 'id'),
+      ticketTitle: `${orderNo || '订单'} 客服跟进`,
+      ticketCategory: 'after_sales',
+      ticketPriority: numberValue(supportSession, 'waitingMinutes') >= 10 ? 'high' : 'normal',
+    }));
+    setSupportFilters(current => ({ ...current, keyword: '', status: 'open' }));
+    setActiveModuleKey('mall');
+    setActivePageKey('mall.supportTickets');
+    writeAdminRouteToLocation('mall.supportTickets');
+  };
+
   const createSupportTicket = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     await runAction('客服工单创建', async () => {
-      await apiPost('/api/support/tickets', {
+      await apiPost('/api/admin/mall/support/tickets', {
         userId: supportForm.userId || stringValue(data.users[0], 'id'),
         sessionId: selectedSessionId || undefined,
         orderId: supportForm.ticketOrderId || undefined,
@@ -14679,7 +14806,7 @@ function App() {
 
   const resolveTicket = async (id: string) => {
     await runAction('客服工单处理', async () => {
-      await apiPut(`/api/support/tickets/${id}`, {
+      await apiPut(`/api/admin/mall/support/tickets/${id}`, {
         status: 'resolved',
         resolution: '管理端已处理',
       });
@@ -14706,7 +14833,7 @@ function App() {
   const createKnowledge = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     await runAction('知识库发布', async () => {
-      await apiPost('/api/support/knowledge', {
+      await apiPost('/api/admin/mall/support/knowledge', {
         title: supportForm.knowledgeTitle,
         category: supportForm.knowledgeCategory,
         content: supportForm.knowledgeContent,
@@ -14718,7 +14845,7 @@ function App() {
 
   const updateKnowledgeStatus = async (id: string, status: string) => {
     await runAction('知识库状态更新', async () => {
-      const article = await apiPut<JsonRecord>(`/api/support/knowledge/${id}`, { status });
+      const article = await apiPut<JsonRecord>(`/api/admin/mall/support/knowledge/${id}`, { status });
       setData(current => ({
         ...current,
         supportKnowledge: updateRecordList(current.supportKnowledge, id, article),
@@ -15209,11 +15336,13 @@ function App() {
           messages={supportMessages}
           metrics={data.supportMetrics}
           selectedSessionId={selectedSessionId}
-          sessions={filteredSupportSessions}
-          onClearFilters={() => setSupportFilters(initialSupportFilters)}
-          onCreateSession={createSupportSession}
+          sessions={data.supportSessions}
           onFiltersChange={patch => setSupportFilters(current => ({ ...current, ...patch }))}
           onFormChange={patch => setSupportForm(current => ({ ...current, ...patch }))}
+          onCreateTicket={prepareSupportTicket}
+          onOpenAfterSales={openSupportAfterSales}
+          onOpenOrder={openMallOrderDetail}
+          onRefresh={refreshSupportRealtime}
           onSelectSession={selectSession}
           onSendMessage={sendSupportMessage}
           onUpdateSessionStatus={updateSupportSessionStatus}

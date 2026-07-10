@@ -3270,6 +3270,20 @@ body.reco-mall-h5 .taro_page {
   font-weight: 700;
 }
 
+.mall-chat-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 64PX);
+  gap: 6PX;
+  margin-top: 8PX;
+}
+
+.mall-chat-evidence-image {
+  width: 64PX;
+  height: 64PX;
+  border-radius: 8PX;
+  background: #e7eee5;
+}
+
 .mall-chat-time {
   display: block;
   margin-top: 5PX;
