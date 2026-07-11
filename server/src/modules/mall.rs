@@ -10078,6 +10078,11 @@ where
         WHERE status = 'on_sale' AND stock > 0
         ORDER BY
           CASE WHEN COALESCE(NULLIF(image_url, ''), images->>0) IS NULL THEN 1 ELSE 0 END,
+          CASE
+            WHEN COALESCE(NULLIF(image_url, ''), images->>0) LIKE '/api/uploads/%' THEN 0
+            WHEN COALESCE(NULLIF(image_url, ''), images->>0) ~ '^https?://' THEN 1
+            ELSE 2
+          END,
           sort_order,
           updated_at DESC NULLS LAST
         LIMIT 1

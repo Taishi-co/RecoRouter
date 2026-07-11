@@ -69,6 +69,7 @@ assert(/upsert_support_satisfaction/.test(mallBackend) && /rateSupportSession/.t
 assert(!/'satisfaction',\s*96/.test(mallBackend), 'Support satisfaction must not be a hard-coded demo number.');
 assert(/admin_support_quality/.test(mallBackend) && /supportQuality/.test(adminMain), 'Admin must expose agent quality and SLA signals.');
 assert(/admin_reset_roadshow/.test(mallBackend) && /RoadshowSandboxSection/.test(adminMain), 'Admin must expose an isolated one-click roadshow reset.');
+assert(/LIKE '\/api\/uploads\/%'/.test(mallBackend), 'Roadshow reset must prefer a product image that is served by the real upload endpoint.');
 assert(/refresh_operations_alerts/.test(mallBackend) && /OperationsAlertsSection/.test(adminMain), 'Admin must monitor payment, refund, delivery, and upload anomalies.');
 
 assert(/uploadSupportEvidence/.test(mallSupport) && /evidenceImages/.test(mallSupport), 'Customer support must upload and render real evidence images.');
