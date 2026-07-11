@@ -784,6 +784,8 @@ struct SupportListQuery {
     #[serde(alias = "user_id")]
     user_id: Option<String>,
     status: Option<String>,
+    #[serde(alias = "updated_after")]
+    updated_after: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -8689,6 +8691,10 @@ where
         builder.push(" AND session.status = ");
         builder.push_bind(status);
     }
+    if let Some(updated_after) = query.updated_after {
+        builder.push(" AND session.updated_at > ");
+        builder.push_bind(updated_after);
+    }
     builder.push(" ORDER BY updated_at DESC LIMIT 100");
     let sessions = builder
         .build_query_scalar::<Value>()
@@ -8805,6 +8811,10 @@ where
     {
         builder.push(" AND session.status = ");
         builder.push_bind(status);
+    }
+    if let Some(updated_after) = query.updated_after {
+        builder.push(" AND session.updated_at > ");
+        builder.push_bind(updated_after);
     }
     builder.push(
         " ORDER BY CASE WHEN session.status = 'open' THEN 0 ELSE 1 END, session.updated_at DESC LIMIT 200",

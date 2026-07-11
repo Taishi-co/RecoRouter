@@ -77,8 +77,10 @@ expect(
 )
 
 expect(
-  /setInterval\(\(\)\s*=>\s*\{[\s\S]*loadMessages\(selectedSession,\s*true\)[\s\S]*\},\s*4000\)/.test(supportPage),
-  '小程序客服聊天需要稳定轮询，避免 1 秒级请求压力。',
+  /setInterval\(\(\)\s*=>\s*\{[\s\S]*pollSessionUpdates\(selectedSession\)[\s\S]*\},\s*4000\)/.test(supportPage)
+    && /updatedAfter:\s*sessionVersionRef\.current/.test(supportPage)
+    && /await loadMessages\(refreshedSession\)/.test(supportPage),
+  '小程序客服聊天需要稳定增量轮询，仅在当前会话变化时刷新消息。',
 )
 
 expect(

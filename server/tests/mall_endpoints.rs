@@ -1207,6 +1207,30 @@ async fn support_sessions_tickets_knowledge_and_metrics_are_backed_by_api() {
     assert_eq!(admin_sessions_body["data"][0]["assignedAgentId"], agent_id);
     assert_eq!(admin_sessions_body["data"][0]["unreadCount"], 0);
 
+    let (incremental_user_status, incremental_user_body) = get_json(
+        &context.app,
+        &format!("/api/support/sessions?userId={user_id}&updatedAfter=2000-01-01T00%3A00%3A00Z"),
+    )
+    .await;
+    assert_eq!(incremental_user_status, StatusCode::OK);
+    assert!(incremental_user_body["data"]
+        .as_array()
+        .expect("incremental user sessions should be an array")
+        .iter()
+        .any(|session| session["id"] == session_id));
+
+    let (unchanged_admin_status, unchanged_admin_body) = get_json_with_auth(
+        &context.app,
+        "/api/admin/mall/support/sessions?updatedAfter=2999-01-01T00%3A00%3A00Z",
+        &admin_token,
+    )
+    .await;
+    assert_eq!(unchanged_admin_status, StatusCode::OK);
+    assert!(unchanged_admin_body["data"]
+        .as_array()
+        .expect("incremental support sessions should be an array")
+        .is_empty());
+
     let (agents_status, agents_body) =
         get_json_with_auth(&context.app, "/api/admin/mall/support/agents", &admin_token).await;
     assert_eq!(agents_status, StatusCode::OK);

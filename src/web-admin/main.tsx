@@ -1665,6 +1665,239 @@ async function loadWithFallback<T>(
   }
 }
 
+interface DashboardLoadContext {
+  productFilters: MallFilterState;
+  categoryFilters: MallFilterState;
+  inventoryFilters: MallFilterState;
+  campaignFilters: MallFilterState;
+  couponFilters: MallFilterState;
+  homeBannerFilters: MallFilterState;
+  permissionFilters: MallPermissionFilterState;
+  pickupPointFilters: PickupPointFilterState;
+  groupLeaderFilters: GroupLeaderFilterState;
+}
+
+async function fetchDashboardPageData(pageKey: string, context: DashboardLoadContext) {
+  const errors: LoadErrors = {};
+  const data: Partial<DashboardData> = {};
+  const tasks: Promise<void>[] = [];
+  const queuedKeys = new Set<keyof DashboardData>();
+  const pages = (...keys: string[]) => keys.includes(pageKey);
+  const queue = <K extends keyof DashboardData>(
+    key: K,
+    label: string,
+    fallback: DashboardData[K],
+    loader: () => Promise<DashboardData[K]>,
+  ) => {
+    if (queuedKeys.has(key)) return;
+    queuedKeys.add(key);
+    tasks.push(loadWithFallback(label, fallback, errors, loader).then((value) => {
+      data[key] = value;
+    }));
+  };
+
+  const queueProducts = () => queue('mallProducts', '商城商品', [], () => apiGet<JsonRecord[]>('/api/admin/mall/products', {
+    keyword: context.productFilters.keyword,
+    categoryCode: context.productFilters.categoryCode,
+    status: context.productFilters.status,
+    stockStatus: context.productFilters.stockStatus,
+    sort: context.productFilters.sort,
+    page: context.productFilters.page,
+    pageSize: context.productFilters.pageSize,
+  }));
+  const queueCategories = () => queue('mallCategories', '商城类目', [], () => apiGet<JsonRecord[]>('/api/admin/mall/categories', {
+    keyword: context.categoryFilters.keyword,
+    status: context.categoryFilters.status,
+  }));
+  const queueOrders = () => queue('mallOrders', '商城订单', [], () => apiGet<JsonRecord[]>('/api/admin/mall/orders'));
+
+  if (pages('platform.overview', 'mall.data')) {
+    queue('adminStats', '平台统计', {}, () => apiGet<JsonRecord>('/api/admin/statistics'));
+    queue('mallOverview', '商城概览', {}, () => apiGet<JsonRecord>('/api/admin/mall/overview'));
+    queue('transportOrders', '运力订单', [], () => apiGet<JsonRecord[]>('/api/admin/orders', { limit: 80 }));
+    queueOrders();
+    queueProducts();
+    queue('mallInventoryAlerts', '库存预警', [], () => apiGet<JsonRecord[]>('/api/admin/mall/inventory-alerts', { stockStatus: 'alert' }));
+    queue('mallSalesStats', '销量统计', {}, () => apiGet<JsonRecord>('/api/admin/mall/stats/sales', { period: '30d' }));
+    queue('supportMetrics', '客服指标', {}, () => apiGet<JsonRecord>('/api/admin/mall/support/metrics'));
+    queue('operationsAlerts', '异常监控', [], () => apiGet<JsonRecord[]>('/api/admin/mall/operations/alerts'));
+  }
+
+  if (pages('platform.accounts') || pageKey.includes('account') || pageKey.includes('roles')) {
+    queue('users', '账号列表', [], () => apiGet<JsonRecord[]>('/api/admin/users', { limit: 80 }));
+  }
+  if (pages('vehicle.review', 'vehicle.vehicleList')) {
+    queue('vehicles', '车辆列表', [], () => apiGet<JsonRecord[]>('/api/vehicles', { limit: 80 }));
+  }
+  if (pages('vehicle.enterpriseReview', 'platform.enterpriseAudit')) {
+    queue('enterprises', '企业列表', [], () => apiGet<JsonRecord[]>('/api/enterprise', { limit: 100 }));
+  }
+  if (pages('vehicle.dispatch')) {
+    queue('trips', '行程列表', [], () => apiGet<JsonRecord[]>('/api/trips', { limit: 100 }));
+    queue('undispatchedOrders', '未分配订单', [], () => apiGet<JsonRecord[]>('/api/trips/undispatched-orders'));
+    queue('allOrders', '全部订单', [], () => apiGet<JsonRecord[]>('/api/trips/all-orders'));
+    queue('availableVehicles', '可用车辆', [], () => apiGet<JsonRecord[]>('/api/trips/available-vehicles'));
+  }
+  if (pages('vehicle.ownerReview')) {
+    queue('demands', '需求列表', [], () => apiGet<JsonRecord[]>('/api/demands', { limit: 100 }));
+    queue('vehicles', '车辆列表', [], () => apiGet<JsonRecord[]>('/api/vehicles', { limit: 80 }));
+  }
+  if (pages('vehicle.cancellations')) {
+    queue('cancellations', '取消申请', [], () => apiGet<JsonRecord[]>('/api/cancellations/pending'));
+  }
+  if (pages('vehicle.wallet')) {
+    queue('ownerWithdrawals', '提现记录', [], () => apiGet<JsonRecord[]>('/api/admin/owner-withdrawals'));
+  }
+  if (pages('vehicle.transportOrders', 'vehicle.commission', 'platform.commission')) {
+    queue('transportOrders', '运力订单', [], () => apiGet<JsonRecord[]>('/api/admin/orders', { limit: 80 }));
+    queue('commissionPending', '佣金待审', [], () => apiGet<JsonRecord[]>('/api/orders/commission-pending'));
+    queue('commissionSummary', '佣金统计', {}, () => apiGet<JsonRecord>('/api/orders/commission-summary'));
+  }
+
+  if (pages('mall.products', 'mall.productList')) {
+    queueProducts();
+    queueCategories();
+    queue('mallProcurementBuyers', '采购商', [], () => apiGet<JsonRecord[]>('/api/admin/mall/procurement-buyers'));
+  }
+  if (pages('mall.procurementBuyers')) {
+    queue('mallProcurementBuyers', '采购商', [], () => apiGet<JsonRecord[]>('/api/admin/mall/procurement-buyers'));
+  }
+  if (pages('mall.categories')) queueCategories();
+  if (pages('mall.inventory')) {
+    queueProducts();
+    queueCategories();
+    queue('mallInventoryAlerts', '库存预警', [], () => apiGet<JsonRecord[]>('/api/admin/mall/inventory-alerts', {
+      keyword: context.inventoryFilters.keyword,
+      categoryCode: context.inventoryFilters.categoryCode,
+      status: context.inventoryFilters.status,
+      stockStatus: context.inventoryFilters.stockStatus,
+    }));
+  }
+  if (pages('mall.todayOrders', 'mall.historyOrders', 'mall.abnormalOrders', 'mall.orders', 'mall.refunds', 'mall.orderDetail')) queueOrders();
+  if (pages('mall.pickup')) {
+    queue('mallPickupPoints', '自提点', [], () => apiGet<JsonRecord[]>('/api/admin/mall/pickup-points', {
+      limit: 100,
+      keyword: context.pickupPointFilters.keyword,
+      status: context.pickupPointFilters.status,
+      community: context.pickupPointFilters.community,
+    }));
+  }
+  if (pages('mall.leaders')) {
+    queue('mallGroupLeaders', '团长', [], () => apiGet<JsonRecord[]>('/api/admin/mall/group-leaders', {
+      limit: 100,
+      keyword: context.groupLeaderFilters.keyword,
+      status: context.groupLeaderFilters.status,
+      pickupPointId: context.groupLeaderFilters.pickupPointId,
+    }));
+    queue('mallPickupPoints', '自提点', [], () => apiGet<JsonRecord[]>('/api/admin/mall/pickup-points', { limit: 100 }));
+  }
+  if (pages('mall.deliverySheets', 'mall.deliveryTracking', 'mall.pickupConnect')) {
+    queueOrders();
+    queue('mallDeliverySheets', '配送单', [], () => apiGet<JsonRecord[]>('/api/admin/mall/delivery-sheets', { limit: 100 }));
+    queue('mallPickupPoints', '自提点', [], () => apiGet<JsonRecord[]>('/api/admin/mall/pickup-points', { limit: 100 }));
+  }
+  if (pages('mall.financeBills', 'mall.settlements', 'mall.withdrawals')) {
+    queue('mallFinanceBills', '账单明细', [], () => apiGet<JsonRecord[]>('/api/admin/mall/finance/bills', { limit: 100 }));
+    queue('mallSettlementRecords', '结算记录', [], () => apiGet<JsonRecord[]>('/api/admin/mall/finance/settlements', { limit: 100 }));
+    queue('mallWithdrawalRequests', '提现申请', [], () => apiGet<JsonRecord[]>('/api/admin/mall/finance/withdrawals', { limit: 100 }));
+  }
+  if (pages('mall.salesStats', 'mall.revenueStats', 'mall.hotProducts')) {
+    queueOrders();
+    queue('mallSalesStats', '销量统计', {}, () => apiGet<JsonRecord>('/api/admin/mall/stats/sales', { period: '30d' }));
+  }
+  if (pages('mall.coupons')) {
+    queue('mallCoupons', '优惠券', [], () => apiGet<JsonRecord[]>('/api/admin/mall/coupons', {
+      keyword: context.couponFilters.keyword,
+      status: context.couponFilters.status,
+      couponType: context.couponFilters.categoryCode,
+    }));
+  }
+  if (pages('mall.banners')) {
+    queue('mallHomeBanners', '首页配置', [], () => apiGet<JsonRecord[]>('/api/admin/mall/home-banners', {
+      keyword: context.homeBannerFilters.keyword,
+      status: context.homeBannerFilters.status,
+    }));
+  }
+  if (homeSectionPageConfigs[pageKey]) {
+    queueProducts();
+    queue('mallHomeSections', '首页专区', [], () => apiGet<JsonRecord[]>('/api/admin/mall/home-sections'));
+  }
+  if (pages('mall.campaigns')) {
+    queueProducts();
+    queue('campaigns', '营销活动', [], () => apiGet<JsonRecord[]>('/api/admin/mall/campaigns', {
+      keyword: context.campaignFilters.keyword,
+      status: context.campaignFilters.status,
+      categoryCode: context.campaignFilters.categoryCode,
+      campaignType: context.campaignFilters.categoryCode,
+    }));
+  }
+  if (pages('mall.fixedPriceCampaigns', 'mall.promotionVenues')) {
+    queueProducts();
+    const isFixedPrice = pageKey === 'mall.fixedPriceCampaigns';
+    queue(isFixedPrice ? 'fixedPriceCampaigns' : 'promotionVenues', isFixedPrice ? '一口价活动' : '大促会场', [], () => apiGet<JsonRecord[]>('/api/admin/mall/campaigns', {
+      campaignType: isFixedPrice ? 'fixed_price' : 'promotion_venue',
+      limit: 200,
+    }));
+  }
+  if (pages('mall.groupBuyPresale')) {
+    queueProducts();
+    queueCategories();
+    queue('mallGroupBuys', '集采预售', [], () => apiGet<JsonRecord[]>('/api/admin/mall/group-buys'));
+  }
+  if (pages('mall.settings')) {
+    queue('campaigns', '营销活动', [], () => apiGet<JsonRecord[]>('/api/admin/mall/campaigns'));
+  }
+  if (pages('mall.operationsAlerts')) {
+    queue('operationsAlerts', '异常监控', [], () => apiGet<JsonRecord[]>('/api/admin/mall/operations/alerts'));
+  }
+  if (pages('mall.roadshowSandbox')) {
+    queue('roadshowStatus', '路演沙箱', {}, () => apiGet<JsonRecord>('/api/admin/mall/roadshow/status'));
+  }
+  if (pages('mall.deliveryRules', 'mall.paymentSplit')) {
+    queue('mallSettings', '商城设置', {}, () => apiGet<JsonRecord>('/api/admin/mall/settings'));
+  }
+  if (pages('mall.permissions')) {
+    queue('mallPermissions', '运营权限', [], () => apiGet<JsonRecord[]>('/api/admin/mall/permissions', {
+      keyword: context.permissionFilters.keyword,
+      status: context.permissionFilters.status,
+      module: context.permissionFilters.module,
+    }));
+  }
+  if (pages('mall.supportData')) {
+    queue('supportMetrics', '客服指标', {}, () => apiGet<JsonRecord>('/api/admin/mall/support/metrics'));
+    queue('supportQuality', '客服质检', {}, () => apiGet<JsonRecord>('/api/admin/mall/support/quality'));
+    queue('supportSessions', '客服会话', [], () => apiGet<JsonRecord[]>('/api/admin/mall/support/sessions'));
+    queue('supportTickets', '客服工单', [], () => apiGet<JsonRecord[]>('/api/admin/mall/support/tickets'));
+    queue('supportKnowledge', '知识库', [], () => apiGet<JsonRecord[]>('/api/admin/mall/support/knowledge'));
+    queue('mallAfterSales', '售后申请', [], () => apiGet<JsonRecord[]>('/api/admin/mall/after-sales'));
+    queueOrders();
+  }
+  if (pages('mall.support', 'vehicle.support')) {
+    queue('supportAgents', '客服坐席', [], () => apiGet<JsonRecord[]>('/api/admin/mall/support/agents'));
+    queue('supportSessions', '客服会话', [], () => apiGet<JsonRecord[]>('/api/admin/mall/support/sessions'));
+    queue('supportMetrics', '客服指标', {}, () => apiGet<JsonRecord>('/api/admin/mall/support/metrics'));
+  }
+  if (pages('mall.afterSales')) {
+    queue('mallAfterSales', '售后申请', [], () => apiGet<JsonRecord[]>('/api/admin/mall/after-sales'));
+    queueOrders();
+  }
+  if (pages('mall.supportTickets')) {
+    queue('supportTickets', '客服工单', [], () => apiGet<JsonRecord[]>('/api/admin/mall/support/tickets'));
+  }
+  if (pages('mall.knowledge', 'vehicle.knowledge')) {
+    queue('supportKnowledge', '知识库', [], () => apiGet<JsonRecord[]>('/api/admin/mall/support/knowledge'));
+  }
+
+  if (!tasks.length) {
+    if (pageKey.startsWith('mall.')) queueProducts();
+    else if (pageKey.startsWith('vehicle.')) queue('vehicles', '车辆列表', [], () => apiGet<JsonRecord[]>('/api/vehicles', { limit: 80 }));
+    else queue('adminStats', '平台统计', {}, () => apiGet<JsonRecord>('/api/admin/statistics'));
+  }
+
+  await Promise.all(tasks);
+  return { data, errors };
+}
+
 async function fetchDashboardData(
   productFilters: MallFilterState = initialProductFilters,
   categoryFilters: MallFilterState = initialCategoryFilters,
@@ -1675,203 +1908,19 @@ async function fetchDashboardData(
   permissionFilters: MallPermissionFilterState = initialPermissionFilters,
   pickupPointFilters: PickupPointFilterState = initialPickupPointFilters,
   groupLeaderFilters: GroupLeaderFilterState = initialGroupLeaderFilters,
+  pageKey: string = 'platform.overview',
 ) {
-  const errors: LoadErrors = {};
-  const [
-    adminStats,
-    users,
-    vehicles,
-    transportOrders,
-    commissionPending,
-    commissionSummary,
-    mallOverview,
-    mallCategories,
-    mallProducts,
-    mallProcurementBuyers,
-    mallInventoryAlerts,
-    mallOrders,
-    mallAfterSales,
-    mallOpsOverview,
-    mallDeliverySheets,
-    mallPickupPoints,
-    mallGroupLeaders,
-    mallFinanceBills,
-    mallSettlementRecords,
-    mallWithdrawalRequests,
-    mallSalesStats,
-    campaigns,
-    fixedPriceCampaigns,
-    promotionVenues,
-    mallGroupBuys,
-    mallCoupons,
-    mallHomeBanners,
-    mallHomeSections,
-    mallPermissions,
-    mallSettings,
-    supportMetrics,
-    supportQuality,
-    supportAgents,
-    supportSessions,
-    supportTickets,
-    supportKnowledge,
-    operationsAlerts,
-    roadshowStatus,
-    enterprises,
-    demands,
-    cancellations,
-    ownerWithdrawals,
-    trips,
-    undispatchedOrders,
-    allOrders,
-    availableVehicles,
-  ] = await Promise.all([
-    loadWithFallback('平台统计', {}, errors, () => apiGet<JsonRecord>('/api/admin/statistics')),
-    loadWithFallback('账号列表', [], errors, () => apiGet<JsonRecord[]>('/api/admin/users', { limit: 80 })),
-    loadWithFallback('车辆列表', [], errors, () => apiGet<JsonRecord[]>('/api/vehicles', { limit: 80 })),
-    loadWithFallback('运力订单', [], errors, () => apiGet<JsonRecord[]>('/api/admin/orders', { limit: 80 })),
-    loadWithFallback('佣金待审', [], errors, () => apiGet<JsonRecord[]>('/api/orders/commission-pending')),
-    loadWithFallback('佣金统计', {}, errors, () => apiGet<JsonRecord>('/api/orders/commission-summary')),
-    loadWithFallback('商城概览', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/overview')),
-    loadWithFallback('商城类目', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/categories', {
-      keyword: categoryFilters.keyword,
-      status: categoryFilters.status,
-    })),
-    loadWithFallback('商城商品', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/products', {
-      keyword: productFilters.keyword,
-      categoryCode: productFilters.categoryCode,
-      status: productFilters.status,
-      stockStatus: productFilters.stockStatus,
-      sort: productFilters.sort,
-      page: productFilters.page,
-      pageSize: productFilters.pageSize,
-    })),
-    loadWithFallback('采购商', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/procurement-buyers')),
-    loadWithFallback('库存预警', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/inventory-alerts', {
-      keyword: inventoryFilters.keyword,
-      categoryCode: inventoryFilters.categoryCode,
-      status: inventoryFilters.status,
-      stockStatus: inventoryFilters.stockStatus,
-    })),
-    loadWithFallback('商城订单', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/orders')),
-    loadWithFallback('售后申请', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/after-sales')),
-    loadWithFallback('商城运营概览', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/ops/overview')),
-    loadWithFallback('配送单', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/delivery-sheets', { limit: 100 })),
-    loadWithFallback('自提点', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/pickup-points', {
-      limit: 100,
-      keyword: pickupPointFilters.keyword,
-      status: pickupPointFilters.status,
-      community: pickupPointFilters.community,
-    })),
-    loadWithFallback('团长', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/group-leaders', {
-      limit: 100,
-      keyword: groupLeaderFilters.keyword,
-      status: groupLeaderFilters.status,
-      pickupPointId: groupLeaderFilters.pickupPointId,
-    })),
-    loadWithFallback('账单明细', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/finance/bills', { limit: 100 })),
-    loadWithFallback('结算记录', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/finance/settlements', { limit: 100 })),
-    loadWithFallback('提现申请', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/finance/withdrawals', { limit: 100 })),
-    loadWithFallback('销量统计', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/stats/sales', { period: '30d' })),
-    loadWithFallback('营销活动', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/campaigns', {
-      keyword: campaignFilters.keyword,
-      status: campaignFilters.status,
-      categoryCode: campaignFilters.categoryCode,
-      campaignType: campaignFilters.categoryCode,
-    })),
-    loadWithFallback('一口价活动', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/campaigns', {
-      campaignType: 'fixed_price',
-      limit: 200,
-    })),
-    loadWithFallback('大促会场', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/campaigns', {
-      campaignType: 'promotion_venue',
-      limit: 200,
-    })),
-    loadWithFallback('集采预售', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/group-buys')),
-    loadWithFallback('优惠券', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/coupons', {
-      keyword: couponFilters.keyword,
-      status: couponFilters.status,
-      couponType: couponFilters.categoryCode,
-    })),
-    loadWithFallback('首页配置', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/home-banners', {
-      keyword: homeBannerFilters.keyword,
-      status: homeBannerFilters.status,
-    })),
-    loadWithFallback('首页专区', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/home-sections')),
-    loadWithFallback('运营权限', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/permissions', {
-      keyword: permissionFilters.keyword,
-      status: permissionFilters.status,
-      module: permissionFilters.module,
-    })),
-    loadWithFallback('商城设置', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/settings')),
-    loadWithFallback('客服指标', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/support/metrics')),
-    loadWithFallback('客服质检', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/support/quality')),
-    loadWithFallback('客服坐席', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/support/agents')),
-    loadWithFallback('客服会话', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/support/sessions')),
-    loadWithFallback('客服工单', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/support/tickets')),
-    loadWithFallback('知识库', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/support/knowledge')),
-    loadWithFallback('异常监控', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/operations/alerts')),
-    loadWithFallback('路演沙箱', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/roadshow/status')),
-    loadWithFallback('企业列表', [], errors, () => apiGet<JsonRecord[]>('/api/enterprise', { limit: 100 }).catch(() => apiGet<JsonRecord[]>('/api/enterprise/admin/' + (getStoredAdminSession()?.user?.id || ''), { limit: 100 }))),
-    loadWithFallback('需求列表', [], errors, () => apiGet<JsonRecord[]>('/api/demands', { limit: 100 })),
-    loadWithFallback('取消申请', [], errors, () => apiGet<JsonRecord[]>('/api/cancellations/pending')),
-    loadWithFallback('提现记录', [], errors, () => apiGet<JsonRecord[]>('/api/admin/owner-withdrawals')),
-    loadWithFallback('行程列表', [], errors, () => apiGet<JsonRecord[]>('/api/trips', { limit: 100 })),
-    loadWithFallback('未分配订单', [], errors, () => apiGet<JsonRecord[]>('/api/trips/undispatched-orders')),
-    loadWithFallback('全部订单', [], errors, () => apiGet<JsonRecord[]>('/api/trips/all-orders')),
-    loadWithFallback('可用车辆', [], errors, () => apiGet<JsonRecord[]>('/api/trips/available-vehicles')),
-  ]);
-
-  return {
-    data: {
-      adminStats,
-      users,
-      vehicles,
-      transportOrders,
-      commissionPending,
-      commissionSummary,
-      mallOverview,
-      mallCategories,
-      mallProducts,
-      mallProcurementBuyers,
-      mallInventoryAlerts,
-      mallOrders,
-      mallAfterSales,
-      mallOpsOverview,
-      mallDeliverySheets,
-      mallPickupPoints,
-      mallGroupLeaders,
-      mallFinanceBills,
-      mallSettlementRecords,
-      mallWithdrawalRequests,
-      mallSalesStats,
-      campaigns,
-      fixedPriceCampaigns,
-      promotionVenues,
-      mallGroupBuys,
-      mallCoupons,
-      mallHomeBanners,
-      mallHomeSections,
-      mallPermissions,
-      mallSettings,
-      supportMetrics,
-      supportQuality,
-      supportAgents,
-      supportSessions,
-      supportTickets,
-      supportKnowledge,
-      operationsAlerts,
-      roadshowStatus,
-      enterprises,
-      demands,
-      cancellations,
-      ownerWithdrawals,
-      trips,
-      undispatchedOrders,
-      allOrders,
-      availableVehicles,
-    },
-    errors,
-  };
+  return fetchDashboardPageData(pageKey, {
+    productFilters,
+    categoryFilters,
+    inventoryFilters,
+    campaignFilters,
+    couponFilters,
+    homeBannerFilters,
+    permissionFilters,
+    pickupPointFilters,
+    groupLeaderFilters,
+  });
 }
 
 function stringValue(record: JsonRecord | undefined, key: string, fallback = '') {
@@ -13216,7 +13265,16 @@ function App() {
   const groupBuyDetailRequest = useRef('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [moduleSwitcherCollapsed, setModuleSwitcherCollapsed] = useState(false);
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => {
+    const initialModule = adminModules.find(module => module.key === initialAdminRoute.moduleKey) || adminModules[0];
+    const initialPage = initialModule.pages.find(page => page.key === initialAdminRoute.pageKey) || initialModule.pages[0];
+    return Object.fromEntries(adminModules.flatMap(module => (
+      moduleGroups(module).map(group => [
+        `${module.key}:${group}`,
+        module.key !== initialModule.key || group !== initialPage.group,
+      ])
+    )));
+  });
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
@@ -13266,6 +13324,10 @@ function App() {
   const productFilterResolveRef = useRef<(() => void) | null>(null);
   const supportRefreshInFlightRef = useRef(false);
   const operationsCriticalRef = useRef(new Set<string>());
+  const loadedPageKeysRef = useRef(new Set<string>());
+  const pageLoadSequenceRef = useRef(0);
+  const supportSessionVersionRef = useRef('');
+  const supportMetricsRefreshRef = useRef(0);
 
   const currentModule = useMemo(
     () => adminModules.find(module => module.key === activeModuleKey) || adminModules[0],
@@ -13325,6 +13387,11 @@ function App() {
       const nextRoute = getInitialAdminRouteState();
       setActiveModuleKey(nextRoute.moduleKey);
       setActivePageKey(nextRoute.pageKey);
+      const nextModule = adminModules.find(module => module.key === nextRoute.moduleKey);
+      const nextPage = nextModule?.pages.find(page => page.key === nextRoute.pageKey);
+      if (nextModule && nextPage) {
+        setCollapsedGroups(current => ({ ...current, [`${nextModule.key}:${nextPage.group}`]: false }));
+      }
     };
 
     window.addEventListener('hashchange', syncAdminRouteFromLocation);
@@ -13337,6 +13404,10 @@ function App() {
   }, []);
 
   const resetDashboardState = () => {
+    loadedPageKeysRef.current.clear();
+    pageLoadSequenceRef.current += 1;
+    supportSessionVersionRef.current = '';
+    supportMetricsRefreshRef.current = 0;
     setData(initialData);
     setErrors({});
     setSupportMessages([]);
@@ -13378,14 +13449,16 @@ function App() {
     setLoading(false);
   };
 
-  const reload = async (overrides: { productFilters?: MallFilterState } = {}) => {
+  const reload = async (overrides: { productFilters?: MallFilterState; pageKey?: string } = {}) => {
     if (!getStoredAdminSession()) {
       setLoading(false);
       return;
     }
 
+    const pageKey = overrides.pageKey || activePageKey;
+    const loadSequence = ++pageLoadSequenceRef.current;
     const nextProductFilters = overrides.productFilters || productFilters;
-    setLoading(true);
+    if (!loadedPageKeysRef.current.has(pageKey)) setLoading(true);
     const result = await fetchDashboardData(
       nextProductFilters,
       categoryFilters,
@@ -13396,16 +13469,18 @@ function App() {
       permissionFilters,
       pickupPointFilters,
       groupLeaderFilters,
+      pageKey,
     );
 
     if (!getStoredAdminSession()) {
-      setLoading(false);
+      if (loadSequence === pageLoadSequenceRef.current) setLoading(false);
       return;
     }
 
-    setData(result.data);
+    setData(current => ({ ...current, ...result.data }));
     setErrors(result.errors);
-    setLoading(false);
+    loadedPageKeysRef.current.add(pageKey);
+    if (loadSequence === pageLoadSequenceRef.current) setLoading(false);
     setNotice(Object.keys(result.errors).length ? '部分数据暂不可用，已显示可用内容' : '管理数据已更新');
   };
 
@@ -13472,8 +13547,8 @@ function App() {
       return;
     }
 
-    void reload();
-  }, [session?.token]);
+    void reload({ pageKey: activePageKey });
+  }, [session?.token, activePageKey]);
 
   useEffect(() => {
     if (!Object.keys(data.mallSettings).length) return;
@@ -13524,16 +13599,40 @@ function App() {
     if (document.visibilityState === 'hidden' || supportRefreshInFlightRef.current) return;
     supportRefreshInFlightRef.current = true;
     try {
-      const [nextSessions, nextMetrics] = await Promise.all([
-        apiGet<JsonRecord[]>('/api/admin/mall/support/sessions', undefined, { fresh: true }),
-        apiGet<JsonRecord>('/api/admin/mall/support/metrics', undefined, { fresh: true }),
+      const now = Date.now();
+      const shouldRefreshMetrics = now - supportMetricsRefreshRef.current >= 30_000;
+      const [changedSessions, nextMetrics] = await Promise.all([
+        apiGet<JsonRecord[]>('/api/admin/mall/support/sessions', {
+          updatedAfter: supportSessionVersionRef.current || undefined,
+        }, { fresh: true }),
+        shouldRefreshMetrics
+          ? apiGet<JsonRecord>('/api/admin/mall/support/metrics', undefined, { fresh: true })
+          : Promise.resolve<JsonRecord | null>(null),
       ]);
+      if (nextMetrics) supportMetricsRefreshRef.current = now;
+      const changedSessionIds = new Set(changedSessions.map(supportSession => stringValue(supportSession, 'id')));
+      const changedSelectedSession = selectedSessionId
+        ? changedSessionIds.has(selectedSessionId)
+        : false;
       setData(current => ({
         ...current,
-        supportSessions: nextSessions,
-        supportMetrics: nextMetrics,
+        supportSessions: changedSessions.length
+          ? [...changedSessions, ...current.supportSessions.filter(supportSession => (
+            !changedSessionIds.has(stringValue(supportSession, 'id'))
+          ))].sort((left, right) => {
+            const leftOpen = stringValue(left, 'status') === 'open' ? 0 : 1;
+            const rightOpen = stringValue(right, 'status') === 'open' ? 0 : 1;
+            if (leftOpen !== rightOpen) return leftOpen - rightOpen;
+            return stringValue(right, 'updatedAt').localeCompare(stringValue(left, 'updatedAt'));
+          })
+          : current.supportSessions,
+        supportMetrics: nextMetrics || current.supportMetrics,
       }));
-      if (selectedSessionId) {
+      changedSessions.forEach(supportSession => {
+        const updatedAt = stringValue(supportSession, 'updatedAt');
+        if (updatedAt > supportSessionVersionRef.current) supportSessionVersionRef.current = updatedAt;
+      });
+      if (selectedSessionId && changedSelectedSession) {
         const nextMessages = await apiGet<JsonRecord[]>(`/api/admin/mall/support/sessions/${selectedSessionId}/messages`, undefined, { fresh: true });
         setSupportMessages(nextMessages);
       }
@@ -13544,12 +13643,18 @@ function App() {
 
   useEffect(() => {
     if (activePageKey !== 'mall.support' && activePageKey !== 'vehicle.support') return undefined;
-    void refreshSupportRealtime().catch(() => undefined);
     const timer = window.setInterval(() => {
       void refreshSupportRealtime().catch(() => undefined);
     }, 5000);
     return () => window.clearInterval(timer);
   }, [activePageKey, refreshSupportRealtime]);
+
+  useEffect(() => {
+    data.supportSessions.forEach(supportSession => {
+      const updatedAt = stringValue(supportSession, 'updatedAt');
+      if (updatedAt > supportSessionVersionRef.current) supportSessionVersionRef.current = updatedAt;
+    });
+  }, [data.supportSessions]);
 
   useEffect(() => {
     if (activePageKey !== 'mall.support' && activePageKey !== 'vehicle.support') return;
@@ -15193,6 +15298,7 @@ function App() {
     const nextModule = adminModules.find(module => module.key === moduleKey) || adminModules[0];
     setActiveModuleKey(nextModule.key);
     setActivePageKey(nextModule.pages[0].key);
+    setCollapsedGroups(current => ({ ...current, [`${nextModule.key}:${nextModule.pages[0].group}`]: false }));
     writeAdminRouteToLocation(nextModule.pages[0].key);
   };
 
@@ -15200,6 +15306,11 @@ function App() {
     const route = findAdminRoute(pageKey);
     if (route) {
       setActiveModuleKey(route.moduleKey);
+      const nextModule = adminModules.find(module => module.key === route.moduleKey);
+      const nextPage = nextModule?.pages.find(page => page.key === pageKey);
+      if (nextModule && nextPage) {
+        setCollapsedGroups(current => ({ ...current, [`${nextModule.key}:${nextPage.group}`]: false }));
+      }
     }
     setActivePageKey(pageKey);
     writeAdminRouteToLocation(pageKey);

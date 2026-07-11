@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Image, Text, View } from '@tarojs/components'
-import Taro, { useDidShow } from '@tarojs/taro'
+import Taro, { useDidHide, useDidShow } from '@tarojs/taro'
 import { Camera, ChevronLeft, Headphones } from 'lucide-react-taro'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -55,11 +55,14 @@ export default function MallSupportCenter() {
   const [order, setOrder] = useState<MallSupportOrder | null>(null)
   const [error, setError] = useState('')
   const [draft, setDraft] = useState('')
+  const [sending, setSending] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [rating, setRating] = useState(5)
   const [ratingTags, setRatingTags] = useState<string[]>([])
   const [ratingComment, setRatingComment] = useState('')
   const [ratingSaving, setRatingSaving] = useState(false)
+  const pageVisibleRef = useRef(false)
+  const sessionVersionRef = useRef('')
   const userId = (Taro.getStorageSync('userInfo') as StoredUser | undefined)?.id || ''
   const orderId = Taro.getCurrentInstance().router?.params?.orderId
   const sessionId = Taro.getCurrentInstance().router?.params?.sessionId
@@ -76,16 +79,28 @@ export default function MallSupportCenter() {
   }, [])
 
   useDidShow(() => {
+    pageVisibleRef.current = true
     loadSessions()
+  })
+
+  useDidHide(() => {
+    pageVisibleRef.current = false
   })
 
   useEffect(() => {
     if (!selectedSession?.id) return undefined
     const timer = setInterval(() => {
-      loadMessages(selectedSession, true)
+      if (pageVisibleRef.current) pollSessionUpdates(selectedSession)
     }, 4000)
     return () => clearInterval(timer)
   }, [selectedSession?.id])
+
+  const rememberSessionVersion = (nextSessions: SupportSession[]) => {
+    nextSessions.forEach((session) => {
+      const updatedAt = session.updatedAt || ''
+      if (updatedAt > sessionVersionRef.current) sessionVersionRef.current = updatedAt
+    })
+  }
 
   const loadSessions = async () => {
     if (!userId) return
@@ -94,6 +109,7 @@ export default function MallSupportCenter() {
         listSupportSessions(userId),
         orderId ? getMallOrder(String(orderId)) : Promise.resolve(null),
       ])
+      rememberSessionVersion(nextSessions)
       setOrder(nextOrder)
       setSessions(nextSessions)
       const session = sessionId
@@ -112,24 +128,36 @@ export default function MallSupportCenter() {
     }
   }
 
-  const loadMessages = async (session: SupportSession, silent = false) => {
+  const loadMessages = async (session: SupportSession) => {
     try {
-      const [nextMessages, nextSessions] = await Promise.all([
-        listSupportMessages(session.id, userId),
-        silent ? listSupportSessions(userId) : Promise.resolve(null),
-      ])
+      const nextMessages = await listSupportMessages(session.id, userId)
       setMessages(nextMessages)
-      if (nextSessions) {
-        setSessions(nextSessions)
-        const refreshedSession = nextSessions.find((item) => item.id === session.id)
-        if (refreshedSession) setSelectedSession(refreshedSession)
-      }
-      if (!silent) setError('')
+      setError('')
     } catch (messageError) {
-      if (!silent) {
-        setMessages([])
-        setError(messageError instanceof Error ? messageError.message : '客服消息加载失败')
+      setMessages([])
+      setError(messageError instanceof Error ? messageError.message : '客服消息加载失败')
+    }
+  }
+
+  const pollSessionUpdates = async (session: SupportSession) => {
+    try {
+      const changedSessions = await listSupportSessions(userId, {
+        updatedAfter: sessionVersionRef.current || undefined,
+      })
+      if (!changedSessions.length) return
+      rememberSessionVersion(changedSessions)
+      const changedIds = new Set(changedSessions.map((item) => item.id))
+      setSessions((current) => [
+        ...changedSessions,
+        ...current.filter((item) => !changedIds.has(item.id)),
+      ].sort((left, right) => (right.updatedAt || '').localeCompare(left.updatedAt || '')))
+      const refreshedSession = changedSessions.find((item) => item.id === session.id)
+      if (refreshedSession) {
+        setSelectedSession(refreshedSession)
+        await loadMessages(refreshedSession)
       }
+    } catch {
+      // 静默轮询失败时保留当前聊天内容，下一轮自动重试。
     }
   }
 
@@ -160,7 +188,8 @@ export default function MallSupportCenter() {
 
   const sendMessageContent = async (content: string) => {
     const nextContent = content.trim()
-    if (!nextContent) return
+    if (!nextContent || sending) return
+    setSending(true)
     try {
       const session = await ensureSession(topic === '订单售后协商')
       const message = await createSupportMessage(session.id, {
@@ -179,6 +208,8 @@ export default function MallSupportCenter() {
         title: sendError instanceof Error ? sendError.message : '发送失败',
         icon: 'none',
       })
+    } finally {
+      setSending(false)
     }
   }
 
@@ -233,6 +264,15 @@ export default function MallSupportCenter() {
       setUploading(false)
       Taro.hideLoading()
     }
+  }
+
+  const openAfterSaleProgress = () => {
+    if (orderId) {
+      Taro.navigateTo({ url: `/pages/mall/after-sale/index?orderId=${encodeURIComponent(String(orderId))}` })
+      return
+    }
+    Taro.showToast({ title: '请先选择需要售后的订单', icon: 'none' })
+    Taro.navigateTo({ url: '/pages/mall/orders/index?tab=after_sale' })
   }
 
   const submitRating = async () => {
@@ -330,7 +370,7 @@ export default function MallSupportCenter() {
 
       <View className="mall-support-quick-replies">
         {QUICK_REPLIES.map((reply) => (
-          <View key={reply.label} className="mall-small-button" onClick={() => handleQuickReply(reply.content)}>
+          <View key={reply.label} className="mall-small-button" onClick={() => !sending && handleQuickReply(reply.content)}>
             <Text>{reply.label}</Text>
           </View>
         ))}
@@ -419,7 +459,7 @@ export default function MallSupportCenter() {
           <Camera size={15} color="#1F2D1F" />
           <Text>{uploading ? '上传中…' : '上传照片'}</Text>
         </View>
-        <View className="mall-small-button" onClick={() => Taro.navigateTo({ url: `/pages/mall/after-sale/index?orderId=${orderId || ''}` })}>
+        <View className="mall-small-button" onClick={openAfterSaleProgress}>
           <Text>查看进度</Text>
         </View>
         <View className="mall-small-button" onClick={contactDelivery}>
@@ -435,9 +475,9 @@ export default function MallSupportCenter() {
           onInput={(event) => setDraft(String(event.detail.value || ''))}
           placeholder="输入问题或售后说明"
         />
-        <View className="mall-chat-send" onClick={sendMessage}>
-          <Text>发送</Text>
-        </View>
+        <Button className="mall-chat-send" disabled={sending || !draft.trim()} onClick={sendMessage}>
+          <Text>{sending ? '发送中…' : '发送'}</Text>
+        </Button>
       </View>
     </MallPage>
   )

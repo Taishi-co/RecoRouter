@@ -1542,8 +1542,11 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
   await apiPut('/api/notifications/mark-all-read', { user_id: userId })
 }
 
-export async function listSupportSessions(userId: string): Promise<SupportSession[]> {
-  return apiGet('/api/support/sessions', { userId })
+export async function listSupportSessions(
+  userId: string,
+  options: { updatedAfter?: string } = {},
+): Promise<SupportSession[]> {
+  return apiGet('/api/support/sessions', { userId, updatedAfter: options.updatedAfter })
 }
 
 export async function createSupportSession(data: {

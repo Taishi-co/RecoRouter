@@ -163,7 +163,8 @@ const checks = [
   },
   {
     name: '首页秒杀倒计时真实刷新，banner 和营销专区能进入活动筛选列表',
-    pass: /setInterval\(\(\)\s*=>\s*setNow\(Date\.now\(\)\),\s*1000\)/.test(files.home)
+    pass: /setInterval\(\(\)\s*=>\s*\{[\s\S]{0,120}setNow\(Date\.now\(\)\)[\s\S]{0,80}\},\s*1000\)/.test(files.home)
+      && /pageVisibleRef\.current/.test(files.home)
       && /buildFlashSaleState/.test(files.home)
       && /formatDurationSeconds/.test(files.home)
       && /resolveBannerActivityType/.test(files.home)
