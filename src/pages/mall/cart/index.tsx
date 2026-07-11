@@ -47,6 +47,7 @@ export default function MallCartPage() {
   const [cartSwipeStart, setCartSwipeStart] = useState<CartSwipeStart | null>(null)
   const [discountDetailOpen, setDiscountDetailOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [bulkAction, setBulkAction] = useState<'' | 'select' | 'clear'>('')
   const userId = (Taro.getStorageSync('userInfo') as StoredUser | undefined)?.id || ''
 
   const payableCents = useMemo(
@@ -135,21 +136,38 @@ export default function MallCartPage() {
   }
 
   const selectAllCartItems = async () => {
+    if (!cart.items.length || bulkAction) return
+    setBulkAction('select')
     try {
       await Promise.all(cart.items.map((item) => updateMallCartItem(item.id, { selected: !allSelected })))
-      loadData({ refreshAddresses: false, freshCart: true })
+      await loadData({ refreshAddresses: false, freshCart: true })
     } catch (error) {
       showError(error, '全选失败')
+    } finally {
+      setBulkAction('')
     }
   }
 
   const clearMallCart = async () => {
+    if (!cart.items.length || bulkAction) return
+    const result = await Taro.showModal({
+      title: '确认清空购物车吗',
+      content: `将删除购物车中的 ${cart.items.length} 件商品，此操作无法撤销。`,
+      confirmText: '清空',
+      cancelText: '取消',
+      confirmColor: '#D14343',
+    })
+    if (!result.confirm) return
+    setBulkAction('clear')
     try {
       await Promise.all(cart.items.map((item) => deleteMallCartItem(item.id)))
       setSwipedCartItemId('')
-      loadData({ refreshAddresses: false, freshCart: true })
+      await loadData({ refreshAddresses: false, freshCart: true })
+      Taro.showToast({ title: '购物车已清空', icon: 'success' })
     } catch (error) {
       showError(error, '清空失败')
+    } finally {
+      setBulkAction('')
     }
   }
 
@@ -274,11 +292,11 @@ export default function MallCartPage() {
       <View className="mall-v7-cart-actions">
         <View onClick={selectAllCartItems}>
           {allSelected ? <Check size={16} color="#2F7E43" /> : <Circle size={16} color="#7A8476" />}
-          <Text>{allSelected ? '取消全选' : '一键勾选全部'}</Text>
+          <Text>{bulkAction === 'select' ? '处理中…' : allSelected ? '取消全选' : '一键勾选全部'}</Text>
         </View>
         <View onClick={clearMallCart}>
           <Trash2 size={16} color="#B45309" />
-          <Text>一键清空</Text>
+          <Text>{bulkAction === 'clear' ? '清空中…' : '一键清空'}</Text>
         </View>
       </View>
 

@@ -2,69 +2,87 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
-
-function read(pathname) {
-  return readFileSync(resolve(root, pathname), 'utf8');
-}
-
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
-}
+const read = pathname => readFileSync(resolve(root, pathname), 'utf8');
+const assert = (condition, message) => {
+  if (!condition) throw new Error(message);
+};
 
 const adminMain = read('src/web-admin/main.tsx');
 const adminStyles = read('src/web-admin/styles.css');
+const mallSupport = read('src/pages/mall/support/index.tsx');
+const mallService = read('src/services/mall.ts');
 const mallBackend = read('server/src/modules/mall.rs');
+const authBackend = read('server/src/modules/auth.rs');
+const supportMigration = read('server/migrations/0046_mall_support_operations_maturity.sql');
 const packageJson = JSON.parse(read('package.json'));
 const supportSection = adminMain.match(/function SupportSection\([\s\S]*?\nfunction AfterSalesSection\(/)?.[0] || '';
 
-assert(/interface SupportFilterState/.test(adminMain), 'Support workbench must define explicit filter state.');
-assert(/const initialSupportFilters/.test(adminMain), 'Support workbench must define initial filters.');
-assert(/filteredSupportSessions/.test(adminMain), 'Support workbench must filter support sessions.');
-assert(/filteredSupportTickets/.test(adminMain), 'Support workbench must filter support tickets.');
-assert(/afterSalesQueue/.test(adminMain), 'Support workbench must surface after-sales items.');
-assert(/supportDashboardStats/.test(adminMain), 'Support data page must compute dashboard stats.');
-assert(/designPage\('mall\.supportData', '客服数据'/.test(adminMain), 'Support data display must live on a separate page.');
-assert(/designPage\('mall\.supportTickets', '客服工单'/.test(adminMain), 'Support tickets must live on a separate page.');
-assert(/function SupportDataSection\(/.test(adminMain), 'Support data page must render its own section.');
-assert(/function SupportTicketsSection\(/.test(adminMain), 'Support ticket page must render its own section.');
-assert(/function AfterSalesSection\(/.test(adminMain), 'After-sales page must render its own section.');
-assert(/function SupportKnowledgeSection\(/.test(adminMain), 'Knowledge page must render its own section.');
-assert(/apiGet<JsonRecord\[]>\('\/api\/admin\/mall\/after-sales'/.test(adminMain), 'After-sales page must load real admin after-sales records.');
-assert(/apiPut<JsonRecord>\(`\/api\/admin\/mall\/after-sales\/\$\{id\}`/.test(adminMain), 'After-sales page must update real after-sales records.');
-assert(/messages: JsonRecord\[\]/.test(supportSection), 'SupportSection must focus on live sessions and messages.');
-assert(!/knowledge: JsonRecord\[\]/.test(supportSection), 'SupportSection must not own knowledge-base data.');
-assert(!/afterSales: JsonRecord\[\]/.test(supportSection), 'SupportSection must not own after-sales queue data.');
-assert(!/tickets: JsonRecord\[\]/.test(supportSection), 'SupportSection must not own ticket board data.');
-assert(/onViewAfterSaleOrder/.test(adminMain), 'Support workbench must allow jumping from after-sales queue to order detail.');
-assert(/support-workbench/.test(adminMain), 'Support page must render a dedicated workbench layout.');
-assert(/support-filterbar/.test(adminMain), 'Support page must expose filters.');
-assert(/support-session-shell/.test(adminMain), 'Support page must render a two-column session/message shell.');
-assert(/support-session-list/.test(adminMain), 'Support page must render a scannable session list.');
-assert(/support-message-composer/.test(adminMain), 'Support page must render a dedicated message composer.');
-assert(/support-context-panel/.test(adminMain), 'Support page must render customer context next to messages.');
-assert(/support-after-sales/.test(adminMain), 'Support page must render after-sales queue.');
-assert(/support-conversation/.test(adminMain), 'Support page must render conversation detail separately.');
-assert(/support-ticket-board/.test(adminMain), 'Support page must render ticket board.');
-assert(/support-knowledge-panel/.test(adminMain), 'Support page must render knowledge panel.');
-assert(!/activePageKey === 'mall\.support' \|\| activePageKey === 'mall\.afterSales' \|\| activePageKey === 'mall\.knowledge'/.test(adminMain), 'Support, after-sales, and knowledge pages must not share one mixed section.');
+assert(/function SupportSection\(/.test(adminMain), 'Admin must render a dedicated live support workbench.');
+assert(/support-inbox-toolbar/.test(supportSection), 'Support workbench must expose a compact inbox toolbar.');
+assert(/support-inbox-tabs/.test(supportSection), 'Support workbench must expose open, resolved, and all tabs.');
+assert(/support-inbox-list/.test(supportSection), 'Support workbench must render a conversation queue.');
+assert(/support-unread-badge/.test(supportSection), 'Conversation queue must surface unread customer messages.');
+assert(/support-chat-card/.test(supportSection), 'Support workbench must keep the chat in the center column.');
+assert(/support-customer-card/.test(supportSection), 'Support workbench must show real customer context.');
+assert(/support-order-card/.test(supportSection), 'Support workbench must show the latest related order.');
+assert(/onOpenOrder/.test(supportSection), 'Support workbench must open the related order.');
+assert(/onOpenAfterSales/.test(supportSection), 'Support workbench must jump into after-sales handling.');
+assert(/onCreateTicket/.test(supportSection), 'Support workbench must create a ticket from the current context.');
+assert(/requestSubmit/.test(supportSection), 'Support composer must support Enter-to-send.');
+assert(!/onCreateSession/.test(supportSection), 'Agents must not create artificial customer sessions from the inbox.');
+assert(!/support-create-session/.test(supportSection), 'The live inbox must not ask agents for raw user IDs.');
 
-assert(/\.support-workbench/.test(adminStyles), 'Support workbench layout CSS must exist.');
-assert(/\.support-filterbar/.test(adminStyles), 'Support filter bar CSS must exist.');
-assert(/\.support-session-shell/.test(adminStyles), 'Support session shell CSS must exist.');
-assert(/\.support-session-list/.test(adminStyles), 'Support session list CSS must exist.');
-assert(/\.support-message-composer/.test(adminStyles), 'Support message composer CSS must exist.');
-assert(/\.support-context-panel/.test(adminStyles), 'Support context panel CSS must exist.');
-assert(/\.support-after-sales/.test(adminStyles), 'Support after-sales queue CSS must exist.');
-assert(/\.support-conversation/.test(adminStyles), 'Support conversation detail CSS must exist.');
-assert(/\.support-ticket-board/.test(adminStyles), 'Support ticket board CSS must exist.');
-assert(/\.support-knowledge-panel/.test(adminStyles), 'Support knowledge panel CSS must exist.');
+for (const className of [
+  'support-inbox-toolbar',
+  'support-inbox-tabs',
+  'support-inbox-layout',
+  'support-inbox-row',
+  'support-unread-badge',
+  'support-chat-card',
+  'support-customer-card',
+  'support-order-card',
+]) {
+  assert(adminStyles.includes(`.${className}`), `Missing support workbench style: ${className}.`);
+}
 
-assert(/\/api\/admin\/mall\/after-sales/.test(mallBackend), 'Backend must expose admin after-sales routes.');
-assert(/async fn admin_list_after_sales/.test(mallBackend), 'Backend must implement admin_list_after_sales.');
-assert(/async fn admin_update_after_sale/.test(mallBackend), 'Backend must implement admin_update_after_sale.');
-assert(/validate_after_sale_status/.test(mallBackend), 'Backend must validate after-sales statuses.');
+for (const endpoint of [
+  '/api/admin/mall/support/sessions',
+  '/api/admin/mall/support/tickets',
+  '/api/admin/mall/support/knowledge',
+  '/api/admin/mall/support/metrics',
+]) {
+  assert(adminMain.includes(endpoint), `Web admin must use protected endpoint ${endpoint}.`);
+  assert(mallBackend.includes(endpoint), `Backend must expose protected endpoint ${endpoint}.`);
+}
+assert(/async fn admin_list_support_sessions/.test(mallBackend), 'Backend must provide enriched admin sessions.');
+assert(/'customer', jsonb_build_object/.test(mallBackend), 'Admin session payload must include customer identity.');
+assert(/'recentOrder', recent_order\.payload/.test(mallBackend), 'Admin session payload must include a recent related order.');
+assert(/'unreadCount'/.test(mallBackend) && /'waitingMinutes'/.test(mallBackend), 'Admin sessions must include queue priority signals.');
+assert(/require_non_empty\(query\.user_id, "用户ID不能为空"\)/.test(mallBackend), 'Public support lists must require a user ID.');
+assert(/ensure_support_session_owner/.test(mallBackend), 'Public support messages must verify session ownership.');
+assert(/用户端不能发送客服坐席消息/.test(mallBackend), 'Public users must not spoof agent replies.');
+assert(/upload_support_evidence/.test(mallBackend), 'Backend must persist real support evidence uploads.');
+assert(/AdminPrincipal/.test(authBackend) && /extensions_mut\(\)[\s\S]*?\.insert/.test(authBackend), 'Admin middleware must expose the authenticated agent identity.');
+assert(/admin_list_support_agents/.test(mallBackend) && /onAssignSession/.test(supportSection), 'Support workbench must support real agent assignment and transfer.');
+assert(/read_at/.test(supportMigration) && /support-message-read/.test(supportSection), 'Support messages must persist and display read state.');
+assert(/upsert_support_satisfaction/.test(mallBackend) && /rateSupportSession/.test(mallSupport), 'Resolved support sessions must accept real customer satisfaction ratings.');
+assert(!/'satisfaction',\s*96/.test(mallBackend), 'Support satisfaction must not be a hard-coded demo number.');
+assert(/admin_support_quality/.test(mallBackend) && /supportQuality/.test(adminMain), 'Admin must expose agent quality and SLA signals.');
+assert(/admin_reset_roadshow/.test(mallBackend) && /RoadshowSandboxSection/.test(adminMain), 'Admin must expose an isolated one-click roadshow reset.');
+assert(/LIKE '\/api\/uploads\/%'/.test(mallBackend), 'Roadshow reset must prefer a product image that is served by the real upload endpoint.');
+assert(/refresh_operations_alerts/.test(mallBackend) && /OperationsAlertsSection/.test(adminMain), 'Admin must monitor payment, refund, delivery, and upload anomalies.');
+
+assert(/uploadSupportEvidence/.test(mallSupport) && /evidenceImages/.test(mallSupport), 'Customer support must upload and render real evidence images.');
+assert(/Network\.uploadFile/.test(mallService), 'Support evidence must use the shared upload transport.');
+assert(/listSupportMessages\(session\.id, userId\)/.test(mallSupport), 'Customer message reads must include ownership context.');
+assert(/}, 4000\)/.test(mallSupport), 'Customer chat polling must use a reasonable interval.');
+assert(/document\.visibilityState === 'hidden'/.test(adminMain), 'Admin polling must pause while the tab is hidden.');
+assert(/}, 5000\)/.test(adminMain), 'Admin polling must avoid one-second request pressure.');
+
+assert(/function SupportDataSection\(/.test(adminMain), 'Support metrics must stay on a separate page.');
+assert(/function SupportTicketsSection\(/.test(adminMain), 'Support tickets must stay on a separate page.');
+assert(/function AfterSalesSection\(/.test(adminMain), 'After-sales handling must stay on a separate page.');
+assert(/function SupportKnowledgeSection\(/.test(adminMain), 'Knowledge management must stay on a separate page.');
 
 assert(
   packageJson.scripts['check:web-admin-support-workbench'] === 'node scripts/check-web-admin-support-workbench.mjs',

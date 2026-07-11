@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Image, Text, View } from '@tarojs/components'
-import Taro, { useDidShow } from '@tarojs/taro'
+import Taro, { useDidHide, useDidShow } from '@tarojs/taro'
 import { ChevronLeft, Headphones, Search } from 'lucide-react-taro'
 import { Input } from '@/components/ui/input'
 import {
@@ -39,18 +39,20 @@ export default function MallOrdersPage() {
   const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(false)
   const [now, setNow] = useState(Date.now())
+  const pageVisibleRef = useRef(false)
   const [payingOrderId, setPayingOrderId] = useState('')
   const [cancellingOrderId, setCancellingOrderId] = useState('')
   const userId = (Taro.getStorageSync('userInfo') as StoredUser | undefined)?.id || ''
 
   useDidShow(() => {
+    pageVisibleRef.current = true
+    setNow(Date.now())
     loadOrders({ preferCache: true, revalidate: true })
   })
 
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [])
+  useDidHide(() => {
+    pageVisibleRef.current = false
+  })
 
   const loadOrders = async ({
     preferCache = false,
@@ -95,6 +97,19 @@ export default function MallOrdersPage() {
     () => mergeOrderItems(orders, groupBuySubscriptions),
     [groupBuySubscriptions, orders],
   )
+
+  const hasActiveCountdown = useMemo(
+    () => orderItems.some((item) => isPendingPaymentItem(item) && paymentDeadline(item) > Date.now()),
+    [orderItems],
+  )
+
+  useEffect(() => {
+    if (!hasActiveCountdown) return undefined
+    const timer = setInterval(() => {
+      if (pageVisibleRef.current) setNow(Date.now())
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [hasActiveCountdown])
 
   const orderTabCounts = useMemo(
     () => ({

@@ -57,6 +57,19 @@ EOF
   exit 2
 fi
 
+current_release="$(readlink -f "$APP_ROOT/current" 2>/dev/null || true)"
+if [[ -d "$APP_ROOT/releases" ]]; then
+  for stale_release in "$APP_ROOT"/releases/*; do
+    [[ -d "$stale_release" ]] || continue
+    if [[ -n "$current_release" && "$(readlink -f "$stale_release")" == "$current_release" ]]; then
+      continue
+    fi
+    rm -rf "$stale_release"
+  done
+fi
+docker container prune -f >/dev/null 2>&1 || true
+docker image prune -af >/dev/null 2>&1 || true
+
 RELEASE_DIR="$APP_ROOT/releases/$RELEASE_ID"
 rm -rf "$RELEASE_DIR"
 mkdir -p "$RELEASE_DIR"
@@ -270,5 +283,9 @@ for spec in \
   fi
   unset healthy
 done
+
+if [[ "$RELEASE_TAR" == /tmp/* ]]; then
+  rm -f "$RELEASE_TAR"
+fi
 
 echo "RecoRouter split APIs are healthy for https://$DOMAIN"

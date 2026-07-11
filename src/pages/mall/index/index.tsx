@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Image, Swiper, SwiperItem, Text, View } from '@tarojs/components'
-import Taro, { useDidShow } from '@tarojs/taro'
+import Taro, { useDidHide, useDidShow } from '@tarojs/taro'
 import { Bell, Clock3, Flame, MapPin, Sparkles, Users } from 'lucide-react-taro'
 import {
   addMallCartItem,
@@ -82,15 +82,24 @@ export default function MallHome() {
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [now, setNow] = useState(() => Date.now())
+  const pageVisibleRef = useRef(false)
   const [specPickerProduct, setSpecPickerProduct] = useState<MallProduct | null>(null)
   const [specPickerLoading, setSpecPickerLoading] = useState(false)
 
   useDidShow(() => {
+    pageVisibleRef.current = true
+    setNow(Date.now())
     loadProducts({ preferCache: true, revalidate: true })
   })
 
+  useDidHide(() => {
+    pageVisibleRef.current = false
+  })
+
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000)
+    const timer = setInterval(() => {
+      if (pageVisibleRef.current) setNow(Date.now())
+    }, 1000)
     return () => clearInterval(timer)
   }, [])
 

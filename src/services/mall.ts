@@ -10,8 +10,10 @@ export interface MallGetOptions {
 const MALL_GET_CACHE_TTL_MS = 30_000
 const MALL_FAST_GET_CACHE_TTL_MS = 8_000
 const MALL_STATIC_GET_CACHE_TTL_MS = 60_000
+const MALL_GET_CACHE_MAX_ENTRIES = 200
 const mallGetCache = new Map<string, { expiresAt: number; value: unknown }>()
 const mallGetInFlight = new Map<string, Promise<unknown>>()
+let mallGetCacheEpoch = 0
 
 export interface MallCategory {
   id: string
@@ -947,6 +949,12 @@ export interface SupportSession {
   lastMessage?: string | null
   createdAt?: string
   updatedAt?: string
+  satisfaction?: {
+    rating: number
+    tags?: string[]
+    comment?: string | null
+    updatedAt?: string
+  } | null
 }
 
 export interface SupportTicket {
@@ -970,6 +978,8 @@ export interface SupportMessage {
   senderRole: string
   content: string
   metadata?: Record<string, unknown>
+  readAt?: string | null
+  readBy?: string | null
   createdAt?: string
 }
 
@@ -1532,28 +1542,51 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
   await apiPut('/api/notifications/mark-all-read', { user_id: userId })
 }
 
-export async function listSupportSessions(userId?: string): Promise<SupportSession[]> {
-  return apiGet('/api/support/sessions', userId ? { userId } : undefined)
+export async function listSupportSessions(
+  userId: string,
+  options: { updatedAfter?: string } = {},
+): Promise<SupportSession[]> {
+  return apiGet('/api/support/sessions', { userId, updatedAfter: options.updatedAfter })
 }
 
 export async function createSupportSession(data: {
   userId: string
   channel: string
   topic: string
-  assignedAgentId?: string
 }): Promise<SupportSession> {
   return apiPost('/api/support/sessions', data)
 }
 
-export async function listSupportMessages(sessionId: string): Promise<SupportMessage[]> {
-  return apiGet(`/api/support/sessions/${sessionId}/messages`)
+export async function listSupportMessages(sessionId: string, userId: string): Promise<SupportMessage[]> {
+  return apiGet(`/api/support/sessions/${sessionId}/messages`, { userId })
 }
 
-export async function updateSupportSessionStatus(
+export async function uploadSupportEvidence(
   sessionId: string,
-  data: { status: 'open' | 'resolved' | 'closed'; lastMessage?: string; assignedAgentId?: string },
-): Promise<SupportSession> {
-  return apiPut(`/api/support/sessions/${sessionId}`, data)
+  userId: string,
+  filePath: string,
+): Promise<{ fileKey: string; url: string }> {
+  const upload = await Network.uploadFile({
+    url: `/api/support/sessions/${encodeURIComponent(sessionId)}/evidence?userId=${encodeURIComponent(userId)}`,
+    filePath,
+    name: 'file',
+  })
+  if (upload.statusCode < 200 || upload.statusCode >= 300) {
+    throw new Error(`凭证上传失败（${upload.statusCode}）`)
+  }
+  let payload: { code?: number; message?: string; data?: { fileKey?: string; url?: string } }
+  try {
+    payload = JSON.parse(String(upload.data || '{}'))
+  } catch {
+    throw new Error('凭证上传响应格式错误')
+  }
+  if (payload.code !== 200 || !payload.data?.url) {
+    throw new Error(payload.message || '凭证上传失败')
+  }
+  return {
+    fileKey: payload.data.fileKey || payload.data.url,
+    url: payload.data.url,
+  }
 }
 
 export async function createSupportMessage(sessionId: string, data: {
@@ -1565,8 +1598,17 @@ export async function createSupportMessage(sessionId: string, data: {
   return apiPost(`/api/support/sessions/${sessionId}/messages`, data)
 }
 
-export async function listSupportTickets(userId?: string): Promise<SupportTicket[]> {
-  return apiGet('/api/support/tickets', userId ? { userId } : undefined)
+export async function rateSupportSession(sessionId: string, data: {
+  userId: string
+  rating: number
+  tags?: string[]
+  comment?: string
+}): Promise<NonNullable<SupportSession['satisfaction']>> {
+  return apiPost(`/api/support/sessions/${sessionId}/satisfaction`, data)
+}
+
+export async function listSupportTickets(userId: string): Promise<SupportTicket[]> {
+  return apiGet('/api/support/tickets', { userId })
 }
 
 export async function createSupportTicket(data: {
@@ -1581,29 +1623,62 @@ export async function createSupportTicket(data: {
   return apiPost('/api/support/tickets', data)
 }
 
-export async function updateSupportTicket(id: string, data: Partial<SupportTicket>) {
-  return apiPut<SupportTicket>(`/api/support/tickets/${id}`, data)
-}
-
 export async function listSupportKnowledge(): Promise<SupportKnowledge[]> {
   return apiGet('/api/support/knowledge')
 }
 
-export async function createSupportKnowledge(data: {
+export async function listAdminSupportSessions(): Promise<SupportSession[]> {
+  return apiGet('/api/admin/mall/support/sessions')
+}
+
+export async function listAdminSupportMessages(sessionId: string): Promise<SupportMessage[]> {
+  return apiGet(`/api/admin/mall/support/sessions/${sessionId}/messages`)
+}
+
+export async function createAdminSupportMessage(sessionId: string, data: {
+  senderId?: string
+  senderRole: 'agent' | 'admin' | 'support' | 'operator'
+  content: string
+  metadata?: Record<string, unknown>
+}): Promise<SupportMessage> {
+  return apiPost(`/api/admin/mall/support/sessions/${sessionId}/messages`, data)
+}
+
+export async function listAdminSupportTickets(): Promise<SupportTicket[]> {
+  return apiGet('/api/admin/mall/support/tickets')
+}
+
+export async function createAdminSupportTicket(data: {
+  userId: string
+  sessionId?: string
+  orderId?: string
+  category: string
+  priority?: string
+  title: string
+  description?: string
+}): Promise<SupportTicket> {
+  return apiPost('/api/admin/mall/support/tickets', data)
+}
+
+export async function updateAdminSupportTicket(id: string, data: Partial<SupportTicket>) {
+  return apiPut<SupportTicket>(`/api/admin/mall/support/tickets/${id}`, data)
+}
+
+export async function listAdminSupportKnowledge(): Promise<SupportKnowledge[]> {
+  return apiGet('/api/admin/mall/support/knowledge')
+}
+
+export async function createAdminSupportKnowledge(data: {
   title: string
   category: string
   content: string
   status?: string
 }): Promise<SupportKnowledge> {
-  return apiPost('/api/support/knowledge', data)
+  return apiPost('/api/admin/mall/support/knowledge', data)
 }
 
-export async function updateSupportKnowledge(id: string, data: Partial<SupportKnowledge>) {
-  return apiPut<SupportKnowledge>(`/api/support/knowledge/${id}`, data)
-}
-
-export async function supportMetrics(): Promise<Record<string, number>> {
-  return apiGet('/api/support/metrics')
+export async function adminSupportMetrics(): Promise<Record<string, number>> {
+  return apiGet('/api/admin/mall/support/metrics')
 }
 
 function normalizeMallAddressInput(data: CreateMallAddressInput): Record<string, unknown> {
@@ -1669,13 +1744,19 @@ async function cachedApiGet<T>(
   const inFlight = mallGetInFlight.get(cacheKey)
   if (inFlight) return inFlight as Promise<T>
 
-  const request = apiGet<T>(url, data)
+  const requestEpoch = mallGetCacheEpoch
+  let request: Promise<T>
+  request = apiGet<T>(url, data)
     .then((value) => {
-      mallGetCache.set(cacheKey, { value, expiresAt: Date.now() + ttlMs })
+      if (requestEpoch === mallGetCacheEpoch) {
+        cacheMallGet(cacheKey, value, ttlMs)
+      }
       return value
     })
     .finally(() => {
-      mallGetInFlight.delete(cacheKey)
+      if (mallGetInFlight.get(cacheKey) === request) {
+        mallGetInFlight.delete(cacheKey)
+      }
     })
 
   mallGetInFlight.set(cacheKey, request)
@@ -1714,8 +1795,20 @@ async function apiDelete<T>(url: string): Promise<T> {
 }
 
 export function clearMallGetCache() {
+  mallGetCacheEpoch += 1
   mallGetCache.clear()
   mallGetInFlight.clear()
+}
+
+function cacheMallGet(cacheKey: string, value: unknown, ttlMs: number) {
+  if (mallGetCache.size >= MALL_GET_CACHE_MAX_ENTRIES) {
+    const oldestKey = mallGetCache.keys().next().value
+    if (oldestKey) mallGetCache.delete(oldestKey)
+  }
+  mallGetCache.set(cacheKey, {
+    expiresAt: Date.now() + ttlMs,
+    value,
+  })
 }
 
 function unwrapApiData<T>(statusCode: number, rawData: unknown): T {

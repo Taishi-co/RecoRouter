@@ -11,16 +11,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  createSupportKnowledge,
-  createSupportMessage,
-  createSupportSession,
-  createSupportTicket,
-  listSupportKnowledge,
-  listSupportMessages,
-  listSupportSessions,
-  listSupportTickets,
-  supportMetrics,
-  updateSupportTicket,
+  adminSupportMetrics,
+  createAdminSupportKnowledge,
+  createAdminSupportMessage,
+  createAdminSupportTicket,
+  listAdminSupportKnowledge,
+  listAdminSupportMessages,
+  listAdminSupportSessions,
+  listAdminSupportTickets,
+  updateAdminSupportTicket,
   type SupportKnowledge,
   type SupportMessage,
   type SupportSession,
@@ -43,7 +42,6 @@ export default function AdminSupportWorkbench() {
   const [knowledge, setKnowledge] = useState<SupportKnowledge[]>([])
   const [metrics, setMetrics] = useState<Record<string, number>>({})
   const [reply, setReply] = useState('您好，客服已接入，请补充订单号或配送异常截图。')
-  const [sessionUserId, setSessionUserId] = useState('user-demo')
   const [articleTitle, setArticleTitle] = useState('无人车开舱码失效处理')
   const [articleContent, setArticleContent] = useState('核验订单状态后重新发送短信开舱码，并同步配送追踪事件。')
 
@@ -61,10 +59,10 @@ export default function AdminSupportWorkbench() {
   const loadAll = async () => {
     try {
       const [nextSessions, nextTickets, nextKnowledge, nextMetrics] = await Promise.all([
-        listSupportSessions(),
-        listSupportTickets(),
-        listSupportKnowledge(),
-        supportMetrics(),
+        listAdminSupportSessions(),
+        listAdminSupportTickets(),
+        listAdminSupportKnowledge(),
+        adminSupportMetrics(),
       ])
       setSessions(nextSessions)
       setTickets(nextTickets)
@@ -75,7 +73,7 @@ export default function AdminSupportWorkbench() {
         : nextSessions[0]
       if (nextSelected) {
         setSelectedSession(nextSelected)
-        setMessages(await listSupportMessages(nextSelected.id))
+        setMessages(await listAdminSupportMessages(nextSelected.id))
       } else {
         setSelectedSession(null)
         setMessages([])
@@ -88,36 +86,16 @@ export default function AdminSupportWorkbench() {
   const openSession = async (session: SupportSession) => {
     try {
       setSelectedSession(session)
-      setMessages(await listSupportMessages(session.id))
+      setMessages(await listAdminSupportMessages(session.id))
     } catch (error) {
       showError(error, '消息加载失败')
-    }
-  }
-
-  const createQueueSession = async () => {
-    try {
-      const session = await createSupportSession({
-        userId: sessionUserId,
-        channel: 'web_queue',
-        topic: '配送追踪客服',
-        assignedAgentId: currentUser.id || 'admin',
-      })
-      await createSupportMessage(session.id, {
-        senderId: currentUser.id || 'admin',
-        senderRole: 'agent',
-        content: '已创建 Web 客服会话，请选择配送订单继续处理。',
-      })
-      Taro.showToast({ title: '会话已创建', icon: 'success' })
-      await loadAll()
-    } catch (error) {
-      showError(error, '创建失败')
     }
   }
 
   const sendReply = async () => {
     if (!selectedSession) return
     try {
-      await createSupportMessage(selectedSession.id, {
+      await createAdminSupportMessage(selectedSession.id, {
         senderId: currentUser.id || 'admin',
         senderRole: 'agent',
         content: reply,
@@ -132,7 +110,7 @@ export default function AdminSupportWorkbench() {
   const createTicketFromSession = async () => {
     if (!selectedSession) return
     try {
-      await createSupportTicket({
+      await createAdminSupportTicket({
         userId: selectedSession.userId,
         sessionId: selectedSession.id,
         category: 'delivery_tracking',
@@ -149,7 +127,7 @@ export default function AdminSupportWorkbench() {
 
   const resolveTicket = async (ticket: SupportTicket) => {
     try {
-      await updateSupportTicket(ticket.id, {
+      await updateAdminSupportTicket(ticket.id, {
         status: 'resolved',
         assignedAgentId: currentUser.id || 'admin',
         resolution: '已完成用户沟通，配送或退款处理已同步。',
@@ -163,7 +141,7 @@ export default function AdminSupportWorkbench() {
 
   const publishKnowledge = async () => {
     try {
-      await createSupportKnowledge({
+      await createAdminSupportKnowledge({
         title: articleTitle,
         category: 'after_sales',
         content: articleContent,
@@ -222,10 +200,6 @@ export default function AdminSupportWorkbench() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Input value={sessionUserId} placeholder="用户 ID" onInput={(event) => setSessionUserId(String(event.detail.value || ''))} />
-              <Button className="w-full rounded-full" onClick={createQueueSession}>
-                <Text className="text-sm font-black text-white">新建客服会话</Text>
-              </Button>
               {sessions.map((session) => (
                 <AdminRow
                   key={session.id}

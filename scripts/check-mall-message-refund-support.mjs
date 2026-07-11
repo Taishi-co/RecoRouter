@@ -77,14 +77,17 @@ expect(
 )
 
 expect(
-  /setInterval\(\(\)\s*=>\s*\{[\s\S]*loadMessages\(selectedSession,\s*true\)[\s\S]*\},\s*1000\)/.test(supportPage),
-  '小程序客服聊天需要 1 秒级轮询刷新。',
+  /setInterval\(\(\)\s*=>\s*\{[\s\S]*pollSessionUpdates\(selectedSession\)[\s\S]*\},\s*4000\)/.test(supportPage)
+    && /updatedAfter:\s*sessionVersionRef\.current/.test(supportPage)
+    && /await loadMessages\(refreshedSession\)/.test(supportPage),
+  '小程序客服聊天需要稳定增量轮询，仅在当前会话变化时刷新消息。',
 )
 
 expect(
-  /setInterval\(\(\)\s*=>\s*\{[\s\S]*refreshSupportRealtime\(\)[\s\S]*\},\s*1000\)/.test(webAdmin)
+  /setInterval\(\(\)\s*=>\s*\{[\s\S]*refreshSupportRealtime\(\)[\s\S]*\},\s*5000\)/.test(webAdmin)
+    && /document\.visibilityState === 'hidden'/.test(webAdmin)
     && /updateSupportSessionStatus/.test(webAdmin),
-  '管理端客服会话需要 1 秒级刷新，并支持完成/关闭会话。',
+  '管理端客服会话需要节流刷新、隐藏页暂停，并支持完成/重开会话。',
 )
 
 expect(

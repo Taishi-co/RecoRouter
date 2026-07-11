@@ -1,8 +1,9 @@
 use axum::{
-    extract::{Multipart, Path, Query, State},
+    extract::{Extension, Multipart, Path, Query, State},
     routing::{get, post, put},
     Json, Router,
 };
+use bcrypt::hash;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -10,8 +11,9 @@ use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
 
 use crate::{
     app::AppState,
-    config::ApiService,
+    config::{read_trimmed, ApiService},
     error::{ApiError, ApiResult},
+    modules::auth::AdminPrincipal,
     response::{ok, ApiEnvelope},
     storage::Storage,
     wechat_pay::{
@@ -24,6 +26,14 @@ const MAX_MALL_QUALIFICATION_FILE_BYTES: usize = 10 * 1024 * 1024;
 const MAX_PRODUCT_IMAGES: usize = 20;
 const MAX_PRODUCT_VARIANTS: usize = 50;
 const MAX_MALL_PURCHASE_QUANTITY: i32 = 9999;
+const ROADSHOW_USER_ID: &str = "roadshow-demo-user";
+const ROADSHOW_ORDER_ID: &str = "roadshow-demo-order";
+const ROADSHOW_SESSION_ID: &str = "roadshow-demo-support";
+const ROADSHOW_AFTER_SALE_ID: &str = "roadshow-demo-after-sale";
+const ROADSHOW_TICKET_ID: &str = "roadshow-demo-ticket";
+const ROADSHOW_PHONE: &str = "13900009999";
+const ROADSHOW_PASSWORD: &str = "Roadshow2026!";
+const ROADSHOW_BCRYPT_COST: u32 = 10;
 const ALLOWED_MALL_PRODUCT_IMAGE_TYPES: &[&str] =
     &["image/jpeg", "image/png", "image/webp", "image/gif"];
 const ALLOWED_MALL_QUALIFICATION_FILE_TYPES: &[&str] = &[
@@ -133,24 +143,22 @@ where
             get(list_support_sessions::<S>).post(create_support_session::<S>),
         )
         .route(
-            "/api/support/sessions/:id",
-            put(update_support_session::<S>),
-        )
-        .route(
             "/api/support/sessions/:id/messages",
             get(list_support_messages::<S>).post(create_support_message::<S>),
+        )
+        .route(
+            "/api/support/sessions/:id/satisfaction",
+            post(upsert_support_satisfaction::<S>),
+        )
+        .route(
+            "/api/support/sessions/:id/evidence",
+            post(upload_support_evidence::<S>),
         )
         .route(
             "/api/support/tickets",
             get(list_support_tickets::<S>).post(create_support_ticket::<S>),
         )
-        .route("/api/support/tickets/:id", put(update_support_ticket::<S>))
-        .route(
-            "/api/support/knowledge",
-            get(list_knowledge::<S>).post(create_knowledge::<S>),
-        )
-        .route("/api/support/knowledge/:id", put(update_knowledge::<S>))
-        .route("/api/support/metrics", get(support_metrics::<S>))
+        .route("/api/support/knowledge", get(list_public_knowledge::<S>))
 }
 
 pub fn admin_router<S>() -> Router<AppState<S>>
@@ -233,6 +241,59 @@ where
         .route(
             "/api/admin/mall/uploads/qualification-file",
             post(admin_upload_qualification_file::<S>),
+        )
+        .route(
+            "/api/admin/mall/support/sessions",
+            get(admin_list_support_sessions::<S>),
+        )
+        .route(
+            "/api/admin/mall/support/sessions/:id",
+            put(update_support_session::<S>),
+        )
+        .route(
+            "/api/admin/mall/support/sessions/:id/messages",
+            get(admin_list_support_messages::<S>).post(admin_create_support_message::<S>),
+        )
+        .route(
+            "/api/admin/mall/support/agents",
+            get(admin_list_support_agents::<S>),
+        )
+        .route(
+            "/api/admin/mall/support/tickets",
+            get(admin_list_support_tickets::<S>).post(create_support_ticket::<S>),
+        )
+        .route(
+            "/api/admin/mall/support/tickets/:id",
+            put(update_support_ticket::<S>),
+        )
+        .route(
+            "/api/admin/mall/support/knowledge",
+            get(list_knowledge::<S>).post(create_knowledge::<S>),
+        )
+        .route(
+            "/api/admin/mall/support/knowledge/:id",
+            put(update_knowledge::<S>),
+        )
+        .route("/api/admin/mall/support/metrics", get(support_metrics::<S>))
+        .route(
+            "/api/admin/mall/support/quality",
+            get(admin_support_quality::<S>),
+        )
+        .route(
+            "/api/admin/mall/roadshow/status",
+            get(admin_roadshow_status::<S>),
+        )
+        .route(
+            "/api/admin/mall/roadshow/reset",
+            post(admin_reset_roadshow::<S>),
+        )
+        .route(
+            "/api/admin/mall/operations/alerts",
+            get(admin_list_operations_alerts::<S>),
+        )
+        .route(
+            "/api/admin/mall/operations/alerts/:id",
+            put(admin_update_operations_alert::<S>),
         )
         .route(
             "/api/admin/mall/procurement-buyers",
@@ -327,6 +388,10 @@ where
         .route(
             "/api/admin/mall/campaigns/:id",
             put(update_campaign::<S>).delete(delete_campaign::<S>),
+        )
+        .route(
+            "/api/admin/mall/marketing-agent",
+            post(admin_marketing_agent::<S>),
         )
         .route(
             "/api/admin/mall/coupons",
@@ -719,6 +784,22 @@ struct SupportListQuery {
     #[serde(alias = "user_id")]
     user_id: Option<String>,
     status: Option<String>,
+    #[serde(alias = "updated_after")]
+    updated_after: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SupportMessageListQuery {
+    #[serde(alias = "user_id")]
+    user_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SupportEvidenceQuery {
+    #[serde(alias = "user_id")]
+    user_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1201,6 +1282,27 @@ struct CouponMutationRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct MarketingAgentRequest {
+    question: String,
+    mode: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MiniMaxChatRequest {
+    model: String,
+    messages: Vec<MiniMaxMessage>,
+    temperature: f32,
+}
+
+#[derive(Debug, Serialize)]
+struct MiniMaxMessage {
+    role: String,
+    content: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct HomeBannerQuery {
     keyword: Option<String>,
     status: Option<String>,
@@ -1518,8 +1620,6 @@ struct CreateSupportSessionRequest {
     user_id: String,
     channel: String,
     topic: String,
-    #[serde(alias = "assigned_agent_id")]
-    assigned_agent_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1541,6 +1641,22 @@ struct CreateSupportMessageRequest {
     sender_role: String,
     content: String,
     metadata: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SupportSatisfactionRequest {
+    #[serde(alias = "user_id")]
+    user_id: String,
+    rating: i16,
+    tags: Option<Vec<String>>,
+    comment: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateOperationsAlertRequest {
+    status: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -6580,6 +6696,358 @@ where
     Ok(ok("活动删除成功", campaign))
 }
 
+async fn admin_marketing_agent<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<MarketingAgentRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let question = require_non_empty(Some(body.question), "请输入要分析的营销问题")?;
+    let question = truncate_for_agent(&question, 800);
+    let mode = non_empty(body.mode).unwrap_or_else(|| "strategy".to_string());
+    let context = marketing_agent_context(&state.db).await?;
+    let suggestions = marketing_agent_rule_suggestions(&context);
+    let fallback_answer = marketing_agent_rule_answer(&question, &context);
+
+    let (provider, model, answer, model_error) =
+        match call_minimax_marketing_agent(&question, &mode, &context, &suggestions).await {
+            Ok(Some((model, answer))) => ("minimax", model, answer, None),
+            Ok(None) => (
+                "rules",
+                "local-rules".to_string(),
+                fallback_answer,
+                Some("MINIMAX_API_KEY 未配置，已返回本地规则建议".to_string()),
+            ),
+            Err(err) => (
+                "rules",
+                "local-rules".to_string(),
+                fallback_answer,
+                Some(err.to_string()),
+            ),
+        };
+
+    Ok(ok(
+        "营销 Agent 已生成建议",
+        json!({
+            "question": question,
+            "mode": mode,
+            "provider": provider,
+            "model": model,
+            "answer": answer,
+            "modelError": model_error,
+            "context": context,
+            "suggestions": suggestions,
+            "privacy": "仅使用订单、商品、券和活动的聚合指标；未向模型传输手机号、地址或用户明文身份。"
+        }),
+    ))
+}
+
+async fn marketing_agent_context(pool: &PgPool) -> ApiResult<Value> {
+    sqlx::query_scalar::<_, Value>(
+        r#"
+        WITH paid_orders AS (
+          SELECT id, user_id, payable_cents, coupon_cents, delivery_fee_cents, created_at
+          FROM mall_orders
+          WHERE payment_status = 'paid'
+            AND created_at >= now() - INTERVAL '30 days'
+        ),
+        paid_user_stats AS (
+          SELECT
+            count(*)::integer AS user_count,
+            count(*) FILTER (WHERE order_count > 1)::integer AS repeat_user_count
+          FROM (
+            SELECT user_id, count(*) AS order_count
+            FROM paid_orders
+            WHERE user_id IS NOT NULL AND user_id <> ''
+            GROUP BY user_id
+          ) users
+        ),
+        product_rows AS (
+          SELECT
+            product.id,
+            product.name,
+            COALESCE(category.name, product.category_code, '未分类') AS category_name,
+            product.price_cents,
+            product.stock,
+            product.stock_alert_threshold,
+            product.sold_count,
+            product.status
+          FROM mall_products product
+          LEFT JOIN mall_categories category ON category.code = product.category_code
+        ),
+        top_products AS (
+          SELECT COALESCE(jsonb_agg(jsonb_build_object(
+            'productId', rows.product_id,
+            'productName', rows.product_name,
+            'categoryName', rows.category_name,
+            'quantity', rows.quantity,
+            'salesCents', rows.sales_cents
+          ) ORDER BY rows.quantity DESC, rows.sales_cents DESC), '[]'::jsonb) AS rows
+          FROM (
+            SELECT
+              item.product_id,
+              item.product_name,
+              COALESCE(category.name, item.category_code, product.category_code, '未分类') AS category_name,
+              sum(item.quantity)::integer AS quantity,
+              sum(item.line_total_cents)::bigint AS sales_cents
+            FROM paid_orders paid
+            JOIN mall_order_items item ON item.order_id = paid.id
+            LEFT JOIN mall_products product ON product.id = item.product_id
+            LEFT JOIN mall_categories category ON category.code = COALESCE(item.category_code, product.category_code)
+            GROUP BY item.product_id, item.product_name, COALESCE(category.name, item.category_code, product.category_code, '未分类')
+            ORDER BY sum(item.quantity) DESC, sum(item.line_total_cents) DESC
+            LIMIT 8
+          ) rows
+        ),
+        category_rows AS (
+          SELECT COALESCE(jsonb_agg(jsonb_build_object(
+            'categoryName', rows.category_name,
+            'quantity', rows.quantity,
+            'salesCents', rows.sales_cents
+          ) ORDER BY rows.sales_cents DESC), '[]'::jsonb) AS rows
+          FROM (
+            SELECT
+              COALESCE(category.name, item.category_code, product.category_code, '未分类') AS category_name,
+              sum(item.quantity)::integer AS quantity,
+              sum(item.line_total_cents)::bigint AS sales_cents
+            FROM paid_orders paid
+            JOIN mall_order_items item ON item.order_id = paid.id
+            LEFT JOIN mall_products product ON product.id = item.product_id
+            LEFT JOIN mall_categories category ON category.code = COALESCE(item.category_code, product.category_code)
+            GROUP BY COALESCE(category.name, item.category_code, product.category_code, '未分类')
+            ORDER BY sum(item.line_total_cents) DESC
+            LIMIT 8
+          ) rows
+        ),
+        coupon_stats AS (
+          SELECT jsonb_build_object(
+            'activeCount', count(*) FILTER (WHERE status = 'active'),
+            'draftCount', count(*) FILTER (WHERE status = 'draft'),
+            'claimedCount', COALESCE(sum(claimed_count), 0),
+            'usedCount', COALESCE(sum(used_count), 0)
+          ) AS value
+          FROM mall_coupons
+          WHERE status <> 'deleted'
+        ),
+        campaign_stats AS (
+          SELECT jsonb_build_object(
+            'activeCount', count(*) FILTER (WHERE status = 'active'),
+            'draftCount', count(*) FILTER (WHERE status = 'draft'),
+            'types', COALESCE(jsonb_agg(DISTINCT campaign_type) FILTER (WHERE campaign_type IS NOT NULL), '[]'::jsonb)
+          ) AS value
+          FROM mall_campaigns
+          WHERE status <> 'deleted'
+        )
+        SELECT jsonb_build_object(
+          'windowDays', 30,
+          'summary', jsonb_build_object(
+            'paidOrders', COALESCE((SELECT count(*) FROM paid_orders), 0),
+            'gmvCents', COALESCE((SELECT sum(payable_cents) FROM paid_orders), 0),
+            'avgOrderCents', COALESCE((SELECT round(avg(payable_cents))::bigint FROM paid_orders), 0),
+            'couponDiscountCents', COALESCE((SELECT sum(coupon_cents) FROM paid_orders), 0),
+            'deliveryFeeCents', COALESCE((SELECT sum(delivery_fee_cents) FROM paid_orders), 0),
+            'activeProducts', COALESCE((SELECT count(*) FROM product_rows WHERE status = 'on_sale'), 0),
+            'lowStockProducts', COALESCE((SELECT count(*) FROM product_rows WHERE status = 'on_sale' AND stock <= stock_alert_threshold), 0),
+            'afterSales', COALESCE((SELECT count(*) FROM mall_after_sales WHERE created_at >= now() - INTERVAL '30 days'), 0),
+            'repeatUserRateBps', COALESCE((
+              SELECT CASE WHEN user_count = 0 THEN 0 ELSE round(repeat_user_count * 10000.0 / user_count)::integer END
+              FROM paid_user_stats
+            ), 0)
+          ),
+          'topProducts', (SELECT rows FROM top_products),
+          'topCategories', (SELECT rows FROM category_rows),
+          'coupons', (SELECT value FROM coupon_stats),
+          'campaigns', (SELECT value FROM campaign_stats),
+          'segments', jsonb_build_array(
+            jsonb_build_object('key', 'new_customers', 'name', '新客', 'rule', '历史付费订单数为0或首次下单用户'),
+            jsonb_build_object('key', 'repeat_customers', 'name', '复购用户', 'rule', '30天内付费订单数大于1'),
+            jsonb_build_object('key', 'sleeping_customers', 'name', '沉睡用户', 'rule', '30天未下单且历史有付费订单'),
+            jsonb_build_object('key', 'coupon_sensitive', 'name', '优惠敏感用户', 'rule', '近30天使用优惠订单占比高'),
+            jsonb_build_object('key', 'after_sale_risk', 'name', '售后风险用户', 'rule', '近90天售后次数偏高')
+          )
+        )
+        "#,
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(Into::into)
+}
+
+fn marketing_agent_rule_suggestions(context: &Value) -> Value {
+    let avg_order_cents = json_path_i64(context, &["summary", "avgOrderCents"]);
+    let low_stock_products = json_path_i64(context, &["summary", "lowStockProducts"]);
+    let repeat_rate_bps = json_path_i64(context, &["summary", "repeatUserRateBps"]);
+    let top_category = context
+        .get("topCategories")
+        .and_then(Value::as_array)
+        .and_then(|items| items.first())
+        .and_then(|item| item.get("categoryName"))
+        .and_then(Value::as_str)
+        .unwrap_or("生鲜商品");
+    let threshold_cents = if avg_order_cents >= 9900 { 9900 } else { 4900 };
+    let discount_cents = if threshold_cents >= 9900 { 1000 } else { 600 };
+
+    json!([
+        {
+            "kind": "coupon",
+            "title": "新客定向满减券",
+            "audience": "new_customers",
+            "reason": "降低首单决策成本，适合放在新人首单、首页弹层或领券中心。",
+            "draft": {
+                "name": "新客满49减6",
+                "code": "AGENT-NEW-49-6",
+                "couponType": "full_reduction",
+                "thresholdCents": 4900,
+                "discountCents": 600,
+                "totalQuantity": 1000,
+                "perUserLimit": 1,
+                "status": "draft",
+                "description": "新客首单专享，满足门槛自动抵扣。",
+                "rules": { "audience": "new_customers", "generatedBy": "marketing-agent" }
+            }
+        },
+        {
+            "kind": "campaign",
+            "title": format!("{}复购满减", top_category),
+            "audience": if repeat_rate_bps >= 2500 { "repeat_customers" } else { "coupon_sensitive" },
+            "reason": "围绕近期高贡献品类做定向活动，优先面向复购或优惠敏感用户。",
+            "draft": {
+                "name": format!("{}定向满减", top_category),
+                "campaignType": "full_reduction",
+                "budgetCents": 300000,
+                "status": "draft",
+                "rules": {
+                    "scope": "category",
+                    "categoryName": top_category,
+                    "audience": if repeat_rate_bps >= 2500 { "repeat_customers" } else { "coupon_sensitive" },
+                    "tiers": [{ "thresholdCents": threshold_cents, "discountCents": discount_cents }],
+                    "display": {
+                        "title": "定向满减",
+                        "tagText": format!("满{}减{}", threshold_cents / 100, discount_cents / 100),
+                        "iconText": "减",
+                        "backgroundColor": "#FFF1E5",
+                        "textColor": "#E85D04",
+                        "ruleExplanation": "活动人群内用户下单满足门槛自动优惠。",
+                        "limitText": "限指定人群和活动商品。"
+                    },
+                    "generatedBy": "marketing-agent"
+                }
+            }
+        },
+        {
+            "kind": "operation",
+            "title": "活动上线前库存检查",
+            "audience": "operations",
+            "reason": if low_stock_products > 0 { "当前存在低库存在售商品，活动上线前先排除低库存商品，避免爆单缺货。" } else { "当前低库存压力较小，可以优先选择热销商品做短期活动。" },
+            "draft": {
+                "lowStockProducts": low_stock_products,
+                "action": "review_inventory_before_launch"
+            }
+        }
+    ])
+}
+
+fn marketing_agent_rule_answer(question: &str, context: &Value) -> String {
+    let paid_orders = json_path_i64(context, &["summary", "paidOrders"]);
+    let gmv_cents = json_path_i64(context, &["summary", "gmvCents"]);
+    let avg_order_cents = json_path_i64(context, &["summary", "avgOrderCents"]);
+    let low_stock_products = json_path_i64(context, &["summary", "lowStockProducts"]);
+    format!(
+        "基于近30天聚合数据：已支付订单{}单，GMV ¥{:.2}，客单价约¥{:.2}，低库存在售商品{}个。建议优先做新客满49减6、围绕热销品类做定向满减，并在活动上线前排除低库存商品。问题：{}",
+        paid_orders,
+        gmv_cents as f64 / 100.0,
+        avg_order_cents as f64 / 100.0,
+        low_stock_products,
+        question
+    )
+}
+
+async fn call_minimax_marketing_agent(
+    question: &str,
+    mode: &str,
+    context: &Value,
+    suggestions: &Value,
+) -> ApiResult<Option<(String, String)>> {
+    let Some(api_key) = read_trimmed("MINIMAX_API_KEY") else {
+        return Ok(None);
+    };
+    let model = read_trimmed("MINIMAX_MODEL").unwrap_or_else(|| "MiniMax-M3".to_string());
+    let api_url = read_trimmed("MINIMAX_API_URL")
+        .unwrap_or_else(|| "https://api.minimax.io/v1/chat/completions".to_string());
+    let system_prompt = "你是叁友甄选 Web 管理端的营销运营助手。只根据提供的聚合数据给建议，不编造个人隐私或不存在的用户明细。输出要面向运营人员，包含人群、策略、券/活动配置建议、成本和风险提醒。";
+    let user_prompt = format!(
+        "运营问题：{}\n工作模式：{}\n聚合数据：{}\n候选草稿：{}",
+        question,
+        mode,
+        serde_json::to_string(context).unwrap_or_else(|_| "{}".to_string()),
+        serde_json::to_string(suggestions).unwrap_or_else(|_| "[]".to_string())
+    );
+    let request = MiniMaxChatRequest {
+        model: model.clone(),
+        temperature: 0.2,
+        messages: vec![
+            MiniMaxMessage {
+                role: "system".to_string(),
+                content: system_prompt.to_string(),
+            },
+            MiniMaxMessage {
+                role: "user".to_string(),
+                content: user_prompt,
+            },
+        ],
+    };
+    let body = serde_json::to_string(&request)
+        .map_err(|err| ApiError::BadRequest(format!("营销 Agent 请求构建失败: {err}")))?;
+    let response = reqwest::Client::new()
+        .post(api_url)
+        .header("Authorization", format!("Bearer {api_key}"))
+        .header("Content-Type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("MiniMax 请求失败: {err}")))?;
+    let status = response.status();
+    let response_text = response
+        .text()
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("MiniMax 响应读取失败: {err}")))?;
+    if !status.is_success() {
+        return Err(ApiError::BadRequest(format!(
+            "MiniMax 返回异常状态 {}",
+            status.as_u16()
+        )));
+    }
+    let payload: Value = serde_json::from_str(&response_text)
+        .map_err(|err| ApiError::BadRequest(format!("MiniMax 响应解析失败: {err}")))?;
+    let answer = payload
+        .get("choices")
+        .and_then(Value::as_array)
+        .and_then(|choices| choices.first())
+        .and_then(|choice| choice.get("message"))
+        .and_then(|message| message.get("content"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| ApiError::BadRequest("MiniMax 未返回可展示内容".to_string()))?;
+    Ok(Some((model, answer.to_string())))
+}
+
+fn truncate_for_agent(value: &str, max_chars: usize) -> String {
+    value.chars().take(max_chars).collect::<String>()
+}
+
+fn json_path_i64(value: &Value, path: &[&str]) -> i64 {
+    let mut current = value;
+    for key in path {
+        let Some(next) = current.get(*key) else {
+            return 0;
+        };
+        current = next;
+    }
+    current.as_i64().unwrap_or(0)
+}
+
 async fn admin_list_coupons<S>(
     State(state): State<AppState<S>>,
     Query(query): Query<CouponQuery>,
@@ -8178,7 +8646,7 @@ where
         "#,
     )
     .bind(body.user_id)
-    .bind(body.assigned_agent_id)
+    .bind(Option::<String>::None)
     .bind(body.channel)
     .bind(body.topic)
     .fetch_one(&state.db)
@@ -8194,24 +8662,38 @@ async fn list_support_sessions<S>(
 where
     S: Storage,
 {
+    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
     let mut builder = QueryBuilder::<Postgres>::new(
-        "SELECT support_session_json(support_sessions) FROM support_sessions WHERE 1 = 1",
+        r#"
+        SELECT support_session_json(session) || jsonb_build_object(
+          'satisfaction', (
+            SELECT jsonb_build_object(
+              'rating', rating.rating,
+              'tags', rating.tags,
+              'comment', rating.comment,
+              'updatedAt', rating.updated_at
+            )
+            FROM support_satisfaction_ratings rating
+            WHERE rating.session_id = session.id
+          )
+        )
+        FROM support_sessions session
+        WHERE 1 = 1
+        "#,
     );
-    if let Some(user_id) = query
-        .user_id
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        builder.push(" AND user_id = ");
-        builder.push_bind(user_id);
-    }
+    builder.push(" AND user_id = ");
+    builder.push_bind(user_id);
     if let Some(status) = query
         .status
         .as_deref()
         .filter(|value| !value.trim().is_empty())
     {
-        builder.push(" AND status = ");
+        builder.push(" AND session.status = ");
         builder.push_bind(status);
+    }
+    if let Some(updated_after) = query.updated_after {
+        builder.push(" AND session.updated_at > ");
+        builder.push_bind(updated_after);
     }
     builder.push(" ORDER BY updated_at DESC LIMIT 100");
     let sessions = builder
@@ -8221,8 +8703,162 @@ where
     Ok(ok("查询成功", sessions))
 }
 
+async fn admin_list_support_sessions<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<SupportListQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT support_session_json(session) || jsonb_build_object(
+          'customer', jsonb_build_object(
+            'id', session.user_id,
+            'name', COALESCE(
+              NULLIF(customer.name, ''),
+              NULLIF(customer.nickname, ''),
+              NULLIF(customer.username, ''),
+              '商城用户'
+            ),
+            'phone', customer.phone,
+            'avatarUrl', COALESCE(NULLIF(customer.avatar_url, ''), NULLIF(customer.avatar, ''))
+          ),
+          'assignedAgent', CASE
+            WHEN assigned_agent.id IS NULL THEN NULL
+            ELSE jsonb_build_object(
+              'id', assigned_agent.id,
+              'name', COALESCE(NULLIF(assigned_agent.name, ''), NULLIF(assigned_agent.nickname, ''), NULLIF(assigned_agent.phone, ''), '客服坐席')
+            )
+          END,
+          'satisfaction', CASE
+            WHEN rating.id IS NULL THEN NULL
+            ELSE jsonb_build_object(
+              'rating', rating.rating,
+              'tags', rating.tags,
+              'comment', rating.comment,
+              'updatedAt', rating.updated_at
+            )
+          END,
+          'recentOrder', recent_order.payload,
+          'lastSenderRole', latest_message.sender_role,
+          'unreadCount', (
+            SELECT count(*)
+            FROM support_messages unread_message
+            WHERE unread_message.session_id = session.id
+              AND unread_message.sender_role IN ('user', 'customer', 'member')
+              AND unread_message.read_at IS NULL
+          ),
+          'waitingMinutes', CASE
+            WHEN latest_customer.created_at IS NOT NULL
+              AND (
+                latest_agent.created_at IS NULL
+                OR latest_customer.created_at > latest_agent.created_at
+              )
+              THEN GREATEST(
+                0,
+                floor(extract(epoch FROM (now() - latest_customer.created_at)) / 60)::integer
+              )
+            ELSE 0
+          END
+        )
+        FROM support_sessions session
+        LEFT JOIN users customer ON customer.id = session.user_id
+        LEFT JOIN users assigned_agent ON assigned_agent.id = session.assigned_agent_id
+        LEFT JOIN support_satisfaction_ratings rating ON rating.session_id = session.id
+        LEFT JOIN LATERAL (
+          SELECT message.sender_role, message.metadata, message.created_at
+          FROM support_messages message
+          WHERE message.session_id = session.id
+          ORDER BY message.created_at DESC, message.id DESC
+          LIMIT 1
+        ) latest_message ON true
+        LEFT JOIN LATERAL (
+          SELECT message.created_at
+          FROM support_messages message
+          WHERE message.session_id = session.id
+            AND message.sender_role IN ('user', 'customer', 'member')
+          ORDER BY message.created_at DESC, message.id DESC
+          LIMIT 1
+        ) latest_customer ON true
+        LEFT JOIN LATERAL (
+          SELECT message.created_at
+          FROM support_messages message
+          WHERE message.session_id = session.id
+            AND message.sender_role IN ('agent', 'admin', 'support', 'operator')
+          ORDER BY message.created_at DESC, message.id DESC
+          LIMIT 1
+        ) latest_agent ON true
+        LEFT JOIN LATERAL (
+          SELECT order_detail_json(mall_order) AS payload
+          FROM mall_orders mall_order
+          WHERE mall_order.user_id = session.user_id
+          ORDER BY
+            CASE
+              WHEN mall_order.id = latest_message.metadata->>'orderId' THEN 0
+              ELSE 1
+            END,
+            mall_order.created_at DESC
+          LIMIT 1
+        ) recent_order ON true
+        WHERE 1 = 1
+        "#,
+    );
+    if let Some(status) = query
+        .status
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        builder.push(" AND session.status = ");
+        builder.push_bind(status);
+    }
+    if let Some(updated_after) = query.updated_after {
+        builder.push(" AND session.updated_at > ");
+        builder.push_bind(updated_after);
+    }
+    builder.push(
+        " ORDER BY CASE WHEN session.status = 'open' THEN 0 ELSE 1 END, session.updated_at DESC LIMIT 200",
+    );
+    let sessions = builder
+        .build_query_scalar::<Value>()
+        .fetch_all(&state.db)
+        .await?;
+    Ok(ok("查询成功", sessions))
+}
+
+async fn admin_list_support_agents<S>(
+    State(state): State<AppState<S>>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let agents = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT jsonb_build_object(
+          'id', agent.id,
+          'name', COALESCE(NULLIF(agent.name, ''), NULLIF(agent.nickname, ''), NULLIF(agent.phone, ''), '客服坐席'),
+          'phone', agent.phone,
+          'avatarUrl', COALESCE(NULLIF(agent.avatar_url, ''), NULLIF(agent.avatar, '')),
+          'activeSessions', (
+            SELECT count(*)
+            FROM support_sessions session
+            WHERE session.assigned_agent_id = agent.id AND session.status = 'open'
+          )
+        )
+        FROM users agent
+        WHERE agent.role = 'admin'
+          AND COALESCE(agent.status, 'active') = 'active'
+        ORDER BY COALESCE(NULLIF(agent.name, ''), NULLIF(agent.phone, ''), agent.id)
+        "#,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    Ok(ok("查询成功", agents))
+}
+
 async fn update_support_session<S>(
     State(state): State<AppState<S>>,
+    Extension(principal): Extension<AdminPrincipal>,
     Path(id): Path<String>,
     Json(body): Json<UpdateSupportSessionRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
@@ -8241,6 +8877,25 @@ where
             _ => "会话已重新打开".to_string(),
         })
     });
+    let current_assignment = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT assigned_agent_id FROM support_sessions WHERE id = $1",
+    )
+    .bind(&id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("客服会话不存在".to_string()))?;
+    if let Some(agent_id) = body.assigned_agent_id.as_deref() {
+        let is_active_agent = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND role = 'admin' AND COALESCE(status, 'active') = 'active')",
+        )
+        .bind(agent_id)
+        .fetch_one(&state.db)
+        .await?;
+        if !is_active_agent {
+            return Err(ApiError::BadRequest("目标客服不存在或已停用".to_string()));
+        }
+    }
+    let requested_assignment = body.assigned_agent_id.clone();
     let session = sqlx::query_scalar::<_, Value>(
         r#"
         UPDATE support_sessions
@@ -8259,6 +8914,28 @@ where
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| ApiError::NotFound("客服会话不存在".to_string()))?;
+
+    if requested_assignment.is_some() && requested_assignment != current_assignment {
+        sqlx::query(
+            r#"
+            INSERT INTO support_session_events (
+              session_id, event_type, actor_id, from_agent_id, to_agent_id, metadata
+            )
+            VALUES ($1, $2, $3, $4, $5, jsonb_build_object('source', 'admin_workbench'))
+            "#,
+        )
+        .bind(&id)
+        .bind(if current_assignment.is_some() {
+            "transferred"
+        } else {
+            "assigned"
+        })
+        .bind(&principal.id)
+        .bind(current_assignment)
+        .bind(requested_assignment)
+        .execute(&state.db)
+        .await?;
+    }
 
     if let (Some(status), Some(user_id)) = (status, session.get("userId").and_then(Value::as_str)) {
         if matches!(status, "resolved" | "closed") {
@@ -8297,6 +8974,96 @@ where
 {
     validate_required(&body.sender_role, "发送者角色不能为空")?;
     validate_required(&body.content, "消息内容不能为空")?;
+    if !matches!(body.sender_role.as_str(), "user" | "customer" | "member") {
+        return Err(ApiError::Forbidden(
+            "用户端不能发送客服坐席消息".to_string(),
+        ));
+    }
+    let sender_id = body
+        .sender_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| ApiError::BadRequest("发送者ID不能为空".to_string()))?;
+    ensure_support_session_owner(&state.db, &session_id, sender_id).await?;
+    persist_support_message(&state.db, &session_id, body)
+        .await
+        .map(|message| ok("消息发送成功", message))
+}
+
+async fn admin_create_support_message<S>(
+    State(state): State<AppState<S>>,
+    Extension(principal): Extension<AdminPrincipal>,
+    Path(session_id): Path<String>,
+    Json(body): Json<CreateSupportMessageRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    validate_required(&body.content, "消息内容不能为空")?;
+    let assigned_agent_id = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT assigned_agent_id FROM support_sessions WHERE id = $1",
+    )
+    .bind(&session_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("客服会话不存在".to_string()))?;
+    if let Some(assigned_agent_id) = assigned_agent_id.as_deref() {
+        if assigned_agent_id != principal.id.as_str() {
+            return Err(ApiError::Forbidden(
+                "该会话已由其他客服接待，请先转接给自己".to_string(),
+            ));
+        }
+    } else {
+        let claimed = sqlx::query(
+            "UPDATE support_sessions SET assigned_agent_id = $2, updated_at = now() WHERE id = $1 AND assigned_agent_id IS NULL",
+        )
+        .bind(&session_id)
+        .bind(&principal.id)
+        .execute(&state.db)
+        .await?
+        .rows_affected()
+            == 1;
+        if claimed {
+            sqlx::query(
+                "INSERT INTO support_session_events (session_id, event_type, actor_id, to_agent_id, metadata) VALUES ($1, 'assigned', $2, $2, jsonb_build_object('source', 'first_reply'))",
+            )
+            .bind(&session_id)
+            .bind(&principal.id)
+            .execute(&state.db)
+            .await?;
+        } else {
+            let current_agent_id = sqlx::query_scalar::<_, Option<String>>(
+                "SELECT assigned_agent_id FROM support_sessions WHERE id = $1",
+            )
+            .bind(&session_id)
+            .fetch_one(&state.db)
+            .await?;
+            if current_agent_id.as_deref() != Some(principal.id.as_str()) {
+                return Err(ApiError::Conflict(
+                    "会话刚刚被其他客服接走，请刷新后再操作".to_string(),
+                ));
+            }
+        }
+    }
+    persist_support_message(
+        &state.db,
+        &session_id,
+        CreateSupportMessageRequest {
+            sender_id: Some(principal.id),
+            sender_role: "agent".to_string(),
+            content: body.content,
+            metadata: body.metadata,
+        },
+    )
+    .await
+    .map(|message| ok("消息发送成功", message))
+}
+
+async fn persist_support_message(
+    pool: &PgPool,
+    session_id: &str,
+    body: CreateSupportMessageRequest,
+) -> ApiResult<Value> {
     let metadata = body.metadata.unwrap_or_else(|| json!({}));
     let message = sqlx::query_scalar::<_, Value>(
         r#"
@@ -8310,7 +9077,7 @@ where
     .bind(&body.sender_role)
     .bind(&body.content)
     .bind(&metadata)
-    .fetch_one(&state.db)
+    .fetch_one(pool)
     .await?;
 
     sqlx::query(
@@ -8323,7 +9090,7 @@ where
     )
     .bind(&session_id)
     .bind(&body.content)
-    .execute(&state.db)
+    .execute(pool)
     .await?;
     if matches!(
         body.sender_role.as_str(),
@@ -8332,12 +9099,12 @@ where
         if let Some(user_id) =
             sqlx::query_scalar::<_, String>("SELECT user_id FROM support_sessions WHERE id = $1")
                 .bind(&session_id)
-                .fetch_optional(&state.db)
+                .fetch_optional(pool)
                 .await?
         {
             let order_id = metadata.get("orderId").and_then(Value::as_str);
             insert_mall_notification(
-                &state.db,
+                pool,
                 &user_id,
                 "mall_support_message",
                 "客服有新消息",
@@ -8350,23 +9117,253 @@ where
         }
     }
 
-    Ok(ok("消息发送成功", message))
+    Ok(message)
 }
 
 async fn list_support_messages<S>(
     State(state): State<AppState<S>>,
     Path(session_id): Path<String>,
+    Query(query): Query<SupportMessageListQuery>,
 ) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
 where
     S: Storage,
 {
+    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
+    ensure_support_session_owner(&state.db, &session_id, &user_id).await?;
+    sqlx::query(
+        r#"
+        UPDATE support_messages
+        SET read_at = COALESCE(read_at, now()),
+            read_by = COALESCE(read_by, $2)
+        WHERE session_id = $1
+          AND sender_role IN ('agent', 'admin', 'support', 'operator')
+          AND read_at IS NULL
+        "#,
+    )
+    .bind(&session_id)
+    .bind(&user_id)
+    .execute(&state.db)
+    .await?;
+    support_messages_for_session(&state.db, &session_id)
+        .await
+        .map(|messages| ok("查询成功", messages))
+}
+
+async fn admin_list_support_messages<S>(
+    State(state): State<AppState<S>>,
+    Extension(principal): Extension<AdminPrincipal>,
+    Path(session_id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let session_exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM support_sessions WHERE id = $1)",
+    )
+    .bind(&session_id)
+    .fetch_one(&state.db)
+    .await?;
+    if !session_exists {
+        return Err(ApiError::NotFound("客服会话不存在".to_string()));
+    }
+    sqlx::query(
+        r#"
+        UPDATE support_messages
+        SET read_at = COALESCE(read_at, now()),
+            read_by = COALESCE(read_by, $2)
+        WHERE session_id = $1
+          AND sender_role IN ('user', 'customer', 'member')
+          AND read_at IS NULL
+        "#,
+    )
+    .bind(&session_id)
+    .bind(&principal.id)
+    .execute(&state.db)
+    .await?;
+    support_messages_for_session(&state.db, &session_id)
+        .await
+        .map(|messages| ok("查询成功", messages))
+}
+
+async fn support_messages_for_session(pool: &PgPool, session_id: &str) -> ApiResult<Vec<Value>> {
     let messages = sqlx::query_scalar::<_, Value>(
         "SELECT support_message_json(support_messages) FROM support_messages WHERE session_id = $1 ORDER BY created_at ASC",
     )
     .bind(session_id)
-    .fetch_all(&state.db)
+    .fetch_all(pool)
     .await?;
-    Ok(ok("查询成功", messages))
+    Ok(messages)
+}
+
+async fn ensure_support_session_owner(
+    pool: &PgPool,
+    session_id: &str,
+    user_id: &str,
+) -> ApiResult<()> {
+    let owns_session = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM support_sessions WHERE id = $1 AND user_id = $2)",
+    )
+    .bind(session_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    if owns_session {
+        Ok(())
+    } else {
+        Err(ApiError::Forbidden("无权访问该客服会话".to_string()))
+    }
+}
+
+async fn upsert_support_satisfaction<S>(
+    State(state): State<AppState<S>>,
+    Path(session_id): Path<String>,
+    Json(body): Json<SupportSatisfactionRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    validate_required(&body.user_id, "用户ID不能为空")?;
+    if !(1..=5).contains(&body.rating) {
+        return Err(ApiError::BadRequest("满意度评分必须是1到5星".to_string()));
+    }
+    ensure_support_session_owner(&state.db, &session_id, &body.user_id).await?;
+    let session_status =
+        sqlx::query_scalar::<_, String>("SELECT status FROM support_sessions WHERE id = $1")
+            .bind(&session_id)
+            .fetch_one(&state.db)
+            .await?;
+    if !matches!(session_status.as_str(), "resolved" | "closed") {
+        return Err(ApiError::BadRequest("客服完成处理后才能评价".to_string()));
+    }
+    let tags = json!(body.tags.unwrap_or_default());
+    let rating = sqlx::query_scalar::<_, Value>(
+        r#"
+        INSERT INTO support_satisfaction_ratings (
+          session_id, user_id, rating, tags, comment
+        )
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (session_id) DO UPDATE
+        SET rating = EXCLUDED.rating,
+            tags = EXCLUDED.tags,
+            comment = EXCLUDED.comment,
+            updated_at = now()
+        RETURNING jsonb_build_object(
+          'id', id,
+          'sessionId', session_id,
+          'userId', user_id,
+          'rating', rating,
+          'tags', tags,
+          'comment', comment,
+          'updatedAt', updated_at
+        )
+        "#,
+    )
+    .bind(&session_id)
+    .bind(&body.user_id)
+    .bind(body.rating)
+    .bind(tags)
+    .bind(non_empty(body.comment))
+    .fetch_one(&state.db)
+    .await?;
+    Ok(ok("感谢您的评价", rating))
+}
+
+async fn upload_support_evidence<S>(
+    State(state): State<AppState<S>>,
+    Path(session_id): Path<String>,
+    Query(query): Query<SupportEvidenceQuery>,
+    mut multipart: Multipart,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    validate_required(&query.user_id, "用户ID不能为空")?;
+    ensure_support_session_owner(&state.db, &session_id, &query.user_id).await?;
+    let mut ignored_field_bytes = 0usize;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?
+    {
+        if field.name() != Some("file") {
+            read_ignored_multipart_field(field, &mut ignored_field_bytes).await?;
+            continue;
+        }
+        let content_type = field.content_type().map(str::to_string);
+        if !content_type
+            .as_deref()
+            .is_some_and(|value| ALLOWED_MALL_PRODUCT_IMAGE_TYPES.contains(&value))
+        {
+            return Err(ApiError::BadRequest(
+                "请上传 JPG、PNG、WebP 或 GIF 凭证图片".to_string(),
+            ));
+        }
+        let extension = extension_for_product_image(content_type.as_deref())
+            .ok_or_else(|| ApiError::BadRequest("请上传有效的凭证图片".to_string()))?;
+        let bytes = read_mall_product_image_bytes(field).await?;
+        if bytes.is_empty() {
+            return Err(ApiError::BadRequest("凭证图片不能为空".to_string()));
+        }
+        if bytes.len() > MAX_MALL_PRODUCT_IMAGE_BYTES {
+            return Err(ApiError::BadRequest("单张凭证图片不能超过5MB".to_string()));
+        }
+        let key = format!(
+            "support-evidence/{}/{}-{}.{}",
+            session_id,
+            chrono::Utc::now().timestamp_millis(),
+            &uuid::Uuid::new_v4().simple().to_string()[..8],
+            extension
+        );
+        let file_key = match state
+            .storage
+            .put_key(bytes, &key, content_type.as_deref())
+            .await
+        {
+            Ok(file_key) => file_key,
+            Err(error) => {
+                let description = format!("客服凭证上传失败：{error}");
+                let _ = record_operations_alert(
+                    &state.db,
+                    &format!("upload:support:{session_id}"),
+                    "upload",
+                    "support_evidence",
+                    Some(&session_id),
+                    "critical",
+                    "客服凭证上传异常",
+                    &description,
+                    json!({ "storageKey": key, "stage": "put" }),
+                )
+                .await;
+                return Err(error);
+            }
+        };
+        let url = match state.storage.public_url(&file_key).await {
+            Ok(url) => url,
+            Err(error) => {
+                let description = format!("客服凭证公开地址生成失败：{error}");
+                let _ = record_operations_alert(
+                    &state.db,
+                    &format!("upload:support:{session_id}"),
+                    "upload",
+                    "support_evidence",
+                    Some(&session_id),
+                    "critical",
+                    "客服凭证上传异常",
+                    &description,
+                    json!({ "storageKey": file_key, "stage": "public_url" }),
+                )
+                .await;
+                return Err(error);
+            }
+        };
+        return Ok(ok(
+            "凭证图片上传成功",
+            json!({ "fileKey": file_key, "url": url }),
+        ));
+    }
+
+    Err(ApiError::BadRequest("请选择凭证图片".to_string()))
 }
 
 async fn create_support_ticket<S>(
@@ -8379,6 +9376,21 @@ where
     validate_required(&body.user_id, "用户ID不能为空")?;
     validate_required(&body.category, "工单分类不能为空")?;
     validate_required(&body.title, "工单标题不能为空")?;
+    if let Some(session_id) = body.session_id.as_deref() {
+        ensure_support_session_owner(&state.db, session_id, &body.user_id).await?;
+    }
+    if let Some(order_id) = body.order_id.as_deref() {
+        let owns_order = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM mall_orders WHERE id = $1 AND user_id = $2)",
+        )
+        .bind(order_id)
+        .bind(&body.user_id)
+        .fetch_one(&state.db)
+        .await?;
+        if !owns_order {
+            return Err(ApiError::Forbidden("订单不属于当前用户".to_string()));
+        }
+    }
     let ticket = sqlx::query_scalar::<_, Value>(
         r#"
         INSERT INTO support_tickets (
@@ -8407,17 +9419,12 @@ async fn list_support_tickets<S>(
 where
     S: Storage,
 {
+    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
     let mut builder = QueryBuilder::<Postgres>::new(
         "SELECT support_ticket_json(support_tickets) FROM support_tickets WHERE 1 = 1",
     );
-    if let Some(user_id) = query
-        .user_id
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        builder.push(" AND user_id = ");
-        builder.push_bind(user_id);
-    }
+    builder.push(" AND user_id = ");
+    builder.push_bind(user_id);
     if let Some(status) = query
         .status
         .as_deref()
@@ -8427,6 +9434,32 @@ where
         builder.push_bind(status);
     }
     builder.push(" ORDER BY created_at DESC LIMIT 100");
+    let tickets = builder
+        .build_query_scalar::<Value>()
+        .fetch_all(&state.db)
+        .await?;
+    Ok(ok("查询成功", tickets))
+}
+
+async fn admin_list_support_tickets<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<SupportListQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let mut builder = QueryBuilder::<Postgres>::new(
+        "SELECT support_ticket_json(support_tickets) FROM support_tickets WHERE 1 = 1",
+    );
+    if let Some(status) = query
+        .status
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        builder.push(" AND status = ");
+        builder.push_bind(status);
+    }
+    builder.push(" ORDER BY created_at DESC LIMIT 200");
     let tickets = builder
         .build_query_scalar::<Value>()
         .fetch_all(&state.db)
@@ -8503,6 +9536,20 @@ where
     Ok(ok("查询成功", articles))
 }
 
+async fn list_public_knowledge<S>(
+    State(state): State<AppState<S>>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let articles = sqlx::query_scalar::<_, Value>(
+        "SELECT knowledge_json(support_knowledge_articles) FROM support_knowledge_articles WHERE status = 'published' ORDER BY updated_at DESC LIMIT 100",
+    )
+    .fetch_all(&state.db)
+    .await?;
+    Ok(ok("查询成功", articles))
+}
+
 async fn update_knowledge<S>(
     State(state): State<AppState<S>>,
     Path(id): Path<String>,
@@ -8554,6 +9601,18 @@ where
            AND message.created_at >= user_message.first_user_at
            AND message.sender_role IN ('agent', 'admin', 'support')
           GROUP BY user_message.session_id
+        ),
+        session_totals AS (
+          SELECT
+            count(*) AS total_count,
+            count(*) FILTER (WHERE status IN ('resolved', 'closed')) AS resolved_count
+          FROM support_sessions
+        ),
+        after_sale_totals AS (
+          SELECT
+            count(*) AS total_count,
+            count(*) FILTER (WHERE status IN ('refunded', 'resolved')) AS refunded_count
+          FROM mall_after_sales
         )
         SELECT jsonb_build_object(
           'openSessions', (SELECT count(*) FROM support_sessions WHERE status = 'open'),
@@ -8564,14 +9623,751 @@ where
             SELECT round(avg(extract(epoch from (agent_message.first_agent_at - user_message.first_user_at)) / 60.0))::integer
             FROM first_user_messages user_message
             JOIN first_agent_messages agent_message ON agent_message.session_id = user_message.session_id
-          ), 6),
-          'satisfaction', 96
+          ), 0),
+          'firstResponseSlaRate', COALESCE((
+            SELECT round(100.0 * count(*) FILTER (
+              WHERE agent_message.first_agent_at <= user_message.first_user_at + interval '5 minutes'
+            ) / NULLIF(count(*), 0))::integer
+            FROM first_user_messages user_message
+            JOIN first_agent_messages agent_message ON agent_message.session_id = user_message.session_id
+          ), 0),
+          'resolutionRate', COALESCE((
+            SELECT round(100.0 * resolved_count / NULLIF(total_count, 0))::integer
+            FROM session_totals
+          ), 0),
+          'refundRate', COALESCE((
+            SELECT round(100.0 * refunded_count / NULLIF(total_count, 0))::integer
+            FROM after_sale_totals
+          ), 0),
+          'satisfaction', COALESCE((
+            SELECT round(avg(rating) * 20)::integer
+            FROM support_satisfaction_ratings
+          ), 0),
+          'satisfactionCount', (SELECT count(*) FROM support_satisfaction_ratings)
         )
         "#,
     )
     .fetch_one(&state.db)
     .await?;
     Ok(ok("查询成功", metrics))
+}
+
+async fn admin_support_quality<S>(
+    State(state): State<AppState<S>>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let quality = sqlx::query_scalar::<_, Value>(
+        r#"
+        WITH first_user AS (
+          SELECT session_id, min(created_at) AS first_user_at
+          FROM support_messages
+          WHERE sender_role IN ('user', 'customer', 'member')
+          GROUP BY session_id
+        ),
+        first_agent AS (
+          SELECT first_user.session_id, min(message.created_at) AS first_agent_at
+          FROM first_user
+          JOIN support_messages message
+            ON message.session_id = first_user.session_id
+           AND message.created_at >= first_user.first_user_at
+           AND message.sender_role IN ('agent', 'admin', 'support', 'operator')
+          GROUP BY first_user.session_id
+        ),
+        agent_stats AS (
+          SELECT jsonb_build_object(
+            'agentId', agent.id,
+            'agentName', COALESCE(NULLIF(agent.name, ''), NULLIF(agent.nickname, ''), NULLIF(agent.phone, ''), '客服坐席'),
+            'sessionCount', count(session.id),
+            'openCount', count(session.id) FILTER (WHERE session.status = 'open'),
+            'resolvedCount', count(session.id) FILTER (WHERE session.status IN ('resolved', 'closed')),
+            'resolutionRate', COALESCE(round(
+              100.0 * count(session.id) FILTER (WHERE session.status IN ('resolved', 'closed'))
+              / NULLIF(count(session.id), 0)
+            )::integer, 0),
+            'avgFirstResponseMinutes', COALESCE(round(avg(
+              extract(epoch FROM (first_agent.first_agent_at - first_user.first_user_at)) / 60.0
+            ))::integer, 0),
+            'satisfaction', COALESCE(round(avg(rating.rating) * 20)::integer, 0),
+            'ratingCount', count(rating.id),
+            'lowRatingCount', count(rating.id) FILTER (WHERE rating.rating <= 2)
+          ) AS payload
+          FROM users agent
+          LEFT JOIN support_sessions session ON session.assigned_agent_id = agent.id
+          LEFT JOIN first_user ON first_user.session_id = session.id
+          LEFT JOIN first_agent ON first_agent.session_id = session.id
+          LEFT JOIN support_satisfaction_ratings rating ON rating.session_id = session.id
+          WHERE agent.role = 'admin' AND COALESCE(agent.status, 'active') = 'active'
+          GROUP BY agent.id, agent.name, agent.nickname, agent.phone
+          ORDER BY count(session.id) DESC, agent.id
+        ),
+        quality_flags AS (
+          SELECT jsonb_build_object(
+            'sessionId', session.id,
+            'topic', session.topic,
+            'customerName', COALESCE(NULLIF(customer.name, ''), NULLIF(customer.nickname, ''), NULLIF(customer.phone, ''), '商城用户'),
+            'agentId', session.assigned_agent_id,
+            'flagType', CASE
+              WHEN rating.rating <= 2 THEN 'low_satisfaction'
+              WHEN latest_customer.created_at IS NOT NULL
+                AND (latest_agent.created_at IS NULL OR latest_customer.created_at > latest_agent.created_at)
+                AND latest_customer.created_at < now() - interval '10 minutes'
+                THEN 'waiting_too_long'
+              WHEN first_user.first_user_at IS NOT NULL AND first_agent.first_agent_at IS NULL
+                AND first_user.first_user_at < now() - interval '5 minutes'
+                THEN 'first_response_overdue'
+              ELSE NULL
+            END,
+            'waitingMinutes', CASE
+              WHEN latest_customer.created_at IS NULL THEN 0
+              ELSE GREATEST(0, floor(extract(epoch FROM (now() - latest_customer.created_at)) / 60)::integer)
+            END,
+            'rating', rating.rating,
+            'updatedAt', session.updated_at
+          ) AS payload
+          FROM support_sessions session
+          LEFT JOIN users customer ON customer.id = session.user_id
+          LEFT JOIN support_satisfaction_ratings rating ON rating.session_id = session.id
+          LEFT JOIN first_user ON first_user.session_id = session.id
+          LEFT JOIN first_agent ON first_agent.session_id = session.id
+          LEFT JOIN LATERAL (
+            SELECT created_at
+            FROM support_messages
+            WHERE session_id = session.id AND sender_role IN ('user', 'customer', 'member')
+            ORDER BY created_at DESC LIMIT 1
+          ) latest_customer ON true
+          LEFT JOIN LATERAL (
+            SELECT created_at
+            FROM support_messages
+            WHERE session_id = session.id AND sender_role IN ('agent', 'admin', 'support', 'operator')
+            ORDER BY created_at DESC LIMIT 1
+          ) latest_agent ON true
+          WHERE rating.rating <= 2
+             OR (
+               latest_customer.created_at IS NOT NULL
+               AND (latest_agent.created_at IS NULL OR latest_customer.created_at > latest_agent.created_at)
+               AND latest_customer.created_at < now() - interval '10 minutes'
+             )
+             OR (
+               first_user.first_user_at IS NOT NULL
+               AND first_agent.first_agent_at IS NULL
+               AND first_user.first_user_at < now() - interval '5 minutes'
+             )
+          ORDER BY session.updated_at DESC
+          LIMIT 50
+        )
+        SELECT jsonb_build_object(
+          'agentStats', COALESCE((SELECT jsonb_agg(payload) FROM agent_stats), '[]'::jsonb),
+          'qualityFlags', COALESCE((SELECT jsonb_agg(payload) FROM quality_flags), '[]'::jsonb)
+        )
+        "#,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    Ok(ok("查询成功", quality))
+}
+
+async fn refresh_operations_alerts(pool: &PgPool) -> ApiResult<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO mall_operations_alerts (
+          dedupe_key, alert_type, source, business_id, severity, title, description, metadata
+        )
+        SELECT
+          'payment:' || payment.id,
+          'payment',
+          'platform_payment_orders',
+          payment.business_id,
+          CASE WHEN payment.status IN ('failed', 'abnormal') THEN 'critical' ELSE 'warning' END,
+          CASE WHEN payment.status IN ('failed', 'abnormal') THEN '支付处理异常' ELSE '支付等待超时' END,
+          '支付单 ' || payment.out_trade_no || ' 状态为 ' || payment.status || '，请核对支付渠道和业务订单。',
+          jsonb_build_object('paymentOrderId', payment.id, 'status', payment.status, 'outTradeNo', payment.out_trade_no)
+        FROM platform_payment_orders payment
+        WHERE payment.status IN ('failed', 'abnormal')
+           OR (
+             payment.status IN ('pending', 'created', 'submitted')
+             AND COALESCE(payment.expires_at, payment.created_at + interval '15 minutes') < now()
+           )
+        ON CONFLICT (dedupe_key) DO UPDATE
+        SET severity = EXCLUDED.severity,
+            title = EXCLUDED.title,
+            description = EXCLUDED.description,
+            metadata = EXCLUDED.metadata,
+            status = CASE WHEN mall_operations_alerts.status = 'resolved' THEN 'open' ELSE mall_operations_alerts.status END,
+            resolved_at = CASE WHEN mall_operations_alerts.status = 'resolved' THEN NULL ELSE mall_operations_alerts.resolved_at END,
+            occurrence_count = mall_operations_alerts.occurrence_count + CASE
+              WHEN mall_operations_alerts.last_occurred_at < now() - interval '1 minute' THEN 1 ELSE 0 END,
+            last_occurred_at = now(),
+            updated_at = now()
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO mall_operations_alerts (
+          dedupe_key, alert_type, source, business_id, severity, title, description, metadata
+        )
+        SELECT
+          'refund:' || refund.id,
+          'refund',
+          'platform_refund_orders',
+          refund.business_id,
+          CASE WHEN refund.status IN ('failed', 'abnormal') THEN 'critical' ELSE 'warning' END,
+          CASE WHEN refund.status IN ('failed', 'abnormal') THEN '退款处理异常' ELSE '退款处理超时' END,
+          '退款单 ' || refund.out_refund_no || ' 状态为 ' || refund.status || '，请检查渠道回执并联系用户。',
+          jsonb_build_object('refundOrderId', refund.id, 'status', refund.status, 'outRefundNo', refund.out_refund_no)
+        FROM platform_refund_orders refund
+        WHERE refund.status IN ('failed', 'abnormal')
+           OR (
+             refund.status IN ('submitted', 'processing')
+             AND refund.updated_at < now() - interval '30 minutes'
+           )
+        ON CONFLICT (dedupe_key) DO UPDATE
+        SET severity = EXCLUDED.severity,
+            title = EXCLUDED.title,
+            description = EXCLUDED.description,
+            metadata = EXCLUDED.metadata,
+            status = CASE WHEN mall_operations_alerts.status = 'resolved' THEN 'open' ELSE mall_operations_alerts.status END,
+            resolved_at = CASE WHEN mall_operations_alerts.status = 'resolved' THEN NULL ELSE mall_operations_alerts.resolved_at END,
+            occurrence_count = mall_operations_alerts.occurrence_count + CASE
+              WHEN mall_operations_alerts.last_occurred_at < now() - interval '1 minute' THEN 1 ELSE 0 END,
+            last_occurred_at = now(),
+            updated_at = now()
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO mall_operations_alerts (
+          dedupe_key, alert_type, source, business_id, severity, title, description, metadata
+        )
+        SELECT
+          'delivery:' || sheet.id,
+          'delivery',
+          'mall_delivery_sheets',
+          sheet.id,
+          CASE WHEN sheet.status = 'shipped' THEN 'critical' ELSE 'warning' END,
+          CASE WHEN sheet.status = 'shipped' THEN '配送签收超时' ELSE '配送单待发车' END,
+          '配送单 ' || sheet.id || ' 当前状态为 ' || sheet.status || '，请核对车辆与履约进度。',
+          jsonb_build_object('deliverySheetId', sheet.id, 'status', sheet.status, 'orderCount', sheet.order_count)
+        FROM mall_delivery_sheets sheet
+        WHERE (sheet.status = 'generated' AND sheet.generated_at < now() - interval '2 hours')
+           OR (sheet.status = 'shipped' AND sheet.shipped_at < now() - interval '4 hours' AND sheet.delivered_at IS NULL)
+        ON CONFLICT (dedupe_key) DO UPDATE
+        SET severity = EXCLUDED.severity,
+            title = EXCLUDED.title,
+            description = EXCLUDED.description,
+            metadata = EXCLUDED.metadata,
+            status = CASE WHEN mall_operations_alerts.status = 'resolved' THEN 'open' ELSE mall_operations_alerts.status END,
+            resolved_at = CASE WHEN mall_operations_alerts.status = 'resolved' THEN NULL ELSE mall_operations_alerts.resolved_at END,
+            occurrence_count = mall_operations_alerts.occurrence_count + CASE
+              WHEN mall_operations_alerts.last_occurred_at < now() - interval '1 minute' THEN 1 ELSE 0 END,
+            last_occurred_at = now(),
+            updated_at = now()
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        UPDATE mall_operations_alerts alert
+        SET status = 'resolved', resolved_at = now(), updated_at = now()
+        WHERE alert.status <> 'resolved'
+          AND (
+            (alert.source = 'platform_payment_orders' AND NOT EXISTS (
+              SELECT 1 FROM platform_payment_orders payment
+              WHERE 'payment:' || payment.id = alert.dedupe_key
+                AND (
+                  payment.status IN ('failed', 'abnormal')
+                  OR (payment.status IN ('pending', 'created', 'submitted') AND COALESCE(payment.expires_at, payment.created_at + interval '15 minutes') < now())
+                )
+            ))
+            OR (alert.source = 'platform_refund_orders' AND NOT EXISTS (
+              SELECT 1 FROM platform_refund_orders refund
+              WHERE 'refund:' || refund.id = alert.dedupe_key
+                AND (
+                  refund.status IN ('failed', 'abnormal')
+                  OR (refund.status IN ('submitted', 'processing') AND refund.updated_at < now() - interval '30 minutes')
+                )
+            ))
+            OR (alert.source = 'mall_delivery_sheets' AND NOT EXISTS (
+              SELECT 1 FROM mall_delivery_sheets sheet
+              WHERE 'delivery:' || sheet.id = alert.dedupe_key
+                AND (
+                  (sheet.status = 'generated' AND sheet.generated_at < now() - interval '2 hours')
+                  OR (sheet.status = 'shipped' AND sheet.shipped_at < now() - interval '4 hours' AND sheet.delivered_at IS NULL)
+                )
+            ))
+          )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+async fn record_operations_alert(
+    pool: &PgPool,
+    dedupe_key: &str,
+    alert_type: &str,
+    source: &str,
+    business_id: Option<&str>,
+    severity: &str,
+    title: &str,
+    description: &str,
+    metadata: Value,
+) -> ApiResult<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO mall_operations_alerts (
+          dedupe_key, alert_type, source, business_id, severity, title, description, metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (dedupe_key) DO UPDATE
+        SET severity = EXCLUDED.severity,
+            title = EXCLUDED.title,
+            description = EXCLUDED.description,
+            metadata = EXCLUDED.metadata,
+            status = CASE WHEN mall_operations_alerts.status = 'resolved' THEN 'open' ELSE mall_operations_alerts.status END,
+            resolved_at = CASE WHEN mall_operations_alerts.status = 'resolved' THEN NULL ELSE mall_operations_alerts.resolved_at END,
+            occurrence_count = mall_operations_alerts.occurrence_count + 1,
+            last_occurred_at = now(),
+            updated_at = now()
+        "#,
+    )
+    .bind(dedupe_key)
+    .bind(alert_type)
+    .bind(source)
+    .bind(business_id)
+    .bind(severity)
+    .bind(title)
+    .bind(description)
+    .bind(metadata)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+async fn admin_list_operations_alerts<S>(
+    State(state): State<AppState<S>>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    refresh_operations_alerts(&state.db).await?;
+    let alerts = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT jsonb_build_object(
+          'id', id,
+          'dedupeKey', dedupe_key,
+          'alertType', alert_type,
+          'source', source,
+          'businessId', business_id,
+          'severity', severity,
+          'title', title,
+          'description', description,
+          'status', status,
+          'occurrenceCount', occurrence_count,
+          'firstOccurredAt', first_occurred_at,
+          'lastOccurredAt', last_occurred_at,
+          'acknowledgedBy', acknowledged_by,
+          'acknowledgedAt', acknowledged_at,
+          'resolvedAt', resolved_at,
+          'metadata', metadata
+        )
+        FROM mall_operations_alerts
+        ORDER BY
+          CASE status WHEN 'open' THEN 0 WHEN 'acknowledged' THEN 1 ELSE 2 END,
+          CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+          last_occurred_at DESC
+        LIMIT 200
+        "#,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    Ok(ok("查询成功", alerts))
+}
+
+async fn admin_update_operations_alert<S>(
+    State(state): State<AppState<S>>,
+    Extension(principal): Extension<AdminPrincipal>,
+    Path(id): Path<String>,
+    Json(body): Json<UpdateOperationsAlertRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    if !matches!(body.status.as_str(), "acknowledged" | "resolved") {
+        return Err(ApiError::BadRequest("告警状态不正确".to_string()));
+    }
+    let alert = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_operations_alerts
+        SET status = $2,
+            acknowledged_by = CASE WHEN $2 = 'acknowledged' THEN $3 ELSE acknowledged_by END,
+            acknowledged_at = CASE WHEN $2 = 'acknowledged' THEN now() ELSE acknowledged_at END,
+            resolved_at = CASE WHEN $2 = 'resolved' THEN now() ELSE NULL END,
+            updated_at = now()
+        WHERE id = $1
+        RETURNING jsonb_build_object(
+          'id', id, 'alertType', alert_type, 'severity', severity,
+          'title', title, 'description', description, 'status', status,
+          'lastOccurredAt', last_occurred_at
+        )
+        "#,
+    )
+    .bind(&id)
+    .bind(&body.status)
+    .bind(&principal.id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("告警不存在".to_string()))?;
+    Ok(ok("告警状态已更新", alert))
+}
+
+async fn admin_roadshow_status<S>(
+    State(state): State<AppState<S>>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let status = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT jsonb_build_object(
+          'ready', EXISTS(SELECT 1 FROM mall_orders WHERE id = $1)
+            AND EXISTS(SELECT 1 FROM support_sessions WHERE id = $2)
+            AND EXISTS(SELECT 1 FROM mall_after_sales WHERE id = $3),
+          'phone', $4::text,
+          'password', $5::text,
+          'orderId', $1::text,
+          'sessionId', $2::text,
+          'afterSaleId', $3::text,
+          'productName', (
+            SELECT product_name FROM mall_order_items WHERE order_id = $1 ORDER BY created_at LIMIT 1
+          ),
+          'lastResetAt', (
+            SELECT updated_at FROM support_sessions WHERE id = $2
+          )
+        )
+        "#,
+    )
+    .bind(ROADSHOW_ORDER_ID)
+    .bind(ROADSHOW_SESSION_ID)
+    .bind(ROADSHOW_AFTER_SALE_ID)
+    .bind(ROADSHOW_PHONE)
+    .bind(ROADSHOW_PASSWORD)
+    .fetch_one(&state.db)
+    .await?;
+    Ok(ok("查询成功", status))
+}
+
+async fn admin_reset_roadshow<S>(
+    State(state): State<AppState<S>>,
+    Extension(principal): Extension<AdminPrincipal>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let product = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT jsonb_build_object(
+          'id', id,
+          'sku', sku,
+          'name', name,
+          'categoryCode', category_code,
+          'imageUrl', COALESCE(NULLIF(image_url, ''), images->>0),
+          'priceCents', price_cents
+        )
+        FROM mall_products
+        WHERE status = 'on_sale' AND stock > 0
+        ORDER BY
+          CASE WHEN COALESCE(NULLIF(image_url, ''), images->>0) IS NULL THEN 1 ELSE 0 END,
+          CASE
+            WHEN COALESCE(NULLIF(image_url, ''), images->>0) LIKE '/api/uploads/%' THEN 0
+            WHEN COALESCE(NULLIF(image_url, ''), images->>0) ~ '^https?://' THEN 1
+            ELSE 2
+          END,
+          sort_order,
+          updated_at DESC NULLS LAST
+        LIMIT 1
+        "#,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::BadRequest("没有可用于路演的在售商品，请先上架商品".to_string()))?;
+    let product_id = product
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ApiError::BadRequest("路演商品数据不完整".to_string()))?;
+    let sku = product.get("sku").and_then(Value::as_str).unwrap_or("DEMO");
+    let product_name = product
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("路演商品");
+    let category_code = product
+        .get("categoryCode")
+        .and_then(Value::as_str)
+        .unwrap_or("demo");
+    let image_url = product.get("imageUrl").and_then(Value::as_str);
+    let price_cents = product
+        .get("priceCents")
+        .and_then(Value::as_i64)
+        .unwrap_or(1990);
+    let password_hash = hash(ROADSHOW_PASSWORD, ROADSHOW_BCRYPT_COST)
+        .map_err(|error| ApiError::BadRequest(error.to_string()))?;
+    let mut tx = state.db.begin().await?;
+
+    let demo_user_id = if let Some((user_id, role)) =
+        sqlx::query_as::<_, (String, Option<String>)>("SELECT id, role FROM users WHERE phone = $1")
+            .bind(ROADSHOW_PHONE)
+            .fetch_optional(&mut *tx)
+            .await?
+    {
+        if role.as_deref() == Some("admin") {
+            return Err(ApiError::Conflict(
+                "路演体验手机号已被管理员账号占用，请联系技术人员处理".to_string(),
+            ));
+        }
+        sqlx::query(
+            r#"
+            UPDATE users
+            SET password = $2,
+                role = 'user',
+                name = '路演体验用户',
+                nickname = '小路演',
+                status = 'active',
+                updated_at = now()
+            WHERE id = $1
+            "#,
+        )
+        .bind(&user_id)
+        .bind(&password_hash)
+        .execute(&mut *tx)
+        .await?;
+        user_id
+    } else {
+        sqlx::query_scalar::<_, String>(
+            r#"
+            INSERT INTO users (id, phone, password, role, name, nickname, status, updated_at)
+            VALUES ($1, $2, $3, 'user', '路演体验用户', '小路演', 'active', now())
+            RETURNING id
+            "#,
+        )
+        .bind(ROADSHOW_USER_ID)
+        .bind(ROADSHOW_PHONE)
+        .bind(&password_hash)
+        .fetch_one(&mut *tx)
+        .await?
+    };
+
+    sqlx::query("DELETE FROM support_satisfaction_ratings WHERE session_id = $1")
+        .bind(ROADSHOW_SESSION_ID)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM support_session_events WHERE session_id = $1")
+        .bind(ROADSHOW_SESSION_ID)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM support_messages WHERE session_id = $1")
+        .bind(ROADSHOW_SESSION_ID)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM support_tickets WHERE id = $1 OR session_id = $2")
+        .bind(ROADSHOW_TICKET_ID)
+        .bind(ROADSHOW_SESSION_ID)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM support_sessions WHERE id = $1")
+        .bind(ROADSHOW_SESSION_ID)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM mall_after_sales WHERE id = $1 OR order_id = $2")
+        .bind(ROADSHOW_AFTER_SALE_ID)
+        .bind(ROADSHOW_ORDER_ID)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM mall_fulfillment_events WHERE order_id = $1")
+        .bind(ROADSHOW_ORDER_ID)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM mall_fulfillment_codes WHERE order_id = $1")
+        .bind(ROADSHOW_ORDER_ID)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM mall_order_events WHERE order_id = $1")
+        .bind(ROADSHOW_ORDER_ID)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM mall_order_items WHERE order_id = $1")
+        .bind(ROADSHOW_ORDER_ID)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM mall_orders WHERE id = $1")
+        .bind(ROADSHOW_ORDER_ID)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO mall_orders (
+          id, order_no, user_id, recipient_name, recipient_phone, address_text,
+          delivery_method, pickup_method, expected_delivery_window,
+          subtotal_cents, delivery_fee_cents, coupon_cents, payable_cents,
+          payment_status, status, after_sale_status, vehicle_code,
+          tracking_distance_km, cabin_code, remark, created_at, updated_at,
+          paid_at, dispatched_at
+        )
+        VALUES (
+          $1, 'ROADSHOW20260710001', $2, '路演体验用户', $3, '上海市路演示范园区 A 座',
+          '无人车冷链直送', '短信码开舱', '今天 15:00-16:00',
+          $4, 0, 0, $4, 'paid', 'delivering', 'processing', 'RC-DEMO-01',
+          1.8, 'A01', '路演固定订单，请勿用于真实履约', now() - interval '35 minutes', now(),
+          now() - interval '32 minutes', now() - interval '12 minutes'
+        )
+        "#,
+    )
+    .bind(ROADSHOW_ORDER_ID)
+    .bind(&demo_user_id)
+    .bind(ROADSHOW_PHONE)
+    .bind(price_cents)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO mall_order_items (
+          id, order_id, product_id, sku, product_name, category_code,
+          image_url, unit_price_cents, quantity, line_total_cents
+        )
+        VALUES ('roadshow-demo-order-item', $1, $2, $3, $4, $5, $6, $7, 1, $7)
+        "#,
+    )
+    .bind(ROADSHOW_ORDER_ID)
+    .bind(product_id)
+    .bind(sku)
+    .bind(product_name)
+    .bind(category_code)
+    .bind(image_url)
+    .bind(price_cents)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO mall_order_events (id, order_id, stage, title, description, event_time)
+        VALUES
+          ('roadshow-demo-event-paid', $1, 'paid', '支付成功', '微信支付已完成', now() - interval '32 minutes'),
+          ('roadshow-demo-event-packed', $1, 'packed', '商品已装车', 'A01 舱完成装载', now() - interval '18 minutes'),
+          ('roadshow-demo-event-delivery', $1, 'delivering', '无人车配送中', '预计 8 分钟后到达', now() - interval '12 minutes')
+        "#,
+    )
+    .bind(ROADSHOW_ORDER_ID)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO support_sessions (
+          id, user_id, assigned_agent_id, channel, topic, status, last_message, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, 'miniapp', '商品轻微破损，申请处理', 'open', '麻烦帮我看一下应该怎么处理？', now() - interval '16 minutes', now())
+        "#,
+    )
+    .bind(ROADSHOW_SESSION_ID)
+    .bind(&demo_user_id)
+    .bind(&principal.id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO support_messages (
+          id, session_id, sender_id, sender_role, content, metadata, read_at, read_by, created_at
+        )
+        VALUES
+          ('roadshow-demo-message-1', $1, $2, 'user', '您好，刚收到的商品外包装有一点破损。', jsonb_build_object('orderId', $3), now() - interval '14 minutes', $4, now() - interval '15 minutes'),
+          ('roadshow-demo-message-2', $1, $4, 'agent', '您好，我已经找到这笔订单。请拍一张商品和包装的照片，我马上帮您处理。', jsonb_build_object('orderId', $3), now() - interval '8 minutes', $2, now() - interval '12 minutes'),
+          ('roadshow-demo-message-3', $1, $2, 'user', '照片已经上传，商品本身没问题，只需要补偿优惠券就可以。', jsonb_build_object('orderId', $3, 'evidenceImages', jsonb_build_array($5::text)), NULL, NULL, now() - interval '2 minutes'),
+          ('roadshow-demo-message-4', $1, $2, 'user', '麻烦帮我看一下应该怎么处理？', jsonb_build_object('orderId', $3), NULL, NULL, now())
+        "#,
+    )
+    .bind(ROADSHOW_SESSION_ID)
+    .bind(&demo_user_id)
+    .bind(ROADSHOW_ORDER_ID)
+    .bind(&principal.id)
+    .bind(image_url.unwrap_or(""))
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO support_session_events (
+          id, session_id, event_type, actor_id, to_agent_id, metadata, created_at
+        )
+        VALUES ('roadshow-demo-assignment', $1, 'assigned', $2, $2, jsonb_build_object('source', 'roadshow_reset'), now() - interval '13 minutes')
+        "#,
+    )
+    .bind(ROADSHOW_SESSION_ID)
+    .bind(&principal.id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO mall_after_sales (
+          id, order_id, user_id, reason, description, amount_cents, status,
+          handling_method, after_sale_type, selected_items, requested_amount_cents,
+          evidence_images, support_session_id, timeline, created_at, updated_at
+        )
+        VALUES (
+          $1, $2, $3, '包装破损', '商品完好，用户接受优惠券补偿', 500, 'submitted',
+          '客服协商', 'compensation', jsonb_build_array(jsonb_build_object('productId', $4, 'quantity', 1)), 500,
+          jsonb_build_array($5::text), $6,
+          jsonb_build_array(jsonb_build_object('status', 'submitted', 'title', '售后申请已提交', 'description', '等待客服协商', 'createdAt', now() - interval '2 minutes')),
+          now() - interval '2 minutes', now()
+        )
+        "#,
+    )
+    .bind(ROADSHOW_AFTER_SALE_ID)
+    .bind(ROADSHOW_ORDER_ID)
+    .bind(&demo_user_id)
+    .bind(product_id)
+    .bind(image_url.unwrap_or(""))
+    .bind(ROADSHOW_SESSION_ID)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO support_tickets (
+          id, user_id, session_id, order_id, category, priority, title, description, status, assigned_agent_id
+        )
+        VALUES ($1, $2, $3, $4, 'after_sale', 'normal', '包装破损补偿', '核对凭证后发放5元优惠券', 'open', $5)
+        "#,
+    )
+    .bind(ROADSHOW_TICKET_ID)
+    .bind(&demo_user_id)
+    .bind(ROADSHOW_SESSION_ID)
+    .bind(ROADSHOW_ORDER_ID)
+    .bind(&principal.id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    Ok(ok(
+        "路演数据已恢复",
+        json!({
+          "ready": true,
+          "phone": ROADSHOW_PHONE,
+          "password": ROADSHOW_PASSWORD,
+          "userId": demo_user_id,
+          "productName": product_name,
+          "orderId": ROADSHOW_ORDER_ID,
+          "sessionId": ROADSHOW_SESSION_ID,
+          "afterSaleId": ROADSHOW_AFTER_SALE_ID,
+          "resetAt": Utc::now()
+        }),
+    ))
 }
 
 pub async fn expire_unpaid_mall_orders(pool: &PgPool) -> ApiResult<()> {
