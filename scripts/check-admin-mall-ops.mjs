@@ -110,12 +110,19 @@ for (const required of [
   '类目',
   '价格从低到高',
   '库存从低到高',
-  'page: productFilters.page',
-  'pageSize: productFilters.pageSize',
-  'sort: productFilters.sort',
   'product-pagination',
 ]) {
   requireIncludes(webAdmin, required, `Mall product list must support server-side sorting and pagination: ${required}`)
+}
+
+for (const required of [
+  /page:\s*(?:context\.)?productFilters\.page/,
+  /pageSize:\s*(?:context\.)?productFilters\.pageSize/,
+  /sort:\s*(?:context\.)?productFilters\.sort/,
+]) {
+  if (!required.test(webAdmin)) {
+    throw new Error(`Mall product list must keep server-side sorting and pagination: ${required}`)
+  }
 }
 
 for (const sortKey of [

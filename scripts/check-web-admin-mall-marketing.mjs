@@ -96,8 +96,8 @@ assert(/apiDelete\(`\/api\/admin\/mall\/campaigns\/\$\{[^}]+\}`/.test(adminMain)
 assert(/apiGet<JsonRecord\[]>\('\/api\/admin\/mall\/campaigns'/.test(adminMain), 'Campaign list must load from the real admin campaign API.');
 assert(/apiPost<JsonRecord>\('\/api\/admin\/mall\/marketing-agent'/.test(adminMain), 'Marketing agent must call the backend admin agent API.');
 assert(!/sk-cp-[A-Za-z0-9_-]+/.test(adminMain), 'Web admin must never contain a MiniMax API key.');
-assert(/keyword: campaignFilters\.keyword/.test(adminMain), 'Campaign list must support keyword search.');
-assert(/categoryCode: campaignFilters\.categoryCode/.test(adminMain), 'Campaign list must support activity type search.');
+assert(/keyword:\s*(?:context\.)?campaignFilters\.keyword/.test(adminMain), 'Campaign list must support keyword search.');
+assert(/categoryCode:\s*(?:context\.)?campaignFilters\.categoryCode/.test(adminMain), 'Campaign list must support activity type search.');
 assert(/displayTitle/.test(adminMain), 'Generic marketing campaign form must include a customer-facing display title.');
 assert(/tagText/.test(adminMain), 'Generic marketing campaign form must include configurable product tag text.');
 assert(/iconText/.test(adminMain), 'Generic marketing campaign form must include configurable tag icon text.');
