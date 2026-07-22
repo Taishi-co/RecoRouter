@@ -209,6 +209,14 @@ where
             "/api/admin/mall/finance/withdrawals",
             get(admin_list_withdrawal_requests::<S>).post(admin_create_withdrawal::<S>),
         )
+        .route(
+            "/api/admin/mall/merchants",
+            get(admin_list_merchants::<S>).post(admin_create_merchant::<S>),
+        )
+        .route(
+            "/api/admin/mall/merchants/:id",
+            put(admin_update_merchant::<S>),
+        )
         .route("/api/admin/mall/stats/sales", get(admin_sales_stats::<S>))
         .route(
             "/api/admin/mall/categories",
@@ -303,6 +311,10 @@ where
         .route(
             "/api/admin/mall/orders/:id/refund",
             post(admin_refund_order::<S>),
+        )
+        .route(
+            "/api/admin/mall/orders/:id/profit-sharing/retry",
+            post(admin_retry_profit_sharing::<S>),
         )
         .route(
             "/api/admin/mall/after-sales",
@@ -921,6 +933,8 @@ struct ProductMutationRequest {
     sku: Option<String>,
     #[serde(alias = "category_code")]
     category_code: Option<String>,
+    #[serde(alias = "merchant_id")]
+    merchant_id: Option<String>,
     subtitle: Option<String>,
     description: Option<String>,
     #[serde(alias = "image_url")]
@@ -971,6 +985,39 @@ struct ProductMutationRequest {
     delivery_minutes: Option<i32>,
     #[serde(alias = "cold_chain_required")]
     cold_chain_required: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MallMerchantQuery {
+    keyword: Option<String>,
+    #[serde(alias = "onboarding_status")]
+    onboarding_status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MallMerchantMutationRequest {
+    name: Option<String>,
+    #[serde(alias = "legal_name")]
+    legal_name: Option<String>,
+    #[serde(alias = "wechat_sub_mchid")]
+    wechat_sub_mchid: Option<String>,
+    #[serde(alias = "wechat_sub_appid")]
+    wechat_sub_appid: Option<String>,
+    #[serde(alias = "service_fee_rate_bps")]
+    service_fee_rate_bps: Option<i32>,
+    #[serde(alias = "onboarding_status")]
+    onboarding_status: Option<String>,
+    #[serde(alias = "qualification_status")]
+    qualification_status: Option<String>,
+    #[serde(alias = "business_license_url")]
+    business_license_url: Option<String>,
+    #[serde(alias = "contact_name")]
+    contact_name: Option<String>,
+    #[serde(alias = "contact_phone")]
+    contact_phone: Option<String>,
+    metadata: Option<Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1352,6 +1399,18 @@ struct MallRefundPaymentRow {
     out_trade_no: String,
     amount_cents: i64,
     provider_transaction_id: Option<String>,
+    payment_mode: String,
+    wechat_sub_mchid: Option<String>,
+    wechat_sub_appid: Option<String>,
+}
+
+#[derive(Debug, FromRow)]
+struct ProfitSharingReturnContext {
+    split_id: String,
+    out_order_no: String,
+    platform_service_fee_cents: i64,
+    returned_cents: i64,
+    status: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1593,6 +1652,23 @@ struct CartProductRow {
     weight_unit_label: String,
     weight_unit_grams: i32,
     weight_tolerance_bps: i32,
+    merchant_id: Option<String>,
+    merchant_name: Option<String>,
+    wechat_sub_mchid: Option<String>,
+    wechat_sub_appid: Option<String>,
+    merchant_service_fee_rate_bps: Option<i32>,
+    merchant_onboarding_status: Option<String>,
+    merchant_qualification_status: Option<String>,
+}
+
+#[derive(Debug)]
+struct PartnerSettlementSnapshot {
+    merchant_id: String,
+    wechat_sub_mchid: String,
+    wechat_sub_appid: Option<String>,
+    service_fee_rate_bps: i32,
+    platform_service_fee_cents: i64,
+    merchant_receivable_cents: i64,
 }
 
 #[derive(Debug, FromRow)]
@@ -1626,6 +1702,8 @@ struct WeightAdjustmentOrderRow {
     coupon_cents: i64,
     payable_cents: i64,
     estimated_payable_cents: Option<i64>,
+    payment_status: String,
+    platform_service_fee_rate_bps: Option<i32>,
 }
 
 #[derive(Debug, FromRow)]
@@ -3011,6 +3089,23 @@ async fn admin_publish_group_buy<S>(
 where
     S: Storage,
 {
+    let partner_product: bool = sqlx::query_scalar(
+        r#"
+        SELECT product.merchant_id IS NOT NULL
+        FROM mall_group_buy_activities activity
+        JOIN mall_products product ON product.id = activity.product_id
+        WHERE activity.id = $1
+        "#,
+    )
+    .bind(&id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("团购活动不存在".to_string()))?;
+    if partner_product {
+        return Err(ApiError::BadRequest(
+            "合作商家商品暂不支持团购定金/尾款支付，请使用普通商城订单".to_string(),
+        ));
+    }
     update_group_buy_status(
         &state.db,
         &id,
@@ -4445,6 +4540,8 @@ where
     )
     .await?;
 
+    trigger_profit_sharing_after_completion(&state.db, &body.order_id).await;
+
     Ok(ok("核销成功", verified_code))
 }
 
@@ -4647,6 +4744,7 @@ where
     if payable_cents <= 0 {
         return Err(ApiError::BadRequest("订单金额必须大于0".to_string()));
     }
+    let partner_settlement = resolve_partner_settlement_snapshot(&cart_items, payable_cents)?;
     let has_weighted_items = cart_items.iter().any(|item| item.pricing_mode == "weighed");
     let weight_adjustment_status = if has_weighted_items {
         "pending"
@@ -4715,9 +4813,12 @@ where
           payment_expires_at, delivery_date, delivery_time_slot,
           subtotal_cents, delivery_fee_cents, coupon_cents, payable_cents,
           cabin_code, remark, waypoints, origin_latitude, origin_longitude, origin_address,
-          estimated_payable_cents, weight_adjustment_status
+          estimated_payable_cents, weight_adjustment_status,
+          merchant_id, wechat_sub_mchid, wechat_sub_appid,
+          platform_service_fee_rate_bps, platform_service_fee_cents,
+          merchant_receivable_cents, profit_sharing_status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::numeric, $10::numeric, $11, $12, $13, now() + interval '10 minutes', $14::date, $15, $16, $17, $18, $19, $20, $21, $22, $23::numeric, $24::numeric, $25, $26, $27)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::numeric, $10::numeric, $11, $12, $13, now() + interval '10 minutes', $14::date, $15, $16, $17, $18, $19, $20, $21, $22, $23::numeric, $24::numeric, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34)
         RETURNING id
         "#,
     )
@@ -4748,6 +4849,13 @@ where
     .bind(body.origin_address.clone())
     .bind(payable_cents)
     .bind(weight_adjustment_status)
+    .bind(partner_settlement.as_ref().map(|snapshot| &snapshot.merchant_id))
+    .bind(partner_settlement.as_ref().map(|snapshot| &snapshot.wechat_sub_mchid))
+    .bind(partner_settlement.as_ref().and_then(|snapshot| snapshot.wechat_sub_appid.as_deref()))
+    .bind(partner_settlement.as_ref().map(|snapshot| snapshot.service_fee_rate_bps))
+    .bind(partner_settlement.as_ref().map(|snapshot| snapshot.platform_service_fee_cents).unwrap_or(0))
+    .bind(partner_settlement.as_ref().map(|snapshot| snapshot.merchant_receivable_cents).unwrap_or(0))
+    .bind(if partner_settlement.is_some() { "pending" } else { "not_required" })
     .fetch_one(&mut *tx)
     .await?;
 
@@ -4765,9 +4873,9 @@ where
               order_id, product_id, variant_id, variant_name, sku, product_name, category_code, image_url,
               unit_price_cents, quantity, line_total_cents, estimated_line_total_cents,
               pricing_mode, estimated_weight_grams, weight_unit, weight_unit_label, weight_unit_grams,
-              weight_tolerance_bps, weight_adjustment_status
+              weight_tolerance_bps, weight_adjustment_status, merchant_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
             "#,
         )
         .bind(&order_id)
@@ -4789,6 +4897,7 @@ where
         .bind(item.weight_unit_grams)
         .bind(item.weight_tolerance_bps)
         .bind(item_weight_adjustment_status)
+        .bind(&item.merchant_id)
         .execute(&mut *tx)
         .await?;
 
@@ -5300,6 +5409,266 @@ async fn ensure_no_active_after_sale_for_items(
     Ok(())
 }
 
+async fn admin_list_merchants<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<MallMerchantQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT mall_merchant_json(merchant) || jsonb_build_object(
+          'productCount', (SELECT count(*) FROM mall_products product WHERE product.merchant_id = merchant.id),
+          'pendingSplitCount', (
+            SELECT count(*) FROM mall_orders mall_order
+            WHERE mall_order.merchant_id = merchant.id
+              AND mall_order.profit_sharing_status IN ('pending', 'processing', 'failed')
+          )
+        )
+        FROM mall_merchants merchant
+        WHERE 1 = 1
+        "#,
+    );
+    if let Some(keyword) = non_empty(query.keyword) {
+        let pattern = format!("%{keyword}%");
+        builder.push(" AND (merchant.name ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR merchant.legal_name ILIKE ");
+        builder.push_bind(pattern.clone());
+        builder.push(" OR merchant.wechat_sub_mchid ILIKE ");
+        builder.push_bind(pattern);
+        builder.push(")");
+    }
+    if let Some(status) = non_empty(query.onboarding_status) {
+        validate_mall_merchant_onboarding_status(&status)?;
+        builder.push(" AND merchant.onboarding_status = ");
+        builder.push_bind(status);
+    }
+    builder.push(" ORDER BY merchant.created_at DESC LIMIT 200");
+    let merchants = builder
+        .build_query_scalar::<Value>()
+        .fetch_all(&state.db)
+        .await?;
+    Ok(ok("查询成功", merchants))
+}
+
+async fn admin_create_merchant<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<MallMerchantMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let name = require_non_empty(body.name, "商家名称不能为空")?;
+    let legal_name = require_non_empty(body.legal_name, "商家主体全称不能为空")?;
+    let sub_mchid = require_non_empty(body.wechat_sub_mchid, "微信二级商户号不能为空")?;
+    validate_wechat_sub_mchid(&sub_mchid)?;
+    let service_fee_rate_bps = body.service_fee_rate_bps.unwrap_or(300);
+    validate_service_fee_rate_bps(service_fee_rate_bps)?;
+    let onboarding_status =
+        non_empty(body.onboarding_status).unwrap_or_else(|| "pending".to_string());
+    let qualification_status =
+        non_empty(body.qualification_status).unwrap_or_else(|| "pending".to_string());
+    validate_mall_merchant_onboarding_status(&onboarding_status)?;
+    validate_mall_merchant_qualification_status(&qualification_status)?;
+    let business_license_url = non_empty(body.business_license_url);
+    validate_merchant_activation(
+        &onboarding_status,
+        &qualification_status,
+        business_license_url.as_deref(),
+    )?;
+    if onboarding_status == "active" {
+        crate::modules::payments::ensure_mall_profit_sharing_runtime_ready()?;
+    }
+
+    let merchant = sqlx::query_scalar::<_, Value>(
+        r#"
+        INSERT INTO mall_merchants (
+          name, legal_name, wechat_sub_mchid, wechat_sub_appid,
+          service_fee_rate_bps, onboarding_status, qualification_status,
+          business_license_url, contact_name, contact_phone, metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, '{}'::jsonb))
+        RETURNING mall_merchant_json(mall_merchants)
+        "#,
+    )
+    .bind(name)
+    .bind(legal_name)
+    .bind(sub_mchid)
+    .bind(non_empty(body.wechat_sub_appid))
+    .bind(service_fee_rate_bps)
+    .bind(onboarding_status)
+    .bind(qualification_status)
+    .bind(business_license_url)
+    .bind(non_empty(body.contact_name))
+    .bind(non_empty(body.contact_phone))
+    .bind(body.metadata)
+    .fetch_one(&state.db)
+    .await?;
+    Ok(ok("合作商家已创建", merchant))
+}
+
+async fn admin_update_merchant<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<MallMerchantMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    if let Some(sub_mchid) = body.wechat_sub_mchid.as_deref() {
+        validate_wechat_sub_mchid(sub_mchid)?;
+    }
+    if let Some(rate) = body.service_fee_rate_bps {
+        validate_service_fee_rate_bps(rate)?;
+    }
+    if let Some(status) = body.onboarding_status.as_deref() {
+        validate_mall_merchant_onboarding_status(status)?;
+    }
+    if let Some(status) = body.qualification_status.as_deref() {
+        validate_mall_merchant_qualification_status(status)?;
+    }
+    let current = sqlx::query_scalar::<_, Value>(
+        "SELECT mall_merchant_json(merchant) FROM mall_merchants merchant WHERE merchant.id = $1",
+    )
+    .bind(&id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("合作商家不存在".to_string()))?;
+    let next_onboarding = body
+        .onboarding_status
+        .as_deref()
+        .or_else(|| current.get("onboardingStatus").and_then(Value::as_str))
+        .unwrap_or("pending");
+    let next_qualification = body
+        .qualification_status
+        .as_deref()
+        .or_else(|| current.get("qualificationStatus").and_then(Value::as_str))
+        .unwrap_or("pending");
+    let next_license = body
+        .business_license_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or_else(|| current.get("businessLicenseUrl").and_then(Value::as_str));
+    validate_merchant_activation(next_onboarding, next_qualification, next_license)?;
+    if next_onboarding == "active" {
+        crate::modules::payments::ensure_mall_profit_sharing_runtime_ready()?;
+    }
+
+    let merchant = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_merchants
+        SET name = COALESCE($2, name),
+            legal_name = COALESCE($3, legal_name),
+            wechat_sub_mchid = COALESCE($4, wechat_sub_mchid),
+            wechat_sub_appid = COALESCE($5, wechat_sub_appid),
+            service_fee_rate_bps = COALESCE($6, service_fee_rate_bps),
+            onboarding_status = COALESCE($7, onboarding_status),
+            qualification_status = COALESCE($8, qualification_status),
+            business_license_url = COALESCE($9, business_license_url),
+            contact_name = COALESCE($10, contact_name),
+            contact_phone = COALESCE($11, contact_phone),
+            metadata = COALESCE($12, metadata),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING mall_merchant_json(mall_merchants)
+        "#,
+    )
+    .bind(&id)
+    .bind(optional_non_empty(body.name, "商家名称不能为空")?)
+    .bind(optional_non_empty(body.legal_name, "商家主体全称不能为空")?)
+    .bind(optional_non_empty(
+        body.wechat_sub_mchid,
+        "微信二级商户号不能为空",
+    )?)
+    .bind(non_empty(body.wechat_sub_appid))
+    .bind(body.service_fee_rate_bps)
+    .bind(body.onboarding_status)
+    .bind(body.qualification_status)
+    .bind(non_empty(body.business_license_url))
+    .bind(non_empty(body.contact_name))
+    .bind(non_empty(body.contact_phone))
+    .bind(body.metadata)
+    .fetch_one(&state.db)
+    .await?;
+    Ok(ok("合作商家已更新", merchant))
+}
+
+fn validate_wechat_sub_mchid(value: &str) -> ApiResult<()> {
+    if !(8..=32).contains(&value.len()) || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(ApiError::BadRequest(
+            "微信二级商户号应为 8 至 32 位数字".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_service_fee_rate_bps(value: i32) -> ApiResult<()> {
+    if !(1..=3000).contains(&value) {
+        return Err(ApiError::BadRequest(
+            "平台服务费率必须大于 0 且不能超过 30%".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_mall_merchant_onboarding_status(value: &str) -> ApiResult<()> {
+    if !matches!(value, "pending" | "active" | "suspended" | "rejected") {
+        return Err(ApiError::BadRequest("商家入驻状态无效".to_string()));
+    }
+    Ok(())
+}
+
+fn validate_mall_merchant_qualification_status(value: &str) -> ApiResult<()> {
+    if !matches!(value, "pending" | "approved" | "rejected" | "expired") {
+        return Err(ApiError::BadRequest("商家资质状态无效".to_string()));
+    }
+    Ok(())
+}
+
+fn validate_merchant_activation(
+    onboarding_status: &str,
+    qualification_status: &str,
+    business_license_url: Option<&str>,
+) -> ApiResult<()> {
+    if onboarding_status == "active"
+        && (qualification_status != "approved" || business_license_url.is_none())
+    {
+        return Err(ApiError::BadRequest(
+            "启用合作商家前必须完成资质审核并上传营业执照".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn validate_product_merchant_assignment(
+    pool: &PgPool,
+    merchant_id: Option<&str>,
+) -> ApiResult<Option<String>> {
+    let Some(merchant_id) = merchant_id else {
+        return Ok(None);
+    };
+    let found = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT id
+        FROM mall_merchants
+        WHERE id = $1
+          AND onboarding_status = 'active'
+          AND qualification_status = 'approved'
+          AND business_license_url IS NOT NULL
+          AND btrim(business_license_url) <> ''
+        "#,
+    )
+    .bind(merchant_id)
+    .fetch_optional(pool)
+    .await?;
+    found
+        .map(Some)
+        .ok_or_else(|| ApiError::BadRequest("只能关联已入驻且资质审核通过的合作商家".to_string()))
+}
+
 async fn admin_create_product<S>(
     State(state): State<AppState<S>>,
     Json(body): Json<ProductMutationRequest>,
@@ -5307,6 +5676,11 @@ async fn admin_create_product<S>(
 where
     S: Storage,
 {
+    let merchant_id = validate_product_merchant_assignment(
+        &state.db,
+        body.merchant_id.as_deref().and_then(non_empty_str),
+    )
+    .await?;
     let procurement_buyer_ids = body.procurement_buyer_ids.clone();
     let qualification_reports = body.qualification_reports.clone();
     let hide_supplier = body.hide_supplier;
@@ -5368,21 +5742,22 @@ where
     let product_id = sqlx::query_scalar::<_, String>(
         r#"
         INSERT INTO mall_products (
-          category_id, category_code, sku, name, subtitle, description, image_url, images, variants, specification, sale_method,
+          category_id, category_code, merchant_id, sku, name, subtitle, description, image_url, images, variants, specification, sale_method,
           supply_price_cents, price_cents, original_price_cents, stock, status, tags, delivery_minutes,
           cold_chain_required, length_cm, width_cm, height_cm, volume_liters,
           weight_kg, stock_alert_threshold, minimum_order_quantity
         )
         VALUES (
           (SELECT id FROM mall_categories WHERE code = $1),
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-          $15, $16, COALESCE($17, 18), COALESCE($18, false),
-          $19, $20, $21, $22, $23, COALESCE($24, 15), $25
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+          $16, $17, COALESCE($18, 18), COALESCE($19, false),
+          $20, $21, $22, $23, $24, COALESCE($25, 15), $26
         )
         RETURNING id
         "#,
     )
     .bind(category_code)
+    .bind(merchant_id)
     .bind(sku)
     .bind(name)
     .bind(body.subtitle)
@@ -5432,6 +5807,12 @@ async fn admin_update_product<S>(
 where
     S: Storage,
 {
+    let merchant_id_was_provided = body.merchant_id.is_some();
+    let merchant_id = validate_product_merchant_assignment(
+        &state.db,
+        body.merchant_id.as_deref().and_then(non_empty_str),
+    )
+    .await?;
     let procurement_buyer_ids = body.procurement_buyer_ids.clone();
     let qualification_reports = body.qualification_reports.clone();
     let hide_supplier = body.hide_supplier;
@@ -5546,6 +5927,7 @@ where
             weight_kg = COALESCE($23, weight_kg),
             stock_alert_threshold = COALESCE($24, stock_alert_threshold),
             minimum_order_quantity = COALESCE($25, minimum_order_quantity),
+            merchant_id = CASE WHEN $28 THEN NULL ELSE COALESCE($29, merchant_id) END,
             updated_at = now()
         WHERE id = $1
         RETURNING id
@@ -5578,6 +5960,8 @@ where
     .bind(minimum_order_quantity)
     .bind(replace_image_url)
     .bind(variants_json)
+    .bind(merchant_id_was_provided && merchant_id.is_none())
+    .bind(merchant_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| ApiError::NotFound("商品不存在".to_string()))?;
@@ -5695,6 +6079,7 @@ where
             "您的订单已完成，如有问题可在订单详情中申请售后。",
         )
         .await?;
+        trigger_profit_sharing_after_completion(&state.db, &id).await;
     }
 
     Ok(ok("状态更新成功", order))
@@ -5920,12 +6305,15 @@ async fn create_mall_platform_refund_order(
 
     let payment = sqlx::query_as::<_, MallRefundPaymentRow>(
         r#"
-        SELECT id, out_trade_no, amount_cents, provider_transaction_id
-        FROM payments
+        SELECT payment.id, payment.out_trade_no, payment.amount_cents,
+               payment.provider_transaction_id, payment.payment_mode,
+               payment.wechat_sub_mchid, mall_order.wechat_sub_appid
+        FROM payments payment
+        JOIN mall_orders mall_order ON mall_order.id = payment.business_id
         WHERE business_type = 'mall_order'
           AND business_id = $1
-          AND status = 'paid'
-        ORDER BY paid_at DESC NULLS LAST, created_at DESC
+          AND payment.status = 'paid'
+        ORDER BY payment.paid_at DESC NULLS LAST, payment.created_at DESC
         LIMIT 1
         "#,
     )
@@ -5971,7 +6359,22 @@ async fn create_mall_platform_refund_order(
         .unwrap_or(&out_refund_no)
         .to_string();
     let config = WechatPayMerchantConfig::from_env_for_service(ApiService::Mall)?;
-    let path = "/v3/refund/domestic/refunds";
+    if payment.payment_mode == "platform_partner" {
+        return_platform_fee_for_refund(
+            pool,
+            &config,
+            &payment,
+            &refund_order,
+            refund_cents,
+            &out_refund_no,
+        )
+        .await?;
+    }
+    let path = if payment.payment_mode == "platform_partner" {
+        "/v3/ecommerce/refunds/apply"
+    } else {
+        "/v3/refund/domestic/refunds"
+    };
     let mut request_body = json!({
         "out_refund_no": out_refund_no,
         "reason": truncate_chars(reason, 80),
@@ -5981,6 +6384,17 @@ async fn create_mall_platform_refund_order(
             "currency": "CNY"
         }
     });
+    if payment.payment_mode == "platform_partner" {
+        request_body["sub_mchid"] = json!(payment
+            .wechat_sub_mchid
+            .as_deref()
+            .ok_or_else(|| ApiError::BadRequest("退款支付单缺少二级商户号".to_string()))?);
+        request_body["sp_appid"] = json!(config.app_id);
+        if let Some(sub_appid) = payment.wechat_sub_appid.as_deref() {
+            request_body["sub_appid"] = json!(sub_appid);
+        }
+        request_body["refund_account"] = json!("REFUND_SOURCE_SUB_MERCHANT");
+    }
     if let Some(transaction_id) = payment.provider_transaction_id.as_deref() {
         request_body["transaction_id"] = json!(transaction_id);
     } else {
@@ -6066,6 +6480,150 @@ async fn create_mall_platform_refund_order(
     .await?;
 
     Ok(updated)
+}
+
+async fn return_platform_fee_for_refund(
+    pool: &PgPool,
+    config: &WechatPayMerchantConfig,
+    payment: &MallRefundPaymentRow,
+    refund_order: &Value,
+    refund_cents: i64,
+    out_refund_no: &str,
+) -> ApiResult<()> {
+    let context = sqlx::query_as::<_, ProfitSharingReturnContext>(
+        r#"
+        SELECT
+          split.id AS split_id,
+          split.out_order_no,
+          split.platform_service_fee_cents,
+          COALESCE((
+            SELECT sum(return_order.amount_cents)
+            FROM platform_profit_sharing_returns return_order
+            WHERE return_order.profit_sharing_order_id = split.id
+              AND return_order.status = 'succeeded'
+          ), 0)::bigint AS returned_cents,
+          split.status
+        FROM platform_profit_sharing_orders split
+        WHERE split.payment_id = $1
+        "#,
+    )
+    .bind(&payment.id)
+    .fetch_optional(pool)
+    .await?;
+    let Some(context) = context else {
+        return Ok(());
+    };
+    if context.status != "succeeded" {
+        return Ok(());
+    }
+    let remaining_fee = (context.platform_service_fee_cents - context.returned_cents).max(0);
+    if remaining_fee == 0 {
+        return Ok(());
+    }
+    let proportional_fee = if refund_cents >= payment.amount_cents {
+        remaining_fee
+    } else {
+        ((refund_cents.saturating_mul(context.platform_service_fee_cents)
+            + payment.amount_cents / 2)
+            / payment.amount_cents)
+            .clamp(1, remaining_fee)
+    };
+    let refund_order_id = refund_order
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ApiError::BadRequest("退款记录缺少ID".to_string()))?;
+    let out_return_no = format!("PR{out_refund_no}");
+    let existing = sqlx::query_scalar::<_, Value>(
+        r#"
+        INSERT INTO platform_profit_sharing_returns (
+          profit_sharing_order_id, refund_order_id, out_return_no, amount_cents, status
+        )
+        VALUES ($1, $2, $3, $4, 'processing')
+        ON CONFLICT (refund_order_id)
+        DO UPDATE SET updated_at = now()
+        RETURNING to_jsonb(platform_profit_sharing_returns)
+        "#,
+    )
+    .bind(&context.split_id)
+    .bind(refund_order_id)
+    .bind(&out_return_no)
+    .bind(proportional_fee)
+    .fetch_one(pool)
+    .await?;
+    if existing.get("status").and_then(Value::as_str) == Some("succeeded") {
+        return Ok(());
+    }
+
+    let sub_mchid = payment
+        .wechat_sub_mchid
+        .as_deref()
+        .ok_or_else(|| ApiError::BadRequest("分账回退缺少二级商户号".to_string()))?;
+    let transaction_id = payment
+        .provider_transaction_id
+        .as_deref()
+        .ok_or_else(|| ApiError::BadRequest("分账回退缺少微信支付订单号".to_string()))?;
+    let path = "/v3/ecommerce/profitsharing/returnorders";
+    let request_body = json!({
+        "sub_mchid": sub_mchid,
+        "out_order_no": context.out_order_no,
+        "out_return_no": out_return_no,
+        "return_mchid": config.mch_id,
+        "amount": proportional_fee,
+        "description": "售后退款退回平台服务费",
+        "transaction_id": transaction_id
+    });
+    let body_text = request_body.to_string();
+    let authorization = wechat_authorization(config, "POST", path, &body_text)?;
+    let response = with_wechat_json_headers(
+        reqwest::Client::new().post(format!("https://api.mch.weixin.qq.com{path}")),
+        &authorization,
+    )
+    .body(body_text)
+    .send()
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("微信分账回退请求失败: {err}")))?;
+    let status_code = response.status();
+    let response_text = response
+        .text()
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("微信分账回退响应读取失败: {err}")))?;
+    let payload = serde_json::from_str::<Value>(&response_text)
+        .unwrap_or_else(|_| json!({ "raw": response_text }));
+    let succeeded = status_code.is_success()
+        && payload.get("result").and_then(Value::as_str) == Some("SUCCESS");
+    sqlx::query(
+        r#"
+        UPDATE platform_profit_sharing_returns
+        SET status = $2,
+            provider_payload = $3,
+            last_error = CASE WHEN $2 = 'succeeded' THEN NULL ELSE $4 END,
+            completed_at = CASE WHEN $2 = 'succeeded' THEN now() ELSE completed_at END,
+            updated_at = now()
+        WHERE refund_order_id = $1
+        "#,
+    )
+    .bind(refund_order_id)
+    .bind(if succeeded { "succeeded" } else { "failed" })
+    .bind(&payload)
+    .bind(
+        payload
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("微信分账回退未成功"),
+    )
+    .execute(pool)
+    .await?;
+    if !succeeded {
+        return Err(ApiError::BadRequest(format!(
+            "平台服务费回退失败，尚未发起用户退款: {}",
+            payload
+                .get("message")
+                .and_then(Value::as_str)
+                .or_else(|| payload.get("code").and_then(Value::as_str))
+                .unwrap_or("请稍后重试")
+        )));
+    }
+    Ok(())
 }
 
 async fn admin_list_after_sales<S>(
@@ -6423,7 +6981,38 @@ where
     let code = require_non_empty(Some(body.code), "提货码不能为空")?;
     let verified_by = non_empty(body.verified_by).unwrap_or_else(|| "admin".to_string());
     let verified_code = verify_fulfillment_code(&state.db, &id, &code, &verified_by, None).await?;
+    trigger_profit_sharing_after_completion(&state.db, &id).await;
     Ok(ok("核销成功", verified_code))
+}
+
+async fn admin_retry_profit_sharing<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let split = crate::modules::payments::trigger_mall_profit_sharing(&state.db, &id).await?;
+    Ok(ok("分账请求已提交", split))
+}
+
+async fn trigger_profit_sharing_after_completion(pool: &PgPool, order_id: &str) {
+    let required = sqlx::query_scalar::<_, bool>(
+        "SELECT profit_sharing_status <> 'not_required' FROM mall_orders WHERE id = $1",
+    )
+    .bind(order_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or(false);
+    if !required {
+        return;
+    }
+    if let Err(error) = crate::modules::payments::trigger_mall_profit_sharing(pool, order_id).await
+    {
+        tracing::error!(order_id = %order_id, error = %error, "mall profit sharing trigger failed");
+    }
 }
 
 async fn list_campaigns<S>(
@@ -7571,6 +8160,19 @@ where
     validate_listing_request_type(&request_type)?;
     let requester_role = non_empty(body.requester_role).unwrap_or_else(|| "admin".to_string());
     validate_listing_requester_role(&requester_role)?;
+    let supplier_id = non_empty(body.supplier_id);
+    if let Some(supplier_id) = supplier_id.as_deref() {
+        let is_partner_merchant: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM mall_merchants WHERE id = $1)")
+                .bind(supplier_id)
+                .fetch_one(&state.db)
+                .await?;
+        if is_partner_merchant {
+            return Err(ApiError::BadRequest(
+                "合作商家货款由微信支付直接结算，禁止通过平台提现".to_string(),
+            ));
+        }
+    }
 
     let request = sqlx::query_scalar::<_, Value>(
         r#"
@@ -7599,7 +8201,7 @@ where
     .bind(requested_status)
     .bind(non_empty(body.requester_id))
     .bind(requester_role)
-    .bind(non_empty(body.supplier_id))
+    .bind(supplier_id)
     .bind(non_empty(body.reason))
     .fetch_one(&state.db)
     .await?;
@@ -9112,9 +9714,13 @@ async fn fetch_products(
     };
     let mut builder = QueryBuilder::<Postgres>::new(
         r#"
-        SELECT product_json(p, c.name)
+        SELECT product_json(p, c.name) || jsonb_build_object(
+          'merchantId', p.merchant_id,
+          'merchant', CASE WHEN merchant.id IS NULL THEN NULL ELSE mall_merchant_json(merchant) END
+        )
         FROM mall_products p
         LEFT JOIN mall_categories c ON c.code = p.category_code
+        LEFT JOIN mall_merchants merchant ON merchant.id = p.merchant_id
         WHERE 1 = 1
         "#,
     );
@@ -10437,9 +11043,13 @@ async fn expire_customer_coupons(pool: &PgPool, user_id: &str) -> ApiResult<()> 
 async fn fetch_points_mall_product_rewards(pool: &PgPool) -> ApiResult<Vec<Value>> {
     Ok(sqlx::query_scalar::<_, Value>(
         r#"
-        SELECT product_json(p, c.name)
+        SELECT product_json(p, c.name) || jsonb_build_object(
+          'merchantId', p.merchant_id,
+          'merchant', CASE WHEN merchant.id IS NULL THEN NULL ELSE mall_merchant_json(merchant) END
+        )
         FROM mall_products p
         LEFT JOIN mall_categories c ON c.code = p.category_code
+        LEFT JOIN mall_merchants merchant ON merchant.id = p.merchant_id
         WHERE p.status = 'on_sale'
         ORDER BY p.sold_count DESC, p.updated_at DESC
         LIMIT 30
@@ -10714,12 +11324,33 @@ fn strip_public_product_specs(product: &mut Value) {
                 }
             }
         }
+        if let Some(merchant) = object.get_mut("merchant").and_then(Value::as_object_mut) {
+            for key in [
+                "wechatSubMchid",
+                "wechatSubAppid",
+                "contactName",
+                "contactPhone",
+                "metadata",
+            ] {
+                merchant.remove(key);
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod product_listing_query_tests {
     use super::*;
+
+    #[test]
+    fn platform_service_fee_rounds_down_without_exceeding_the_rate() {
+        assert_eq!(
+            calculate_platform_service_fee_cents(10_001, 300).unwrap(),
+            300
+        );
+        assert_eq!(calculate_platform_service_fee_cents(100, 3000).unwrap(), 30);
+        assert!(calculate_platform_service_fee_cents(1, 3000).is_err());
+    }
 
     #[test]
     fn activity_filters_match_jsonb_tags_without_array_functions() {
@@ -11586,6 +12217,7 @@ async fn checkout_payload(pool: &PgPool, checkout_id: &str) -> ApiResult<Value> 
         Some(&marketing_context),
     )
     .await?;
+    let partner_settlement = resolve_partner_settlement_snapshot(&items, summary.payable_cents)?;
     let item_values = checkout_item_values(&items, &summary);
 
     Ok(json!({
@@ -11617,6 +12249,9 @@ async fn checkout_payload(pool: &PgPool, checkout_id: &str) -> ApiResult<Value> 
         "nextDiscountCents": summary.next_discount_cents,
         "availablePoints": summary.available_points,
         "memberLevel": summary.member_level,
+        "merchantId": partner_settlement.as_ref().map(|snapshot| &snapshot.merchant_id),
+        "platformServiceFeeCents": partner_settlement.as_ref().map(|snapshot| snapshot.platform_service_fee_cents).unwrap_or(0),
+        "merchantReceivableCents": partner_settlement.as_ref().map(|snapshot| snapshot.merchant_receivable_cents).unwrap_or(0),
     }))
 }
 
@@ -11799,8 +12434,16 @@ async fn fetch_buy_now_product(
           $9::text AS weight_unit,
           $10::text AS weight_unit_label,
           $11::integer AS weight_unit_grams,
-          $12::integer AS weight_tolerance_bps
+          $12::integer AS weight_tolerance_bps,
+          p.merchant_id,
+          merchant.name AS merchant_name,
+          merchant.wechat_sub_mchid,
+          merchant.wechat_sub_appid,
+          merchant.service_fee_rate_bps AS merchant_service_fee_rate_bps,
+          merchant.onboarding_status AS merchant_onboarding_status,
+          merchant.qualification_status AS merchant_qualification_status
         FROM mall_products p
+        LEFT JOIN mall_merchants merchant ON merchant.id = p.merchant_id
         WHERE p.id = $1
           AND p.status = 'on_sale'
         "#,
@@ -11844,6 +12487,8 @@ fn checkout_item_values(items: &[CartProductRow], summary: &MallPriceSummary) ->
                 "sku": item.sku,
                 "name": item.name,
                 "categoryCode": item.category_code,
+                "merchantId": item.merchant_id,
+                "merchantName": item.merchant_name,
                 "imageUrl": item.image_url,
                 "priceCents": item.price_cents,
                 "discountedPriceCents": discounted_unit_price_cents,
@@ -11865,6 +12510,8 @@ fn checkout_item_values(items: &[CartProductRow], summary: &MallPriceSummary) ->
                 "sku": item.sku,
                 "productName": item.name,
                 "categoryCode": item.category_code,
+                "merchantId": item.merchant_id,
+                "merchantName": item.merchant_name,
                 "imageUrl": item.image_url,
                 "unitPriceCents": item.price_cents,
                 "originalUnitPriceCents": item.price_cents,
@@ -11895,6 +12542,72 @@ fn checkout_subtotal_cents(items: &[CartProductRow]) -> i64 {
         .iter()
         .map(|item| item.price_cents * i64::from(item.quantity))
         .sum()
+}
+
+fn resolve_partner_settlement_snapshot(
+    items: &[CartProductRow],
+    payable_cents: i64,
+) -> ApiResult<Option<PartnerSettlementSnapshot>> {
+    let first_merchant_id = items.first().and_then(|item| item.merchant_id.as_deref());
+    if items
+        .iter()
+        .any(|item| item.merchant_id.as_deref() != first_merchant_id)
+    {
+        return Err(ApiError::BadRequest(
+            "不同商家的商品暂不支持合并支付，请分开结算".to_string(),
+        ));
+    }
+    let Some(merchant_id) = first_merchant_id else {
+        return Ok(None);
+    };
+    let merchant = items
+        .first()
+        .ok_or_else(|| ApiError::BadRequest("结算商品为空".to_string()))?;
+    if merchant.merchant_onboarding_status.as_deref() != Some("active")
+        || merchant.merchant_qualification_status.as_deref() != Some("approved")
+    {
+        return Err(ApiError::BadRequest(
+            "合作商家当前不可收款，请移除该商品后重试".to_string(),
+        ));
+    }
+    let sub_mchid = merchant
+        .wechat_sub_mchid
+        .as_deref()
+        .and_then(non_empty_str)
+        .ok_or_else(|| ApiError::BadRequest("合作商家尚未完成微信支付入驻".to_string()))?;
+    validate_wechat_sub_mchid(sub_mchid)?;
+    let service_fee_rate_bps = merchant
+        .merchant_service_fee_rate_bps
+        .ok_or_else(|| ApiError::BadRequest("合作商家服务费率未配置".to_string()))?;
+    validate_service_fee_rate_bps(service_fee_rate_bps)?;
+    let platform_service_fee_cents =
+        calculate_platform_service_fee_cents(payable_cents, service_fee_rate_bps)?;
+    let merchant_receivable_cents = payable_cents - platform_service_fee_cents;
+
+    Ok(Some(PartnerSettlementSnapshot {
+        merchant_id: merchant_id.to_string(),
+        wechat_sub_mchid: sub_mchid.to_string(),
+        wechat_sub_appid: merchant.wechat_sub_appid.clone(),
+        service_fee_rate_bps,
+        platform_service_fee_cents,
+        merchant_receivable_cents,
+    }))
+}
+
+fn calculate_platform_service_fee_cents(payable_cents: i64, rate_bps: i32) -> ApiResult<i64> {
+    validate_service_fee_rate_bps(rate_bps)?;
+    if payable_cents <= 0 {
+        return Err(ApiError::BadRequest("订单金额必须大于0".to_string()));
+    }
+    // Round down so the effective split never exceeds the contracted rate or
+    // WeChat Pay's 30% ceiling merely because the order is only a few cents.
+    let fee = payable_cents.saturating_mul(i64::from(rate_bps)) / 10_000;
+    if fee <= 0 || fee >= payable_cents {
+        return Err(ApiError::BadRequest(
+            "订单金额过低，无法按当前服务费率进行微信分账".to_string(),
+        ));
+    }
+    Ok(fee)
 }
 
 async fn fetch_mall_marketing_context(
@@ -12020,9 +12733,17 @@ async fn fetch_selected_cart_products(
           COALESCE(variant.value->>'weightUnit', 'jin') AS weight_unit,
           COALESCE(variant.value->>'weightUnitLabel', '斤') AS weight_unit_label,
           COALESCE((variant.value->>'weightUnitGrams')::integer, 500) AS weight_unit_grams,
-          COALESCE((variant.value->>'weightToleranceBps')::integer, 500) AS weight_tolerance_bps
+          COALESCE((variant.value->>'weightToleranceBps')::integer, 500) AS weight_tolerance_bps,
+          p.merchant_id,
+          merchant.name AS merchant_name,
+          merchant.wechat_sub_mchid,
+          merchant.wechat_sub_appid,
+          merchant.service_fee_rate_bps AS merchant_service_fee_rate_bps,
+          merchant.onboarding_status AS merchant_onboarding_status,
+          merchant.qualification_status AS merchant_qualification_status
         FROM mall_cart_items ci
         JOIN mall_products p ON p.id = ci.product_id
+        LEFT JOIN mall_merchants merchant ON merchant.id = p.merchant_id
         LEFT JOIN LATERAL (
           SELECT item.value
           FROM jsonb_array_elements(COALESCE(p.variants, '[]'::jsonb)) AS item(value)
@@ -13133,12 +13854,13 @@ async fn fetch_orders(
 ) -> ApiResult<Vec<Value>> {
     let mut builder = QueryBuilder::<Postgres>::new("SELECT order_summary_json(o)");
     if include_admin_fields {
-        builder.push(" || jsonb_build_object('merchantId', o.merchant_id, 'userPhone', u.phone)");
+        builder.push(" || jsonb_build_object('merchantId', o.merchant_id, 'merchantName', merchant.name, 'userPhone', u.phone, 'platformServiceFeeCents', o.platform_service_fee_cents, 'merchantReceivableCents', o.merchant_receivable_cents, 'profitSharingStatus', o.profit_sharing_status, 'profitSharingLastError', o.profit_sharing_last_error)");
     }
     builder.push(
         r#"
         FROM mall_orders o
         LEFT JOIN users u ON u.id = o.user_id
+        LEFT JOIN mall_merchants merchant ON merchant.id = o.merchant_id
         WHERE 1 = 1
         "#,
     );
@@ -13191,9 +13913,21 @@ async fn fetch_orders(
 async fn fetch_order_detail(pool: &PgPool, order_identifier: &str) -> ApiResult<Value> {
     sqlx::query_scalar::<_, Value>(
         r#"
-        SELECT order_detail_json(o) || jsonb_build_object('merchantId', o.merchant_id, 'userPhone', u.phone)
+        SELECT order_detail_json(o) || jsonb_build_object(
+          'merchantId', o.merchant_id,
+          'merchantName', merchant.name,
+          'userPhone', u.phone,
+          'platformServiceFeeRateBps', o.platform_service_fee_rate_bps,
+          'platformServiceFeeCents', o.platform_service_fee_cents,
+          'merchantReceivableCents', o.merchant_receivable_cents,
+          'profitSharingStatus', o.profit_sharing_status,
+          'profitSharingOutOrderNo', o.profit_sharing_out_order_no,
+          'profitSharingCompletedAt', o.profit_sharing_completed_at,
+          'profitSharingLastError', o.profit_sharing_last_error
+        )
         FROM mall_orders o
         LEFT JOIN users u ON u.id = o.user_id
+        LEFT JOIN mall_merchants merchant ON merchant.id = o.merchant_id
         WHERE o.id = $1
            OR lower(o.order_no) = lower($1)
         "#,
@@ -13212,7 +13946,8 @@ async fn apply_weight_adjustment(
     let mut tx = pool.begin().await?;
     let order = sqlx::query_as::<_, WeightAdjustmentOrderRow>(
         r#"
-        SELECT subtotal_cents, delivery_fee_cents, coupon_cents, payable_cents, estimated_payable_cents
+        SELECT subtotal_cents, delivery_fee_cents, coupon_cents, payable_cents, estimated_payable_cents,
+               payment_status, platform_service_fee_rate_bps
         FROM mall_orders
         WHERE id = $1
         FOR UPDATE
@@ -13222,6 +13957,9 @@ async fn apply_weight_adjustment(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| ApiError::NotFound("订单不存在".to_string()))?;
+    if order.payment_status != "unpaid" {
+        return Err(ApiError::BadRequest("订单支付后不能再称重改价".to_string()));
+    }
 
     let item = sqlx::query_as::<_, WeightAdjustmentItemRow>(
         r#"
@@ -13254,8 +13992,22 @@ async fn apply_weight_adjustment(
     );
     let subtotal_cents = (order.subtotal_cents + line_total_cents - item.line_total_cents).max(0);
     let payable_cents = (subtotal_cents + order.delivery_fee_cents - order.coupon_cents).max(0);
+    if payable_cents <= 0 {
+        return Err(ApiError::BadRequest(
+            "称重后的订单金额必须大于0".to_string(),
+        ));
+    }
     let estimated_payable_cents = order.estimated_payable_cents.unwrap_or(order.payable_cents);
     let weight_adjustment_cents = payable_cents - estimated_payable_cents;
+    let platform_service_fee_cents = match order.platform_service_fee_rate_bps {
+        Some(rate) => calculate_platform_service_fee_cents(payable_cents, rate)?,
+        None => 0,
+    };
+    let merchant_receivable_cents = if order.platform_service_fee_rate_bps.is_some() {
+        payable_cents - platform_service_fee_cents
+    } else {
+        0
+    };
     let adjusted_by = non_empty(body.adjusted_by).unwrap_or_else(|| "admin".to_string());
     let note = non_empty(body.note);
 
@@ -13314,6 +14066,8 @@ async fn apply_weight_adjustment(
             estimated_payable_cents = COALESCE(estimated_payable_cents, $4),
             weight_adjustment_cents = $5,
             weight_adjustment_status = $6,
+            platform_service_fee_cents = $7,
+            merchant_receivable_cents = $8,
             updated_at = now()
         WHERE id = $1
         "#,
@@ -13324,6 +14078,8 @@ async fn apply_weight_adjustment(
     .bind(estimated_payable_cents)
     .bind(weight_adjustment_cents)
     .bind(order_weight_status)
+    .bind(platform_service_fee_cents)
+    .bind(merchant_receivable_cents)
     .execute(&mut *tx)
     .await?;
 
@@ -15796,6 +16552,15 @@ fn non_empty(value: Option<String>) -> Option<String> {
             Some(trimmed.to_string())
         }
     })
+}
+
+fn non_empty_str(value: &str) -> Option<&str> {
+    let value = value.trim();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
 }
 
 fn optional_non_empty(value: Option<String>, message: &str) -> ApiResult<Option<String>> {

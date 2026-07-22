@@ -46,6 +46,7 @@
     "check:mall-ops-dual-surface": "node scripts/check-mall-ops-dual-surface.mjs",
     "check:mall-group-buy-presale": "node scripts/check-mall-group-buy-presale.mjs",
     "check:mall-performance-cache": "node scripts/check-mall-performance-cache.mjs",
+    "check:wechat-platform-profit-sharing": "node scripts/check-wechat-platform-profit-sharing.mjs",
     "check:web-admin-group-buy-inline-product": "node scripts/check-web-admin-group-buy-inline-product.mjs",
     "check:mall-marketing-scope-presale": "node scripts/check-mall-marketing-scope-presale.mjs",
     "check:no-physical-fks": "node scripts/check-no-physical-foreign-keys.mjs",

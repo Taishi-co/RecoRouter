@@ -11,12 +11,13 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rand::{distributions::Alphanumeric, rngs::OsRng, Rng};
 use rsa::{
     pkcs1::DecodeRsaPrivateKey,
-    pkcs1v15::SigningKey,
-    pkcs8::DecodePrivateKey,
-    signature::{RandomizedSigner, SignatureEncoding},
-    RsaPrivateKey,
+    pkcs1v15::{Signature as RsaSignature, SigningKey, VerifyingKey},
+    pkcs8::{DecodePrivateKey, DecodePublicKey},
+    signature::{RandomizedSigner, SignatureEncoding, Verifier},
+    Oaep, RsaPrivateKey, RsaPublicKey,
 };
 use serde::{de::DeserializeOwned, Deserialize};
+use sha1::Sha1;
 use sha2::Sha256;
 
 use crate::{
@@ -321,6 +322,47 @@ pub fn load_wechat_private_key() -> ApiResult<RsaPrivateKey> {
         .map_err(|err| ApiError::BadRequest(format!("微信支付私钥格式不正确: {err}")))
 }
 
+pub fn load_wechat_public_key() -> ApiResult<RsaPublicKey> {
+    let pem = if let Some(value) = read_trimmed("WECHAT_PAY_PUBLIC_KEY") {
+        value.replace("\\n", "\n")
+    } else if let Some(path) = read_trimmed("WECHAT_PAY_PUBLIC_KEY_PATH") {
+        fs::read_to_string(path)
+            .map_err(|err| ApiError::BadRequest(format!("读取微信支付公钥失败: {err}")))?
+    } else {
+        return Err(ApiError::BadRequest(
+            "缺少 WECHAT_PAY_PUBLIC_KEY 或 WECHAT_PAY_PUBLIC_KEY_PATH 配置".to_string(),
+        ));
+    };
+
+    RsaPublicKey::from_public_key_pem(&pem)
+        .map_err(|err| ApiError::BadRequest(format!("微信支付公钥格式不正确: {err}")))
+}
+
+pub fn encrypt_wechat_sensitive(public_key: &RsaPublicKey, plaintext: &str) -> ApiResult<String> {
+    let encrypted = public_key
+        .encrypt(&mut OsRng, Oaep::new::<Sha1>(), plaintext.as_bytes())
+        .map_err(|err| ApiError::BadRequest(format!("微信支付敏感信息加密失败: {err}")))?;
+    Ok(BASE64.encode(encrypted))
+}
+
+pub fn verify_wechat_signature(
+    public_key: &RsaPublicKey,
+    timestamp: &str,
+    nonce: &str,
+    body: &str,
+    signature: &str,
+) -> ApiResult<()> {
+    let signature = BASE64
+        .decode(signature.as_bytes())
+        .map_err(|_| ApiError::BadRequest("微信支付签名格式无效".to_string()))?;
+    let signature = RsaSignature::try_from(signature.as_slice())
+        .map_err(|_| ApiError::BadRequest("微信支付签名长度无效".to_string()))?;
+    let message = format!("{timestamp}\n{nonce}\n{body}\n");
+    VerifyingKey::<Sha256>::new(public_key.clone())
+        .verify(message.as_bytes(), &signature)
+        .map_err(|_| ApiError::BadRequest("微信支付通知验签失败".to_string()))
+}
+
 pub fn decrypt_wechat_notification<T>(resource: &WechatNotifyResource) -> ApiResult<T>
 where
     T: DeserializeOwned,
@@ -423,7 +465,13 @@ struct PhoneInfoResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::{decrypt_wechat_notification, with_wechat_json_headers, WechatNotifyResource};
+    use rand::rngs::OsRng;
+    use rsa::{RsaPrivateKey, RsaPublicKey};
+
+    use super::{
+        decrypt_wechat_notification, sign_message, verify_wechat_signature,
+        with_wechat_json_headers, WechatNotifyResource,
+    };
 
     #[test]
     fn api_v3_json_requests_include_required_headers() {
@@ -466,5 +514,26 @@ mod tests {
 
         let result = decrypt_wechat_notification::<serde_json::Value>(&resource);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn notification_signatures_cover_timestamp_nonce_and_raw_body() {
+        let private_key = RsaPrivateKey::new(&mut OsRng, 2048).unwrap();
+        let public_key = RsaPublicKey::from(&private_key);
+        let timestamp = "1710000000";
+        let nonce = "notification-nonce";
+        let body = r#"{"event_type":"TRANSACTION.SUCCESS"}"#;
+        let message = format!("{timestamp}\n{nonce}\n{body}\n");
+        let signature = sign_message(&private_key, &message).unwrap();
+
+        verify_wechat_signature(&public_key, timestamp, nonce, body, &signature).unwrap();
+        assert!(verify_wechat_signature(
+            &public_key,
+            timestamp,
+            nonce,
+            r#"{"event_type":"TAMPERED"}"#,
+            &signature,
+        )
+        .is_err());
     }
 }
