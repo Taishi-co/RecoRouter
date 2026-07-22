@@ -1,7 +1,9 @@
 use std::{fmt, str::FromStr};
 
 use axum::{
+    body::Bytes,
     extract::{Path, State},
+    http::HeaderMap,
     routing::post,
     Json, Router,
 };
@@ -16,15 +18,30 @@ use crate::{
     response::{ok, ApiEnvelope},
     storage::Storage,
     wechat_pay::{
-        decrypt_wechat_notification, exchange_miniapp_login_code, random_token, sign_message,
-        truncate_chars, unix_timestamp, unix_timestamp_millis, wechat_authorization,
-        with_wechat_headers, with_wechat_json_headers, WechatNotifyBody, WechatPayMerchantConfig,
+        decrypt_wechat_notification, encrypt_wechat_sensitive, exchange_miniapp_login_code,
+        load_wechat_public_key, random_token, sign_message, truncate_chars, unix_timestamp,
+        unix_timestamp_millis, verify_wechat_signature, wechat_authorization, with_wechat_headers,
+        with_wechat_json_headers, WechatNotifyBody, WechatPayMerchantConfig,
     },
 };
 
 const WECHAT_JSAPI_URL: &str = "https://api.mch.weixin.qq.com/v3/pay/transactions/jsapi";
 const WECHAT_QUERY_URL_PREFIX: &str =
     "https://api.mch.weixin.qq.com/v3/pay/transactions/out-trade-no";
+const WECHAT_PARTNER_JSAPI_PATH: &str = "/v3/pay/partner/transactions/jsapi";
+const WECHAT_PARTNER_QUERY_PATH_PREFIX: &str = "/v3/pay/partner/transactions/out-trade-no";
+const WECHAT_ECOMMERCE_PROFIT_SHARING_PATH: &str = "/v3/ecommerce/profitsharing/orders";
+
+pub fn ensure_mall_profit_sharing_runtime_ready() -> ApiResult<()> {
+    let _ = WechatPayConfig::from_env_for_service(crate::config::ApiService::Mall)?;
+    let _ = read_trimmed("WECHAT_PAY_PUBLIC_KEY_ID")
+        .ok_or_else(|| ApiError::BadRequest("缺少 WECHAT_PAY_PUBLIC_KEY_ID 配置".to_string()))?;
+    let _ = read_trimmed("WECHAT_PAY_PLATFORM_LEGAL_NAME").ok_or_else(|| {
+        ApiError::BadRequest("缺少 WECHAT_PAY_PLATFORM_LEGAL_NAME 配置".to_string())
+    })?;
+    let _ = load_wechat_public_key()?;
+    Ok(())
+}
 
 pub fn router<S>() -> Router<AppState<S>>
 where
@@ -186,6 +203,10 @@ struct PayableOrderRow {
     payable_cents: Option<i64>,
     cargo_name: Option<String>,
     group_buy_pay_window_open: Option<bool>,
+    wechat_sub_mchid: Option<String>,
+    platform_service_fee_cents: Option<i64>,
+    merchant_receivable_cents: Option<i64>,
+    profit_sharing_status: Option<String>,
 }
 
 #[derive(Debug, FromRow)]
@@ -196,6 +217,8 @@ struct PaymentRow {
     business_id: String,
     out_trade_no: String,
     status: String,
+    payment_mode: String,
+    wechat_sub_mchid: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -214,6 +237,20 @@ struct WechatNotifyTransaction {
     out_trade_no: String,
     trade_state: String,
     transaction_id: Option<String>,
+}
+
+#[derive(Debug, FromRow)]
+struct MallProfitSharingRow {
+    payment_id: String,
+    business_id: String,
+    out_trade_no: String,
+    provider_transaction_id: String,
+    sub_mchid: String,
+    payment_status: String,
+    order_status: String,
+    profit_sharing_status: String,
+    platform_service_fee_cents: i64,
+    merchant_receivable_cents: i64,
 }
 
 struct WechatPayConfig {
@@ -253,6 +290,8 @@ where
             provider,
             out_trade_no: &out_trade_no,
             amount_cents,
+            payment_mode: payment_mode_for_order(&order),
+            wechat_sub_mchid: order.wechat_sub_mchid.as_deref(),
         },
     )
     .await?;
@@ -330,7 +369,7 @@ where
     match provider {
         PaymentProvider::Wechat => {
             let config = WechatPayConfig::from_env_for_business(state.service, business_type)?;
-            let state_result = wechat_query_order(&config, &payment.out_trade_no).await?;
+            let state_result = wechat_query_order(&config, &payment).await?;
             if state_result.trade_state == "SUCCESS" {
                 mark_payment_success(
                     &state.db,
@@ -367,11 +406,17 @@ where
 
 async fn wechat_notify<S>(
     State(state): State<AppState<S>>,
-    Json(body): Json<WechatNotifyBody>,
+    headers: HeaderMap,
+    body: Bytes,
 ) -> ApiResult<Json<Value>>
 where
     S: Storage,
 {
+    let body_text = std::str::from_utf8(&body)
+        .map_err(|_| ApiError::BadRequest("微信支付通知正文格式无效".to_string()))?;
+    verify_wechat_notify_if_configured(&headers, body_text)?;
+    let body = serde_json::from_slice::<WechatNotifyBody>(&body)
+        .map_err(|err| ApiError::BadRequest(format!("微信支付通知格式无效: {err}")))?;
     let transaction = decrypt_wechat_notification::<WechatNotifyTransaction>(&body.resource)?;
     if transaction.trade_state == "SUCCESS" {
         let payment = fetch_payment_by_out_trade_no(&state.db, &transaction.out_trade_no).await?;
@@ -388,6 +433,36 @@ where
     Ok(Json(json!({ "code": "SUCCESS", "message": "成功" })))
 }
 
+fn verify_wechat_notify_if_configured(headers: &HeaderMap, body: &str) -> ApiResult<()> {
+    let has_public_key = read_trimmed("WECHAT_PAY_PUBLIC_KEY").is_some()
+        || read_trimmed("WECHAT_PAY_PUBLIC_KEY_PATH").is_some();
+    if !has_public_key {
+        return Ok(());
+    }
+    let header = |name: &'static str| {
+        headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| ApiError::BadRequest(format!("微信支付通知缺少 {name}")))
+    };
+    let serial = header("Wechatpay-Serial")?;
+    if let Some(expected) = read_trimmed("WECHAT_PAY_PUBLIC_KEY_ID") {
+        if serial != expected {
+            return Err(ApiError::BadRequest(
+                "微信支付通知公钥ID与配置不一致".to_string(),
+            ));
+        }
+    }
+    verify_wechat_signature(
+        &load_wechat_public_key()?,
+        header("Wechatpay-Timestamp")?,
+        header("Wechatpay-Nonce")?,
+        body,
+        header("Wechatpay-Signature")?,
+    )
+}
+
 struct InsertPayment<'a> {
     business_type: PaymentBusinessType,
     order_id: &'a str,
@@ -395,6 +470,8 @@ struct InsertPayment<'a> {
     provider: PaymentProvider,
     out_trade_no: &'a str,
     amount_cents: i64,
+    payment_mode: &'a str,
+    wechat_sub_mchid: Option<&'a str>,
 }
 
 async fn insert_payment(pool: &PgPool, payment: InsertPayment<'_>) -> ApiResult<String> {
@@ -402,9 +479,10 @@ async fn insert_payment(pool: &PgPool, payment: InsertPayment<'_>) -> ApiResult<
         r#"
         INSERT INTO payments (
             business_type, business_id, payer_id, provider, out_trade_no,
-            amount_cents, currency, status
+            amount_cents, currency, status, payment_mode, wechat_sub_mchid,
+            profit_sharing_required
         )
-        VALUES ($1, $2, $3, $4, $5, $6, 'CNY', 'pending')
+        VALUES ($1, $2, $3, $4, $5, $6, 'CNY', 'pending', $7, $8, $7 = 'platform_partner')
         RETURNING id
         "#,
     )
@@ -414,6 +492,8 @@ async fn insert_payment(pool: &PgPool, payment: InsertPayment<'_>) -> ApiResult<
     .bind(payment.provider.as_str())
     .bind(payment.out_trade_no)
     .bind(payment.amount_cents)
+    .bind(payment.payment_mode)
+    .bind(payment.wechat_sub_mchid)
     .fetch_one(pool)
     .await?;
 
@@ -442,7 +522,11 @@ async fn fetch_payable_order(
                     o.commission_amount::float8 AS commission_amount,
                     NULL::bigint AS payable_cents,
                     d.cargo_name,
-                    NULL::boolean AS group_buy_pay_window_open
+                    NULL::boolean AS group_buy_pay_window_open,
+                    NULL::text AS wechat_sub_mchid,
+                    NULL::bigint AS platform_service_fee_cents,
+                    NULL::bigint AS merchant_receivable_cents,
+                    NULL::text AS profit_sharing_status
                 FROM orders o
                 LEFT JOIN demands d ON d.id = o.demand_id
                 WHERE o.id = $1
@@ -464,7 +548,11 @@ async fn fetch_payable_order(
                 NULL::float8 AS commission_amount,
                 payable_cents,
                 'RecoRouter Fresh'::text AS cargo_name,
-                NULL::boolean AS group_buy_pay_window_open
+                NULL::boolean AS group_buy_pay_window_open,
+                wechat_sub_mchid,
+                platform_service_fee_cents,
+                merchant_receivable_cents,
+                profit_sharing_status
             FROM mall_orders
             WHERE id = $1
             "#,
@@ -491,7 +579,11 @@ async fn fetch_payable_order(
                     activity.status IN ('published', 'enrolling')
                     AND activity.starts_at <= now()
                     AND activity.ends_at > now()
-                ) AS group_buy_pay_window_open
+                ) AS group_buy_pay_window_open,
+                NULL::text AS wechat_sub_mchid,
+                NULL::bigint AS platform_service_fee_cents,
+                NULL::bigint AS merchant_receivable_cents,
+                NULL::text AS profit_sharing_status
             FROM mall_group_buy_subscriptions subscription
             JOIN mall_group_buy_activities activity ON activity.id = subscription.activity_id
             WHERE subscription.id = $1
@@ -515,7 +607,11 @@ async fn fetch_payable_order(
                 NULL::float8 AS commission_amount,
                 subscription.balance_cents AS payable_cents,
                 activity.name AS cargo_name,
-                NULL::boolean AS group_buy_pay_window_open
+                NULL::boolean AS group_buy_pay_window_open,
+                NULL::text AS wechat_sub_mchid,
+                NULL::bigint AS platform_service_fee_cents,
+                NULL::bigint AS merchant_receivable_cents,
+                NULL::text AS profit_sharing_status
             FROM mall_group_buy_subscriptions subscription
             JOIN mall_group_buy_activities activity ON activity.id = subscription.activity_id
             WHERE subscription.id = $1
@@ -531,7 +627,8 @@ async fn fetch_payable_order(
 async fn fetch_payment(pool: &PgPool, payment_id: &str) -> ApiResult<PaymentRow> {
     sqlx::query_as::<_, PaymentRow>(
         r#"
-        SELECT id, provider, business_type, business_id, out_trade_no, status
+        SELECT id, provider, business_type, business_id, out_trade_no, status,
+               payment_mode, wechat_sub_mchid
         FROM payments
         WHERE id = $1
         "#,
@@ -545,7 +642,8 @@ async fn fetch_payment(pool: &PgPool, payment_id: &str) -> ApiResult<PaymentRow>
 async fn fetch_payment_by_out_trade_no(pool: &PgPool, out_trade_no: &str) -> ApiResult<PaymentRow> {
     sqlx::query_as::<_, PaymentRow>(
         r#"
-        SELECT id, provider, business_type, business_id, out_trade_no, status
+        SELECT id, provider, business_type, business_id, out_trade_no, status,
+               payment_mode, wechat_sub_mchid
         FROM payments
         WHERE out_trade_no = $1
         "#,
@@ -588,6 +686,23 @@ fn validate_payable_order(
             }
             if order.payment_status.as_deref() == Some("paid") {
                 return Err(ApiError::BadRequest("商城订单已支付".to_string()));
+            }
+            if order.wechat_sub_mchid.is_some() {
+                let platform_fee = order.platform_service_fee_cents.unwrap_or_default();
+                let merchant_receivable = order.merchant_receivable_cents.unwrap_or_default();
+                if platform_fee <= 0
+                    || merchant_receivable <= 0
+                    || platform_fee + merchant_receivable != order.payable_cents.unwrap_or_default()
+                {
+                    return Err(ApiError::BadRequest(
+                        "合作商家订单分账金额无效，请联系平台处理".to_string(),
+                    ));
+                }
+                if order.profit_sharing_status.as_deref() != Some("pending") {
+                    return Err(ApiError::BadRequest(
+                        "合作商家订单分账状态无效，请联系平台处理".to_string(),
+                    ));
+                }
             }
         }
         PaymentBusinessType::MallGroupBuyDeposit => {
@@ -650,7 +765,7 @@ async fn mark_payment_success(
         UPDATE payments
         SET status = 'paid',
             provider_transaction_id = COALESCE($2, provider_transaction_id),
-            paid_at = now(),
+            paid_at = COALESCE(paid_at, now()),
             updated_at = now()
         WHERE id = $1
         "#,
@@ -703,6 +818,351 @@ async fn mark_payment_success(
     Ok(())
 }
 
+pub async fn trigger_mall_profit_sharing(pool: &PgPool, order_id: &str) -> ApiResult<Value> {
+    let row = sqlx::query_as::<_, MallProfitSharingRow>(
+        r#"
+        SELECT
+          payment.id AS payment_id,
+          payment.business_id,
+          payment.out_trade_no,
+          payment.provider_transaction_id,
+          payment.wechat_sub_mchid AS sub_mchid,
+          payment.status AS payment_status,
+          mall_order.status AS order_status,
+          mall_order.profit_sharing_status,
+          mall_order.platform_service_fee_cents,
+          mall_order.merchant_receivable_cents
+        FROM payments payment
+        JOIN mall_orders mall_order ON mall_order.id = payment.business_id
+        WHERE payment.business_type = 'mall_order'
+          AND payment.business_id = $1
+          AND payment.payment_mode = 'platform_partner'
+          AND payment.profit_sharing_required = true
+          AND payment.provider_transaction_id IS NOT NULL
+        ORDER BY payment.paid_at DESC NULLS LAST, payment.created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(order_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| ApiError::BadRequest("订单没有可分账的平台收付通支付记录".to_string()))?;
+
+    if row.payment_status != "paid" {
+        return Err(ApiError::BadRequest("支付成功后才能分账".to_string()));
+    }
+    if row.order_status != "completed" {
+        return Err(ApiError::BadRequest("确认履约完成后才能分账".to_string()));
+    }
+    if row.platform_service_fee_cents <= 0 || row.merchant_receivable_cents <= 0 {
+        return Err(ApiError::BadRequest("订单分账金额配置无效".to_string()));
+    }
+    if row.profit_sharing_status == "succeeded" {
+        return sqlx::query_scalar::<_, Value>(
+            "SELECT to_jsonb(platform_profit_sharing_orders) FROM platform_profit_sharing_orders WHERE payment_id = $1",
+        )
+        .bind(&row.payment_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| ApiError::BadRequest("分账记录不存在".to_string()));
+    }
+
+    let out_order_no = format!("PS{}", row.out_trade_no);
+    let config = WechatPayConfig::from_env_for_service(crate::config::ApiService::Mall)?;
+    if let Some(existing) = sqlx::query_scalar::<_, Value>(
+        "SELECT to_jsonb(platform_profit_sharing_orders) FROM platform_profit_sharing_orders WHERE payment_id = $1",
+    )
+    .bind(&row.payment_id)
+    .fetch_optional(pool)
+    .await?
+    {
+        match existing.get("status").and_then(Value::as_str) {
+            Some("succeeded") => return Ok(existing),
+            Some("processing") => {
+                if let Some(provider_payload) = query_profit_sharing_order(
+                    &config,
+                    &row.sub_mchid,
+                    &row.provider_transaction_id,
+                    &out_order_no,
+                )
+                .await?
+                {
+                    return persist_profit_sharing_result(
+                        pool,
+                        order_id,
+                        &row.payment_id,
+                        &provider_payload,
+                    )
+                    .await;
+                }
+            }
+            _ => {}
+        }
+    }
+    let split = sqlx::query_scalar::<_, Value>(
+        r#"
+        INSERT INTO platform_profit_sharing_orders (
+          payment_id, business_type, business_id, sub_mchid, transaction_id,
+          out_order_no, platform_service_fee_cents, merchant_receivable_cents,
+          status, attempts
+        )
+        VALUES ($1, 'mall_order', $2, $3, $4, $5, $6, $7, 'processing', 1)
+        ON CONFLICT (payment_id)
+        DO UPDATE SET attempts = platform_profit_sharing_orders.attempts + 1,
+                      status = CASE
+                        WHEN platform_profit_sharing_orders.status = 'succeeded' THEN 'succeeded'
+                        ELSE 'processing'
+                      END,
+                      last_error = NULL,
+                      updated_at = now()
+        RETURNING to_jsonb(platform_profit_sharing_orders)
+        "#,
+    )
+    .bind(&row.payment_id)
+    .bind(&row.business_id)
+    .bind(&row.sub_mchid)
+    .bind(&row.provider_transaction_id)
+    .bind(&out_order_no)
+    .bind(row.platform_service_fee_cents)
+    .bind(row.merchant_receivable_cents)
+    .fetch_one(pool)
+    .await?;
+
+    if split.get("status").and_then(Value::as_str) == Some("succeeded") {
+        return Ok(split);
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE mall_orders
+        SET profit_sharing_status = 'processing',
+            profit_sharing_out_order_no = $2,
+            profit_sharing_last_error = NULL,
+            updated_at = now()
+        WHERE id = $1
+        "#,
+    )
+    .bind(order_id)
+    .bind(&out_order_no)
+    .execute(pool)
+    .await?;
+
+    let public_key_id = read_trimmed("WECHAT_PAY_PUBLIC_KEY_ID")
+        .ok_or_else(|| ApiError::BadRequest("缺少 WECHAT_PAY_PUBLIC_KEY_ID 配置".to_string()))?;
+    let platform_legal_name = read_trimmed("WECHAT_PAY_PLATFORM_LEGAL_NAME").ok_or_else(|| {
+        ApiError::BadRequest("缺少 WECHAT_PAY_PLATFORM_LEGAL_NAME 配置".to_string())
+    })?;
+    let encrypted_legal_name =
+        encrypt_wechat_sensitive(&load_wechat_public_key()?, &platform_legal_name)?;
+    let request_body = json!({
+        "appid": config.merchant.app_id,
+        "sub_mchid": row.sub_mchid,
+        "transaction_id": row.provider_transaction_id,
+        "out_order_no": out_order_no,
+        "receivers": [{
+            "type": "MERCHANT_ID",
+            "receiver_account": config.merchant.mch_id,
+            "amount": row.platform_service_fee_cents,
+            "description": "平台技术与运营服务费",
+            "receiver_name": encrypted_legal_name
+        }],
+        "finish": true
+    });
+    let body_text = request_body.to_string();
+    let authorization = wechat_authorization(
+        &config.merchant,
+        "POST",
+        WECHAT_ECOMMERCE_PROFIT_SHARING_PATH,
+        &body_text,
+    )?;
+    let response = with_wechat_json_headers(
+        reqwest::Client::new().post(format!(
+            "https://api.mch.weixin.qq.com{WECHAT_ECOMMERCE_PROFIT_SHARING_PATH}"
+        )),
+        &authorization,
+    )
+    .header("Wechatpay-Serial", public_key_id)
+    .body(body_text)
+    .send()
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("微信分账请求失败: {err}")))?;
+    let status_code = response.status();
+    let response_text = response
+        .text()
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("微信分账响应读取失败: {err}")))?;
+    let provider_payload = serde_json::from_str::<Value>(&response_text)
+        .unwrap_or_else(|_| json!({ "raw": response_text }));
+
+    if !status_code.is_success() {
+        let message = provider_payload
+            .get("message")
+            .and_then(Value::as_str)
+            .or_else(|| provider_payload.get("code").and_then(Value::as_str))
+            .unwrap_or("请稍后重试")
+            .to_string();
+        mark_profit_sharing_failed(pool, order_id, &row.payment_id, &provider_payload, &message)
+            .await?;
+        return Err(ApiError::BadRequest(format!("微信分账申请失败: {message}")));
+    }
+
+    persist_profit_sharing_result(pool, order_id, &row.payment_id, &provider_payload).await
+}
+
+async fn query_profit_sharing_order(
+    config: &WechatPayConfig,
+    sub_mchid: &str,
+    transaction_id: &str,
+    out_order_no: &str,
+) -> ApiResult<Option<Value>> {
+    let path = format!(
+        "{WECHAT_ECOMMERCE_PROFIT_SHARING_PATH}?sub_mchid={sub_mchid}&transaction_id={transaction_id}&out_order_no={out_order_no}"
+    );
+    let authorization = wechat_authorization(&config.merchant, "GET", &path, "")?;
+    let response = with_wechat_headers(
+        reqwest::Client::new().get(format!("https://api.mch.weixin.qq.com{path}")),
+        &authorization,
+    )
+    .send()
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("微信分账结果查询失败: {err}")))?;
+    let status_code = response.status();
+    let response_text = response
+        .text()
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("微信分账查询响应读取失败: {err}")))?;
+    let payload = serde_json::from_str::<Value>(&response_text)
+        .unwrap_or_else(|_| json!({ "raw": response_text }));
+    if status_code == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    if !status_code.is_success() {
+        return Err(ApiError::BadRequest(format!(
+            "微信分账结果查询失败: {}",
+            payload
+                .get("message")
+                .and_then(Value::as_str)
+                .or_else(|| payload.get("code").and_then(Value::as_str))
+                .unwrap_or("请稍后重试")
+        )));
+    }
+    Ok(Some(payload))
+}
+
+async fn persist_profit_sharing_result(
+    pool: &PgPool,
+    order_id: &str,
+    payment_id: &str,
+    provider_payload: &Value,
+) -> ApiResult<Value> {
+    let provider_status = provider_payload
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("PROCESSING");
+    let receiver_failed = provider_payload
+        .get("receivers")
+        .and_then(Value::as_array)
+        .is_some_and(|receivers| {
+            receivers.iter().any(|receiver| {
+                receiver
+                    .get("result")
+                    .and_then(Value::as_str)
+                    .is_some_and(|result| result != "SUCCESS")
+            })
+        });
+    let status = match (provider_status, receiver_failed) {
+        ("FINISHED", false) => "succeeded",
+        ("FINISHED", true) => "failed",
+        _ => "processing",
+    };
+    let provider_order_id = provider_payload
+        .get("order_id")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let last_error = (status == "failed").then(|| "微信分账接收方处理失败".to_string());
+    let updated = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE platform_profit_sharing_orders
+        SET status = $2,
+            provider_order_id = COALESCE($3, provider_order_id),
+            provider_payload = $4,
+            last_error = $5,
+            completed_at = CASE WHEN $2 = 'succeeded' THEN now() ELSE completed_at END,
+            updated_at = now()
+        WHERE payment_id = $1
+        RETURNING to_jsonb(platform_profit_sharing_orders)
+        "#,
+    )
+    .bind(payment_id)
+    .bind(status)
+    .bind(provider_order_id)
+    .bind(provider_payload)
+    .bind(last_error.as_deref())
+    .fetch_one(pool)
+    .await?;
+    sqlx::query(
+        r#"
+        UPDATE mall_orders
+        SET profit_sharing_status = $2,
+            profit_sharing_completed_at = CASE WHEN $2 = 'succeeded' THEN now() ELSE profit_sharing_completed_at END,
+            profit_sharing_last_error = $3,
+            updated_at = now()
+        WHERE id = $1
+        "#,
+    )
+    .bind(order_id)
+    .bind(status)
+    .bind(last_error.as_deref())
+    .execute(pool)
+    .await?;
+
+    if let Some(message) = last_error {
+        return Err(ApiError::BadRequest(message));
+    }
+    Ok(updated)
+}
+
+async fn mark_profit_sharing_failed(
+    pool: &PgPool,
+    order_id: &str,
+    payment_id: &str,
+    provider_payload: &Value,
+    message: &str,
+) -> ApiResult<()> {
+    sqlx::query(
+        r#"
+        UPDATE platform_profit_sharing_orders
+        SET status = 'failed', provider_payload = $2, last_error = $3, updated_at = now()
+        WHERE payment_id = $1
+        "#,
+    )
+    .bind(payment_id)
+    .bind(provider_payload)
+    .bind(message)
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        r#"
+        UPDATE mall_orders
+        SET profit_sharing_status = 'failed', profit_sharing_last_error = $2, updated_at = now()
+        WHERE id = $1
+        "#,
+    )
+    .bind(order_id)
+    .bind(message)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+fn payment_mode_for_order(order: &PayableOrderRow) -> &'static str {
+    if order.wechat_sub_mchid.is_some() {
+        "platform_partner"
+    } else {
+        "direct"
+    }
+}
+
 async fn resolve_wechat_openid(
     config: &WechatPayConfig,
     request: &PrepayRequest,
@@ -752,29 +1212,41 @@ async fn wechat_create_jsapi_prepay(
         ),
     };
     let description = truncate_chars(&description, 127);
-    let body = json!({
-        "appid": config.merchant.app_id,
-        "mchid": config.merchant.mch_id,
-        "description": description,
-        "out_trade_no": out_trade_no,
-        "notify_url": config.notify_url,
-        "amount": {
-            "total": amount_cents,
-            "currency": "CNY"
-        },
-        "payer": {
-            "openid": openid
-        }
-    })
-    .to_string();
-    let authorization = wechat_authorization(
-        &config.merchant,
-        "POST",
-        "/v3/pay/transactions/jsapi",
-        &body,
-    )?;
+    let (path, body) = if let Some(sub_mchid) = order.wechat_sub_mchid.as_deref() {
+        let request = json!({
+            "sp_appid": config.merchant.app_id,
+            "sp_mchid": config.merchant.mch_id,
+            "sub_mchid": sub_mchid,
+            "description": description,
+            "out_trade_no": out_trade_no,
+            "notify_url": config.notify_url,
+            "settle_info": { "profit_sharing": true },
+            "amount": { "total": amount_cents, "currency": "CNY" },
+            "payer": { "sp_openid": openid }
+        });
+        (WECHAT_PARTNER_JSAPI_PATH, request.to_string())
+    } else {
+        (
+            "/v3/pay/transactions/jsapi",
+            json!({
+                "appid": config.merchant.app_id,
+                "mchid": config.merchant.mch_id,
+                "description": description,
+                "out_trade_no": out_trade_no,
+                "notify_url": config.notify_url,
+                "amount": { "total": amount_cents, "currency": "CNY" },
+                "payer": { "openid": openid }
+            })
+            .to_string(),
+        )
+    };
+    let authorization = wechat_authorization(&config.merchant, "POST", path, &body)?;
     let response = with_wechat_json_headers(
-        reqwest::Client::new().post(WECHAT_JSAPI_URL),
+        reqwest::Client::new().post(if path == WECHAT_PARTNER_JSAPI_PATH {
+            format!("https://api.mch.weixin.qq.com{WECHAT_PARTNER_JSAPI_PATH}")
+        } else {
+            WECHAT_JSAPI_URL.to_string()
+        }),
         &authorization,
     )
     .body(body)
@@ -798,17 +1270,32 @@ async fn wechat_create_jsapi_prepay(
 
 async fn wechat_query_order(
     config: &WechatPayConfig,
-    out_trade_no: &str,
+    payment: &PaymentRow,
 ) -> ApiResult<WechatQueryResponse> {
-    let path = format!(
-        "/v3/pay/transactions/out-trade-no/{out_trade_no}?mchid={}",
-        config.merchant.mch_id
-    );
+    let path = if payment.payment_mode == "platform_partner" {
+        let sub_mchid = payment
+            .wechat_sub_mchid
+            .as_deref()
+            .ok_or_else(|| ApiError::BadRequest("平台收付通支付单缺少二级商户号".to_string()))?;
+        format!(
+            "{WECHAT_PARTNER_QUERY_PATH_PREFIX}/{}?sp_mchid={}&sub_mchid={}",
+            payment.out_trade_no, config.merchant.mch_id, sub_mchid
+        )
+    } else {
+        format!(
+            "/v3/pay/transactions/out-trade-no/{}?mchid={}",
+            payment.out_trade_no, config.merchant.mch_id
+        )
+    };
     let authorization = wechat_authorization(&config.merchant, "GET", &path, "")?;
-    let url = format!(
-        "{WECHAT_QUERY_URL_PREFIX}/{out_trade_no}?mchid={}",
-        config.merchant.mch_id
-    );
+    let url = if payment.payment_mode == "platform_partner" {
+        format!("https://api.mch.weixin.qq.com{path}")
+    } else {
+        format!(
+            "{WECHAT_QUERY_URL_PREFIX}/{}?mchid={}",
+            payment.out_trade_no, config.merchant.mch_id
+        )
+    };
     let response = with_wechat_headers(reqwest::Client::new().get(url), &authorization)
         .send()
         .await
@@ -944,6 +1431,10 @@ mod tests {
             payable_cents: Some(500),
             cargo_name: Some("集采苹果".to_string()),
             group_buy_pay_window_open: Some(false),
+            wechat_sub_mchid: None,
+            platform_service_fee_cents: None,
+            merchant_receivable_cents: None,
+            profit_sharing_status: None,
         };
 
         let error = validate_payable_order(&order, PaymentBusinessType::MallGroupBuyDeposit)

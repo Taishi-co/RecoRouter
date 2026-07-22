@@ -102,6 +102,7 @@ interface DashboardData {
   mallOverview: JsonRecord;
   mallCategories: JsonRecord[];
   mallProducts: JsonRecord[];
+  mallMerchants: JsonRecord[];
   mallProcurementBuyers: JsonRecord[];
   mallInventoryAlerts: JsonRecord[];
   mallOrders: JsonRecord[];
@@ -141,6 +142,7 @@ interface ProductForm {
   name: string;
   sku: string;
   categoryCode: string;
+  merchantId: string;
   subtitle: string;
   description: string;
   imageUrl: string;
@@ -919,6 +921,7 @@ const initialData: DashboardData = {
   mallOverview: {},
   mallCategories: [],
   mallProducts: [],
+  mallMerchants: [],
   mallProcurementBuyers: [],
   mallInventoryAlerts: [],
   mallOrders: [],
@@ -958,6 +961,7 @@ const initialProductForm: ProductForm = {
   name: '',
   sku: '',
   categoryCode: 'fruit',
+  merchantId: '',
   subtitle: '',
   description: '',
   imageUrl: '',
@@ -1632,6 +1636,7 @@ async function fetchDashboardData(
     mallOverview,
     mallCategories,
     mallProducts,
+    mallMerchants,
     mallProcurementBuyers,
     mallInventoryAlerts,
     mallOrders,
@@ -1686,6 +1691,7 @@ async function fetchDashboardData(
       page: productFilters.page,
       pageSize: productFilters.pageSize,
     })),
+    loadWithFallback('合作商家', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/merchants')),
     loadWithFallback('采购商', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/procurement-buyers')),
     loadWithFallback('库存预警', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/inventory-alerts', {
       keyword: inventoryFilters.keyword,
@@ -1769,6 +1775,7 @@ async function fetchDashboardData(
       mallOverview,
       mallCategories,
       mallProducts,
+      mallMerchants,
       mallProcurementBuyers,
       mallInventoryAlerts,
       mallOrders,
@@ -2298,6 +2305,7 @@ function productToForm(product: JsonRecord, fallbackCategoryCode = 'fruit'): Pro
     name: stringValue(product, 'name'),
     sku: stringValue(product, 'sku'),
     categoryCode: stringValue(product, 'categoryCode', fallbackCategoryCode),
+    merchantId: stringValue(product, 'merchantId'),
     subtitle: stringValue(product, 'subtitle'),
     description: stringValue(product, 'description'),
     imageUrl: images[0] || '',
@@ -5647,6 +5655,7 @@ function DesignPlaceholderPage({
 
 function MallProductDesignSection({
   categories,
+  merchants,
   procurementBuyers,
   products,
   form,
@@ -5656,6 +5665,7 @@ function MallProductDesignSection({
   onUploadQualificationFile,
 }: {
   categories: JsonRecord[];
+  merchants: JsonRecord[];
   procurementBuyers: JsonRecord[];
   products: JsonRecord[];
   form: ProductForm;
@@ -5683,6 +5693,7 @@ function MallProductDesignSection({
       {createModalOpen ? (
         <ProductCreateModal
           categories={categories}
+          merchants={merchants}
           procurementBuyers={procurementBuyers}
           form={form}
           onChange={onChange}
@@ -5698,6 +5709,7 @@ function MallProductDesignSection({
 
 function ProductFormFields({
   categories,
+  merchants,
   procurementBuyers,
   form,
   layout = 'grid',
@@ -5706,6 +5718,7 @@ function ProductFormFields({
   onUploadQualificationFile,
 }: {
   categories: JsonRecord[];
+  merchants: JsonRecord[];
   procurementBuyers: JsonRecord[];
   form: ProductForm;
   layout?: 'grid' | 'tiles';
@@ -5722,6 +5735,20 @@ function ProductFormFields({
         <label className={fieldClass}>
           <span className="field-label">商品名称<span className="required-mark">*</span></span>
           <input required value={form.name} onChange={event => onChange({ name: event.target.value })} placeholder="例如 恒大苏打水" />
+        </label>
+        <label className={fieldClass}>
+          收款主体
+          <select value={form.merchantId} onChange={event => onChange({ merchantId: event.target.value })}>
+            <option value="">平台自营（普通商户直收）</option>
+            {merchants
+              .filter(merchant => stringValue(merchant, 'onboardingStatus') === 'active' && stringValue(merchant, 'qualificationStatus') === 'approved')
+              .map(merchant => (
+                <option key={stringValue(merchant, 'id')} value={stringValue(merchant, 'id')}>
+                  {stringValue(merchant, 'name')}（微信二级商户）
+                </option>
+              ))}
+          </select>
+          <small>合作商家订单由微信直接归集至二级商户，平台仅在线抽取服务费</small>
         </label>
         <label className={fieldClass}>
           SKU
@@ -6768,6 +6795,7 @@ function TransportOrdersSection({
 
 function MallProductsSection({
   categories,
+  merchants,
   procurementBuyers,
   products,
   filters,
@@ -6780,6 +6808,7 @@ function MallProductsSection({
   onUploadQualificationFile,
 }: {
   categories: JsonRecord[];
+  merchants: JsonRecord[];
   procurementBuyers: JsonRecord[];
   products: JsonRecord[];
   filters: MallFilterState;
@@ -6844,6 +6873,7 @@ function MallProductsSection({
               <tr>
                 <th>商品</th>
                 <th>类目</th>
+                <th>收款主体</th>
                 <th>价格</th>
                 <th>库存</th>
                 <th>规格</th>
@@ -6865,6 +6895,7 @@ function MallProductsSection({
                       <span>{stringValue(product, 'categoryName', stringValue(product, 'categoryCode'))}</span>
                       <small>{boolValue(product, 'qualityGuaranteed') ? `品质保证 · ${tagsText(product)}` : tagsText(product)}</small>
                     </td>
+                    <td>{stringValue(recordValue(product, 'merchant'), 'name', '平台自营')}</td>
                     <td>
                       <strong>{yuan(numberValue(product, 'priceCents'))}</strong>
                       <small>进货价 {numberValue(product, 'supplyPriceCents') ? yuan(numberValue(product, 'supplyPriceCents')) : '-'}</small>
@@ -6911,6 +6942,7 @@ function MallProductsSection({
       {editingProduct ? (
         <ProductEditModal
           categories={categories}
+          merchants={merchants}
           procurementBuyers={procurementBuyers}
           product={editingProduct}
           onClose={() => setEditingProduct(null)}
@@ -6928,6 +6960,7 @@ function MallProductsSection({
 
 function ProductCreateModal({
   categories,
+  merchants,
   procurementBuyers,
   form,
   onChange,
@@ -6937,6 +6970,7 @@ function ProductCreateModal({
   onUploadQualificationFile,
 }: {
   categories: JsonRecord[];
+  merchants: JsonRecord[];
   procurementBuyers: JsonRecord[];
   form: ProductForm;
   onChange: (patch: Partial<ProductForm>) => void;
@@ -6960,6 +6994,7 @@ function ProductCreateModal({
         <form className="product-form-scroll-guard" onSubmit={onSubmit}>
           <ProductFormFields
             categories={categories}
+            merchants={merchants}
             procurementBuyers={procurementBuyers}
             form={form}
             onChange={onChange}
@@ -6981,6 +7016,7 @@ function ProductCreateModal({
 
 function ProductEditModal({
   categories,
+  merchants,
   procurementBuyers,
   product,
   onClose,
@@ -6989,6 +7025,7 @@ function ProductEditModal({
   onUploadQualificationFile,
 }: {
   categories: JsonRecord[];
+  merchants: JsonRecord[];
   procurementBuyers: JsonRecord[];
   product: JsonRecord;
   onClose: () => void;
@@ -7014,6 +7051,7 @@ function ProductEditModal({
         <div className="product-form-scroll-guard">
           <ProductFormFields
             categories={categories}
+            merchants={merchants}
             procurementBuyers={procurementBuyers}
             form={draft}
             onChange={patch => setDraft(current => ({ ...current, ...patch }))}
@@ -8790,7 +8828,7 @@ function MallFinanceOpsSection({
       ) : null}
 
       {mode === 'withdrawals' ? (
-        <Panel title="提交提现申请" description="填写提现金额并提交审核">
+        <Panel title="平台运营账户提现" description="仅用于平台自有资金；合作商家货款由微信直接结算，禁止在这里代付">
           <form className="ops-withdrawal-form" onSubmit={onCreateWithdrawal}>
             <label>
               提现金额
@@ -11771,13 +11809,28 @@ function MallDeliveryRulesSection({
 
 function MallPaymentSplitRulesSection({
   settingsForm,
+  merchants,
   onSettingsSave,
+  onActivateMerchant,
+  onCreateMerchant,
 }: {
   settingsForm: SettingsForm;
+  merchants: JsonRecord[];
   onSettingsSave: (form: SettingsForm) => Promise<void>;
+  onActivateMerchant: (id: string) => Promise<void>;
+  onCreateMerchant: (merchant: JsonRecord) => Promise<void>;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState<SettingsForm>(settingsForm);
+  const [merchantDraft, setMerchantDraft] = useState({
+    name: '',
+    legalName: '',
+    wechatSubMchid: '',
+    serviceFeePercent: '3',
+    businessLicenseUrl: '',
+    contactName: '',
+    contactPhone: '',
+  });
 
   useEffect(() => {
     if (!isEditing) {
@@ -11785,24 +11838,10 @@ function MallPaymentSplitRulesSection({
     }
   }, [isEditing, settingsForm]);
 
-  const settlementCycleLabels: Record<string, string> = {
-    'T+1': 'T+1',
-    'T+3': 'T+3',
-    'T+7': 'T+7',
-    monthly: '月结',
-  };
-  const summaryItems = [
-    { label: '团长佣金比例', value: `${settingsForm.leaderCommissionRate || '0'}%`, note: '按自提点订单实付金额计算' },
-    { label: '平台服务费比例', value: `${settingsForm.platformServiceRate || '0'}%`, note: '从商家结算金额中扣减' },
-    { label: '供应商结算周期', value: settlementCycleLabels[settingsForm.supplierSettlementCycle] || settingsForm.supplierSettlementCycle || '-', note: '用于账单和提现审核提示' },
-    { label: '最低提现金额', value: `${settingsForm.withdrawMinYuan || '0.00'} 元`, note: '低于门槛不能提现' },
-  ];
+  const activeCount = merchants.filter(merchant => stringValue(merchant, 'onboardingStatus') === 'active').length;
+  const failedSplitCount = merchants.reduce((sum, merchant) => sum + numberValue(merchant, 'pendingSplitCount'), 0);
 
-  const updateDraft = (patch: Partial<SettingsForm>) => {
-    setDraft(current => ({ ...current, ...patch }));
-  };
-
-  const submitDraft = async (event: FormEvent<HTMLFormElement>) => {
+  const submitRules = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     await onSettingsSave(draft);
     setIsEditing(false);
@@ -11813,70 +11852,104 @@ function MallPaymentSplitRulesSection({
     setIsEditing(false);
   };
 
+  const submitMerchant = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await onCreateMerchant({
+      name: merchantDraft.name.trim(),
+      legalName: merchantDraft.legalName.trim(),
+      wechatSubMchid: merchantDraft.wechatSubMchid.trim(),
+      serviceFeeRateBps: Math.round(Number(merchantDraft.serviceFeePercent) * 100),
+      businessLicenseUrl: merchantDraft.businessLicenseUrl.trim(),
+      contactName: merchantDraft.contactName.trim(),
+      contactPhone: merchantDraft.contactPhone.trim(),
+      onboardingStatus: 'pending',
+      qualificationStatus: 'pending',
+    });
+    setMerchantDraft(current => ({ ...current, name: '', legalName: '', wechatSubMchid: '', businessLicenseUrl: '', contactName: '', contactPhone: '' }));
+  };
+
   return (
     <div className="page-grid">
-      <Panel title="分账规则" description="维护商城订单的团长佣金、平台服务费、供应商结算周期和提现门槛">
+      <div className="settings-summary-grid">
+        <StatCard label="合作商家" value={String(merchants.length)} detail={`${activeCount} 家可收款`} />
+        <StatCard label="待处理分账" value={String(failedSplitCount)} detail="含处理中和失败记录" />
+        <StatCard label="资金路径" value="微信直清" detail="二级商户收商品款，平台在线抽服务费" />
+      </div>
+
+      <Panel title="平台收付通" description="合作商家必须先由微信支付审核为二级商户，再绑定商品；平台不能代收后人工提现">
         {isEditing ? (
-          <form className="form-grid settings-form split-settings-form" onSubmit={submitDraft}>
+          <form className="form-grid settings-form" onSubmit={submitRules}>
             <label>
-              团长佣金比例
-              <input value={draft.leaderCommissionRate} type="number" min="0" max="100" step="0.1" onChange={event => updateDraft({ leaderCommissionRate: event.target.value })} />
+              新商家建议服务费（%）
+              <input value={draft.platformServiceRate} type="number" min="0.01" max="30" step="0.01" onChange={event => setDraft(current => ({ ...current, platformServiceRate: event.target.value }))} />
             </label>
-            <label>
-              平台服务费比例
-              <input value={draft.platformServiceRate} type="number" min="0" max="100" step="0.1" onChange={event => updateDraft({ platformServiceRate: event.target.value })} />
-            </label>
-            <label>
-              供应商结算周期
-              <select value={draft.supplierSettlementCycle} onChange={event => updateDraft({ supplierSettlementCycle: event.target.value })}>
-                <option value="T+1">T+1</option>
-                <option value="T+3">T+3</option>
-                <option value="T+7">T+7</option>
-                <option value="monthly">月结</option>
-              </select>
-            </label>
-            <label>
-              最低提现金额
-              <input value={draft.withdrawMinYuan} type="number" min="0" step="0.01" onChange={event => updateDraft({ withdrawMinYuan: event.target.value })} />
-            </label>
-            <div className="settings-rule-note wide">
-              <strong>当前口径</strong>
-              <span>团长佣金按自提点订单实付金额计算；平台服务费从商家结算金额中扣减；供应商结算周期用于账单和提现审核提示。</span>
-            </div>
             <div className="settings-actions wide">
-              <button className="ghost-button" type="button" onClick={cancelEditing}>
-                <Icon name="x" />
-                取消
-              </button>
-              <button className="primary-button" type="submit">
-                <Icon name="save" />
-                保存分账规则
-              </button>
+              <button className="ghost-button" type="button" onClick={cancelEditing}><Icon name="x" />取消</button>
+              <button className="primary-button" type="submit"><Icon name="save" />保存分账规则</button>
             </div>
           </form>
         ) : (
           <div className="settings-summary">
             <div className="settings-summary-grid">
-              {summaryItems.map(item => (
-                <div className="settings-summary-card" key={item.label}>
-                  <span>{item.label}</span>
-                  <strong>{item.value}</strong>
-                  <small>{item.note}</small>
-                </div>
-              ))}
+              <div className="settings-summary-card"><span>建议服务费</span><strong>{settingsForm.platformServiceRate || '3'}%</strong><small>仅作为新商家签约参考，每家实际费率单独登记</small></div>
+              <div className="settings-summary-card"><span>分账时点</span><strong>履约完成后一次性</strong><small>微信直接解冻商家货款并分出平台服务费</small></div>
+              <div className="settings-summary-card"><span>最大比例</span><strong>30%</strong><small>后台和接口同时限制，不允许超限</small></div>
             </div>
             <div className="settings-rule-note">
-              <strong>当前口径</strong>
-              <span>团长佣金按自提点订单实付金额计算；平台服务费从商家结算金额中扣减；供应商结算周期用于账单和提现审核提示。</span>
+              <strong>合规路径</strong>
+              <span>买家付款进入合作商家的微信二级商户冻结账户；订单履约完成后，微信一次性把平台服务费分给平台，并把剩余商品款解冻给商家。</span>
             </div>
             <div className="settings-actions">
-              <button className="primary-button" type="button" onClick={() => setIsEditing(true)}>
-                <Icon name="save" />
-                编辑分账规则
-              </button>
+              <button className="primary-button" type="button" onClick={() => setIsEditing(true)}><Icon name="save" />编辑分账规则</button>
             </div>
           </div>
         )}
+      </Panel>
+
+      <Panel title="新增合作商家" description="这里只登记微信已经分配或正在审核的二级商户资料">
+        <form className="form-grid settings-form split-settings-form" onSubmit={submitMerchant}>
+          <label>商家展示名<input required value={merchantDraft.name} onChange={event => setMerchantDraft(current => ({ ...current, name: event.target.value }))} /></label>
+          <label>签约主体全称<input required value={merchantDraft.legalName} onChange={event => setMerchantDraft(current => ({ ...current, legalName: event.target.value }))} /></label>
+          <label>微信二级商户号<input required value={merchantDraft.wechatSubMchid} inputMode="numeric" onChange={event => setMerchantDraft(current => ({ ...current, wechatSubMchid: event.target.value }))} /></label>
+          <label>平台服务费（%）<input required value={merchantDraft.serviceFeePercent} type="number" min="0.01" max="30" step="0.01" onChange={event => setMerchantDraft(current => ({ ...current, serviceFeePercent: event.target.value }))} /></label>
+          <label className="wide">营业执照/资质文件地址<input required value={merchantDraft.businessLicenseUrl} onChange={event => setMerchantDraft(current => ({ ...current, businessLicenseUrl: event.target.value }))} /></label>
+          <label>联系人<input value={merchantDraft.contactName} onChange={event => setMerchantDraft(current => ({ ...current, contactName: event.target.value }))} /></label>
+          <label>联系电话<input value={merchantDraft.contactPhone} onChange={event => setMerchantDraft(current => ({ ...current, contactPhone: event.target.value }))} /></label>
+          <div className="settings-actions wide">
+            <button className="primary-button" type="submit"><Icon name="plus" />登记商家</button>
+          </div>
+        </form>
+      </Panel>
+
+      <Panel title="合作商家清单" description="只有资质审核通过且微信入驻完成的商家可在商品页选择">
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>商家</th><th>二级商户号</th><th>服务费</th><th>入驻</th><th>资质</th><th>关联商品</th><th>操作</th></tr></thead>
+            <tbody>
+              {merchants.map(merchant => {
+                const id = stringValue(merchant, 'id');
+                const onboardingStatus = stringValue(merchant, 'onboardingStatus', 'pending');
+                const qualificationStatus = stringValue(merchant, 'qualificationStatus', 'pending');
+                return (
+                  <tr key={id}>
+                    <td><strong>{stringValue(merchant, 'name')}</strong><small>{stringValue(merchant, 'legalName')}</small></td>
+                    <td>{stringValue(merchant, 'wechatSubMchid')}</td>
+                    <td>{(numberValue(merchant, 'serviceFeeRateBps') / 100).toFixed(2)}%</td>
+                    <td><span className={badgeClass(onboardingStatus)}>{statusLabel(onboardingStatus)}</span></td>
+                    <td><span className={badgeClass(qualificationStatus)}>{statusLabel(qualificationStatus)}</span></td>
+                    <td>{numberValue(merchant, 'productCount')}</td>
+                    <td>
+                      {onboardingStatus !== 'active' ? (
+                        <button className="ghost-button" type="button" onClick={() => void onActivateMerchant(id)}>确认审核并启用</button>
+                      ) : <span>可收款</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {!merchants.length ? <EmptyState text="暂无合作商家，请先完成微信平台收付通入驻" /> : null}
       </Panel>
     </div>
   );
@@ -13168,6 +13241,7 @@ function App() {
         name: productForm.name || '新增鲜选商品',
         sku: productForm.sku || `WEB-${Date.now()}`,
         categoryCode: productForm.categoryCode,
+        merchantId: productForm.merchantId,
         subtitle: productForm.subtitle,
         description: productForm.description,
         imageUrl: images[0] || '',
@@ -13220,6 +13294,7 @@ function App() {
         name: form.name,
         sku: form.sku,
         categoryCode: form.categoryCode,
+        merchantId: form.merchantId,
         subtitle: form.subtitle,
         description: form.description,
         imageUrl: images[0] || '',
@@ -14294,6 +14369,23 @@ function App() {
     });
   };
 
+  const createMallMerchant = async (merchant: JsonRecord) => {
+    await runAction('合作商家登记', async () => {
+      await apiPost('/api/admin/mall/merchants', merchant);
+      await reload();
+    });
+  };
+
+  const activateMallMerchant = async (id: string) => {
+    await runAction('合作商家启用', async () => {
+      await apiPut(`/api/admin/mall/merchants/${id}`, {
+        onboardingStatus: 'active',
+        qualificationStatus: 'approved',
+      });
+      await reload();
+    });
+  };
+
   const resetPermissionForm = () => {
     setPermissionForm(initialPermissionForm);
   };
@@ -14572,6 +14664,7 @@ function App() {
         return (
           <MallProductDesignSection
             categories={data.mallCategories}
+            merchants={data.mallMerchants}
             procurementBuyers={data.mallProcurementBuyers}
             form={productForm}
             products={data.mallProducts}
@@ -14585,6 +14678,7 @@ function App() {
       return (
         <MallProductsSection
           categories={data.mallCategories}
+          merchants={data.mallMerchants}
           procurementBuyers={data.mallProcurementBuyers}
           filters={productFilters}
           products={data.mallProducts}
@@ -14920,7 +15014,10 @@ function App() {
       return (
         <MallPaymentSplitRulesSection
           settingsForm={settingsForm}
+          merchants={data.mallMerchants}
           onSettingsSave={saveSettingsForm}
+          onActivateMerchant={activateMallMerchant}
+          onCreateMerchant={createMallMerchant}
         />
       );
     }

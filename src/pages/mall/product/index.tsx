@@ -203,6 +203,8 @@ export default function MallProductDetail() {
             onToggle={() => setPromotionOpen((current) => !current)}
           />
 
+          <ProductMerchantSection product={product} />
+
           <VariantSelector
             product={product}
             variants={variants}
@@ -239,6 +241,33 @@ export default function MallProductDetail() {
         </>
       )}
     </MallPage>
+  )
+}
+
+function ProductMerchantSection({ product }: { product: MallProduct }) {
+  const merchant = product.merchant
+  const licenseUrl = resolveMallImageUrl(merchant?.businessLicenseUrl)
+  return (
+    <View className="mall-card">
+      <Text className="mall-list-title">销售与收款主体</Text>
+      <Text className="mall-page-subtitle" style={{ marginTop: 8 }}>
+        {merchant?.legalName || merchant?.name || '叁友甄选自营'}
+      </Text>
+      <Text className="mall-product-subtitle" style={{ marginTop: 6 }}>
+        {merchant
+          ? '合作商家商品款由其微信支付二级商户直接收取，平台仅按订单在线收取服务费。'
+          : '本商品由叁友甄选自营主体直接收款并负责履约与售后。'}
+      </Text>
+      {licenseUrl ? (
+        <Text
+          className="mall-section-action"
+          style={{ marginTop: 10 }}
+          onClick={() => Taro.previewImage({ current: licenseUrl, urls: [licenseUrl] })}
+        >
+          查看营业执照
+        </Text>
+      ) : null}
+    </View>
   )
 }
 
