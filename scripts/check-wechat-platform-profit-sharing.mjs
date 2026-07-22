@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 const payments = readFileSync('server/src/modules/payments.rs', 'utf8');
 const mall = readFileSync('server/src/modules/mall.rs', 'utf8');
 const migration = readFileSync(
-  'server/migrations/0044_wechat_platform_profit_sharing.sql',
+  'server/migrations/0048_wechat_platform_profit_sharing.sql',
   'utf8',
 );
 

@@ -1,4 +1,4 @@
--- WeChat Pay platform collection and payment (平台收付通) support.
+-- WeChat Pay platform collection and payment (平台收付通) support (migration 0048).
 -- Independent partners are onboarded as WeChat secondary merchants. Customer
 -- funds therefore enter the secondary merchant account instead of the platform
 -- collecting and settling them offline.
