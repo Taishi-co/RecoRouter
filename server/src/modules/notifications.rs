@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     routing::{get, post, put},
     Json, Router,
 };
@@ -9,6 +9,7 @@ use serde_json::Value;
 use crate::{
     app::AppState,
     error::{ApiError, ApiResult},
+    modules::auth::{require_admin, AuthenticatedUser},
     response::{ok, ApiEnvelope},
     storage::Storage,
 };
@@ -56,11 +57,13 @@ struct UserBody {
 
 async fn create_notification<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Json(body): Json<CreateNotificationRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
+    require_admin(&user)?;
     let user_exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM users WHERE id = $1)")
         .bind(&body.user_id)
         .fetch_one(&state.db)
@@ -94,6 +97,7 @@ where
 
 async fn list_notifications<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Query(query): Query<NotificationQuery>,
 ) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
 where
@@ -116,7 +120,7 @@ where
         ) notification_row
         "#,
     )
-    .bind(&query.user_id)
+    .bind(&user.id)
     .bind(unread_only)
     .bind(limit)
     .bind(offset)
@@ -129,7 +133,8 @@ where
 
 async fn unread_count<S>(
     State(state): State<AppState<S>>,
-    Query(query): Query<NotificationQuery>,
+    Extension(user): Extension<AuthenticatedUser>,
+    Query(_query): Query<NotificationQuery>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
@@ -137,7 +142,7 @@ where
     let count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND is_read = false",
     )
-    .bind(&query.user_id)
+    .bind(&user.id)
     .fetch_one(&state.db)
     .await
     .map_err(|err| ApiError::BadRequest(format!("查询失败: {err}")))?;
@@ -152,8 +157,9 @@ where
 
 async fn mark_read<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(id): Path<String>,
-    Json(body): Json<UserBody>,
+    Json(_body): Json<UserBody>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
@@ -162,7 +168,7 @@ where
         "SELECT EXISTS (SELECT 1 FROM notifications WHERE id = $1 AND user_id = $2)",
     )
     .bind(&id)
-    .bind(&body.user_id)
+    .bind(&user.id)
     .fetch_one(&state.db)
     .await?;
 
@@ -174,11 +180,12 @@ where
         r#"
         UPDATE notifications
         SET is_read = true
-        WHERE id = $1
+        WHERE id = $1 AND user_id = $2
         RETURNING row_to_json(notifications)
         "#,
     )
     .bind(&id)
+    .bind(&user.id)
     .fetch_one(&state.db)
     .await
     .map_err(|err| ApiError::BadRequest(format!("更新失败: {err}")))?;
@@ -188,13 +195,14 @@ where
 
 async fn mark_all_read<S>(
     State(state): State<AppState<S>>,
-    Json(body): Json<UserBody>,
+    Extension(user): Extension<AuthenticatedUser>,
+    Json(_body): Json<UserBody>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
     sqlx::query("UPDATE notifications SET is_read = true WHERE user_id = $1 AND is_read = false")
-        .bind(&body.user_id)
+        .bind(&user.id)
         .execute(&state.db)
         .await
         .map_err(|err| ApiError::BadRequest(format!("批量标记失败: {err}")))?;

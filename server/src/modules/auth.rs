@@ -221,8 +221,21 @@ struct WechatBindingUserRow {
 
 #[derive(Debug, FromRow)]
 struct SessionUserRow {
+    id: String,
     role: Option<String>,
     status: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthenticatedUser {
+    pub id: String,
+    pub role: Option<String>,
+}
+
+impl AuthenticatedUser {
+    pub fn is_admin(&self) -> bool {
+        self.role.as_deref() == Some("admin")
+    }
 }
 
 #[derive(Debug, FromRow)]
@@ -359,8 +372,10 @@ where
         return Err(ApiError::Unauthorized("密码错误".to_string()));
     }
 
-    if row.status.as_deref() == Some("disabled") {
-        return Err(ApiError::Unauthorized("账号已被禁用".to_string()));
+    match row.status.as_deref() {
+        Some("disabled") => return Err(ApiError::Unauthorized("账号已被禁用".to_string())),
+        Some("deleted") => return Err(ApiError::Unauthorized("账号已注销".to_string())),
+        _ => {}
     }
 
     let token = create_session_token(&state.db, &row.id).await?;
@@ -493,8 +508,10 @@ where
         }
     };
 
-    if row.status.as_deref() == Some("disabled") {
-        return Err(ApiError::Unauthorized("账号已被禁用".to_string()));
+    match row.status.as_deref() {
+        Some("disabled") => return Err(ApiError::Unauthorized("账号已被禁用".to_string())),
+        Some("deleted") => return Err(ApiError::Unauthorized("账号已注销".to_string())),
+        _ => {}
     }
 
     let token = create_session_token(&state.db, &row.id).await?;
@@ -531,11 +548,20 @@ where
 
 async fn user_info<S>(
     State(state): State<AppState<S>>,
+    headers: HeaderMap,
     Query(query): Query<UserInfoQuery>,
 ) -> ApiResult<Json<ApiEnvelope<UserInfoResponse>>>
 where
     S: Storage,
 {
+    let token = bearer_token(&headers)?;
+    let session_user = session_user(&state.db, token).await?;
+    let authenticated_user = AuthenticatedUser {
+        id: session_user.id,
+        role: session_user.role,
+    };
+    require_self_or_admin(&authenticated_user, &query.user_id)?;
+
     let row = sqlx::query_as::<_, UserInfoRow>(
         r#"
         SELECT id, phone, name, role, avatar, wechat_payment_qr, created_at
@@ -569,11 +595,18 @@ where
 
 async fn update_payment_qr<S>(
     State(state): State<AppState<S>>,
+    headers: HeaderMap,
     mut multipart: Multipart,
 ) -> ApiResult<Json<ApiEnvelope<PaymentQrResponse>>>
 where
     S: Storage,
 {
+    let token = bearer_token(&headers)?;
+    let session_user = session_user(&state.db, token).await?;
+    let authenticated_user = AuthenticatedUser {
+        id: session_user.id,
+        role: session_user.role,
+    };
     let mut user_id = None;
     let mut file = None;
     let mut total_multipart_bytes = 0usize;
@@ -611,6 +644,7 @@ where
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .ok_or_else(|| ApiError::BadRequest("用户ID不能为空".to_string()))?;
+    require_self_or_admin(&authenticated_user, &user_id)?;
 
     let user = sqlx::query_as::<_, PaymentQrUserRow>(
         "SELECT id, phone, name, role FROM users WHERE id = $1",
@@ -795,7 +829,7 @@ fn auth_response_from_row(row: AuthUserRow, token: String) -> AuthResponse {
 pub async fn admin_guard<S>(
     State(state): State<AppState<S>>,
     headers: HeaderMap,
-    request: Request<Body>,
+    mut request: Request<Body>,
     next: Next,
 ) -> ApiResult<Response>
 where
@@ -804,15 +838,62 @@ where
     let token = bearer_token(&headers)?;
     let user = session_user(&state.db, token).await?;
 
-    if user.status.as_deref() == Some("disabled") {
-        return Err(ApiError::Unauthorized("账号已被禁用".to_string()));
+    match user.status.as_deref() {
+        Some("disabled") => return Err(ApiError::Unauthorized("账号已被禁用".to_string())),
+        Some("deleted") => return Err(ApiError::Unauthorized("账号已注销".to_string())),
+        _ => {}
     }
 
     if user.role.as_deref() != Some("admin") {
         return Err(ApiError::Forbidden("需要管理员权限".to_string()));
     }
 
+    request.extensions_mut().insert(AuthenticatedUser {
+        id: user.id,
+        role: user.role,
+    });
     Ok(next.run(request).await)
+}
+
+pub async fn user_guard<S>(
+    State(state): State<AppState<S>>,
+    headers: HeaderMap,
+    mut request: Request<Body>,
+    next: Next,
+) -> ApiResult<Response>
+where
+    S: Storage,
+{
+    let token = bearer_token(&headers)?;
+    let user = session_user(&state.db, token).await?;
+
+    match user.status.as_deref() {
+        Some("disabled") => return Err(ApiError::Unauthorized("账号已被禁用".to_string())),
+        Some("deleted") => return Err(ApiError::Unauthorized("账号已注销".to_string())),
+        _ => {}
+    }
+
+    request.extensions_mut().insert(AuthenticatedUser {
+        id: user.id,
+        role: user.role,
+    });
+    Ok(next.run(request).await)
+}
+
+pub fn require_admin(user: &AuthenticatedUser) -> ApiResult<()> {
+    if user.is_admin() {
+        Ok(())
+    } else {
+        Err(ApiError::Forbidden("需要管理员权限".to_string()))
+    }
+}
+
+pub fn require_self_or_admin(user: &AuthenticatedUser, resource_user_id: &str) -> ApiResult<()> {
+    if user.is_admin() || user.id == resource_user_id {
+        Ok(())
+    } else {
+        Err(ApiError::Forbidden("无权访问该用户数据".to_string()))
+    }
 }
 
 fn bearer_token(headers: &HeaderMap) -> ApiResult<&str> {
@@ -831,7 +912,7 @@ fn bearer_token(headers: &HeaderMap) -> ApiResult<&str> {
 async fn session_user(pool: &PgPool, token: &str) -> ApiResult<SessionUserRow> {
     sqlx::query_as::<_, SessionUserRow>(
         r#"
-        SELECT u.role, u.status
+        SELECT u.id, u.role, u.status
         FROM admin_sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.token = $1
