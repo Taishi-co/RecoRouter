@@ -87,11 +87,14 @@ const checks = [
       && files.privacyPage.indexOf('if (firstLaunch)') < files.privacyPage.indexOf('privacyPolicy?.content.map'),
   },
   {
-    name: '条款入口打开独立全文页',
+    name: '条款入口打开独立全文页并可靠返回确认弹窗',
     pass:
       /params\.documentType/.test(files.legalPage)
       && /selectedDocument\.content\.map/.test(files.legalPage)
-      && /正在加载条款全文/.test(files.legalPage),
+      && /正在加载条款全文/.test(files.legalPage)
+      && /returnToConsent=1/.test(files.privacyPage)
+      && /reason=policy_updated/.test(files.privacyPage)
+      && /Taro\.redirectTo\(\{ url: `\/pages\/mall\/privacy\/index\?\$\{query\.join\('&'\)\}` \}\)/.test(files.legalPage),
   },
   {
     name: '登录页使用管理端当前隐私版本记录同意',

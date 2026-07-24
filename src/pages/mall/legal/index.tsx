@@ -11,6 +11,9 @@ export default function MallLegalCenterPage() {
   const requestedDocumentType = typeof params.documentType === 'string'
     ? decodeURIComponent(params.documentType)
     : ''
+  const returnToConsent = params.returnToConsent === '1'
+  const consentReturnUrl = decodeMallReturnUrl(params.returnUrl)
+  const consentReason = params.reason === 'policy_updated' ? 'policy_updated' : ''
   const [center, setCenter] = useState<LegalCenter | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -32,11 +35,23 @@ export default function MallLegalCenterPage() {
   const selectedDocument = requestedDocumentType
     ? center?.documents.find((document) => document.documentType === requestedDocumentType)
     : undefined
+  const returnFromDocument = () => {
+    if (!returnToConsent) {
+      Taro.navigateBack()
+      return
+    }
+    const query = [
+      'firstLaunch=1',
+      `returnUrl=${encodeURIComponent(consentReturnUrl)}`,
+    ]
+    if (consentReason) query.push(`reason=${consentReason}`)
+    Taro.redirectTo({ url: `/pages/mall/privacy/index?${query.join('&')}` })
+  }
 
   if (requestedDocumentType) {
     return (
       <MallPage active="mine" noTab>
-        <View className="mall-back-row" onClick={() => Taro.navigateBack()}>
+        <View className="mall-back-row" onClick={returnFromDocument}>
           <ChevronLeft size={24} color="#1F2D1F" />
           <Text className="mall-section-action">返回确认页</Text>
         </View>
@@ -178,4 +193,14 @@ function formatDate(value?: string) {
   if (!value) return '未设置'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('zh-CN')
+}
+
+function decodeMallReturnUrl(value?: string) {
+  if (typeof value !== 'string') return '/pages/mall/index/index'
+  try {
+    const decoded = decodeURIComponent(value)
+    return decoded.startsWith('/pages/mall/') ? decoded : '/pages/mall/index/index'
+  } catch {
+    return '/pages/mall/index/index'
+  }
 }

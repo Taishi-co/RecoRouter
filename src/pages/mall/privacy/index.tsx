@@ -172,8 +172,14 @@ export default function MallPrivacyPage() {
   }
 
   const openDocument = (documentType: string) => {
+    const query = [
+      `documentType=${encodeURIComponent(documentType)}`,
+      'returnToConsent=1',
+      `returnUrl=${encodeURIComponent(returnUrl)}`,
+    ]
+    if (policyUpdated) query.push('reason=policy_updated')
     Taro.navigateTo({
-      url: `/pages/mall/legal/index?documentType=${encodeURIComponent(documentType)}`,
+      url: `/pages/mall/legal/index?${query.join('&')}`,
     })
   }
 
