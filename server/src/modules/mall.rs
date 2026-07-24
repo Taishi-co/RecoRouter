@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Multipart, Path, Query, State},
+    extract::{Extension, Multipart, Path, Query, State},
     routing::{get, post, put},
     Json, Router,
 };
@@ -12,10 +12,12 @@ use crate::{
     app::AppState,
     config::ApiService,
     error::{ApiError, ApiResult},
+    modules::auth::{require_admin, require_self_or_admin, AuthenticatedUser},
     response::{ok, ApiEnvelope},
     storage::Storage,
     wechat_pay::{
-        truncate_chars, wechat_authorization, with_wechat_json_headers, WechatPayMerchantConfig,
+        miniapp_access_token, truncate_chars, wechat_authorization, with_wechat_json_headers,
+        WechatMiniappConfig, WechatPayMerchantConfig, WECHAT_USER_AGENT,
     },
 };
 
@@ -50,6 +52,21 @@ where
         .route("/api/mall/products/:id", get(get_product::<S>))
         .route("/api/mall/group-buys", get(list_group_buys::<S>))
         .route("/api/mall/group-buys/:id", get(get_group_buy::<S>))
+        .route("/api/mall/pickup-points", get(list_pickup_points::<S>))
+        .route(
+            "/api/mall/delivery-time-slots",
+            get(get_delivery_time_slots::<S>),
+        )
+        .route("/api/mall/community-posts", get(list_community_posts::<S>))
+        .route("/api/support/knowledge", get(list_knowledge::<S>))
+        .route("/api/mall/legal-center", get(get_legal_center::<S>))
+}
+
+pub fn customer_router<S>() -> Router<AppState<S>>
+where
+    S: Storage,
+{
+    Router::new()
         .route(
             "/api/mall/group-buys/:id/subscribe",
             post(subscribe_group_buy::<S>),
@@ -97,14 +114,9 @@ where
             get(list_mall_addresses::<S>).post(create_mall_address::<S>),
         )
         .route("/api/mall/addresses/:id", put(update_mall_address::<S>))
-        .route("/api/mall/pickup-points", get(list_pickup_points::<S>))
-        .route(
-            "/api/mall/delivery-time-slots",
-            get(get_delivery_time_slots::<S>),
-        )
         .route(
             "/api/mall/community-posts",
-            get(list_community_posts::<S>).post(create_community_post::<S>),
+            post(create_community_post::<S>),
         )
         .route(
             "/api/mall/community-posts/:id/interactions",
@@ -146,11 +158,30 @@ where
         )
         .route("/api/support/tickets/:id", put(update_support_ticket::<S>))
         .route(
-            "/api/support/knowledge",
-            get(list_knowledge::<S>).post(create_knowledge::<S>),
+            "/api/mall/invoices",
+            get(list_customer_invoices::<S>).post(create_invoice_request::<S>),
         )
-        .route("/api/support/knowledge/:id", put(update_knowledge::<S>))
-        .route("/api/support/metrics", get(support_metrics::<S>))
+        .route(
+            "/api/mall/invoices/:id/cancel",
+            post(cancel_invoice_request::<S>),
+        )
+}
+
+pub fn customer_compliance_router<S>() -> Router<AppState<S>>
+where
+    S: Storage,
+{
+    Router::new()
+        .route(
+            "/api/mall/privacy/consent",
+            get(get_privacy_consent::<S>).post(record_privacy_consent::<S>),
+        )
+        .route(
+            "/api/mall/account/deletion",
+            get(get_account_deletion::<S>)
+                .post(request_account_deletion::<S>)
+                .delete(cancel_account_deletion::<S>),
+        )
 }
 
 pub fn admin_router<S>() -> Router<AppState<S>>
@@ -317,6 +348,48 @@ where
             post(admin_retry_profit_sharing::<S>),
         )
         .route(
+            "/api/admin/mall/orders/:id/wechat-shipping-report",
+            post(admin_retry_wechat_shipping_report::<S>),
+        )
+        .route(
+            "/api/admin/mall/legal-center",
+            get(admin_get_legal_center::<S>).put(admin_update_legal_profile::<S>),
+        )
+        .route(
+            "/api/admin/mall/legal-documents",
+            post(admin_create_legal_document::<S>),
+        )
+        .route(
+            "/api/admin/mall/legal-documents/:id",
+            put(admin_update_legal_document::<S>),
+        )
+        .route(
+            "/api/admin/mall/merchants/:id/qualifications",
+            get(admin_list_merchant_qualifications::<S>)
+                .post(admin_create_merchant_qualification::<S>),
+        )
+        .route(
+            "/api/admin/mall/merchant-qualifications/:id",
+            put(admin_update_merchant_qualification::<S>),
+        )
+        .route("/api/admin/mall/invoices", get(admin_list_invoices::<S>))
+        .route(
+            "/api/admin/mall/invoices/:id",
+            put(admin_update_invoice::<S>),
+        )
+        .route(
+            "/api/admin/mall/wechat-complaints",
+            get(admin_list_wechat_complaints::<S>),
+        )
+        .route(
+            "/api/admin/mall/wechat-complaints/:id",
+            put(admin_update_wechat_complaint::<S>),
+        )
+        .route(
+            "/api/admin/mall/wechat-complaints/configure-notify",
+            post(admin_configure_wechat_complaint_notify::<S>),
+        )
+        .route(
             "/api/admin/mall/after-sales",
             get(admin_list_after_sales::<S>),
         )
@@ -380,6 +453,9 @@ where
             "/api/admin/mall/permissions/:id",
             put(admin_update_permission::<S>).delete(admin_delete_permission::<S>),
         )
+        .route("/api/support/knowledge", post(create_knowledge::<S>))
+        .route("/api/support/knowledge/:id", put(update_knowledge::<S>))
+        .route("/api/support/metrics", get(support_metrics::<S>))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1013,11 +1089,156 @@ struct MallMerchantMutationRequest {
     qualification_status: Option<String>,
     #[serde(alias = "business_license_url")]
     business_license_url: Option<String>,
+    #[serde(alias = "business_license_number")]
+    business_license_number: Option<String>,
+    #[serde(alias = "business_license_expires_at")]
+    business_license_expires_at: Option<String>,
+    #[serde(alias = "last_verified_at")]
+    last_verified_at: Option<DateTime<Utc>>,
+    #[serde(alias = "next_review_at")]
+    next_review_at: Option<String>,
     #[serde(alias = "contact_name")]
     contact_name: Option<String>,
     #[serde(alias = "contact_phone")]
     contact_phone: Option<String>,
     metadata: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PrivacyConsentRequest {
+    #[serde(alias = "policy_version")]
+    policy_version: String,
+    action: String,
+    #[serde(alias = "consent_items")]
+    consent_items: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AccountDeletionRequest {
+    reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InvoiceMutationRequest {
+    #[serde(alias = "order_id")]
+    order_id: String,
+    #[serde(alias = "invoice_type")]
+    invoice_type: Option<String>,
+    #[serde(alias = "title_type")]
+    title_type: String,
+    title: String,
+    #[serde(alias = "tax_number")]
+    tax_number: Option<String>,
+    email: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct InvoiceListQuery {
+    status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminInvoiceUpdateRequest {
+    status: String,
+    #[serde(alias = "invoice_url")]
+    invoice_url: Option<String>,
+    #[serde(alias = "invoice_code")]
+    invoice_code: Option<String>,
+    #[serde(alias = "rejection_reason")]
+    rejection_reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegalProfileMutationRequest {
+    #[serde(alias = "operator_name")]
+    operator_name: Option<String>,
+    #[serde(alias = "legal_entity_name")]
+    legal_entity_name: Option<String>,
+    #[serde(alias = "unified_social_credit_code")]
+    unified_social_credit_code: Option<String>,
+    #[serde(alias = "business_license_url")]
+    business_license_url: Option<String>,
+    #[serde(alias = "business_license_expires_at")]
+    business_license_expires_at: Option<String>,
+    #[serde(alias = "platform_qualification_type")]
+    platform_qualification_type: Option<String>,
+    #[serde(alias = "platform_qualification_number")]
+    platform_qualification_number: Option<String>,
+    #[serde(alias = "platform_qualification_url")]
+    platform_qualification_url: Option<String>,
+    #[serde(alias = "platform_qualification_expires_at")]
+    platform_qualification_expires_at: Option<String>,
+    #[serde(alias = "service_phone")]
+    service_phone: Option<String>,
+    #[serde(alias = "service_email")]
+    service_email: Option<String>,
+    #[serde(alias = "complaint_phone")]
+    complaint_phone: Option<String>,
+    #[serde(alias = "complaint_email")]
+    complaint_email: Option<String>,
+    #[serde(alias = "complaint_description")]
+    complaint_description: Option<String>,
+    #[serde(alias = "office_address")]
+    office_address: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegalDocumentMutationRequest {
+    #[serde(alias = "document_type")]
+    document_type: String,
+    title: String,
+    version: String,
+    summary: Option<String>,
+    content: Value,
+    #[serde(alias = "effective_at")]
+    effective_at: Option<DateTime<Utc>>,
+    publish: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MerchantQualificationMutationRequest {
+    #[serde(alias = "qualification_type")]
+    qualification_type: Option<String>,
+    #[serde(alias = "qualification_name")]
+    qualification_name: Option<String>,
+    #[serde(alias = "certificate_number")]
+    certificate_number: Option<String>,
+    #[serde(alias = "certificate_url")]
+    certificate_url: Option<String>,
+    issuer: Option<String>,
+    #[serde(alias = "issued_at")]
+    issued_at: Option<String>,
+    #[serde(alias = "expires_at")]
+    expires_at: Option<String>,
+    status: Option<String>,
+    #[serde(alias = "rejection_reason")]
+    rejection_reason: Option<String>,
+    #[serde(alias = "public_visible")]
+    public_visible: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WechatComplaintUpdateRequest {
+    #[serde(alias = "complaint_state")]
+    complaint_state: String,
+    #[serde(alias = "response_content")]
+    response_content: Option<String>,
+}
+
+#[derive(Debug, FromRow)]
+struct WechatShippingContext {
+    payment_id: String,
+    transaction_id: String,
+    mch_id: Option<String>,
+    openid: String,
+    item_desc: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2445,14 +2666,14 @@ where
 
 async fn subscribe_group_buy<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(activity_id): Path<String>,
     Json(body): Json<GroupBuySubscribeRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    let user_id = body.user_id.trim().to_string();
-    validate_required(&user_id, "用户ID不能为空")?;
+    let user_id = user.id;
     validate_positive_i32(body.quantity, "认购数量必须大于 0")?;
 
     let mut tx = state.db.begin().await?;
@@ -2648,6 +2869,7 @@ where
 
 async fn pay_group_buy_deposit<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
@@ -2657,6 +2879,13 @@ where
     let subscription = fetch_group_buy_subscription_payload(&state.db, &id)
         .await?
         .ok_or_else(|| ApiError::NotFound("团购认购不存在".to_string()))?;
+    require_self_or_admin(
+        &user,
+        subscription
+            .get("userId")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+    )?;
     if subscription.get("status").and_then(Value::as_str) != Some("pending_deposit") {
         return Err(ApiError::BadRequest("当前认购不需要支付订金".to_string()));
     }
@@ -2687,6 +2916,7 @@ where
 
 async fn pay_group_buy_balance<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
@@ -2696,6 +2926,13 @@ where
     let subscription = fetch_group_buy_subscription_payload(&state.db, &id)
         .await?
         .ok_or_else(|| ApiError::NotFound("团购认购不存在".to_string()))?;
+    require_self_or_admin(
+        &user,
+        subscription
+            .get("userId")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+    )?;
     if subscription.get("status").and_then(Value::as_str) != Some("pending_balance") {
         return Err(ApiError::BadRequest("当前认购不需要支付尾款".to_string()));
     }
@@ -2711,13 +2948,14 @@ where
 
 async fn list_my_group_buy_subscriptions<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Query(query): Query<GroupBuyUserQuery>,
 ) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
 where
     S: Storage,
 {
     advance_group_buy_activities(&state.db).await?;
-    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
+    let user_id = user.id;
     let mut builder = QueryBuilder::<Postgres>::new(
         r#"
         SELECT mall_group_buy_subscription_json(subscription)
@@ -3447,12 +3685,13 @@ where
 
 async fn get_cart<S>(
     State(state): State<AppState<S>>,
-    Query(query): Query<UserQuery>,
+    Extension(user): Extension<AuthenticatedUser>,
+    Query(_query): Query<UserQuery>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
+    let user_id = user.id;
     let mut cart = cart_payload(&state.db, &user_id).await?;
     if let Some(items) = cart.get_mut("items").and_then(Value::as_array_mut) {
         for item in items {
@@ -3467,6 +3706,7 @@ where
 
 async fn upsert_cart_item<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Json(body): Json<UpsertCartItemRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
@@ -3501,7 +3741,7 @@ where
         )
         "#,
     )
-    .bind(body.user_id)
+    .bind(user.id)
     .bind(body.product_id)
     .bind(variant.id)
     .bind(variant.name)
@@ -3515,6 +3755,7 @@ where
 
 async fn update_cart_item<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(id): Path<String>,
     Json(body): Json<UpdateCartItemRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
@@ -3523,12 +3764,14 @@ where
 {
     if let Some(quantity) = body.quantity {
         validate_quantity(quantity)?;
-        let (product_id, variant_id): (String, String) =
-            sqlx::query_as("SELECT product_id, variant_id FROM mall_cart_items WHERE id = $1")
-                .bind(&id)
-                .fetch_optional(&state.db)
-                .await?
-                .ok_or_else(|| ApiError::NotFound("购物车项不存在".to_string()))?;
+        let (product_id, variant_id): (String, String) = sqlx::query_as(
+            "SELECT product_id, variant_id FROM mall_cart_items WHERE id = $1 AND user_id = $2",
+        )
+        .bind(&id)
+        .bind(&user.id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("购物车项不存在".to_string()))?;
         ensure_product_variant_can_sell(&state.db, &product_id, Some(&variant_id), quantity)
             .await?;
     }
@@ -3539,7 +3782,7 @@ where
         SET quantity = COALESCE($2, quantity),
             selected = COALESCE($3, selected),
             updated_at = now()
-        WHERE id = $1
+        WHERE id = $1 AND user_id = $4
         RETURNING jsonb_build_object(
           'id', id,
           'userId', user_id,
@@ -3554,6 +3797,7 @@ where
     .bind(&id)
     .bind(body.quantity)
     .bind(body.selected)
+    .bind(&user.id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| ApiError::NotFound("购物车项不存在".to_string()))?;
@@ -3563,26 +3807,32 @@ where
 
 async fn delete_cart_item<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    sqlx::query("DELETE FROM mall_cart_items WHERE id = $1")
+    let result = sqlx::query("DELETE FROM mall_cart_items WHERE id = $1 AND user_id = $2")
         .bind(id)
+        .bind(user.id)
         .execute(&state.db)
         .await?;
+    if result.rows_affected() == 0 {
+        return Err(ApiError::NotFound("购物车项不存在".to_string()));
+    }
     Ok(ok("删除成功", Value::Null))
 }
 
 async fn create_mall_checkout<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Json(body): Json<CreateMallCheckoutRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    validate_required(&body.user_id, "用户ID不能为空")?;
+    let user_id = user.id;
     let source = normalize_checkout_source(body.source.as_deref())?;
     let quantity = body.quantity.unwrap_or(1);
     if quantity <= 0 {
@@ -3612,7 +3862,7 @@ where
         RETURNING id
         "#,
     )
-    .bind(&body.user_id)
+    .bind(&user_id)
     .bind(source)
     .bind(product_id)
     .bind(non_empty(body.variant_id))
@@ -3629,24 +3879,33 @@ where
 
 async fn get_mall_checkout<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
     let mut checkout = checkout_payload(&state.db, &id).await?;
+    require_self_or_admin(
+        &user,
+        checkout
+            .get("userId")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+    )?;
     resolve_mall_image_urls(&state.storage, &mut checkout).await?;
     Ok(ok("查询成功", checkout))
 }
 
 async fn list_mall_addresses<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Query(query): Query<AddressQuery>,
 ) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
 where
     S: Storage,
 {
-    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
+    let user_id = user.id;
     let mut builder = QueryBuilder::<Postgres>::new(
         r#"
         SELECT jsonb_build_object(
@@ -3683,12 +3942,13 @@ where
 
 async fn create_mall_address<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Json(body): Json<AddressMutationRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    let user_id = require_non_empty(body.user_id, "用户ID不能为空")?;
+    let user_id = user.id;
     let address_text = require_non_empty(body.address_text, "地址不能为空")?;
     let address_label = non_empty(body.address_label).or_else(|| Some(address_text.clone()));
     let contact_name = non_empty(body.contact_name)
@@ -3759,6 +4019,7 @@ where
 
 async fn update_mall_address<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(id): Path<String>,
     Json(body): Json<AddressMutationRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
@@ -3771,6 +4032,7 @@ where
             .fetch_optional(&state.db)
             .await?
             .ok_or_else(|| ApiError::NotFound("地址不存在".to_string()))?;
+    require_self_or_admin(&user, &existing_user_id)?;
 
     let contact_name = non_empty(body.contact_name);
     let contact_phone = non_empty(body.contact_phone);
@@ -3806,7 +4068,7 @@ where
             pickup_point_id = COALESCE($9, pickup_point_id),
             is_default = COALESCE($10, is_default),
             updated_at = now()
-        WHERE id = $1
+        WHERE id = $1 AND user_id = $11
         RETURNING jsonb_build_object(
           'id', id,
           'userId', user_id,
@@ -3834,6 +4096,7 @@ where
     .bind(address_type)
     .bind(pickup_point_id)
     .bind(body.is_default)
+    .bind(&existing_user_id)
     .fetch_one(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -4197,12 +4460,13 @@ where
 
 async fn get_mall_profile<S>(
     State(state): State<AppState<S>>,
-    Query(query): Query<UserQuery>,
+    Extension(user): Extension<AuthenticatedUser>,
+    Query(_query): Query<UserQuery>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
+    let user_id = user.id;
     let member = fetch_member_profile(&state.db, &user_id).await?;
     let order_counts = fetch_member_order_counts(&state.db, &user_id).await?;
     let default_address = fetch_default_mall_address(&state.db, &user_id).await?;
@@ -4231,12 +4495,13 @@ where
 
 async fn update_mall_profile<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Json(body): Json<UpdateMallProfileRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    let user_id = require_non_empty(body.user_id, "用户ID不能为空")?;
+    let user_id = user.id;
     let nickname = non_empty(body.nickname).or_else(|| non_empty(body.name));
     let phone = non_empty(body.phone);
 
@@ -4281,12 +4546,13 @@ where
 
 async fn list_customer_coupons<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Query(query): Query<CustomerCouponQuery>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
+    let user_id = user.id;
     let payload = fetch_customer_coupon_payload(
         &state.db,
         &user_id,
@@ -4299,13 +4565,14 @@ where
 
 async fn claim_customer_coupon<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(id): Path<String>,
-    Json(body): Json<ClaimCouponRequest>,
+    Json(_body): Json<ClaimCouponRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    let user_id = require_non_empty(body.user_id, "用户ID不能为空")?;
+    let user_id = user.id;
     expire_customer_coupons(&state.db, &user_id).await?;
 
     if let Some(coupon) = fetch_customer_coupon_detail(&state.db, &user_id, &id).await? {
@@ -4404,12 +4671,13 @@ where
 
 async fn get_points_mall<S>(
     State(state): State<AppState<S>>,
-    Query(query): Query<UserQuery>,
+    Extension(user): Extension<AuthenticatedUser>,
+    Query(_query): Query<UserQuery>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
+    let user_id = user.id;
     let member = fetch_member_profile(&state.db, &user_id).await?;
     let wallet = fetch_customer_coupon_payload(&state.db, &user_id, None, None).await?;
     let coupon_rewards = wallet
@@ -4455,12 +4723,13 @@ where
 
 async fn get_group_leader_workbench<S>(
     State(state): State<AppState<S>>,
-    Query(query): Query<UserQuery>,
+    Extension(user): Extension<AuthenticatedUser>,
+    Query(_query): Query<UserQuery>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
+    let user_id = user.id;
     let leader = fetch_group_leader_context(&state.db, &user_id)
         .await?
         .ok_or_else(|| ApiError::Forbidden("当前用户不是团长".to_string()))?;
@@ -4515,15 +4784,15 @@ where
 
 async fn group_leader_verify_fulfillment<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Json(body): Json<GroupLeaderVerifyFulfillmentRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    validate_required(&body.user_id, "用户ID不能为空")?;
     validate_required(&body.order_id, "订单ID不能为空")?;
     let code = require_non_empty(Some(body.code), "提货码不能为空")?;
-    let leader = fetch_group_leader_context(&state.db, &body.user_id)
+    let leader = fetch_group_leader_context(&state.db, &user.id)
         .await?
         .ok_or_else(|| ApiError::Forbidden("当前用户不是团长".to_string()))?;
     let pickup_point_id = leader
@@ -4535,7 +4804,7 @@ where
         &state.db,
         &body.order_id,
         &code,
-        &body.user_id,
+        &user.id,
         Some(&pickup_point_id),
     )
     .await?;
@@ -4573,12 +4842,12 @@ where
 
 async fn create_community_post<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Json(body): Json<CommunityPostMutationRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    validate_required(&body.user_id, "用户ID不能为空")?;
     validate_required(&body.title, "帖子标题不能为空")?;
     let pickup_point_id = non_empty(body.pickup_point_id);
     if let Some(pickup_point_id) = pickup_point_id.as_deref() {
@@ -4596,7 +4865,7 @@ where
         RETURNING community_post_json(mall_community_posts)
         "#,
     )
-    .bind(&body.user_id)
+    .bind(&user.id)
     .bind(body.title)
     .bind(body.summary)
     .bind(body.content)
@@ -4612,27 +4881,27 @@ where
 
 async fn create_community_post_interaction<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(id): Path<String>,
     Json(body): Json<CommunityPostInteractionRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    validate_required(&body.user_id, "用户ID不能为空")?;
     let interaction_type = normalize_community_interaction(&body.interaction_type)?;
-    let post =
-        upsert_community_interaction(&state.db, &id, &body.user_id, interaction_type).await?;
+    let post = upsert_community_interaction(&state.db, &id, &user.id, interaction_type).await?;
     Ok(ok("互动已记录", post))
 }
 
 async fn get_notification_preferences<S>(
     State(state): State<AppState<S>>,
-    Query(query): Query<UserQuery>,
+    Extension(user): Extension<AuthenticatedUser>,
+    Query(_query): Query<UserQuery>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
+    let user_id = user.id;
     Ok(ok(
         "查询成功",
         upsert_notification_preferences(&state.db, &user_id, None).await?,
@@ -4641,13 +4910,14 @@ where
 
 async fn update_notification_preferences<S>(
     State(state): State<AppState<S>>,
-    Query(query): Query<UserQuery>,
+    Extension(user): Extension<AuthenticatedUser>,
+    Query(_query): Query<UserQuery>,
     Json(body): Json<NotificationPreferenceRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
+    let user_id = user.id;
     Ok(ok(
         "设置已保存",
         upsert_notification_preferences(&state.db, &user_id, Some(body)).await?,
@@ -4656,18 +4926,19 @@ where
 
 async fn create_mall_order<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Json(body): Json<CreateMallOrderRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    validate_required(&body.user_id, "用户ID不能为空")?;
+    let user_id = user.id;
     let checkout = match non_empty(body.checkout_id) {
         Some(checkout_id) => Some(fetch_checkout(&state.db, &checkout_id).await?),
         None => None,
     };
     if let Some(checkout) = &checkout {
-        if checkout.user_id != body.user_id {
+        if checkout.user_id != user_id {
             return Err(ApiError::Forbidden("结算单不属于当前用户".to_string()));
         }
         if let Some(existing_order_id) = sqlx::query_scalar::<_, String>(
@@ -4682,7 +4953,7 @@ where
             "#,
         )
         .bind(&checkout.id)
-        .bind(&body.user_id)
+        .bind(&user_id)
         .fetch_optional(&state.db)
         .await?
         {
@@ -4704,14 +4975,14 @@ where
 
     let address = fetch_order_address_snapshot(
         &state.db,
-        &body.user_id,
+        &user_id,
         address_id.as_deref(),
         pickup_point_id.as_deref(),
     )
     .await?;
     let mut cart_items = match checkout.as_ref() {
         Some(checkout) => checkout_products(&state.db, checkout).await?,
-        None => fetch_selected_cart_products(&state.db, &body.user_id).await?,
+        None => fetch_selected_cart_products(&state.db, &user_id).await?,
     };
     if cart_items.is_empty() {
         return Err(ApiError::BadRequest("购物车为空".to_string()));
@@ -4733,7 +5004,7 @@ where
     let marketing_context = fetch_mall_marketing_context(&state.db, &cart_items).await?;
     let summary = calculate_mall_price_summary(
         &state.db,
-        Some(&body.user_id),
+        Some(&user_id),
         subtotal_cents,
         delivery_fee_cents,
         Some(&marketing_context),
@@ -4770,7 +5041,7 @@ where
             "#,
         )
         .bind(&checkout.id)
-        .bind(&body.user_id)
+        .bind(&user_id)
         .fetch_optional(&mut *tx)
         .await?
         {
@@ -4823,7 +5094,7 @@ where
         "#,
     )
     .bind(&order_no)
-    .bind(&body.user_id)
+    .bind(&user_id)
     .bind(&checkout_id_for_order)
     .bind(&address.address_id)
     .bind(&address.pickup_point_id)
@@ -4939,7 +5210,7 @@ where
             VALUES ($1, $2, 'redeem', $3, '订单积分抵扣')
             "#,
         )
-        .bind(&body.user_id)
+        .bind(&user_id)
         .bind(&order_id)
         .bind(summary.points_redeemed_cents as i32)
         .execute(&mut *tx)
@@ -4947,8 +5218,7 @@ where
     }
 
     if summary.coupon_discount_cents > 0 {
-        mark_best_customer_coupon_used_tx(&mut tx, &body.user_id, &order_id, subtotal_cents)
-            .await?;
+        mark_best_customer_coupon_used_tx(&mut tx, &user_id, &order_id, subtotal_cents).await?;
     }
 
     if checkout
@@ -4957,7 +5227,7 @@ where
         .unwrap_or(true)
     {
         sqlx::query("DELETE FROM mall_cart_items WHERE user_id = $1 AND selected = true")
-            .bind(&body.user_id)
+            .bind(&user_id)
             .execute(&mut *tx)
             .await?;
     }
@@ -4981,12 +5251,13 @@ where
 
 async fn list_mall_orders<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Query(query): Query<UserQuery>,
 ) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
 where
     S: Storage,
 {
-    let user_id = require_non_empty(query.user_id, "用户ID不能为空")?;
+    let user_id = user.id;
     expire_unpaid_mall_orders(&state.db).await?;
     let order_query = OrderQuery {
         status: query.status,
@@ -5012,6 +5283,7 @@ where
 
 async fn get_mall_order<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
@@ -5019,6 +5291,13 @@ where
 {
     expire_unpaid_mall_orders(&state.db).await?;
     let mut order = fetch_order_detail(&state.db, &id).await?;
+    require_self_or_admin(
+        &user,
+        order
+            .get("userId")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+    )?;
     resolve_mall_image_urls(&state.storage, &mut order).await?;
     Ok(ok("查询成功", order))
 }
@@ -5038,6 +5317,7 @@ where
 
 async fn get_mall_order_tracking<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
@@ -5045,6 +5325,13 @@ where
 {
     expire_unpaid_mall_orders(&state.db).await?;
     let mut order = fetch_order_detail(&state.db, &id).await?;
+    require_self_or_admin(
+        &user,
+        order
+            .get("userId")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+    )?;
     resolve_mall_image_urls(&state.storage, &mut order).await?;
     let events = fetch_order_events(&state.db, &id).await?;
     Ok(ok(
@@ -5058,19 +5345,19 @@ where
 
 async fn cancel_mall_order<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(id): Path<String>,
     Json(body): Json<CancelMallOrderRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    validate_required(&body.user_id, "用户ID不能为空")?;
     expire_unpaid_mall_orders(&state.db).await?;
     let reason = non_empty(body.reason).unwrap_or_else(|| "用户取消订单".to_string());
     let cancelled_order_id = cancel_pending_mall_order(
         &state.db,
         &id,
-        Some(&body.user_id),
+        Some(&user.id),
         "user_cancelled",
         "订单已取消",
         &reason,
@@ -5084,6 +5371,7 @@ where
 
 async fn create_after_sale<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(order_id): Path<String>,
     Json(body): Json<AfterSaleRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
@@ -5093,9 +5381,7 @@ where
     validate_required(&body.reason, "售后原因不能为空")?;
     let after_sale_type = normalize_after_sale_type(body.after_sale_type.as_deref())?;
     let order = fetch_after_sale_order_context(&state.db, &order_id).await?;
-    if order.user_id != body.user_id {
-        return Err(ApiError::BadRequest("只能为自己的订单申请售后".to_string()));
-    }
+    require_self_or_admin(&user, &order.user_id)?;
     let selected_items =
         normalize_after_sale_selected_items(&state.db, &order.id, body.selected_items.as_ref())
             .await?;
@@ -5123,7 +5409,7 @@ where
         RETURNING id
         "#,
     )
-    .bind(&body.user_id)
+    .bind(&user.id)
     .bind(&topic)
     .bind(format!("用户已提交{type_label}申请"))
     .fetch_one(&mut *tx)
@@ -5169,7 +5455,7 @@ where
         "#,
     )
     .bind(&order.id)
-    .bind(&body.user_id)
+    .bind(&user.id)
     .bind(after_sale_type)
     .bind(body.reason)
     .bind(body.description)
@@ -5195,7 +5481,7 @@ where
         "#,
     )
     .bind(&support_session_id)
-    .bind(&body.user_id)
+    .bind(&user.id)
     .bind(initial_message)
     .bind(json!({
         "orderId": order.id,
@@ -5247,11 +5533,14 @@ where
 
 async fn list_after_sales<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(order_id): Path<String>,
 ) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
 where
     S: Storage,
 {
+    let order = fetch_after_sale_order_context(&state.db, &order_id).await?;
+    require_self_or_admin(&user, &order.user_id)?;
     let list = sqlx::query_scalar::<_, Value>(
         r#"
         SELECT jsonb_build_object(
@@ -5279,10 +5568,13 @@ where
         )
         FROM mall_after_sales
         WHERE order_id = $1
+          AND ($2::boolean OR user_id = $3)
         ORDER BY created_at DESC
         "#,
     )
-    .bind(order_id)
+    .bind(&order.id)
+    .bind(user.is_admin())
+    .bind(&user.id)
     .fetch_all(&state.db)
     .await?;
 
@@ -5487,9 +5779,11 @@ where
         INSERT INTO mall_merchants (
           name, legal_name, wechat_sub_mchid, wechat_sub_appid,
           service_fee_rate_bps, onboarding_status, qualification_status,
-          business_license_url, contact_name, contact_phone, metadata
+          business_license_url, business_license_number,
+          business_license_expires_at, last_verified_at, next_review_at,
+          contact_name, contact_phone, metadata
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, '{}'::jsonb))
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11, $12::date, $13, $14, COALESCE($15, '{}'::jsonb))
         RETURNING mall_merchant_json(mall_merchants)
         "#,
     )
@@ -5501,6 +5795,10 @@ where
     .bind(onboarding_status)
     .bind(qualification_status)
     .bind(business_license_url)
+    .bind(non_empty(body.business_license_number))
+    .bind(non_empty(body.business_license_expires_at))
+    .bind(body.last_verified_at)
+    .bind(non_empty(body.next_review_at))
     .bind(non_empty(body.contact_name))
     .bind(non_empty(body.contact_phone))
     .bind(body.metadata)
@@ -5554,6 +5852,55 @@ where
         .or_else(|| current.get("businessLicenseUrl").and_then(Value::as_str));
     validate_merchant_activation(next_onboarding, next_qualification, next_license)?;
     if next_onboarding == "active" {
+        let next_license_number = body
+            .business_license_number
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .or_else(|| current.get("businessLicenseNumber").and_then(Value::as_str));
+        let next_license_expires_at = body
+            .business_license_expires_at
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                current
+                    .get("businessLicenseExpiresAt")
+                    .and_then(Value::as_str)
+            });
+        let next_review_at = body
+            .next_review_at
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .or_else(|| current.get("nextReviewAt").and_then(Value::as_str));
+        if next_license_number.is_none()
+            || next_license_expires_at.is_none()
+            || next_review_at.is_none()
+        {
+            return Err(ApiError::BadRequest(
+                "启用商家前必须登记营业执照编号、有效期和下次复核日期".to_string(),
+            ));
+        }
+        let has_food_qualification: bool = sqlx::query_scalar(
+            r#"
+            SELECT EXISTS(
+              SELECT 1 FROM mall_merchant_qualifications
+              WHERE merchant_id = $1
+                AND qualification_type IN ('food_business_license', 'prepackaged_food_filing')
+                AND status = 'approved'
+                AND (expires_at IS NULL OR expires_at >= current_date)
+            )
+            "#,
+        )
+        .bind(&id)
+        .fetch_one(&state.db)
+        .await?;
+        if !has_food_qualification {
+            return Err(ApiError::BadRequest(
+                "启用食品商家前必须审核食品经营许可证或仅销售预包装食品备案".to_string(),
+            ));
+        }
         crate::modules::payments::ensure_mall_profit_sharing_runtime_ready()?;
     }
 
@@ -5568,9 +5915,13 @@ where
             onboarding_status = COALESCE($7, onboarding_status),
             qualification_status = COALESCE($8, qualification_status),
             business_license_url = COALESCE($9, business_license_url),
-            contact_name = COALESCE($10, contact_name),
-            contact_phone = COALESCE($11, contact_phone),
-            metadata = COALESCE($12, metadata),
+            business_license_number = COALESCE($10, business_license_number),
+            business_license_expires_at = COALESCE($11::date, business_license_expires_at),
+            last_verified_at = COALESCE($12, last_verified_at),
+            next_review_at = COALESCE($13::date, next_review_at),
+            contact_name = COALESCE($14, contact_name),
+            contact_phone = COALESCE($15, contact_phone),
+            metadata = COALESCE($16, metadata),
             updated_at = now()
         WHERE id = $1
         RETURNING mall_merchant_json(mall_merchants)
@@ -5588,6 +5939,10 @@ where
     .bind(body.onboarding_status)
     .bind(body.qualification_status)
     .bind(non_empty(body.business_license_url))
+    .bind(non_empty(body.business_license_number))
+    .bind(non_empty(body.business_license_expires_at))
+    .bind(body.last_verified_at)
+    .bind(non_empty(body.next_review_at))
     .bind(non_empty(body.contact_name))
     .bind(non_empty(body.contact_phone))
     .bind(body.metadata)
@@ -6027,6 +6382,9 @@ where
         "您的订单已开始配送，请留意手机和收货地址。",
     )
     .await?;
+    if let Err(error) = report_wechat_shipping_info(&state.db, &id).await {
+        record_shipping_report_alert(&state.db, &id, &format!("{error:?}")).await?;
+    }
     Ok(ok("派车成功", order))
 }
 
@@ -8763,14 +9121,24 @@ where
 
 async fn create_support_session<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Json(body): Json<CreateSupportSessionRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    validate_required(&body.user_id, "用户ID不能为空")?;
     validate_required(&body.channel, "渠道不能为空")?;
     validate_required(&body.topic, "主题不能为空")?;
+    let user_id = if user.is_admin() {
+        require_non_empty(Some(body.user_id), "用户ID不能为空")?
+    } else {
+        user.id.clone()
+    };
+    let assigned_agent_id = if user.is_admin() {
+        body.assigned_agent_id
+    } else {
+        None
+    };
 
     let session = sqlx::query_scalar::<_, Value>(
         r#"
@@ -8779,8 +9147,8 @@ where
         RETURNING support_session_json(support_sessions)
         "#,
     )
-    .bind(body.user_id)
-    .bind(body.assigned_agent_id)
+    .bind(user_id)
+    .bind(assigned_agent_id)
     .bind(body.channel)
     .bind(body.topic)
     .fetch_one(&state.db)
@@ -8791,6 +9159,7 @@ where
 
 async fn list_support_sessions<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Query(query): Query<SupportListQuery>,
 ) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
 where
@@ -8799,11 +9168,12 @@ where
     let mut builder = QueryBuilder::<Postgres>::new(
         "SELECT support_session_json(support_sessions) FROM support_sessions WHERE 1 = 1",
     );
-    if let Some(user_id) = query
-        .user_id
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
+    let requested_user_id = if user.is_admin() {
+        non_empty(query.user_id)
+    } else {
+        Some(user.id)
+    };
+    if let Some(user_id) = requested_user_id {
         builder.push(" AND user_id = ");
         builder.push_bind(user_id);
     }
@@ -8825,12 +9195,14 @@ where
 
 async fn update_support_session<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(id): Path<String>,
     Json(body): Json<UpdateSupportSessionRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
+    require_admin(&user)?;
     let status = body
         .status
         .as_deref()
@@ -8891,14 +9263,22 @@ where
 
 async fn create_support_message<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(session_id): Path<String>,
     Json(body): Json<CreateSupportMessageRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    validate_required(&body.sender_role, "发送者角色不能为空")?;
     validate_required(&body.content, "消息内容不能为空")?;
+    let session_user_id =
+        sqlx::query_scalar::<_, String>("SELECT user_id FROM support_sessions WHERE id = $1")
+            .bind(&session_id)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or_else(|| ApiError::NotFound("客服会话不存在".to_string()))?;
+    require_self_or_admin(&user, &session_user_id)?;
+    let sender_role = if user.is_admin() { "agent" } else { "user" };
     let metadata = body.metadata.unwrap_or_else(|| json!({}));
     let message = sqlx::query_scalar::<_, Value>(
         r#"
@@ -8908,8 +9288,8 @@ where
         "#,
     )
     .bind(&session_id)
-    .bind(&body.sender_id)
-    .bind(&body.sender_role)
+    .bind(&user.id)
+    .bind(sender_role)
     .bind(&body.content)
     .bind(&metadata)
     .fetch_one(&state.db)
@@ -8927,29 +9307,19 @@ where
     .bind(&body.content)
     .execute(&state.db)
     .await?;
-    if matches!(
-        body.sender_role.as_str(),
-        "agent" | "admin" | "support" | "operator"
-    ) {
-        if let Some(user_id) =
-            sqlx::query_scalar::<_, String>("SELECT user_id FROM support_sessions WHERE id = $1")
-                .bind(&session_id)
-                .fetch_optional(&state.db)
-                .await?
-        {
-            let order_id = metadata.get("orderId").and_then(Value::as_str);
-            insert_mall_notification(
-                &state.db,
-                &user_id,
-                "mall_support_message",
-                "客服有新消息",
-                &body.content,
-                order_id,
-                Some("support_session"),
-                Some(&session_id),
-            )
-            .await?;
-        }
+    if user.is_admin() {
+        let order_id = metadata.get("orderId").and_then(Value::as_str);
+        insert_mall_notification(
+            &state.db,
+            &session_user_id,
+            "mall_support_message",
+            "客服有新消息",
+            &body.content,
+            order_id,
+            Some("support_session"),
+            Some(&session_id),
+        )
+        .await?;
     }
 
     Ok(ok("消息发送成功", message))
@@ -8957,11 +9327,19 @@ where
 
 async fn list_support_messages<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(session_id): Path<String>,
 ) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
 where
     S: Storage,
 {
+    let session_user_id =
+        sqlx::query_scalar::<_, String>("SELECT user_id FROM support_sessions WHERE id = $1")
+            .bind(&session_id)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or_else(|| ApiError::NotFound("客服会话不存在".to_string()))?;
+    require_self_or_admin(&user, &session_user_id)?;
     let messages = sqlx::query_scalar::<_, Value>(
         "SELECT support_message_json(support_messages) FROM support_messages WHERE session_id = $1 ORDER BY created_at ASC",
     )
@@ -8973,14 +9351,44 @@ where
 
 async fn create_support_ticket<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Json(body): Json<CreateSupportTicketRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
-    validate_required(&body.user_id, "用户ID不能为空")?;
     validate_required(&body.category, "工单分类不能为空")?;
     validate_required(&body.title, "工单标题不能为空")?;
+    let user_id = if user.is_admin() {
+        require_non_empty(Some(body.user_id), "用户ID不能为空")?
+    } else {
+        user.id.clone()
+    };
+    if let Some(session_id) = body.session_id.as_deref() {
+        let owner =
+            sqlx::query_scalar::<_, String>("SELECT user_id FROM support_sessions WHERE id = $1")
+                .bind(session_id)
+                .fetch_optional(&state.db)
+                .await?
+                .ok_or_else(|| ApiError::BadRequest("关联客服会话不存在".to_string()))?;
+        require_self_or_admin(&user, &owner)?;
+        if owner != user_id {
+            return Err(ApiError::BadRequest("客服会话与工单用户不一致".to_string()));
+        }
+    }
+    if let Some(order_id) = body.order_id.as_deref() {
+        let owner = sqlx::query_scalar::<_, String>(
+            "SELECT user_id FROM mall_orders WHERE id = $1 OR lower(order_no) = lower($1)",
+        )
+        .bind(order_id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| ApiError::BadRequest("关联订单不存在".to_string()))?;
+        require_self_or_admin(&user, &owner)?;
+        if owner != user_id {
+            return Err(ApiError::BadRequest("订单与工单用户不一致".to_string()));
+        }
+    }
     let ticket = sqlx::query_scalar::<_, Value>(
         r#"
         INSERT INTO support_tickets (
@@ -8990,7 +9398,7 @@ where
         RETURNING support_ticket_json(support_tickets)
         "#,
     )
-    .bind(body.user_id)
+    .bind(user_id)
     .bind(body.session_id)
     .bind(body.order_id)
     .bind(body.category)
@@ -9004,6 +9412,7 @@ where
 
 async fn list_support_tickets<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Query(query): Query<SupportListQuery>,
 ) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
 where
@@ -9012,11 +9421,12 @@ where
     let mut builder = QueryBuilder::<Postgres>::new(
         "SELECT support_ticket_json(support_tickets) FROM support_tickets WHERE 1 = 1",
     );
-    if let Some(user_id) = query
-        .user_id
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
+    let requested_user_id = if user.is_admin() {
+        non_empty(query.user_id)
+    } else {
+        Some(user.id)
+    };
+    if let Some(user_id) = requested_user_id {
         builder.push(" AND user_id = ");
         builder.push_bind(user_id);
     }
@@ -9038,12 +9448,14 @@ where
 
 async fn update_support_ticket<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(id): Path<String>,
     Json(body): Json<UpdateSupportTicketRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>>
 where
     S: Storage,
 {
+    require_admin(&user)?;
     let ticket = sqlx::query_scalar::<_, Value>(
         r#"
         UPDATE support_tickets
@@ -9098,7 +9510,7 @@ where
     S: Storage,
 {
     let articles = sqlx::query_scalar::<_, Value>(
-        "SELECT knowledge_json(support_knowledge_articles) FROM support_knowledge_articles ORDER BY updated_at DESC LIMIT 100",
+        "SELECT knowledge_json(support_knowledge_articles) FROM support_knowledge_articles WHERE status = 'published' ORDER BY updated_at DESC LIMIT 100",
     )
     .fetch_all(&state.db)
     .await?;
@@ -9174,6 +9586,1544 @@ where
     .fetch_one(&state.db)
     .await?;
     Ok(ok("查询成功", metrics))
+}
+
+async fn fetch_legal_center(pool: &PgPool, public_only: bool) -> ApiResult<Value> {
+    let value = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT jsonb_build_object(
+          'profile', (
+            SELECT jsonb_build_object(
+              'operatorName', operator_name,
+              'legalEntityName', legal_entity_name,
+              'unifiedSocialCreditCode', unified_social_credit_code,
+              'businessLicenseUrl', business_license_url,
+              'businessLicenseExpiresAt', business_license_expires_at,
+              'platformQualificationType', platform_qualification_type,
+              'platformQualificationNumber', platform_qualification_number,
+              'platformQualificationUrl', platform_qualification_url,
+              'platformQualificationExpiresAt', platform_qualification_expires_at,
+              'servicePhone', service_phone,
+              'serviceEmail', service_email,
+              'complaintPhone', complaint_phone,
+              'complaintEmail', complaint_email,
+              'complaintDescription', complaint_description,
+              'officeAddress', office_address,
+              'updatedAt', updated_at
+            )
+            FROM mall_platform_legal_profile WHERE id = 'default'
+          ),
+          'documents', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+              'id', id, 'documentType', document_type, 'title', title,
+              'version', version, 'summary', summary, 'content', content,
+              'status', status, 'effectiveAt', effective_at,
+              'publishedAt', published_at, 'updatedAt', updated_at
+            ) ORDER BY document_type, effective_at DESC NULLS LAST, created_at DESC)
+            FROM mall_legal_documents
+            WHERE (NOT $1 OR status = 'published')
+          ), '[]'::jsonb),
+          'merchants', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+              'id', merchant.id, 'name', merchant.name, 'legalName', merchant.legal_name,
+              'qualificationStatus', merchant.qualification_status,
+              'businessLicenseNumber', merchant.business_license_number,
+              'businessLicenseUrl', merchant.business_license_url,
+              'businessLicenseExpiresAt', merchant.business_license_expires_at,
+              'qualifications', COALESCE((
+                SELECT jsonb_agg(jsonb_build_object(
+                  'id', qualification.id,
+                  'qualificationType', qualification.qualification_type,
+                  'qualificationName', qualification.qualification_name,
+                  'certificateNumber', qualification.certificate_number,
+                  'certificateUrl', qualification.certificate_url,
+                  'issuer', qualification.issuer,
+                  'issuedAt', qualification.issued_at,
+                  'expiresAt', qualification.expires_at,
+                  'status', CASE
+                    WHEN qualification.expires_at < current_date THEN 'expired'
+                    ELSE qualification.status
+                  END,
+                  'verifiedAt', qualification.verified_at
+                ) ORDER BY qualification.qualification_type, qualification.expires_at DESC NULLS LAST)
+                FROM mall_merchant_qualifications qualification
+                WHERE qualification.merchant_id = merchant.id
+                  AND (NOT $1 OR (
+                    qualification.public_visible = true
+                    AND qualification.status = 'approved'
+                  ))
+              ), '[]'::jsonb)
+            ) ORDER BY merchant.name)
+            FROM mall_merchants merchant
+            WHERE (NOT $1 OR (
+              merchant.onboarding_status = 'active'
+              AND merchant.qualification_status = 'approved'
+            ))
+          ), '[]'::jsonb)
+        )
+        "#,
+    )
+    .bind(public_only)
+    .fetch_one(pool)
+    .await?;
+    Ok(value)
+}
+
+async fn get_legal_center<S>(
+    State(state): State<AppState<S>>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    Ok(ok("查询成功", fetch_legal_center(&state.db, true).await?))
+}
+
+async fn admin_get_legal_center<S>(
+    State(state): State<AppState<S>>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    refresh_merchant_qualification_alerts(&state.db).await?;
+    Ok(ok("查询成功", fetch_legal_center(&state.db, false).await?))
+}
+
+async fn admin_update_legal_profile<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<LegalProfileMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let profile = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_platform_legal_profile
+        SET operator_name = COALESCE($2, operator_name),
+            legal_entity_name = COALESCE($3, legal_entity_name),
+            unified_social_credit_code = COALESCE($4, unified_social_credit_code),
+            business_license_url = COALESCE($5, business_license_url),
+            business_license_expires_at = COALESCE($6::date, business_license_expires_at),
+            platform_qualification_type = COALESCE($7, platform_qualification_type),
+            platform_qualification_number = COALESCE($8, platform_qualification_number),
+            platform_qualification_url = COALESCE($9, platform_qualification_url),
+            platform_qualification_expires_at = COALESCE($10::date, platform_qualification_expires_at),
+            service_phone = COALESCE($11, service_phone),
+            service_email = COALESCE($12, service_email),
+            complaint_phone = COALESCE($13, complaint_phone),
+            complaint_email = COALESCE($14, complaint_email),
+            complaint_description = COALESCE($15, complaint_description),
+            office_address = COALESCE($16, office_address),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING jsonb_build_object('id', id, 'operatorName', operator_name, 'updatedAt', updated_at)
+        "#,
+    )
+    .bind("default")
+    .bind(optional_non_empty(body.operator_name, "平台名称不能为空")?)
+    .bind(non_empty(body.legal_entity_name))
+    .bind(non_empty(body.unified_social_credit_code))
+    .bind(non_empty(body.business_license_url))
+    .bind(non_empty(body.business_license_expires_at))
+    .bind(non_empty(body.platform_qualification_type))
+    .bind(non_empty(body.platform_qualification_number))
+    .bind(non_empty(body.platform_qualification_url))
+    .bind(non_empty(body.platform_qualification_expires_at))
+    .bind(non_empty(body.service_phone))
+    .bind(non_empty(body.service_email))
+    .bind(non_empty(body.complaint_phone))
+    .bind(non_empty(body.complaint_email))
+    .bind(non_empty(body.complaint_description))
+    .bind(non_empty(body.office_address))
+    .fetch_one(&state.db)
+    .await?;
+    Ok(ok("平台公示信息已更新", profile))
+}
+
+async fn admin_create_legal_document<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<LegalDocumentMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let document_type = require_non_empty(Some(body.document_type), "文档类型不能为空")?;
+    if !matches!(
+        document_type.as_str(),
+        "privacy_policy" | "service_agreement" | "transaction_rules"
+    ) {
+        return Err(ApiError::BadRequest("不支持的公示文档类型".to_string()));
+    }
+    let title = require_non_empty(Some(body.title), "文档标题不能为空")?;
+    let version = require_non_empty(Some(body.version), "版本号不能为空")?;
+    let publish = body.publish.unwrap_or(false);
+    let mut tx = state.db.begin().await?;
+    if publish {
+        sqlx::query(
+            "UPDATE mall_legal_documents SET status = 'retired', updated_at = now() WHERE document_type = $1 AND status = 'published'",
+        )
+        .bind(&document_type)
+        .execute(&mut *tx)
+        .await?;
+    }
+    let document = sqlx::query_scalar::<_, Value>(
+        r#"
+        INSERT INTO mall_legal_documents (
+          document_type, title, version, summary, content, status,
+          effective_at, published_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6,
+          COALESCE($7, CASE WHEN $6 = 'published' THEN now() END),
+          CASE WHEN $6 = 'published' THEN now() END)
+        RETURNING jsonb_build_object(
+          'id', id, 'documentType', document_type, 'title', title,
+          'version', version, 'status', status, 'effectiveAt', effective_at
+        )
+        "#,
+    )
+    .bind(document_type)
+    .bind(title)
+    .bind(version)
+    .bind(non_empty(body.summary))
+    .bind(body.content)
+    .bind(if publish { "published" } else { "draft" })
+    .bind(body.effective_at)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(ok("规则版本已存档", document))
+}
+
+async fn admin_update_legal_document<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<LegalDocumentMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let document_type = require_non_empty(Some(body.document_type), "文档类型不能为空")?;
+    if !matches!(
+        document_type.as_str(),
+        "privacy_policy" | "service_agreement" | "transaction_rules"
+    ) {
+        return Err(ApiError::BadRequest("不支持的公示文档类型".to_string()));
+    }
+    let title = require_non_empty(Some(body.title), "文档标题不能为空")?;
+    let version = require_non_empty(Some(body.version), "版本号不能为空")?;
+    let publish = body.publish.unwrap_or(false);
+    let mut tx = state.db.begin().await?;
+    let current_status = sqlx::query_scalar::<_, String>(
+        "SELECT status FROM mall_legal_documents WHERE id = $1 FOR UPDATE",
+    )
+    .bind(&id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("条款草稿不存在".to_string()))?;
+    if current_status != "draft" {
+        return Err(ApiError::BadRequest(
+            "已发布或已归档条款不可直接修改，请复制为新版本".to_string(),
+        ));
+    }
+    if publish {
+        sqlx::query(
+            "UPDATE mall_legal_documents SET status = 'retired', updated_at = now() WHERE document_type = $1 AND status = 'published' AND id <> $2",
+        )
+        .bind(&document_type)
+        .bind(&id)
+        .execute(&mut *tx)
+        .await?;
+    }
+    let document = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_legal_documents
+        SET document_type = $2,
+            title = $3,
+            version = $4,
+            summary = $5,
+            content = $6,
+            status = $7,
+            effective_at = COALESCE($8, CASE WHEN $7 = 'published' THEN now() ELSE effective_at END),
+            published_at = CASE WHEN $7 = 'published' THEN COALESCE(published_at, now()) ELSE NULL END,
+            updated_at = now()
+        WHERE id = $1
+        RETURNING jsonb_build_object(
+          'id', id, 'documentType', document_type, 'title', title,
+          'version', version, 'status', status, 'effectiveAt', effective_at
+        )
+        "#,
+    )
+    .bind(id)
+    .bind(document_type)
+    .bind(title)
+    .bind(version)
+    .bind(non_empty(body.summary))
+    .bind(body.content)
+    .bind(if publish { "published" } else { "draft" })
+    .bind(body.effective_at)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(ok(
+        if publish {
+            "条款新版本已发布"
+        } else {
+            "条款草稿已更新"
+        },
+        document,
+    ))
+}
+
+async fn get_privacy_consent<S>(
+    State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let consent = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT COALESCE((
+            SELECT jsonb_build_object(
+              'policyVersion', policy_version, 'action', action,
+              'consentItems', consent_items, 'createdAt', created_at
+            )
+            FROM mall_privacy_consents
+            WHERE user_id = $1
+            ORDER BY created_at DESC, id DESC LIMIT 1
+          ), jsonb_build_object('action', 'not_recorded'))
+          || jsonb_build_object(
+            'currentPolicyVersion',
+            (SELECT version FROM mall_legal_documents
+             WHERE document_type = 'privacy_policy' AND status = 'published'
+             LIMIT 1)
+          )
+        "#,
+    )
+    .bind(&user.id)
+    .fetch_one(&state.db)
+    .await?;
+    Ok(ok("查询成功", consent))
+}
+
+async fn record_privacy_consent<S>(
+    State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
+    Json(body): Json<PrivacyConsentRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    if !matches!(body.action.as_str(), "granted" | "withdrawn") {
+        return Err(ApiError::BadRequest(
+            "同意状态必须为 granted 或 withdrawn".to_string(),
+        ));
+    }
+    let policy_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM mall_legal_documents WHERE document_type = 'privacy_policy' AND version = $1 AND status = 'published')",
+    )
+    .bind(&body.policy_version)
+    .fetch_one(&state.db)
+    .await?;
+    if !policy_exists {
+        return Err(ApiError::BadRequest(
+            "隐私政策版本不存在或尚未发布".to_string(),
+        ));
+    }
+    let consent = sqlx::query_scalar::<_, Value>(
+        r#"
+        INSERT INTO mall_privacy_consents (user_id, policy_version, action, consent_items)
+        VALUES ($1, $2, $3, COALESCE($4, '[]'::jsonb))
+        RETURNING jsonb_build_object(
+          'policyVersion', policy_version, 'action', action,
+          'consentItems', consent_items, 'createdAt', created_at
+        )
+        "#,
+    )
+    .bind(&user.id)
+    .bind(body.policy_version)
+    .bind(body.action)
+    .bind(body.consent_items)
+    .fetch_one(&state.db)
+    .await?;
+    Ok(ok("隐私选择已记录", consent))
+}
+
+async fn account_deletion_blockers(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
+    Ok(sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT COALESCE(jsonb_agg(blocker), '[]'::jsonb)
+        FROM (
+          SELECT jsonb_build_object(
+            'type', 'active_order', 'id', id, 'label', order_no,
+            'message', '仍有履约中订单，请等待完成或取消后再注销'
+          ) AS blocker
+          FROM mall_orders
+          WHERE user_id = $1
+            AND status NOT IN ('completed', 'cancelled')
+          UNION ALL
+          SELECT jsonb_build_object(
+            'type', 'active_after_sale', 'id', id, 'label', id,
+            'message', '仍有处理中的售后，请等待售后结束后再注销'
+          ) AS blocker
+          FROM mall_after_sales
+          WHERE user_id = $1
+            AND status NOT IN ('rejected', 'closed', 'refunded', 'completed')
+          UNION ALL
+          SELECT jsonb_build_object(
+            'type', 'active_group_buy', 'id', id, 'label', id,
+            'message', '仍有集采预售款项或履约待处理，请等待退款或成单后再注销'
+          ) AS blocker
+          FROM mall_group_buy_subscriptions
+          WHERE user_id = $1
+            AND status IN (
+              'deposit_paid', 'pending_balance', 'balance_paid',
+              'activity_cancel_refunding'
+            )
+          UNION ALL
+          SELECT jsonb_build_object(
+            'type', 'active_invoice', 'id', id, 'label', invoice_no,
+            'message', '仍有开票申请处理中，请等待开具、驳回或先撤销后再注销'
+          ) AS blocker
+          FROM mall_invoice_requests
+          WHERE user_id = $1
+            AND status IN ('submitted', 'processing')
+        ) blockers
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?)
+}
+
+async fn complete_account_deletion(
+    pool: &PgPool,
+    user_id: &str,
+    request_id: &str,
+) -> ApiResult<()> {
+    let mut tx = pool.begin().await?;
+    let deleted_reference = format!("deleted:{request_id}");
+    sqlx::query("DELETE FROM mall_addresses WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM mall_cart_items WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM mall_checkouts WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM mall_notification_preferences WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM mall_user_coupons WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM notifications WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM mall_community_post_interactions WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM mall_points_ledger WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM mall_credit_ledger WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM support_satisfaction_ratings WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM mall_fulfillment_codes WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        r#"
+        UPDATE mall_orders
+        SET user_id = $2, address_id = NULL,
+            recipient_name = '已注销用户', recipient_phone = NULL,
+            address_text = '已匿名化', latitude = NULL, longitude = NULL,
+            origin_address = NULL, origin_latitude = NULL, origin_longitude = NULL,
+            waypoints = '[]'::jsonb, cabin_code = NULL, remark = NULL,
+            updated_at = now()
+        WHERE user_id = $1
+        "#,
+    )
+    .bind(user_id)
+    .bind(&deleted_reference)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        r#"
+        UPDATE mall_after_sales
+        SET user_id = $2, description = NULL, evidence_images = '[]'::jsonb,
+            updated_at = now()
+        WHERE user_id = $1
+        "#,
+    )
+    .bind(user_id)
+    .bind(&deleted_reference)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "DELETE FROM mall_group_buy_subscriptions WHERE user_id = $1 AND status = 'pending_deposit'",
+    )
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "UPDATE mall_group_buy_subscriptions SET user_id = $2, updated_at = now() WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .bind(&deleted_reference)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "UPDATE mall_invoice_requests SET user_id = $2, updated_at = now() WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .bind(&deleted_reference)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE support_messages SET sender_id = NULL WHERE sender_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("UPDATE support_messages SET read_by = NULL WHERE read_by = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "UPDATE support_sessions SET user_id = $2, last_message = NULL, updated_at = now() WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .bind(&deleted_reference)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE support_tickets SET user_id = $2, updated_at = now() WHERE user_id = $1")
+        .bind(user_id)
+        .bind(&deleted_reference)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "UPDATE mall_group_leaders SET user_id = NULL, updated_at = now() WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "UPDATE mall_community_posts SET author_user_id = $2, author_name = '已注销用户', updated_at = now() WHERE author_user_id = $1",
+    )
+    .bind(user_id)
+    .bind(&deleted_reference)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        r#"
+        UPDATE users
+        SET phone = NULL, password = NULL, name = NULL, username = NULL,
+            nickname = '已注销用户', id_card = NULL, address = NULL,
+            avatar = NULL, avatar_url = NULL, birthday = NULL,
+            wechat_payment_qr = NULL, wechat_openid = NULL,
+            wechat_unionid = NULL, wechat_appid = NULL,
+            status = 'deleted', deleted_at = now(), anonymized_at = now(),
+            updated_at = now()
+        WHERE id = $1
+        "#,
+    )
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "UPDATE mall_account_deletion_requests SET status = 'completed', blockers = '[]'::jsonb, completed_at = now(), updated_at = now() WHERE id = $1",
+    )
+    .bind(request_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "UPDATE admin_sessions SET revoked_at = COALESCE(revoked_at, now()) WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn fetch_account_deletion(pool: &PgPool, user_id: &str) -> ApiResult<Value> {
+    Ok(sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT COALESCE((
+          SELECT jsonb_build_object(
+            'id', id, 'status', status, 'reason', reason, 'blockers', blockers,
+            'requestedAt', requested_at, 'completedAt', completed_at,
+            'cancelledAt', cancelled_at, 'updatedAt', updated_at
+          )
+          FROM mall_account_deletion_requests
+          WHERE user_id = $1 ORDER BY requested_at DESC LIMIT 1
+        ), jsonb_build_object('status', 'not_requested'))
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?)
+}
+
+async fn reconcile_account_deletion(pool: &PgPool, user_id: &str) -> ApiResult<()> {
+    let active_request_id = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT id
+        FROM mall_account_deletion_requests
+        WHERE user_id = $1 AND status IN ('pending', 'waiting')
+        ORDER BY requested_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+
+    let Some(request_id) = active_request_id else {
+        return Ok(());
+    };
+
+    let blockers = account_deletion_blockers(pool, user_id).await?;
+    let has_blockers = blockers.as_array().is_some_and(|items| !items.is_empty());
+    if has_blockers {
+        sqlx::query(
+            r#"
+            UPDATE mall_account_deletion_requests
+            SET status = 'waiting', blockers = $2, updated_at = now()
+            WHERE id = $1 AND status IN ('pending', 'waiting')
+            "#,
+        )
+        .bind(request_id)
+        .bind(blockers)
+        .execute(pool)
+        .await?;
+    } else {
+        complete_account_deletion(pool, user_id, &request_id).await?;
+    }
+
+    Ok(())
+}
+
+async fn get_account_deletion<S>(
+    State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    reconcile_account_deletion(&state.db, &user.id).await?;
+    Ok(ok(
+        "查询成功",
+        fetch_account_deletion(&state.db, &user.id).await?,
+    ))
+}
+
+async fn request_account_deletion<S>(
+    State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
+    Json(body): Json<AccountDeletionRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let blockers = account_deletion_blockers(&state.db, &user.id).await?;
+    let has_blockers = blockers.as_array().is_some_and(|items| !items.is_empty());
+    let request = sqlx::query_scalar::<_, Value>(
+        r#"
+        INSERT INTO mall_account_deletion_requests (user_id, status, reason, blockers)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (user_id) WHERE status IN ('pending', 'waiting')
+        DO UPDATE SET status = EXCLUDED.status, reason = EXCLUDED.reason,
+          blockers = EXCLUDED.blockers, updated_at = now()
+        RETURNING jsonb_build_object(
+          'id', id, 'status', status, 'reason', reason,
+          'blockers', blockers, 'requestedAt', requested_at
+        )
+        "#,
+    )
+    .bind(&user.id)
+    .bind(if has_blockers { "waiting" } else { "pending" })
+    .bind(non_empty(body.reason))
+    .bind(&blockers)
+    .fetch_one(&state.db)
+    .await?;
+    if !has_blockers {
+        let request_id = request
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        complete_account_deletion(&state.db, &user.id, request_id).await?;
+        return Ok(ok(
+            "账号已注销，个人信息已删除或匿名化",
+            fetch_account_deletion(&state.db, &user.id).await?,
+        ));
+    }
+    Ok(ok("注销申请已受理，请先处理未完成事项", request))
+}
+
+async fn cancel_account_deletion<S>(
+    State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let request = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_account_deletion_requests
+        SET status = 'cancelled', cancelled_at = now(), updated_at = now()
+        WHERE user_id = $1 AND status IN ('pending', 'waiting')
+        RETURNING jsonb_build_object('id', id, 'status', status, 'cancelledAt', cancelled_at)
+        "#,
+    )
+    .bind(&user.id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::BadRequest("没有可撤销的注销申请".to_string()))?;
+    Ok(ok("注销申请已撤销", request))
+}
+
+fn invoice_json_expression(alias: &str) -> String {
+    format!(
+        r#"jsonb_build_object(
+          'id', {alias}.id, 'invoiceNo', {alias}.invoice_no,
+          'userId', {alias}.user_id, 'orderId', {alias}.order_id,
+          'invoiceType', {alias}.invoice_type, 'titleType', {alias}.title_type,
+          'title', {alias}.title, 'taxNumber', {alias}.tax_number,
+          'email', {alias}.email, 'amountCents', {alias}.amount_cents,
+          'status', {alias}.status, 'invoiceUrl', {alias}.invoice_url,
+          'invoiceCode', {alias}.invoice_code,
+          'rejectionReason', {alias}.rejection_reason,
+          'issuedAt', {alias}.issued_at, 'createdAt', {alias}.created_at,
+          'updatedAt', {alias}.updated_at
+        )"#,
+    )
+}
+
+async fn create_invoice_request<S>(
+    State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
+    Json(body): Json<InvoiceMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let title = require_non_empty(Some(body.title), "发票抬头不能为空")?;
+    let email = require_non_empty(Some(body.email), "接收邮箱不能为空")?;
+    if !email.contains('@') || email.starts_with('@') || email.ends_with('@') {
+        return Err(ApiError::BadRequest("邮箱格式不正确".to_string()));
+    }
+    if !matches!(body.title_type.as_str(), "individual" | "enterprise") {
+        return Err(ApiError::BadRequest("发票抬头类型不正确".to_string()));
+    }
+    let tax_number = non_empty(body.tax_number);
+    if body.title_type == "enterprise" && tax_number.is_none() {
+        return Err(ApiError::BadRequest("企业发票需填写税号".to_string()));
+    }
+    let invoice_type =
+        non_empty(body.invoice_type).unwrap_or_else(|| "electronic_normal".to_string());
+    if !matches!(
+        invoice_type.as_str(),
+        "electronic_normal" | "electronic_special"
+    ) {
+        return Err(ApiError::BadRequest("发票类型不正确".to_string()));
+    }
+    let order = sqlx::query_as::<_, (String, i64)>(
+        "SELECT id, payable_cents FROM mall_orders WHERE (id = $1 OR lower(order_no) = lower($1)) AND user_id = $2 AND payment_status = 'paid'",
+    )
+    .bind(body.order_id.trim())
+    .bind(&user.id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::BadRequest("仅可为自己的已支付订单申请发票".to_string()))?;
+    let invoice_no = format!(
+        "FP{}{}",
+        Utc::now().format("%Y%m%d%H%M%S"),
+        random_cabin_code()
+    );
+    let sql = format!(
+        r#"
+        INSERT INTO mall_invoice_requests (
+          invoice_no, user_id, order_id, invoice_type, title_type,
+          title, tax_number, email, amount_cents
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING {}
+        "#,
+        invoice_json_expression("mall_invoice_requests")
+    );
+    let invoice = sqlx::query_scalar::<_, Value>(&sql)
+        .bind(invoice_no)
+        .bind(&user.id)
+        .bind(order.0)
+        .bind(invoice_type)
+        .bind(body.title_type)
+        .bind(title)
+        .bind(tax_number)
+        .bind(email)
+        .bind(order.1)
+        .fetch_one(&state.db)
+        .await?;
+    Ok(ok("开票申请已提交，可在本页查看进度", invoice))
+}
+
+async fn list_customer_invoices<S>(
+    State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let sql = format!(
+        "SELECT {} FROM mall_invoice_requests invoice WHERE invoice.user_id = $1 ORDER BY invoice.created_at DESC",
+        invoice_json_expression("invoice")
+    );
+    let invoices = sqlx::query_scalar::<_, Value>(&sql)
+        .bind(&user.id)
+        .fetch_all(&state.db)
+        .await?;
+    Ok(ok("查询成功", invoices))
+}
+
+async fn cancel_invoice_request<S>(
+    State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let sql = format!(
+        "UPDATE mall_invoice_requests SET status = 'cancelled', updated_at = now() WHERE id = $1 AND user_id = $2 AND status = 'submitted' RETURNING {}",
+        invoice_json_expression("mall_invoice_requests")
+    );
+    let invoice = sqlx::query_scalar::<_, Value>(&sql)
+        .bind(id)
+        .bind(&user.id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| ApiError::BadRequest("仅可撤销自己的待处理开票申请".to_string()))?;
+    Ok(ok("开票申请已撤销", invoice))
+}
+
+async fn admin_list_invoices<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<InvoiceListQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let mut builder = QueryBuilder::<Postgres>::new(format!(
+        "SELECT {} || jsonb_build_object('orderNo', mall_order.order_no, 'userPhone', app_user.phone) FROM mall_invoice_requests invoice JOIN mall_orders mall_order ON mall_order.id = invoice.order_id LEFT JOIN users app_user ON app_user.id = invoice.user_id WHERE 1 = 1",
+        invoice_json_expression("invoice")
+    ));
+    if let Some(status) = non_empty(query.status) {
+        builder.push(" AND invoice.status = ");
+        builder.push_bind(status);
+    }
+    builder.push(" ORDER BY invoice.created_at DESC LIMIT 500");
+    Ok(ok(
+        "查询成功",
+        builder
+            .build_query_scalar::<Value>()
+            .fetch_all(&state.db)
+            .await?,
+    ))
+}
+
+async fn admin_update_invoice<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<AdminInvoiceUpdateRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    if !matches!(body.status.as_str(), "processing" | "issued" | "rejected") {
+        return Err(ApiError::BadRequest("不支持的开票状态".to_string()));
+    }
+    if body.status == "issued" && non_empty(body.invoice_url.clone()).is_none() {
+        return Err(ApiError::BadRequest(
+            "开票完成后必须上传电子发票".to_string(),
+        ));
+    }
+    if body.status == "rejected" && non_empty(body.rejection_reason.clone()).is_none() {
+        return Err(ApiError::BadRequest("驳回时必须填写原因".to_string()));
+    }
+    let sql = format!(
+        r#"
+        UPDATE mall_invoice_requests
+        SET status = $2, invoice_url = COALESCE($3, invoice_url),
+            invoice_code = COALESCE($4, invoice_code),
+            rejection_reason = CASE WHEN $2 = 'rejected' THEN $5 ELSE NULL END,
+            issued_at = CASE WHEN $2 = 'issued' THEN COALESCE(issued_at, now()) ELSE issued_at END,
+            updated_at = now()
+        WHERE id = $1 AND status NOT IN ('cancelled', 'issued')
+        RETURNING {}
+        "#,
+        invoice_json_expression("mall_invoice_requests")
+    );
+    let invoice = sqlx::query_scalar::<_, Value>(&sql)
+        .bind(&id)
+        .bind(&body.status)
+        .bind(non_empty(body.invoice_url))
+        .bind(non_empty(body.invoice_code))
+        .bind(non_empty(body.rejection_reason))
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| ApiError::BadRequest("开票申请不存在或已结束".to_string()))?;
+    let user_id = invoice
+        .get("userId")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    insert_mall_notification(
+        &state.db,
+        user_id,
+        "mall_invoice",
+        if body.status == "issued" {
+            "电子发票已开具"
+        } else {
+            "开票进度已更新"
+        },
+        if body.status == "rejected" {
+            "开票申请未通过，请查看原因后重新申请。"
+        } else {
+            "开票申请已有新进度，请前往发票中心查看。"
+        },
+        invoice.get("orderId").and_then(Value::as_str),
+        Some("invoice"),
+        Some(&id),
+    )
+    .await?;
+    Ok(ok("开票状态已更新", invoice))
+}
+
+fn validate_merchant_qualification_type(value: &str) -> ApiResult<()> {
+    if matches!(
+        value,
+        "business_license" | "food_business_license" | "prepackaged_food_filing" | "other"
+    ) {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest("不支持的商家资质类型".to_string()))
+    }
+}
+
+fn validate_merchant_qualification_status(value: &str) -> ApiResult<()> {
+    if matches!(value, "pending" | "approved" | "rejected" | "expired") {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest("不支持的资质审核状态".to_string()))
+    }
+}
+
+fn merchant_qualification_json_expression(alias: &str) -> String {
+    format!(
+        r#"jsonb_build_object(
+          'id', {alias}.id, 'merchantId', {alias}.merchant_id,
+          'qualificationType', {alias}.qualification_type,
+          'qualificationName', {alias}.qualification_name,
+          'certificateNumber', {alias}.certificate_number,
+          'certificateUrl', {alias}.certificate_url, 'issuer', {alias}.issuer,
+          'issuedAt', {alias}.issued_at, 'expiresAt', {alias}.expires_at,
+          'status', CASE WHEN {alias}.expires_at < current_date THEN 'expired' ELSE {alias}.status END,
+          'verifiedBy', {alias}.verified_by, 'verifiedAt', {alias}.verified_at,
+          'rejectionReason', {alias}.rejection_reason,
+          'publicVisible', {alias}.public_visible,
+          'createdAt', {alias}.created_at, 'updatedAt', {alias}.updated_at
+        )"#,
+    )
+}
+
+async fn refresh_merchant_qualification_alerts(pool: &PgPool) -> ApiResult<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO mall_operations_alerts (
+          dedupe_key, alert_type, source, business_id, severity, title, description, metadata
+        )
+        SELECT
+          'merchant-qualification:' || qualification.id,
+          'merchant_qualification_expiry', 'merchant_qualification', qualification.id,
+          CASE WHEN qualification.expires_at < current_date THEN 'critical' ELSE 'warning' END,
+          CASE WHEN qualification.expires_at < current_date THEN '商家资质已过期' ELSE '商家资质即将到期' END,
+          merchant.name || ' · ' || qualification.qualification_name || '（' || qualification.expires_at::text || '）',
+          jsonb_build_object('merchantId', merchant.id, 'expiresAt', qualification.expires_at)
+        FROM mall_merchant_qualifications qualification
+        JOIN mall_merchants merchant ON merchant.id = qualification.merchant_id
+        WHERE qualification.status = 'approved'
+          AND qualification.expires_at IS NOT NULL
+          AND qualification.expires_at <= current_date + 30
+        ON CONFLICT (dedupe_key) DO UPDATE SET
+          severity = EXCLUDED.severity, title = EXCLUDED.title,
+          description = EXCLUDED.description, metadata = EXCLUDED.metadata,
+          status = 'open', occurrence_count = mall_operations_alerts.occurrence_count + 1,
+          last_occurred_at = now(), updated_at = now()
+        "#,
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        r#"
+        UPDATE mall_operations_alerts alert
+        SET status = 'resolved', resolved_at = now(), updated_at = now()
+        WHERE alert.alert_type = 'merchant_qualification_expiry'
+          AND alert.status <> 'resolved'
+          AND NOT EXISTS (
+            SELECT 1 FROM mall_merchant_qualifications qualification
+            WHERE 'merchant-qualification:' || qualification.id = alert.dedupe_key
+              AND qualification.status = 'approved'
+              AND qualification.expires_at IS NOT NULL
+              AND qualification.expires_at <= current_date + 30
+          )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+async fn admin_list_merchant_qualifications<S>(
+    State(state): State<AppState<S>>,
+    Path(merchant_id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    refresh_merchant_qualification_alerts(&state.db).await?;
+    let sql = format!(
+        "SELECT {} FROM mall_merchant_qualifications qualification WHERE qualification.merchant_id = $1 ORDER BY qualification.created_at DESC",
+        merchant_qualification_json_expression("qualification")
+    );
+    Ok(ok(
+        "查询成功",
+        sqlx::query_scalar::<_, Value>(&sql)
+            .bind(merchant_id)
+            .fetch_all(&state.db)
+            .await?,
+    ))
+}
+
+async fn admin_create_merchant_qualification<S>(
+    State(state): State<AppState<S>>,
+    Path(merchant_id): Path<String>,
+    Json(body): Json<MerchantQualificationMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let qualification_type = require_non_empty(body.qualification_type, "资质类型不能为空")?;
+    validate_merchant_qualification_type(&qualification_type)?;
+    let qualification_name = require_non_empty(body.qualification_name, "资质名称不能为空")?;
+    let certificate_number = require_non_empty(body.certificate_number, "证照编号不能为空")?;
+    let certificate_url = require_non_empty(body.certificate_url, "证照文件不能为空")?;
+    let status = non_empty(body.status).unwrap_or_else(|| "pending".to_string());
+    validate_merchant_qualification_status(&status)?;
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM mall_merchants WHERE id = $1)")
+            .bind(&merchant_id)
+            .fetch_one(&state.db)
+            .await?;
+    if !exists {
+        return Err(ApiError::NotFound("合作商家不存在".to_string()));
+    }
+    let sql = format!(
+        r#"
+        INSERT INTO mall_merchant_qualifications (
+          merchant_id, qualification_type, qualification_name,
+          certificate_number, certificate_url, issuer, issued_at,
+          expires_at, status, public_visible, verified_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8::date, $9, COALESCE($10, true),
+          CASE WHEN $9 = 'approved' THEN now() END)
+        RETURNING {}
+        "#,
+        merchant_qualification_json_expression("mall_merchant_qualifications")
+    );
+    let qualification = sqlx::query_scalar::<_, Value>(&sql)
+        .bind(&merchant_id)
+        .bind(qualification_type)
+        .bind(qualification_name)
+        .bind(certificate_number)
+        .bind(certificate_url)
+        .bind(non_empty(body.issuer))
+        .bind(non_empty(body.issued_at))
+        .bind(non_empty(body.expires_at))
+        .bind(status)
+        .bind(body.public_visible)
+        .fetch_one(&state.db)
+        .await?;
+    refresh_merchant_qualification_alerts(&state.db).await?;
+    Ok(ok("商家资质已登记", qualification))
+}
+
+async fn admin_update_merchant_qualification<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<MerchantQualificationMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    if let Some(value) = body.qualification_type.as_deref() {
+        validate_merchant_qualification_type(value)?;
+    }
+    if let Some(value) = body.status.as_deref() {
+        validate_merchant_qualification_status(value)?;
+    }
+    let sql = format!(
+        r#"
+        UPDATE mall_merchant_qualifications
+        SET qualification_type = COALESCE($2, qualification_type),
+            qualification_name = COALESCE($3, qualification_name),
+            certificate_number = COALESCE($4, certificate_number),
+            certificate_url = COALESCE($5, certificate_url),
+            issuer = COALESCE($6, issuer), issued_at = COALESCE($7::date, issued_at),
+            expires_at = COALESCE($8::date, expires_at),
+            status = COALESCE($9, status), rejection_reason = $10,
+            public_visible = COALESCE($11, public_visible),
+            verified_at = CASE WHEN $9 = 'approved' THEN now() ELSE verified_at END,
+            updated_at = now()
+        WHERE id = $1
+        RETURNING {}
+        "#,
+        merchant_qualification_json_expression("mall_merchant_qualifications")
+    );
+    let qualification = sqlx::query_scalar::<_, Value>(&sql)
+        .bind(id)
+        .bind(non_empty(body.qualification_type))
+        .bind(non_empty(body.qualification_name))
+        .bind(non_empty(body.certificate_number))
+        .bind(non_empty(body.certificate_url))
+        .bind(non_empty(body.issuer))
+        .bind(non_empty(body.issued_at))
+        .bind(non_empty(body.expires_at))
+        .bind(body.status)
+        .bind(non_empty(body.rejection_reason))
+        .bind(body.public_visible)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("商家资质不存在".to_string()))?;
+    refresh_merchant_qualification_alerts(&state.db).await?;
+    Ok(ok("商家资质已更新", qualification))
+}
+
+async fn report_wechat_shipping_info(pool: &PgPool, order_id: &str) -> ApiResult<Value> {
+    let context = sqlx::query_as::<_, WechatShippingContext>(
+        r#"
+        SELECT payment.id AS payment_id,
+               payment.provider_transaction_id AS transaction_id,
+               payment.wechat_sub_mchid AS mch_id,
+               app_user.wechat_openid AS openid,
+               COALESCE(string_agg(DISTINCT item.product_name, '、'), '商城商品') AS item_desc
+        FROM mall_orders mall_order
+        JOIN payments payment
+          ON payment.business_type = 'mall_order'
+         AND payment.business_id = mall_order.id
+         AND payment.provider = 'wechat'
+         AND payment.status = 'paid'
+        JOIN users app_user ON app_user.id = mall_order.user_id
+        LEFT JOIN mall_order_items item ON item.order_id = mall_order.id
+        WHERE mall_order.id = $1
+          AND payment.provider_transaction_id IS NOT NULL
+          AND app_user.wechat_openid IS NOT NULL
+        GROUP BY payment.id, payment.provider_transaction_id,
+                 payment.wechat_sub_mchid, app_user.wechat_openid
+        ORDER BY max(payment.paid_at) DESC NULLS LAST
+        LIMIT 1
+        "#,
+    )
+    .bind(order_id)
+    .fetch_optional(pool)
+    .await?;
+    let Some(context) = context else {
+        let report = sqlx::query_scalar::<_, Value>(
+            r#"
+            INSERT INTO mall_wechat_shipping_reports (order_id, status, last_error)
+            VALUES ($1, 'not_required', '订单没有可上报的微信支付交易或用户OpenID')
+            ON CONFLICT (order_id) DO UPDATE SET
+              status = 'not_required', last_error = EXCLUDED.last_error, updated_at = now()
+            RETURNING jsonb_build_object('orderId', order_id, 'status', status, 'lastError', last_error)
+            "#,
+        )
+        .bind(order_id)
+        .fetch_one(pool)
+        .await?;
+        return Ok(report);
+    };
+
+    let config = WechatMiniappConfig::from_env_for_service(ApiService::Mall)?;
+    let pay_config = WechatPayMerchantConfig::from_env_for_service(ApiService::Mall)?;
+    let payload = json!({
+        "order_key": {
+            "order_number_type": 2,
+            "transaction_id": context.transaction_id,
+            "mchid": context.mch_id.as_deref().unwrap_or(&pay_config.mch_id)
+        },
+        "logistics_type": 4,
+        "delivery_mode": 1,
+        "shipping_list": [{
+            "item_desc": truncate_chars(&context.item_desc, 120)
+        }],
+        "upload_time": Utc::now().to_rfc3339(),
+        "payer": { "openid": context.openid }
+    });
+    sqlx::query(
+        r#"
+        INSERT INTO mall_wechat_shipping_reports (
+          order_id, payment_id, transaction_id, status, attempts, request_payload
+        )
+        VALUES ($1, $2, $3, 'pending', 1, $4)
+        ON CONFLICT (order_id) DO UPDATE SET
+          payment_id = EXCLUDED.payment_id, transaction_id = EXCLUDED.transaction_id,
+          status = 'pending', attempts = mall_wechat_shipping_reports.attempts + 1,
+          request_payload = EXCLUDED.request_payload, last_error = NULL, updated_at = now()
+        "#,
+    )
+    .bind(order_id)
+    .bind(&context.payment_id)
+    .bind(&context.transaction_id)
+    .bind(&payload)
+    .execute(pool)
+    .await?;
+
+    let access_token = miniapp_access_token(&config).await?;
+    let url = format!(
+        "https://api.weixin.qq.com/wxa/sec/order/upload_shipping_info?access_token={access_token}"
+    );
+    let response = reqwest::Client::new()
+        .post(url)
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .header("User-Agent", WECHAT_USER_AGENT)
+        .body(payload.to_string())
+        .send()
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("微信交易发货信息上报失败: {err}")))?;
+    let response_status = response.status();
+    let response_body = response
+        .text()
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("微信发货上报响应读取失败: {err}")))?;
+    let response_json = serde_json::from_str::<Value>(&response_body)
+        .unwrap_or_else(|_| json!({ "raw": truncate_chars(&response_body, 500) }));
+    let errcode = response_json
+        .get("errcode")
+        .and_then(Value::as_i64)
+        .unwrap_or(if response_status.is_success() { 0 } else { -1 });
+    if !response_status.is_success() || errcode != 0 {
+        let error = response_json
+            .get("errmsg")
+            .and_then(Value::as_str)
+            .unwrap_or("微信返回失败")
+            .to_string();
+        sqlx::query(
+            "UPDATE mall_wechat_shipping_reports SET status = 'failed', response_payload = $2, last_error = $3, updated_at = now() WHERE order_id = $1",
+        )
+        .bind(order_id)
+        .bind(&response_json)
+        .bind(&error)
+        .execute(pool)
+        .await?;
+        return Err(ApiError::BadRequest(format!(
+            "微信交易发货信息上报失败: {error}"
+        )));
+    }
+    Ok(sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_wechat_shipping_reports
+        SET status = 'reported', response_payload = $2, last_error = NULL,
+            reported_at = now(), updated_at = now()
+        WHERE order_id = $1
+        RETURNING jsonb_build_object(
+          'orderId', order_id, 'paymentId', payment_id,
+          'transactionId', transaction_id, 'status', status,
+          'attempts', attempts, 'reportedAt', reported_at
+        )
+        "#,
+    )
+    .bind(order_id)
+    .bind(response_json)
+    .fetch_one(pool)
+    .await?)
+}
+
+async fn record_shipping_report_alert(pool: &PgPool, order_id: &str, error: &str) -> ApiResult<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO mall_operations_alerts (
+          dedupe_key, alert_type, source, business_id, severity, title, description
+        )
+        VALUES ($1, 'wechat_shipping_report', 'mall_order', $2, 'critical',
+          '微信交易发货信息上报失败', $3)
+        ON CONFLICT (dedupe_key) DO UPDATE SET
+          status = 'open', description = EXCLUDED.description,
+          occurrence_count = mall_operations_alerts.occurrence_count + 1,
+          last_occurred_at = now(), updated_at = now()
+        "#,
+    )
+    .bind(format!("wechat-shipping:{order_id}"))
+    .bind(order_id)
+    .bind(truncate_chars(error, 500))
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+async fn admin_retry_wechat_shipping_report<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    match report_wechat_shipping_info(&state.db, &id).await {
+        Ok(report) => {
+            sqlx::query(
+                "UPDATE mall_operations_alerts SET status = 'resolved', resolved_at = now(), updated_at = now() WHERE dedupe_key = $1",
+            )
+            .bind(format!("wechat-shipping:{id}"))
+            .execute(&state.db)
+            .await?;
+            Ok(ok("微信交易发货信息已上报", report))
+        }
+        Err(error) => {
+            record_shipping_report_alert(&state.db, &id, &format!("{error:?}")).await?;
+            Err(error)
+        }
+    }
+}
+
+async fn admin_list_wechat_complaints<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<InvoiceListQuery>,
+) -> ApiResult<Json<ApiEnvelope<Vec<Value>>>>
+where
+    S: Storage,
+{
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT jsonb_build_object(
+          'id', id, 'complaintId', complaint_id, 'orderNo', order_no,
+          'transactionId', transaction_id, 'userComplaintTimes', user_complaint_times,
+          'complaintDetail', complaint_detail, 'complaintState', complaint_state,
+          'payerPhone', payer_phone, 'complaintMedia', complaint_media,
+          'responseContent', response_content, 'respondedBy', responded_by,
+          'respondedAt', responded_at, 'completedAt', completed_at,
+          'createdAt', created_at, 'updatedAt', updated_at
+        )
+        FROM mall_wechat_complaints WHERE 1 = 1
+        "#,
+    );
+    if let Some(status) = non_empty(query.status) {
+        builder.push(" AND complaint_state = ");
+        builder.push_bind(status);
+    }
+    builder.push(" ORDER BY updated_at DESC LIMIT 500");
+    Ok(ok(
+        "查询成功",
+        builder
+            .build_query_scalar::<Value>()
+            .fetch_all(&state.db)
+            .await?,
+    ))
+}
+
+async fn wechat_pay_json_request(
+    config: &WechatPayMerchantConfig,
+    method: &str,
+    path: &str,
+    payload: &Value,
+) -> ApiResult<Value> {
+    let body_text = if method == "GET" {
+        String::new()
+    } else {
+        payload.to_string()
+    };
+    let authorization = wechat_authorization(config, method, path, &body_text)?;
+    let method = reqwest::Method::from_bytes(method.as_bytes())
+        .map_err(|_| ApiError::BadRequest("微信支付请求方法无效".to_string()))?;
+    let request = with_wechat_json_headers(
+        reqwest::Client::new().request(method, format!("https://api.mch.weixin.qq.com{path}")),
+        &authorization,
+    );
+    let response = if body_text.is_empty() {
+        request.send().await
+    } else {
+        request.body(body_text).send().await
+    }
+    .map_err(|err| ApiError::BadRequest(format!("微信支付接口请求失败: {err}")))?;
+    let status = response.status();
+    let response_text = response
+        .text()
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("微信支付响应读取失败: {err}")))?;
+    let response_json = if response_text.trim().is_empty() {
+        json!({ "httpStatus": status.as_u16() })
+    } else {
+        serde_json::from_str::<Value>(&response_text)
+            .unwrap_or_else(|_| json!({ "raw": truncate_chars(&response_text, 500) }))
+    };
+    if !status.is_success() {
+        return Err(ApiError::BadRequest(format!(
+            "微信支付接口返回失败: {}",
+            response_json
+                .get("message")
+                .and_then(Value::as_str)
+                .or_else(|| response_json.get("code").and_then(Value::as_str))
+                .unwrap_or("请稍后重试")
+        )));
+    }
+    Ok(response_json)
+}
+
+async fn submit_wechat_complaint_action(
+    pool: &PgPool,
+    complaint_identifier: &str,
+    action: &str,
+    response_content: Option<&str>,
+) -> ApiResult<Value> {
+    let complaint = sqlx::query_as::<_, (String, Value)>(
+        "SELECT complaint_id, provider_payload FROM mall_wechat_complaints WHERE id = $1 OR complaint_id = $1",
+    )
+    .bind(complaint_identifier)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("微信支付投诉不存在".to_string()))?;
+    if !complaint
+        .0
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    {
+        return Err(ApiError::BadRequest("微信投诉单号格式无效".to_string()));
+    }
+    let config = WechatPayMerchantConfig::from_env_for_service(ApiService::Mall)?;
+    let complained_mchid = complaint
+        .1
+        .get("complainted_mchid")
+        .and_then(Value::as_str)
+        .unwrap_or(&config.mch_id);
+    let path = format!(
+        "/v3/merchant-service/complaints-v2/{}/{}",
+        complaint.0, action
+    );
+    let mut payload = json!({ "complainted_mchid": complained_mchid });
+    if action == "response" {
+        payload["response_content"] = json!(require_non_empty(
+            response_content.map(str::to_string),
+            "投诉回复内容不能为空"
+        )?);
+        payload["response_images"] = json!([]);
+    }
+    wechat_pay_json_request(&config, "POST", &path, &payload).await
+}
+
+async fn admin_configure_wechat_complaint_notify<S>(
+    State(state): State<AppState<S>>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let base_url = state
+        .config
+        .public_base_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| value.starts_with("https://"))
+        .ok_or_else(|| {
+            ApiError::BadRequest("PUBLIC_BASE_URL 必须配置为 HTTPS 公网地址".to_string())
+        })?;
+    let notify_url = format!(
+        "{}/api/payments/wechat/complaints/notify",
+        base_url.trim_end_matches('/')
+    );
+    let config = WechatPayMerchantConfig::from_env_for_service(ApiService::Mall)?;
+    let path = "/v3/merchant-service/complaint-notifications";
+    let payload = json!({ "url": notify_url });
+    let response = match wechat_pay_json_request(&config, "POST", path, &payload).await {
+        Ok(response) => response,
+        Err(_) => wechat_pay_json_request(&config, "PUT", path, &payload).await?,
+    };
+    Ok(ok(
+        "微信支付投诉通知地址已配置",
+        json!({ "notifyUrl": notify_url, "provider": response }),
+    ))
+}
+
+async fn admin_update_wechat_complaint<S>(
+    State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
+    Path(id): Path<String>,
+    Json(body): Json<WechatComplaintUpdateRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    if !matches!(
+        body.complaint_state.as_str(),
+        "pending" | "processing" | "responded" | "completed"
+    ) {
+        return Err(ApiError::BadRequest("不支持的投诉状态".to_string()));
+    }
+    if body.complaint_state == "responded" && non_empty(body.response_content.clone()).is_none() {
+        return Err(ApiError::BadRequest("回复投诉必须填写回复内容".to_string()));
+    }
+    let provider_response = match body.complaint_state.as_str() {
+        "responded" => Some(
+            submit_wechat_complaint_action(
+                &state.db,
+                &id,
+                "response",
+                body.response_content.as_deref(),
+            )
+            .await?,
+        ),
+        "completed" => {
+            Some(submit_wechat_complaint_action(&state.db, &id, "complete", None).await?)
+        }
+        _ => None,
+    };
+    let complaint = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_wechat_complaints
+        SET complaint_state = $2,
+            response_content = COALESCE($3, response_content),
+            responded_by = CASE WHEN $3 IS NOT NULL THEN $4 ELSE responded_by END,
+            responded_at = CASE WHEN $3 IS NOT NULL THEN now() ELSE responded_at END,
+            completed_at = CASE WHEN $2 = 'completed' THEN now() ELSE completed_at END,
+            updated_at = now()
+        WHERE id = $1 OR complaint_id = $1
+        RETURNING jsonb_build_object(
+          'id', id, 'complaintId', complaint_id, 'complaintState', complaint_state,
+          'responseContent', response_content, 'respondedAt', responded_at,
+          'completedAt', completed_at
+        )
+        "#,
+    )
+    .bind(id)
+    .bind(body.complaint_state)
+    .bind(non_empty(body.response_content))
+    .bind(user.id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("微信支付投诉不存在".to_string()))?;
+    let mut result = complaint;
+    if let (Some(provider_response), Some(object)) = (provider_response, result.as_object_mut()) {
+        object.insert("providerResponse".to_string(), provider_response);
+    }
+    Ok(ok("投诉处理状态已同步至微信支付", result))
 }
 
 pub async fn expire_unpaid_mall_orders(pool: &PgPool) -> ApiResult<()> {

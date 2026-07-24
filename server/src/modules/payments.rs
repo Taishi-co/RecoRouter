@@ -2,7 +2,7 @@ use std::{fmt, str::FromStr};
 
 use axum::{
     body::Bytes,
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::HeaderMap,
     routing::post,
     Json, Router,
@@ -15,6 +15,7 @@ use crate::{
     app::AppState,
     config::read_trimmed,
     error::{ApiError, ApiResult},
+    modules::auth::{require_mall_privacy_consent, require_self_or_admin, AuthenticatedUser},
     response::{ok, ApiEnvelope},
     storage::Storage,
     wechat_pay::{
@@ -48,9 +49,20 @@ where
     S: Storage,
 {
     Router::new()
+        .route("/api/payments/wechat/notify", post(wechat_notify::<S>))
+        .route(
+            "/api/payments/wechat/complaints/notify",
+            post(wechat_complaint_notify::<S>),
+        )
+}
+
+pub fn customer_router<S>() -> Router<AppState<S>>
+where
+    S: Storage,
+{
+    Router::new()
         .route("/api/payments/prepay", post(create_prepay::<S>))
         .route("/api/payments/:id/sync", post(sync_payment::<S>))
-        .route("/api/payments/wechat/notify", post(wechat_notify::<S>))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -102,6 +114,13 @@ impl PaymentBusinessType {
             Self::MallGroupBuyDeposit => "mall_group_buy_deposit",
             Self::MallGroupBuyBalance => "mall_group_buy_balance",
         }
+    }
+
+    fn is_mall(self) -> bool {
+        matches!(
+            self,
+            Self::MallOrder | Self::MallGroupBuyDeposit | Self::MallGroupBuyBalance
+        )
     }
 }
 
@@ -195,6 +214,7 @@ impl WechatJsapiClientPayload {
 #[derive(Debug, FromRow)]
 struct PayableOrderRow {
     id: String,
+    owner_user_id: Option<String>,
     status: Option<String>,
     payment_status: Option<String>,
     commission_payment_status: Option<String>,
@@ -260,6 +280,7 @@ struct WechatPayConfig {
 
 async fn create_prepay<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Json(body): Json<PrepayRequest>,
 ) -> ApiResult<Json<ApiEnvelope<PrepayResponse>>>
 where
@@ -275,7 +296,11 @@ where
         .as_deref()
         .unwrap_or("order_fare")
         .parse::<PaymentBusinessType>()?;
+    if business_type.is_mall() {
+        require_mall_privacy_consent(&state.db, &user).await?;
+    }
     let order = fetch_payable_order(&state.db, &body.order_id, business_type).await?;
+    require_self_or_admin(&user, order.owner_user_id.as_deref().unwrap_or_default())?;
     let amount_cents = payable_amount_cents(&order, business_type)?;
 
     validate_payable_order(&order, business_type)?;
@@ -286,7 +311,7 @@ where
         InsertPayment {
             business_type,
             order_id: &order.id,
-            payer_id: body.payer_id.as_deref(),
+            payer_id: Some(&user.id),
             provider,
             out_trade_no: &out_trade_no,
             amount_cents,
@@ -357,6 +382,7 @@ where
 
 async fn sync_payment<S>(
     State(state): State<AppState<S>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<ApiEnvelope<SyncPaymentResponse>>>
 where
@@ -365,6 +391,11 @@ where
     let payment = fetch_payment(&state.db, &id).await?;
     let provider = payment.provider.parse::<PaymentProvider>()?;
     let business_type = payment.business_type.parse::<PaymentBusinessType>()?;
+    let owned_order = fetch_payable_order(&state.db, &payment.business_id, business_type).await?;
+    require_self_or_admin(
+        &user,
+        owned_order.owner_user_id.as_deref().unwrap_or_default(),
+    )?;
 
     match provider {
         PaymentProvider::Wechat => {
@@ -430,6 +461,94 @@ where
         .await?;
     }
 
+    Ok(Json(json!({ "code": "SUCCESS", "message": "成功" })))
+}
+
+async fn wechat_complaint_notify<S>(
+    State(state): State<AppState<S>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> ApiResult<Json<Value>>
+where
+    S: Storage,
+{
+    let body_text = std::str::from_utf8(&body)
+        .map_err(|_| ApiError::BadRequest("微信投诉通知正文格式无效".to_string()))?;
+    verify_wechat_notify_if_configured(&headers, body_text)?;
+    let notify = serde_json::from_slice::<WechatNotifyBody>(&body)
+        .map_err(|err| ApiError::BadRequest(format!("微信投诉通知格式无效: {err}")))?;
+    let complaint = decrypt_wechat_notification::<Value>(&notify.resource)?;
+    let complaint_id = complaint
+        .get("complaint_id")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| ApiError::BadRequest("微信投诉通知缺少 complaint_id".to_string()))?;
+    let complaint_state = complaint
+        .get("complaint_state")
+        .and_then(Value::as_str)
+        .unwrap_or("pending");
+    sqlx::query(
+        r#"
+        INSERT INTO mall_wechat_complaints (
+          complaint_id, order_no, transaction_id, user_complaint_times,
+          complaint_detail, complaint_state, payer_phone,
+          complaint_media, provider_payload
+        )
+        VALUES ($1, $2, $3, COALESCE($4, 1), $5, $6, $7, COALESCE($8, '[]'::jsonb), $9)
+        ON CONFLICT (complaint_id) DO UPDATE SET
+          order_no = COALESCE(EXCLUDED.order_no, mall_wechat_complaints.order_no),
+          transaction_id = COALESCE(EXCLUDED.transaction_id, mall_wechat_complaints.transaction_id),
+          user_complaint_times = EXCLUDED.user_complaint_times,
+          complaint_detail = COALESCE(EXCLUDED.complaint_detail, mall_wechat_complaints.complaint_detail),
+          complaint_state = EXCLUDED.complaint_state,
+          payer_phone = COALESCE(EXCLUDED.payer_phone, mall_wechat_complaints.payer_phone),
+          complaint_media = EXCLUDED.complaint_media,
+          provider_payload = EXCLUDED.provider_payload,
+          updated_at = now()
+        "#,
+    )
+    .bind(complaint_id)
+    .bind(complaint.get("out_trade_no").and_then(Value::as_str))
+    .bind(complaint.get("transaction_id").and_then(Value::as_str))
+    .bind(
+        complaint
+            .get("user_complaint_times")
+            .and_then(Value::as_i64)
+            .and_then(|value| i32::try_from(value).ok()),
+    )
+    .bind(complaint.get("complaint_detail").and_then(Value::as_str))
+    .bind(complaint_state)
+    .bind(complaint.get("payer_phone").and_then(Value::as_str))
+    .bind(complaint.get("complaint_media_list"))
+    .bind(&complaint)
+    .execute(&state.db)
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO mall_operations_alerts (
+          dedupe_key, alert_type, source, business_id, severity, title, description, metadata
+        )
+        VALUES ($1, 'wechat_consumer_complaint', 'wechat_pay', $2, 'critical',
+          '收到微信支付消费者投诉', $3, $4)
+        ON CONFLICT (dedupe_key) DO UPDATE SET
+          status = CASE WHEN $5 IN ('204', 'COMPLETED', 'completed') THEN 'resolved' ELSE 'open' END,
+          description = EXCLUDED.description, metadata = EXCLUDED.metadata,
+          occurrence_count = mall_operations_alerts.occurrence_count + 1,
+          last_occurred_at = now(), updated_at = now()
+        "#,
+    )
+    .bind(format!("wechat-complaint:{complaint_id}"))
+    .bind(complaint_id)
+    .bind(
+        complaint
+            .get("complaint_detail")
+            .and_then(Value::as_str)
+            .unwrap_or("请及时登录商户平台处理消费者投诉"),
+    )
+    .bind(json!({ "complaintState": complaint_state }))
+    .bind(complaint_state)
+    .execute(&state.db)
+    .await?;
     Ok(Json(json!({ "code": "SUCCESS", "message": "成功" })))
 }
 
@@ -515,6 +634,7 @@ async fn fetch_payable_order(
                 r#"
                 SELECT
                     o.id,
+                    CASE WHEN $2 = 'order_commission' THEN o.owner_id ELSE o.merchant_id END AS owner_user_id,
                     o.status,
                     o.payment_status,
                     o.commission_payment_status,
@@ -533,6 +653,7 @@ async fn fetch_payable_order(
                 "#,
             )
             .bind(order_id)
+            .bind(business_type.as_str())
             .fetch_optional(pool)
             .await?
             .ok_or_else(|| ApiError::NotFound("订单不存在".to_string()))
@@ -541,6 +662,7 @@ async fn fetch_payable_order(
             r#"
             SELECT
                 id,
+                user_id AS owner_user_id,
                 status,
                 payment_status,
                 NULL::text AS commission_payment_status,
@@ -565,6 +687,7 @@ async fn fetch_payable_order(
             r#"
             SELECT
                 subscription.id,
+                subscription.user_id AS owner_user_id,
                 subscription.status,
                 CASE
                     WHEN subscription.deposit_paid_at IS NULL THEN 'pending'
@@ -597,6 +720,7 @@ async fn fetch_payable_order(
             r#"
             SELECT
                 subscription.id,
+                subscription.user_id AS owner_user_id,
                 subscription.status,
                 CASE
                     WHEN subscription.balance_paid_at IS NULL THEN 'pending'
@@ -1423,6 +1547,7 @@ mod tests {
     fn group_buy_deposit_prepay_requires_open_activity_window() {
         let order = PayableOrderRow {
             id: "subscription-expired".to_string(),
+            owner_user_id: Some("customer-1".to_string()),
             status: Some("pending_deposit".to_string()),
             payment_status: Some("pending".to_string()),
             commission_payment_status: None,

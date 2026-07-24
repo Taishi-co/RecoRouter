@@ -2397,6 +2397,22 @@ async fn disabled_users_cannot_login_or_reuse_admin_sessions() {
     assert_eq!(disabled_login_status, StatusCode::UNAUTHORIZED);
     assert_eq!(disabled_login_body["message"], "账号已被禁用");
 
+    sqlx::query(
+        r#"
+        INSERT INTO users (phone, password, role, name, status)
+        VALUES ('13900000115', $1, 'customer', '已注销用户', 'deleted')
+        "#,
+    )
+    .bind(bcrypt::hash("secret123", 10).expect("test password should hash"))
+    .execute(&context.pool)
+    .await
+    .expect("deleted user should insert");
+
+    let (deleted_login_status, deleted_login_body) =
+        login_auth_user(&context.app, "13900000115", "secret123").await;
+    assert_eq!(deleted_login_status, StatusCode::UNAUTHORIZED);
+    assert_eq!(deleted_login_body["message"], "账号已注销");
+
     let active_admin_id: String = sqlx::query_scalar(
         r#"
         INSERT INTO users (phone, password, role, name, status)
@@ -2439,6 +2455,10 @@ async fn auth_user_info_returns_payment_qr_url_after_owner_upload() {
         .as_str()
         .expect("registered user id should be a string")
         .to_string();
+    let user_token = register_body["data"]["token"]
+        .as_str()
+        .expect("registered user token should be a string")
+        .to_string();
     let boundary = "recocar-auth-payment-boundary";
 
     let upload = context
@@ -2452,6 +2472,7 @@ async fn auth_user_info_returns_payment_qr_url_after_owner_upload() {
                     "content-type",
                     format!("multipart/form-data; boundary={boundary}"),
                 )
+                .header("authorization", format!("Bearer {user_token}"))
                 .body(Body::from(payment_qr_multipart_body(
                     boundary,
                     &user_id,
@@ -2500,6 +2521,7 @@ async fn auth_user_info_returns_payment_qr_url_after_owner_upload() {
         .oneshot(
             Request::builder()
                 .uri(format!("/api/auth/user-info?userId={user_id}"))
+                .header("authorization", format!("Bearer {user_token}"))
                 .body(Body::empty())
                 .expect("user info request should build"),
         )
@@ -2520,6 +2542,26 @@ async fn auth_user_info_returns_payment_qr_url_after_owner_upload() {
         upload_body["data"]["wechat_payment_qr"]
     );
     assert!(user_info_body["data"]["created_at"].as_str().is_some());
+
+    let (_, attacker_body) =
+        register_auth_user(&context.app, "13900000012", "customer", "其他用户").await;
+    let attacker_token = attacker_body["data"]["token"]
+        .as_str()
+        .expect("attacker token should be returned");
+    let forbidden = context
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/auth/user-info?userId={user_id}"))
+                .header("authorization", format!("Bearer {attacker_token}"))
+                .body(Body::empty())
+                .expect("forbidden user info request should build"),
+        )
+        .await
+        .expect("forbidden user info request should complete");
+    assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
+    assert_eq!(body_json(forbidden).await["message"], "无权访问该用户数据");
 
     context.cleanup().await;
 }
@@ -2544,10 +2586,15 @@ async fn auth_json_routes_keep_default_body_limit() {
 }
 
 #[tokio::test]
-async fn auth_payment_qr_rejects_unknown_user() {
+async fn auth_payment_qr_rejects_other_user() {
     let Some(context) = auth_test_context().await else {
         return;
     };
+    let (_, requester_body) =
+        register_auth_user(&context.app, "13900000013", "owner", "请求车主").await;
+    let requester_token = requester_body["data"]["token"]
+        .as_str()
+        .expect("requester token should be returned");
     let boundary = "recocar-auth-payment-boundary";
 
     let response = context
@@ -2561,6 +2608,7 @@ async fn auth_payment_qr_rejects_unknown_user() {
                     "content-type",
                     format!("multipart/form-data; boundary={boundary}"),
                 )
+                .header("authorization", format!("Bearer {requester_token}"))
                 .body(Body::from(payment_qr_multipart_body(
                     boundary,
                     "missing-user",
@@ -2573,9 +2621,9 @@ async fn auth_payment_qr_rejects_unknown_user() {
         .await
         .expect("payment qr upload request should complete");
 
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
     let body = body_json(response).await;
-    assert_eq!(body["message"], "用户不存在");
+    assert_eq!(body["message"], "无权访问该用户数据");
 
     context.cleanup().await;
 }
@@ -2591,6 +2639,9 @@ async fn auth_payment_qr_rejects_non_owner_user() {
         .as_str()
         .expect("registered user id should be a string")
         .to_string();
+    let user_token = register_body["data"]["token"]
+        .as_str()
+        .expect("registered user token should be a string");
     let boundary = "recocar-auth-payment-boundary";
 
     let response = context
@@ -2604,6 +2655,7 @@ async fn auth_payment_qr_rejects_non_owner_user() {
                     "content-type",
                     format!("multipart/form-data; boundary={boundary}"),
                 )
+                .header("authorization", format!("Bearer {user_token}"))
                 .body(Body::from(payment_qr_multipart_body(
                     boundary,
                     &user_id,
@@ -2634,6 +2686,9 @@ async fn auth_payment_qr_accepts_present_file_without_image_content_type() {
         .as_str()
         .expect("registered user id should be a string")
         .to_string();
+    let user_token = register_body["data"]["token"]
+        .as_str()
+        .expect("registered user token should be a string");
     let boundary = "recocar-auth-payment-boundary";
 
     let response = context
@@ -2647,6 +2702,7 @@ async fn auth_payment_qr_accepts_present_file_without_image_content_type() {
                     "content-type",
                     format!("multipart/form-data; boundary={boundary}"),
                 )
+                .header("authorization", format!("Bearer {user_token}"))
                 .body(Body::from(payment_qr_multipart_body(
                     boundary,
                     &user_id,
@@ -2677,6 +2733,9 @@ async fn auth_payment_qr_rejects_missing_file() {
         .as_str()
         .expect("registered user id should be a string")
         .to_string();
+    let user_token = register_body["data"]["token"]
+        .as_str()
+        .expect("registered user token should be a string");
     let boundary = "recocar-auth-payment-boundary";
 
     let response = context
@@ -2690,6 +2749,7 @@ async fn auth_payment_qr_rejects_missing_file() {
                     "content-type",
                     format!("multipart/form-data; boundary={boundary}"),
                 )
+                .header("authorization", format!("Bearer {user_token}"))
                 .body(Body::from(payment_qr_multipart_body(
                     boundary, &user_id, None, None, None,
                 )))

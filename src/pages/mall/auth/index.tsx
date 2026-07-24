@@ -1,10 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Image, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
-import { ChevronLeft, MessageCircle, RefreshCw, ShieldCheck } from 'lucide-react-taro'
+import { Check, ChevronLeft, MessageCircle, RefreshCw, ShieldCheck } from 'lucide-react-taro'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Network } from '@/network'
+import {
+  getLegalCenter,
+  MALL_PRIVACY_POLICY_VERSION,
+  MALL_PRIVACY_STORAGE_KEY,
+  recordPrivacyConsent,
+  resolvePrivacyPolicyVersion,
+} from '@/services/mall-compliance'
 import { MallBrandMark, MallPage, MallPrimaryButton } from '../mall-ui'
 
 type AuthMode = 'login' | 'register'
@@ -55,6 +62,10 @@ export default function MallAuthPage() {
   const [loading, setLoading] = useState(false)
   const [wechatLoading, setWechatLoading] = useState(false)
   const [captchaLoading, setCaptchaLoading] = useState(false)
+  const [currentPolicyVersion, setCurrentPolicyVersion] = useState(MALL_PRIVACY_POLICY_VERSION)
+  const [privacyAccepted, setPrivacyAccepted] = useState(
+    Taro.getStorageSync(MALL_PRIVACY_STORAGE_KEY) === MALL_PRIVACY_POLICY_VERSION,
+  )
 
   const returnUrl = useMemo(() => {
     const raw = typeof params.returnUrl === 'string'
@@ -68,6 +79,20 @@ export default function MallAuthPage() {
       loadCaptcha()
     }
   }, [mode])
+
+  useEffect(() => {
+    getLegalCenter()
+      .then((center) => {
+        const nextVersion = resolvePrivacyPolicyVersion(center)
+        setCurrentPolicyVersion(nextVersion)
+        setPrivacyAccepted(
+          Taro.getStorageSync(MALL_PRIVACY_STORAGE_KEY) === nextVersion,
+        )
+      })
+      .catch(() => {
+        // 启动页已完成版本核验；此处网络失败时保留当前选择。
+      })
+  }, [])
 
   const switchMode = (nextMode: AuthMode) => {
     setMode(nextMode)
@@ -95,6 +120,10 @@ export default function MallAuthPage() {
   }
 
   const submit = async () => {
+    if (!privacyAccepted) {
+      Taro.showToast({ title: '请先阅读并同意隐私政策和服务协议', icon: 'none' })
+      return
+    }
     if (!/^1[3-9]\d{9}$/.test(phone.trim())) {
       Taro.showToast({ title: '请输入正确手机号', icon: 'none' })
       return
@@ -132,6 +161,7 @@ export default function MallAuthPage() {
           role: registerRole,
         })
       persistAuth(authUser)
+      await recordPrivacyConsent('granted', currentPolicyVersion)
       Taro.showToast({ title: mode === 'login' ? '登录成功' : '注册成功', icon: 'success' })
       setTimeout(() => Taro.redirectTo({ url: returnUrl }), 500)
     } catch (error) {
@@ -149,6 +179,10 @@ export default function MallAuthPage() {
 
   const wechatLogin = async (event: WechatPhoneEvent) => {
     if (wechatLoading) return
+    if (!privacyAccepted) {
+      Taro.showToast({ title: '请先阅读并同意隐私政策和服务协议', icon: 'none' })
+      return
+    }
 
     const detail = event.detail || {}
     const phoneCode = typeof detail.code === 'string' ? detail.code.trim() : ''
@@ -172,6 +206,7 @@ export default function MallAuthPage() {
         role: registerRole,
       })
       persistAuth(authUser)
+      await recordPrivacyConsent('granted', currentPolicyVersion)
       Taro.showToast({ title: '微信登录成功', icon: 'success' })
       setTimeout(() => Taro.redirectTo({ url: returnUrl }), 500)
     } catch (error) {
@@ -255,6 +290,32 @@ export default function MallAuthPage() {
             <Input className="mall-form-input" password value={confirmPassword} placeholder="请再次输入密码" onInput={(event) => setConfirmPassword(String(event.detail.value || ''))} />
           </Field>
         ) : null}
+        <View className="mall-auth-consent">
+          <View
+            className={privacyAccepted ? 'mall-auth-consent-check active' : 'mall-auth-consent-check'}
+            onClick={() => {
+              const next = !privacyAccepted
+              setPrivacyAccepted(next)
+              if (next) Taro.setStorageSync(MALL_PRIVACY_STORAGE_KEY, currentPolicyVersion)
+              else Taro.removeStorageSync(MALL_PRIVACY_STORAGE_KEY)
+            }}
+          >
+            {privacyAccepted ? <Check size={13} color="#FFFFFF" /> : null}
+          </View>
+          <Text>我已阅读并同意</Text>
+          <Text
+            className="mall-section-action"
+            onClick={() => Taro.navigateTo({
+              url: '/pages/mall/legal/index?documentType=privacy_policy',
+            })}
+          >《隐私保护指引》</Text>
+          <Text
+            className="mall-section-action"
+            onClick={() => Taro.navigateTo({
+              url: '/pages/mall/legal/index?documentType=service_agreement',
+            })}
+          >《用户服务协议》</Text>
+        </View>
         <MallPrimaryButton onClick={submit}>
           <ShieldCheck size={18} color="#FFFFFF" />
           <Text>{loading ? '提交中' : mode === 'login' ? '登录' : '注册并登录'}</Text>

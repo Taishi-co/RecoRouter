@@ -124,6 +124,9 @@ interface DashboardData {
   mallHomeSections: JsonRecord[];
   mallPermissions: JsonRecord[];
   mallSettings: JsonRecord;
+  mallLegalCenter: JsonRecord;
+  mallInvoices: JsonRecord[];
+  mallWechatComplaints: JsonRecord[];
   supportMetrics: JsonRecord;
   supportSessions: JsonRecord[];
   supportTickets: JsonRecord[];
@@ -869,6 +872,9 @@ const adminModules: AdminModuleSpec[] = [
       designPage('mall.settings', '运营设置', '运营设置', '活动启停', 'save', 'operations'),
       designPage('mall.deliveryRules', '配送规则', '运营设置', '自提窗口、冷链承诺和服务费', 'route'),
       designPage('mall.paymentSplit', '分账规则', '运营设置', '商城分账、团长佣金和商户结算', 'refund'),
+      designPage('mall.compliance', '合规公示', '运营设置', '平台主体、规则版本和商家经营资质', 'check'),
+      designPage('mall.invoices', '电子发票', '客服售后', '开票申请、开具与驳回闭环', 'orders'),
+      designPage('mall.complaints', '支付投诉', '客服售后', '微信支付消费者投诉通知和处理记录', 'support'),
       designPage('mall.risk', '风险审核', '运营设置', '售后异常、频控和恶意退款拦截', 'x'),
       designPage('mall.financeBills', '账单明细', '财务结算', '每日、每周、每月账单明细', 'orders', 'operations'),
       designPage('mall.settlements', '结算记录', '财务结算', '结算状态、金额和打款凭证', 'refund', 'operations'),
@@ -943,6 +949,9 @@ const initialData: DashboardData = {
   mallHomeSections: [],
   mallPermissions: [],
   mallSettings: {},
+  mallLegalCenter: {},
+  mallInvoices: [],
+  mallWechatComplaints: [],
   supportMetrics: {},
   supportSessions: [],
   supportTickets: [],
@@ -1658,6 +1667,9 @@ async function fetchDashboardData(
     mallHomeSections,
     mallPermissions,
     mallSettings,
+    mallLegalCenter,
+    mallInvoices,
+    mallWechatComplaints,
     supportMetrics,
     supportSessions,
     supportTickets,
@@ -1750,6 +1762,9 @@ async function fetchDashboardData(
       module: permissionFilters.module,
     })),
     loadWithFallback('商城设置', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/settings')),
+    loadWithFallback('合规公示', {}, errors, () => apiGet<JsonRecord>('/api/admin/mall/legal-center')),
+    loadWithFallback('电子发票', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/invoices')),
+    loadWithFallback('支付投诉', [], errors, () => apiGet<JsonRecord[]>('/api/admin/mall/wechat-complaints')),
     loadWithFallback('客服指标', {}, errors, () => apiGet<JsonRecord>('/api/support/metrics')),
     loadWithFallback('客服会话', [], errors, () => apiGet<JsonRecord[]>('/api/support/sessions')),
     loadWithFallback('客服工单', [], errors, () => apiGet<JsonRecord[]>('/api/support/tickets')),
@@ -1797,6 +1812,9 @@ async function fetchDashboardData(
       mallHomeSections,
       mallPermissions,
       mallSettings,
+      mallLegalCenter,
+      mallInvoices,
+      mallWechatComplaints,
       supportMetrics,
       supportSessions,
       supportTickets,
@@ -11828,6 +11846,9 @@ function MallPaymentSplitRulesSection({
     wechatSubMchid: '',
     serviceFeePercent: '3',
     businessLicenseUrl: '',
+    businessLicenseNumber: '',
+    businessLicenseExpiresAt: '',
+    nextReviewAt: '',
     contactName: '',
     contactPhone: '',
   });
@@ -11860,12 +11881,15 @@ function MallPaymentSplitRulesSection({
       wechatSubMchid: merchantDraft.wechatSubMchid.trim(),
       serviceFeeRateBps: Math.round(Number(merchantDraft.serviceFeePercent) * 100),
       businessLicenseUrl: merchantDraft.businessLicenseUrl.trim(),
+      businessLicenseNumber: merchantDraft.businessLicenseNumber.trim(),
+      businessLicenseExpiresAt: merchantDraft.businessLicenseExpiresAt,
+      nextReviewAt: merchantDraft.nextReviewAt,
       contactName: merchantDraft.contactName.trim(),
       contactPhone: merchantDraft.contactPhone.trim(),
       onboardingStatus: 'pending',
       qualificationStatus: 'pending',
     });
-    setMerchantDraft(current => ({ ...current, name: '', legalName: '', wechatSubMchid: '', businessLicenseUrl: '', contactName: '', contactPhone: '' }));
+    setMerchantDraft(current => ({ ...current, name: '', legalName: '', wechatSubMchid: '', businessLicenseUrl: '', businessLicenseNumber: '', businessLicenseExpiresAt: '', nextReviewAt: '', contactName: '', contactPhone: '' }));
   };
 
   return (
@@ -11913,6 +11937,9 @@ function MallPaymentSplitRulesSection({
           <label>微信二级商户号<input required value={merchantDraft.wechatSubMchid} inputMode="numeric" onChange={event => setMerchantDraft(current => ({ ...current, wechatSubMchid: event.target.value }))} /></label>
           <label>平台服务费（%）<input required value={merchantDraft.serviceFeePercent} type="number" min="0.01" max="30" step="0.01" onChange={event => setMerchantDraft(current => ({ ...current, serviceFeePercent: event.target.value }))} /></label>
           <label className="wide">营业执照/资质文件地址<input required value={merchantDraft.businessLicenseUrl} onChange={event => setMerchantDraft(current => ({ ...current, businessLicenseUrl: event.target.value }))} /></label>
+          <label>营业执照编号<input required value={merchantDraft.businessLicenseNumber} onChange={event => setMerchantDraft(current => ({ ...current, businessLicenseNumber: event.target.value }))} /></label>
+          <label>营业执照有效期<input required type="date" value={merchantDraft.businessLicenseExpiresAt} onChange={event => setMerchantDraft(current => ({ ...current, businessLicenseExpiresAt: event.target.value }))} /></label>
+          <label>下次复核日期<input required type="date" value={merchantDraft.nextReviewAt} onChange={event => setMerchantDraft(current => ({ ...current, nextReviewAt: event.target.value }))} /></label>
           <label>联系人<input value={merchantDraft.contactName} onChange={event => setMerchantDraft(current => ({ ...current, contactName: event.target.value }))} /></label>
           <label>联系电话<input value={merchantDraft.contactPhone} onChange={event => setMerchantDraft(current => ({ ...current, contactPhone: event.target.value }))} /></label>
           <div className="settings-actions wide">
@@ -11953,6 +11980,375 @@ function MallPaymentSplitRulesSection({
       </Panel>
     </div>
   );
+}
+
+function MallComplianceSection({
+  center,
+  onUpdated,
+}: {
+  center: JsonRecord;
+  onUpdated: () => Promise<void>;
+}) {
+  const notify = useAdminMessage();
+  const profile = recordValue(center, 'profile');
+  const documents = arrayValue(center, 'documents');
+  const merchants = arrayValue(center, 'merchants');
+  const [profileDraft, setProfileDraft] = useState({
+    operatorName: '', legalEntityName: '', unifiedSocialCreditCode: '', businessLicenseUrl: '',
+    businessLicenseExpiresAt: '', platformQualificationType: '', platformQualificationNumber: '',
+    platformQualificationUrl: '', platformQualificationExpiresAt: '', servicePhone: '', serviceEmail: '',
+    complaintPhone: '', complaintEmail: '', complaintDescription: '', officeAddress: '',
+  });
+  const [documentDraft, setDocumentDraft] = useState({
+    documentType: 'transaction_rules', title: '', version: '', summary: '', content: '', publish: true,
+    sourceId: '', sourceVersion: '', sourceStatus: '',
+  });
+  const [qualificationDraft, setQualificationDraft] = useState({
+    merchantId: '', qualificationType: 'food_business_license', qualificationName: '食品经营许可证',
+    certificateNumber: '', certificateUrl: '', issuer: '', issuedAt: '', expiresAt: '', status: 'approved',
+  });
+
+  useEffect(() => {
+    setProfileDraft({
+      operatorName: stringValue(profile, 'operatorName'),
+      legalEntityName: stringValue(profile, 'legalEntityName'),
+      unifiedSocialCreditCode: stringValue(profile, 'unifiedSocialCreditCode'),
+      businessLicenseUrl: stringValue(profile, 'businessLicenseUrl'),
+      businessLicenseExpiresAt: dateInputValue(stringValue(profile, 'businessLicenseExpiresAt')),
+      platformQualificationType: stringValue(profile, 'platformQualificationType'),
+      platformQualificationNumber: stringValue(profile, 'platformQualificationNumber'),
+      platformQualificationUrl: stringValue(profile, 'platformQualificationUrl'),
+      platformQualificationExpiresAt: dateInputValue(stringValue(profile, 'platformQualificationExpiresAt')),
+      servicePhone: stringValue(profile, 'servicePhone'),
+      serviceEmail: stringValue(profile, 'serviceEmail'),
+      complaintPhone: stringValue(profile, 'complaintPhone'),
+      complaintEmail: stringValue(profile, 'complaintEmail'),
+      complaintDescription: stringValue(profile, 'complaintDescription'),
+      officeAddress: stringValue(profile, 'officeAddress'),
+    });
+    if (!qualificationDraft.merchantId && merchants.length) {
+      setQualificationDraft(current => ({ ...current, merchantId: stringValue(merchants[0], 'id') }));
+    }
+  }, [center]);
+
+  const missingProfile = [
+    profileDraft.legalEntityName,
+    profileDraft.unifiedSocialCreditCode,
+    profileDraft.businessLicenseUrl,
+    profileDraft.officeAddress,
+    profileDraft.complaintPhone || profileDraft.complaintEmail,
+  ].filter(value => !value).length;
+  const expiringQualifications = merchants.flatMap(merchant => arrayValue(merchant, 'qualifications'))
+    .filter(qualification => isExpiringWithin(stringValue(qualification, 'expiresAt'), 30)).length;
+
+  const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      await apiPut('/api/admin/mall/legal-center', profileDraft);
+      notify('success', '平台公示信息已保存');
+      await onUpdated();
+    } catch (error) {
+      notify('error', error instanceof Error ? error.message : '保存失败');
+    }
+  };
+
+  const createDocument = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      if (documents.some(document =>
+        stringValue(document, 'documentType') === documentDraft.documentType
+        && stringValue(document, 'version') === documentDraft.version.trim()
+        && stringValue(document, 'id') !== documentDraft.sourceId
+      )) {
+        throw new Error('该文档类型的版本号已存在，请填写新的版本号');
+      }
+      const content = parseLegalDocumentContent(
+        documentDraft.content,
+        documentDraft.title.trim(),
+      );
+      if (!content.length) {
+        throw new Error('请填写有效的条款正文');
+      }
+      const payload = {
+        documentType: documentDraft.documentType,
+        title: documentDraft.title.trim(),
+        version: documentDraft.version.trim(),
+        summary: documentDraft.summary.trim(),
+        content,
+        publish: documentDraft.publish,
+      };
+      if (documentDraft.sourceStatus === 'draft' && documentDraft.sourceId) {
+        await apiPut(`/api/admin/mall/legal-documents/${documentDraft.sourceId}`, payload);
+      } else {
+        await apiPost('/api/admin/mall/legal-documents', payload);
+      }
+      const requiresReconfirmation =
+        documentDraft.documentType === 'privacy_policy' && documentDraft.publish;
+      setDocumentDraft(current => ({
+        ...current,
+        title: '',
+        version: '',
+        summary: '',
+        content: '',
+        sourceId: '',
+        sourceVersion: '',
+        sourceStatus: '',
+      }));
+      notify(
+        'success',
+        requiresReconfirmation
+          ? '隐私政策新版本已发布，用户下次使用前会重新确认'
+          : documentDraft.publish ? '条款新版本已发布' : '条款草稿已保存',
+      );
+      await onUpdated();
+    } catch (error) {
+      notify('error', error instanceof Error ? error.message : '规则存档失败');
+    }
+  };
+
+  const copyDocumentToDraft = (legalDocument: JsonRecord) => {
+    const status = stringValue(legalDocument, 'status');
+    const isDraft = status === 'draft';
+    setDocumentDraft({
+      documentType: stringValue(legalDocument, 'documentType', 'transaction_rules'),
+      title: stringValue(legalDocument, 'title'),
+      version: isDraft ? stringValue(legalDocument, 'version') : '',
+      summary: stringValue(legalDocument, 'summary'),
+      content: legalDocumentContentToText(legalDocument),
+      publish: true,
+      sourceId: isDraft ? stringValue(legalDocument, 'id') : '',
+      sourceVersion: stringValue(legalDocument, 'version'),
+      sourceStatus: status,
+    });
+    window.requestAnimationFrame(() => {
+      window.document.getElementById('legal-document-editor')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    });
+  };
+
+  const createQualification = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      if (!qualificationDraft.merchantId) throw new Error('请先选择合作商家');
+      await apiPost(`/api/admin/mall/merchants/${qualificationDraft.merchantId}/qualifications`, qualificationDraft);
+      setQualificationDraft(current => ({
+        ...current, certificateNumber: '', certificateUrl: '', issuer: '', issuedAt: '', expiresAt: '',
+      }));
+      notify('success', '商家资质已登记');
+      await onUpdated();
+    } catch (error) {
+      notify('error', error instanceof Error ? error.message : '资质登记失败');
+    }
+  };
+
+  const setQualificationType = (qualificationType: string) => {
+    const name = qualificationType === 'food_business_license'
+      ? '食品经营许可证'
+      : qualificationType === 'prepackaged_food_filing'
+        ? '仅销售预包装食品备案'
+        : qualificationType === 'business_license' ? '营业执照' : '其他经营资质';
+    setQualificationDraft(current => ({ ...current, qualificationType, qualificationName: name }));
+  };
+
+  return (
+    <div className="page-grid">
+      <div className="settings-summary-grid">
+        <StatCard label="公示缺失项" value={String(missingProfile)} detail={missingProfile ? '正式提审前必须补齐' : '平台主体信息完整'} />
+        <StatCard label="规则版本" value={String(documents.length)} detail="隐私、服务协议和交易规则" />
+        <StatCard label="资质到期预警" value={String(expiringQualifications)} detail="未来 30 天内到期" />
+      </div>
+
+      <Panel title="平台主体与投诉渠道" description="请填写真实工商信息；这些内容会原样展示在小程序公示页">
+        <form className="form-grid settings-form" onSubmit={saveProfile}>
+          <label>平台展示名<input required value={profileDraft.operatorName} onChange={event => setProfileDraft(current => ({ ...current, operatorName: event.target.value }))} /></label>
+          <label>经营主体全称<input required value={profileDraft.legalEntityName} onChange={event => setProfileDraft(current => ({ ...current, legalEntityName: event.target.value }))} /></label>
+          <label>统一社会信用代码<input required value={profileDraft.unifiedSocialCreditCode} onChange={event => setProfileDraft(current => ({ ...current, unifiedSocialCreditCode: event.target.value }))} /></label>
+          <label>营业执照有效期<input type="date" value={profileDraft.businessLicenseExpiresAt} onChange={event => setProfileDraft(current => ({ ...current, businessLicenseExpiresAt: event.target.value }))} /></label>
+          <label className="wide">营业执照文件地址<input required value={profileDraft.businessLicenseUrl} onChange={event => setProfileDraft(current => ({ ...current, businessLicenseUrl: event.target.value }))} /></label>
+          <label>平台食品资质类型<input value={profileDraft.platformQualificationType} placeholder="食品经营许可证/备案" onChange={event => setProfileDraft(current => ({ ...current, platformQualificationType: event.target.value }))} /></label>
+          <label>平台食品资质编号<input value={profileDraft.platformQualificationNumber} onChange={event => setProfileDraft(current => ({ ...current, platformQualificationNumber: event.target.value }))} /></label>
+          <label>食品资质有效期<input type="date" value={profileDraft.platformQualificationExpiresAt} onChange={event => setProfileDraft(current => ({ ...current, platformQualificationExpiresAt: event.target.value }))} /></label>
+          <label>客服电话<input value={profileDraft.servicePhone} onChange={event => setProfileDraft(current => ({ ...current, servicePhone: event.target.value }))} /></label>
+          <label>投诉电话<input value={profileDraft.complaintPhone} onChange={event => setProfileDraft(current => ({ ...current, complaintPhone: event.target.value }))} /></label>
+          <label>投诉邮箱<input type="email" value={profileDraft.complaintEmail} onChange={event => setProfileDraft(current => ({ ...current, complaintEmail: event.target.value }))} /></label>
+          <label className="wide">经营地址<input required value={profileDraft.officeAddress} onChange={event => setProfileDraft(current => ({ ...current, officeAddress: event.target.value }))} /></label>
+          <label className="wide">投诉处理说明<textarea value={profileDraft.complaintDescription} onChange={event => setProfileDraft(current => ({ ...current, complaintDescription: event.target.value }))} /></label>
+          <div className="settings-actions wide"><button className="primary-button" type="submit"><Icon name="save" />保存公示信息</button></div>
+        </form>
+      </Panel>
+
+      <Panel title="条款编辑与版本发布" description="从历史版本复制内容后修改并发布；旧版本会完整保留，已发布版本不直接覆盖">
+        <form id="legal-document-editor" className="form-grid settings-form" onSubmit={createDocument}>
+          {documentDraft.sourceVersion ? (
+            <div className="legal-document-editor-status wide">
+              {documentDraft.sourceStatus === 'draft'
+                ? `正在继续编辑 ${legalDocumentTypeLabel(documentDraft.documentType)}草稿 v${documentDraft.sourceVersion}，可保存草稿或直接发布。`
+                : `正在基于 ${legalDocumentTypeLabel(documentDraft.documentType)} v${documentDraft.sourceVersion} 创建新版本，请填写新的版本号。`}
+            </div>
+          ) : null}
+          {documentDraft.documentType === 'privacy_policy' && documentDraft.publish ? (
+            <div className="legal-document-publish-warning wide">
+              <strong>发布提醒</strong>
+              <span>隐私政策新版本发布后，所有用户下次打开商城时都会先看到更新提醒，并需确认新版本后才能登录、下单或使用售后。</span>
+            </div>
+          ) : null}
+          <label>文档类型<select value={documentDraft.documentType} onChange={event => setDocumentDraft(current => ({ ...current, documentType: event.target.value, sourceId: '', sourceVersion: '', sourceStatus: '' }))}><option value="privacy_policy">隐私保护指引</option><option value="service_agreement">用户服务协议</option><option value="transaction_rules">平台交易规则</option></select></label>
+          <label>版本号<input required placeholder="例如 2026.08" value={documentDraft.version} onChange={event => setDocumentDraft(current => ({ ...current, version: event.target.value }))} /></label>
+          <label className="wide">文档标题<input required value={documentDraft.title} onChange={event => setDocumentDraft(current => ({ ...current, title: event.target.value }))} /></label>
+          <label className="wide">变更摘要<input value={documentDraft.summary} onChange={event => setDocumentDraft(current => ({ ...current, summary: event.target.value }))} /></label>
+          <label className="wide">正文<textarea required rows={14} placeholder="使用“## 小标题”分段，使用“- 条目”添加列表。可从下方历史版本复制后修改。" value={documentDraft.content} onChange={event => setDocumentDraft(current => ({ ...current, content: event.target.value }))} /></label>
+          <label className="checkbox-field"><input type="checkbox" checked={documentDraft.publish} onChange={event => setDocumentDraft(current => ({ ...current, publish: event.target.checked }))} />保存后立即发布</label>
+          <div className="settings-actions wide"><button className="primary-button" type="submit"><Icon name="save" />{documentDraft.publish ? '发布新版本' : '保存为草稿'}</button></div>
+        </form>
+        <div className="table-wrap"><table><thead><tr><th>类型</th><th>标题</th><th>版本</th><th>状态</th><th>生效时间</th><th>操作</th></tr></thead><tbody>{documents.map(document => <tr key={stringValue(document, 'id')}><td>{legalDocumentTypeLabel(stringValue(document, 'documentType'))}</td><td>{stringValue(document, 'title')}</td><td>{stringValue(document, 'version')}</td><td><span className={badgeClass(stringValue(document, 'status'))}>{statusLabel(stringValue(document, 'status'))}</span></td><td>{formatDate(stringValue(document, 'effectiveAt'))}</td><td><button className="ghost-button" type="button" onClick={() => copyDocumentToDraft(document)}>{stringValue(document, 'status') === 'draft' ? '继续编辑' : '复制并修改'}</button></td></tr>)}</tbody></table></div>
+      </Panel>
+
+      <Panel title="商家经营与食品资质" description="销售食品必须登记食品经营许可证，或登记仅销售预包装食品备案；系统会在到期前 30 天告警">
+        <form className="form-grid settings-form" onSubmit={createQualification}>
+          <label>合作商家<select required value={qualificationDraft.merchantId} onChange={event => setQualificationDraft(current => ({ ...current, merchantId: event.target.value }))}><option value="">请选择</option>{merchants.map(merchant => <option key={stringValue(merchant, 'id')} value={stringValue(merchant, 'id')}>{stringValue(merchant, 'name')}</option>)}</select></label>
+          <label>资质类型<select value={qualificationDraft.qualificationType} onChange={event => setQualificationType(event.target.value)}><option value="food_business_license">食品经营许可证</option><option value="prepackaged_food_filing">仅销售预包装食品备案</option><option value="business_license">营业执照</option><option value="other">其他</option></select></label>
+          <label>证照编号<input required value={qualificationDraft.certificateNumber} onChange={event => setQualificationDraft(current => ({ ...current, certificateNumber: event.target.value }))} /></label>
+          <label>发证机关<input value={qualificationDraft.issuer} onChange={event => setQualificationDraft(current => ({ ...current, issuer: event.target.value }))} /></label>
+          <label>发证日期<input type="date" value={qualificationDraft.issuedAt} onChange={event => setQualificationDraft(current => ({ ...current, issuedAt: event.target.value }))} /></label>
+          <label>有效期至<input type="date" value={qualificationDraft.expiresAt} onChange={event => setQualificationDraft(current => ({ ...current, expiresAt: event.target.value }))} /></label>
+          <label className="wide">证照文件地址<input required value={qualificationDraft.certificateUrl} onChange={event => setQualificationDraft(current => ({ ...current, certificateUrl: event.target.value }))} /></label>
+          <div className="settings-actions wide"><button className="primary-button" type="submit"><Icon name="plus" />登记并公示资质</button></div>
+        </form>
+        <div className="table-wrap"><table><thead><tr><th>商家</th><th>资质</th><th>编号</th><th>有效期</th><th>状态</th></tr></thead><tbody>{merchants.flatMap(merchant => arrayValue(merchant, 'qualifications').map(qualification => <tr key={stringValue(qualification, 'id')}><td>{stringValue(merchant, 'name')}</td><td>{stringValue(qualification, 'qualificationName')}</td><td>{stringValue(qualification, 'certificateNumber')}</td><td>{dateInputValue(stringValue(qualification, 'expiresAt')) || '-'}</td><td><span className={badgeClass(stringValue(qualification, 'status'))}>{statusLabel(stringValue(qualification, 'status'))}</span></td></tr>))}</tbody></table></div>
+        {!merchants.length ? <EmptyState text="暂无合作商家，请先在分账规则中登记商家" /> : null}
+      </Panel>
+    </div>
+  );
+}
+
+function MallInvoicesSection({ invoices, onUpdated }: { invoices: JsonRecord[]; onUpdated: () => Promise<void> }) {
+  const notify = useAdminMessage();
+  const update = async (invoice: JsonRecord, status: 'processing' | 'issued' | 'rejected') => {
+    const id = stringValue(invoice, 'id');
+    const invoiceUrl = status === 'issued' ? window.prompt('请输入已开具电子发票的文件地址')?.trim() : '';
+    if (status === 'issued' && !invoiceUrl) return;
+    const rejectionReason = status === 'rejected' ? window.prompt('请输入驳回原因')?.trim() : '';
+    if (status === 'rejected' && !rejectionReason) return;
+    try {
+      await apiPut(`/api/admin/mall/invoices/${id}`, { status, invoiceUrl, rejectionReason });
+      notify('success', status === 'issued' ? '电子发票已发放给用户' : '开票状态已更新');
+      await onUpdated();
+    } catch (error) {
+      notify('error', error instanceof Error ? error.message : '更新失败');
+    }
+  };
+  return <div className="page-grid"><div className="settings-summary-grid"><StatCard label="待处理" value={String(invoices.filter(invoice => stringValue(invoice, 'status') === 'submitted').length)} detail="用户已提交" /><StatCard label="开票中" value={String(invoices.filter(invoice => stringValue(invoice, 'status') === 'processing').length)} detail="财务处理中" /><StatCard label="已开具" value={String(invoices.filter(invoice => stringValue(invoice, 'status') === 'issued').length)} detail="电子发票已交付" /></div><Panel title="电子发票申请" description="处理结果会同步到用户发票中心和站内通知"><div className="table-wrap"><table><thead><tr><th>申请号</th><th>订单</th><th>抬头/税号</th><th>金额</th><th>邮箱</th><th>状态</th><th>操作</th></tr></thead><tbody>{invoices.map(invoice => { const status = stringValue(invoice, 'status'); return <tr key={stringValue(invoice, 'id')}><td>{stringValue(invoice, 'invoiceNo')}<small>{formatDate(stringValue(invoice, 'createdAt'))}</small></td><td>{stringValue(invoice, 'orderNo')}</td><td><strong>{stringValue(invoice, 'title')}</strong><small>{stringValue(invoice, 'taxNumber', '个人')}</small></td><td>{yuan(numberValue(invoice, 'amountCents'))}</td><td>{stringValue(invoice, 'email')}</td><td><span className={badgeClass(status)}>{statusLabel(status)}</span></td><td className="row-actions">{status === 'submitted' ? <><button className="ghost-button" type="button" onClick={() => void update(invoice, 'processing')}>开始开票</button><button className="danger-button" type="button" onClick={() => void update(invoice, 'rejected')}>驳回</button></> : null}{status === 'processing' ? <button className="primary-button" type="button" onClick={() => void update(invoice, 'issued')}>上传并完成</button> : null}{status === 'issued' && stringValue(invoice, 'invoiceUrl') ? <a href={stringValue(invoice, 'invoiceUrl')} target="_blank" rel="noreferrer">查看发票</a> : null}</td></tr>; })}</tbody></table></div>{!invoices.length ? <EmptyState text="暂无开票申请" /> : null}</Panel></div>;
+}
+
+function MallComplaintsSection({ complaints, onUpdated }: { complaints: JsonRecord[]; onUpdated: () => Promise<void> }) {
+  const notify = useAdminMessage();
+  const configureNotify = async () => {
+    try {
+      const result = await apiPost<JsonRecord>('/api/admin/mall/wechat-complaints/configure-notify');
+      notify('success', `投诉通知地址已配置：${stringValue(result, 'notifyUrl')}`);
+    } catch (error) {
+      notify('error', error instanceof Error ? error.message : '通知地址配置失败');
+    }
+  };
+  const respond = async (complaint: JsonRecord) => {
+    const responseContent = window.prompt('请输入给消费者的处理回复')?.trim();
+    if (!responseContent) return;
+    try {
+      await apiPut(`/api/admin/mall/wechat-complaints/${stringValue(complaint, 'id')}`, { complaintState: 'responded', responseContent });
+      notify('success', '投诉回复已实时同步至微信支付');
+      await onUpdated();
+    } catch (error) {
+      notify('error', error instanceof Error ? error.message : '回复失败');
+    }
+  };
+  const complete = async (complaint: JsonRecord) => {
+    try {
+      await apiPut(`/api/admin/mall/wechat-complaints/${stringValue(complaint, 'id')}`, { complaintState: 'completed' });
+      notify('success', '投诉已标记完成');
+      await onUpdated();
+    } catch (error) {
+      notify('error', error instanceof Error ? error.message : '更新失败');
+    }
+  };
+  return <div className="page-grid"><div className="settings-summary-grid"><StatCard label="待处理投诉" value={String(complaints.filter(item => !['completed', '204'].includes(stringValue(item, 'complaintState'))).length)} detail="来自微信支付通知" /><StatCard label="重复投诉" value={String(complaints.filter(item => numberValue(item, 'userComplaintTimes') > 1).length)} detail="需优先跟进" /><StatCard label="已完成" value={String(complaints.filter(item => ['completed', '204'].includes(stringValue(item, 'complaintState'))).length)} detail="保留处理记录" /></div><Panel title="消费者投诉 2.0" description="回复和完成动作会实时调用微信支付接口"><div className="settings-actions"><button className="primary-button" type="button" onClick={() => void configureNotify()}><Icon name="save" />一键配置投诉通知地址</button></div><div className="table-wrap"><table><thead><tr><th>投诉单</th><th>交易/订单</th><th>投诉内容</th><th>次数</th><th>状态</th><th>操作</th></tr></thead><tbody>{complaints.map(complaint => { const state = stringValue(complaint, 'complaintState'); return <tr key={stringValue(complaint, 'id')}><td>{stringValue(complaint, 'complaintId')}<small>{formatDate(stringValue(complaint, 'createdAt'))}</small></td><td>{stringValue(complaint, 'orderNo', stringValue(complaint, 'transactionId', '-'))}</td><td>{stringValue(complaint, 'complaintDetail', '-')}</td><td>{numberValue(complaint, 'userComplaintTimes', 1)}</td><td><span className={badgeClass(state)}>{statusLabel(state)}</span></td><td className="row-actions">{!['completed', '204'].includes(state) ? <button className="ghost-button" type="button" onClick={() => void respond(complaint)}>回复消费者</button> : null}{state === 'responded' ? <button className="primary-button" type="button" onClick={() => void complete(complaint)}>反馈已完成</button> : null}</td></tr>; })}</tbody></table></div>{!complaints.length ? <EmptyState text="暂无微信支付投诉通知" /> : null}</Panel></div>;
+}
+
+function legalDocumentTypeLabel(value: string) {
+  return ({ privacy_policy: '隐私保护指引', service_agreement: '用户服务协议', transaction_rules: '平台交易规则' } as Record<string, string>)[value] || value;
+}
+
+function legalDocumentContentToText(document: JsonRecord) {
+  return arrayValue(document, 'content')
+    .map(section => {
+      const heading = stringValue(section, 'heading');
+      const body = stringValue(section, 'body');
+      const items = arrayValue(section, 'items')
+        .map(item => typeof item === 'string' ? `- ${item}` : '')
+        .filter(Boolean);
+      return [
+        heading ? `## ${heading}` : '',
+        body,
+        ...items,
+      ].filter(Boolean).join('\n');
+    })
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+function parseLegalDocumentContent(value: string, fallbackHeading: string) {
+  type EditableSection = { heading: string; bodyLines: string[]; items: string[] };
+  const sections: EditableSection[] = [];
+  let current: EditableSection = {
+    heading: fallbackHeading,
+    bodyLines: [],
+    items: [],
+  };
+  const pushCurrent = () => {
+    if (current.bodyLines.some(Boolean) || current.items.length || current.heading !== fallbackHeading || !sections.length) {
+      sections.push(current);
+    }
+  };
+
+  for (const rawLine of value.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line.startsWith('## ')) {
+      if (current.bodyLines.some(Boolean) || current.items.length || current.heading !== fallbackHeading) {
+        pushCurrent();
+      }
+      current = {
+        heading: line.slice(3).trim() || fallbackHeading,
+        bodyLines: [],
+        items: [],
+      };
+    } else if (line.startsWith('- ')) {
+      const item = line.slice(2).trim();
+      if (item) current.items.push(item);
+    } else {
+      current.bodyLines.push(line);
+    }
+  }
+  pushCurrent();
+
+  return sections
+    .map(section => ({
+      heading: section.heading || fallbackHeading,
+      body: section.bodyLines.join('\n').trim() || undefined,
+      items: section.items.length ? section.items : undefined,
+    }))
+    .filter(section => section.body || section.items?.length);
+}
+
+function dateInputValue(value: string) {
+  return value ? value.split('T')[0] : '';
+}
+
+function isExpiringWithin(value: string, days: number) {
+  if (!value) return false;
+  const expiresAt = new Date(value).getTime();
+  const now = Date.now();
+  return Number.isFinite(expiresAt) && expiresAt >= now && expiresAt <= now + days * 86400000;
 }
 
 function SupportDataSection({
@@ -15020,6 +15416,15 @@ function App() {
           onCreateMerchant={createMallMerchant}
         />
       );
+    }
+    if (activePageKey === 'mall.compliance') {
+      return <MallComplianceSection center={data.mallLegalCenter} onUpdated={() => reload()} />;
+    }
+    if (activePageKey === 'mall.invoices') {
+      return <MallInvoicesSection invoices={data.mallInvoices} onUpdated={() => reload()} />;
+    }
+    if (activePageKey === 'mall.complaints') {
+      return <MallComplaintsSection complaints={data.mallWechatComplaints} onUpdated={() => reload()} />;
     }
     if (activePageKey === 'mall.permissions') {
       return (
