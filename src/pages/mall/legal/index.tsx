@@ -36,8 +36,8 @@ export default function MallLegalCenterPage() {
   if (requestedDocumentType) {
     return (
       <MallPage active="mine" noTab>
-        <View className="mall-back-row">
-          <ChevronLeft size={24} color="#1F2D1F" onClick={() => Taro.navigateBack()} />
+        <View className="mall-back-row" onClick={() => Taro.navigateBack()}>
+          <ChevronLeft size={24} color="#1F2D1F" />
           <Text className="mall-section-action">返回确认页</Text>
         </View>
         {loading ? <Text className="mall-empty-copy">正在加载条款全文…</Text> : null}
@@ -81,8 +81,8 @@ export default function MallLegalCenterPage() {
 
   return (
     <MallPage active="mine" noTab>
-      <View className="mall-back-row">
-        <ChevronLeft size={24} color="#1F2D1F" onClick={() => Taro.navigateBack()} />
+      <View className="mall-back-row" onClick={() => Taro.navigateBack()}>
+        <ChevronLeft size={24} color="#1F2D1F" />
         <Text className="mall-section-action">返回</Text>
       </View>
       <Text className="mall-page-title">平台规则与经营资质</Text>
