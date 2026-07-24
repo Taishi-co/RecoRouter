@@ -12001,6 +12001,7 @@ function MallComplianceSection({
   });
   const [documentDraft, setDocumentDraft] = useState({
     documentType: 'transaction_rules', title: '', version: '', summary: '', content: '', publish: true,
+    sourceId: '', sourceVersion: '', sourceStatus: '',
   });
   const [qualificationDraft, setQualificationDraft] = useState({
     merchantId: '', qualificationType: 'food_business_license', qualificationName: '食品经营许可证',
@@ -12054,20 +12055,77 @@ function MallComplianceSection({
   const createDocument = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     try {
-      await apiPost('/api/admin/mall/legal-documents', {
+      if (documents.some(document =>
+        stringValue(document, 'documentType') === documentDraft.documentType
+        && stringValue(document, 'version') === documentDraft.version.trim()
+        && stringValue(document, 'id') !== documentDraft.sourceId
+      )) {
+        throw new Error('该文档类型的版本号已存在，请填写新的版本号');
+      }
+      const content = parseLegalDocumentContent(
+        documentDraft.content,
+        documentDraft.title.trim(),
+      );
+      if (!content.length) {
+        throw new Error('请填写有效的条款正文');
+      }
+      const payload = {
         documentType: documentDraft.documentType,
         title: documentDraft.title.trim(),
         version: documentDraft.version.trim(),
         summary: documentDraft.summary.trim(),
-        content: [{ heading: documentDraft.title.trim(), body: documentDraft.content.trim() }],
+        content,
         publish: documentDraft.publish,
-      });
-      setDocumentDraft(current => ({ ...current, title: '', version: '', summary: '', content: '' }));
-      notify('success', '规则新版本已存档');
+      };
+      if (documentDraft.sourceStatus === 'draft' && documentDraft.sourceId) {
+        await apiPut(`/api/admin/mall/legal-documents/${documentDraft.sourceId}`, payload);
+      } else {
+        await apiPost('/api/admin/mall/legal-documents', payload);
+      }
+      const requiresReconfirmation =
+        documentDraft.documentType === 'privacy_policy' && documentDraft.publish;
+      setDocumentDraft(current => ({
+        ...current,
+        title: '',
+        version: '',
+        summary: '',
+        content: '',
+        sourceId: '',
+        sourceVersion: '',
+        sourceStatus: '',
+      }));
+      notify(
+        'success',
+        requiresReconfirmation
+          ? '隐私政策新版本已发布，用户下次使用前会重新确认'
+          : documentDraft.publish ? '条款新版本已发布' : '条款草稿已保存',
+      );
       await onUpdated();
     } catch (error) {
       notify('error', error instanceof Error ? error.message : '规则存档失败');
     }
+  };
+
+  const copyDocumentToDraft = (legalDocument: JsonRecord) => {
+    const status = stringValue(legalDocument, 'status');
+    const isDraft = status === 'draft';
+    setDocumentDraft({
+      documentType: stringValue(legalDocument, 'documentType', 'transaction_rules'),
+      title: stringValue(legalDocument, 'title'),
+      version: isDraft ? stringValue(legalDocument, 'version') : '',
+      summary: stringValue(legalDocument, 'summary'),
+      content: legalDocumentContentToText(legalDocument),
+      publish: true,
+      sourceId: isDraft ? stringValue(legalDocument, 'id') : '',
+      sourceVersion: stringValue(legalDocument, 'version'),
+      sourceStatus: status,
+    });
+    window.requestAnimationFrame(() => {
+      window.document.getElementById('legal-document-editor')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    });
   };
 
   const createQualification = async (event: FormEvent<HTMLFormElement>) => {
@@ -12121,17 +12179,30 @@ function MallComplianceSection({
         </form>
       </Panel>
 
-      <Panel title="规则版本存档" description="发布新版本会保留旧版本，并将同类型旧版本标记为历史版本">
-        <form className="form-grid settings-form" onSubmit={createDocument}>
-          <label>文档类型<select value={documentDraft.documentType} onChange={event => setDocumentDraft(current => ({ ...current, documentType: event.target.value }))}><option value="privacy_policy">隐私保护指引</option><option value="service_agreement">用户服务协议</option><option value="transaction_rules">平台交易规则</option></select></label>
+      <Panel title="条款编辑与版本发布" description="从历史版本复制内容后修改并发布；旧版本会完整保留，已发布版本不直接覆盖">
+        <form id="legal-document-editor" className="form-grid settings-form" onSubmit={createDocument}>
+          {documentDraft.sourceVersion ? (
+            <div className="legal-document-editor-status wide">
+              {documentDraft.sourceStatus === 'draft'
+                ? `正在继续编辑 ${legalDocumentTypeLabel(documentDraft.documentType)}草稿 v${documentDraft.sourceVersion}，可保存草稿或直接发布。`
+                : `正在基于 ${legalDocumentTypeLabel(documentDraft.documentType)} v${documentDraft.sourceVersion} 创建新版本，请填写新的版本号。`}
+            </div>
+          ) : null}
+          {documentDraft.documentType === 'privacy_policy' && documentDraft.publish ? (
+            <div className="legal-document-publish-warning wide">
+              <strong>发布提醒</strong>
+              <span>隐私政策新版本发布后，所有用户下次打开商城时都会先看到更新提醒，并需确认新版本后才能登录、下单或使用售后。</span>
+            </div>
+          ) : null}
+          <label>文档类型<select value={documentDraft.documentType} onChange={event => setDocumentDraft(current => ({ ...current, documentType: event.target.value, sourceId: '', sourceVersion: '', sourceStatus: '' }))}><option value="privacy_policy">隐私保护指引</option><option value="service_agreement">用户服务协议</option><option value="transaction_rules">平台交易规则</option></select></label>
           <label>版本号<input required placeholder="例如 2026.08" value={documentDraft.version} onChange={event => setDocumentDraft(current => ({ ...current, version: event.target.value }))} /></label>
           <label className="wide">文档标题<input required value={documentDraft.title} onChange={event => setDocumentDraft(current => ({ ...current, title: event.target.value }))} /></label>
           <label className="wide">变更摘要<input value={documentDraft.summary} onChange={event => setDocumentDraft(current => ({ ...current, summary: event.target.value }))} /></label>
-          <label className="wide">正文<textarea required rows={8} value={documentDraft.content} onChange={event => setDocumentDraft(current => ({ ...current, content: event.target.value }))} /></label>
+          <label className="wide">正文<textarea required rows={14} placeholder="使用“## 小标题”分段，使用“- 条目”添加列表。可从下方历史版本复制后修改。" value={documentDraft.content} onChange={event => setDocumentDraft(current => ({ ...current, content: event.target.value }))} /></label>
           <label className="checkbox-field"><input type="checkbox" checked={documentDraft.publish} onChange={event => setDocumentDraft(current => ({ ...current, publish: event.target.checked }))} />保存后立即发布</label>
-          <div className="settings-actions wide"><button className="primary-button" type="submit"><Icon name="save" />存档新版本</button></div>
+          <div className="settings-actions wide"><button className="primary-button" type="submit"><Icon name="save" />{documentDraft.publish ? '发布新版本' : '保存为草稿'}</button></div>
         </form>
-        <div className="table-wrap"><table><thead><tr><th>类型</th><th>标题</th><th>版本</th><th>状态</th><th>生效时间</th></tr></thead><tbody>{documents.map(document => <tr key={stringValue(document, 'id')}><td>{legalDocumentTypeLabel(stringValue(document, 'documentType'))}</td><td>{stringValue(document, 'title')}</td><td>{stringValue(document, 'version')}</td><td><span className={badgeClass(stringValue(document, 'status'))}>{statusLabel(stringValue(document, 'status'))}</span></td><td>{formatDate(stringValue(document, 'effectiveAt'))}</td></tr>)}</tbody></table></div>
+        <div className="table-wrap"><table><thead><tr><th>类型</th><th>标题</th><th>版本</th><th>状态</th><th>生效时间</th><th>操作</th></tr></thead><tbody>{documents.map(document => <tr key={stringValue(document, 'id')}><td>{legalDocumentTypeLabel(stringValue(document, 'documentType'))}</td><td>{stringValue(document, 'title')}</td><td>{stringValue(document, 'version')}</td><td><span className={badgeClass(stringValue(document, 'status'))}>{statusLabel(stringValue(document, 'status'))}</span></td><td>{formatDate(stringValue(document, 'effectiveAt'))}</td><td><button className="ghost-button" type="button" onClick={() => copyDocumentToDraft(document)}>{stringValue(document, 'status') === 'draft' ? '继续编辑' : '复制并修改'}</button></td></tr>)}</tbody></table></div>
       </Panel>
 
       <Panel title="商家经营与食品资质" description="销售食品必须登记食品经营许可证，或登记仅销售预包装食品备案；系统会在到期前 30 天告警">
@@ -12206,6 +12277,67 @@ function MallComplaintsSection({ complaints, onUpdated }: { complaints: JsonReco
 
 function legalDocumentTypeLabel(value: string) {
   return ({ privacy_policy: '隐私保护指引', service_agreement: '用户服务协议', transaction_rules: '平台交易规则' } as Record<string, string>)[value] || value;
+}
+
+function legalDocumentContentToText(document: JsonRecord) {
+  return arrayValue(document, 'content')
+    .map(section => {
+      const heading = stringValue(section, 'heading');
+      const body = stringValue(section, 'body');
+      const items = arrayValue(section, 'items')
+        .map(item => typeof item === 'string' ? `- ${item}` : '')
+        .filter(Boolean);
+      return [
+        heading ? `## ${heading}` : '',
+        body,
+        ...items,
+      ].filter(Boolean).join('\n');
+    })
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+function parseLegalDocumentContent(value: string, fallbackHeading: string) {
+  type EditableSection = { heading: string; bodyLines: string[]; items: string[] };
+  const sections: EditableSection[] = [];
+  let current: EditableSection = {
+    heading: fallbackHeading,
+    bodyLines: [],
+    items: [],
+  };
+  const pushCurrent = () => {
+    if (current.bodyLines.some(Boolean) || current.items.length || current.heading !== fallbackHeading || !sections.length) {
+      sections.push(current);
+    }
+  };
+
+  for (const rawLine of value.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line.startsWith('## ')) {
+      if (current.bodyLines.some(Boolean) || current.items.length || current.heading !== fallbackHeading) {
+        pushCurrent();
+      }
+      current = {
+        heading: line.slice(3).trim() || fallbackHeading,
+        bodyLines: [],
+        items: [],
+      };
+    } else if (line.startsWith('- ')) {
+      const item = line.slice(2).trim();
+      if (item) current.items.push(item);
+    } else {
+      current.bodyLines.push(line);
+    }
+  }
+  pushCurrent();
+
+  return sections
+    .map(section => ({
+      heading: section.heading || fallbackHeading,
+      body: section.bodyLines.join('\n').trim() || undefined,
+      items: section.items.length ? section.items : undefined,
+    }))
+    .filter(section => section.body || section.items?.length);
 }
 
 function dateInputValue(value: string) {

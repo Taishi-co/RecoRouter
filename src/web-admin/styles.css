@@ -3378,6 +3378,33 @@ textarea:focus {
   justify-content: flex-end;
 }
 
+.legal-document-editor-status,
+.legal-document-publish-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 11px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.legal-document-editor-status {
+  color: #285a37;
+  background: #f2fbef;
+  border: 1px solid #cce5c7;
+}
+
+.legal-document-publish-warning {
+  color: #7c4a03;
+  background: #fff8eb;
+  border: 1px solid #f2d39d;
+}
+
+.legal-document-publish-warning strong {
+  flex: none;
+}
+
 .settings-campaign-list {
   display: grid;
   gap: 10px;

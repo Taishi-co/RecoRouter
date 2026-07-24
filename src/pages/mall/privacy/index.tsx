@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Image, Text, View } from '@tarojs/components'
-import Taro from '@tarojs/taro'
-import { ChevronLeft, FileCheck, Headphones, ShieldCheck, Trash2 } from 'lucide-react-taro'
+import Taro, { useDidHide, useDidShow } from '@tarojs/taro'
+import { ChevronLeft, ChevronRight, FileCheck, Headphones, ShieldCheck, Trash2 } from 'lucide-react-taro'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   cancelAccountDeletion,
   getAccountDeletion,
@@ -20,6 +28,7 @@ import { MallPage, MallPrimaryButton } from '../mall-ui'
 export default function MallPrivacyPage() {
   const params = Taro.getCurrentInstance().router?.params || {}
   const firstLaunch = params.firstLaunch === '1'
+  const policyUpdated = params.reason === 'policy_updated'
   const returnUrl = useMemo(() => {
     const raw = typeof params.returnUrl === 'string' ? decodeURIComponent(params.returnUrl) : ''
     return raw.startsWith('/pages/mall/') ? raw : '/pages/mall/profile/index'
@@ -29,7 +38,16 @@ export default function MallPrivacyPage() {
   const [privacyConsent, setPrivacyConsent] = useState<PrivacyConsentStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [promptOpen, setPromptOpen] = useState(firstLaunch)
   const token = String(Taro.getStorageSync('token') || '')
+
+  useDidShow(() => {
+    if (firstLaunch) setPromptOpen(true)
+  })
+
+  useDidHide(() => {
+    setPromptOpen(false)
+  })
 
   useEffect(() => {
     Promise.all([
@@ -60,6 +78,11 @@ export default function MallPrivacyPage() {
 
   const privacyPolicy = legalCenter?.documents.find((document) => document.documentType === 'privacy_policy')
   const currentPolicyVersion = privacyPolicy?.version || MALL_PRIVACY_POLICY_VERSION
+  const consentDocuments = [
+    legalCenter?.documents.find((document) => document.documentType === 'privacy_policy'),
+    legalCenter?.documents.find((document) => document.documentType === 'service_agreement'),
+    legalCenter?.documents.find((document) => document.documentType === 'transaction_rules'),
+  ].filter((document): document is NonNullable<typeof document> => Boolean(document))
   const hasGrantedPrivacy = token
     ? privacyConsent?.action === 'granted' && privacyConsent.policyVersion === currentPolicyVersion
     : Taro.getStorageSync(MALL_PRIVACY_STORAGE_KEY) === currentPolicyVersion
@@ -148,14 +171,108 @@ export default function MallPrivacyPage() {
     }
   }
 
+  const openDocument = (documentType: string) => {
+    Taro.navigateTo({
+      url: `/pages/mall/legal/index?documentType=${encodeURIComponent(documentType)}`,
+    })
+  }
+
+  if (firstLaunch) {
+    return (
+      <MallPage active="mine" noTab hideNotificationBanner>
+        <View className="flex min-h-screen flex-col items-center justify-center gap-3 text-center">
+          <View className="flex h-16 w-16 items-center justify-center rounded-3xl bg-green-50">
+            <ShieldCheck size={34} color="#2F7E43" />
+          </View>
+          <Text className="block text-lg font-semibold text-slate-800">叁友甄选</Text>
+          <Text className="block text-sm text-slate-500">放心选购，安心使用</Text>
+        </View>
+
+        <Dialog
+          open={promptOpen}
+          onOpenChange={(open) => {
+            if (open) setPromptOpen(true)
+          }}
+        >
+          <DialogContent
+            className="max-w-md gap-5 border-green-100 bg-white p-5"
+            closeClassName="hidden"
+          >
+            <DialogHeader className="space-y-3 text-left">
+              <View className="flex items-center gap-3">
+                <View className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-green-50">
+                  <ShieldCheck size={24} color="#2F7E43" />
+                </View>
+                <View className="flex min-w-0 flex-col gap-1">
+                  {policyUpdated ? (
+                    <Text className="block text-xs font-semibold text-amber-700">条款已更新</Text>
+                  ) : null}
+                  <DialogTitle>
+                    <Text className="block text-lg font-semibold text-slate-900">
+                      {policyUpdated ? '请确认新版隐私条款' : '服务条款与隐私保护'}
+                    </Text>
+                  </DialogTitle>
+                </View>
+              </View>
+              <DialogDescription>
+                <Text className="block text-sm leading-relaxed text-slate-600">
+                  为提供登录、下单、配送和售后服务，请阅读并同意以下条款。点击条款名称可查看完整内容。
+                </Text>
+              </DialogDescription>
+            </DialogHeader>
+
+            <View className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+              {consentDocuments.map((document) => (
+                <Button
+                  key={document.id}
+                  variant="ghost"
+                  className="h-auto w-full justify-between rounded-none border-b border-slate-200 px-4 py-3 text-left last:border-b-0"
+                  onClick={() => openDocument(document.documentType)}
+                >
+                  <View className="flex min-w-0 items-center gap-3">
+                    <FileCheck size={18} color="#2F7E43" />
+                    <View className="flex min-w-0 flex-col gap-1">
+                      <Text className="block text-sm font-semibold text-slate-800">《{document.title}》</Text>
+                      <Text className="block text-xs font-normal text-slate-500">版本 {document.version}</Text>
+                    </View>
+                  </View>
+                  <ChevronRight size={18} color="#849085" />
+                </Button>
+              ))}
+              {!loading && !consentDocuments.length ? (
+                <Text className="block px-4 py-5 text-center text-sm text-amber-700">
+                  条款加载失败，请稍后重新打开
+                </Text>
+              ) : null}
+            </View>
+
+            <Text className="block text-center text-xs leading-relaxed text-slate-500">
+              点击“同意并继续”即表示您已阅读并同意以上条款。隐私政策当前版本为 {currentPolicyVersion}。
+            </Text>
+            <View className="flex flex-col gap-2">
+              <Button
+                className="w-full bg-green-700 text-white"
+                disabled={loading || !privacyPolicy || submitting}
+                onClick={acceptPrivacy}
+              >
+                <Text>{submitting ? '保存中' : loading ? '条款加载中' : '同意并继续'}</Text>
+              </Button>
+              <Button variant="ghost" className="w-full text-slate-500" onClick={browseOnly}>
+                <Text>暂不同意，仅浏览商品</Text>
+              </Button>
+            </View>
+          </DialogContent>
+        </Dialog>
+      </MallPage>
+    )
+  }
+
   return (
     <MallPage active="mine" noTab>
-      {!firstLaunch ? (
-        <View className="mall-back-row">
-          <ChevronLeft size={24} color="#1F2D1F" onClick={() => Taro.navigateBack()} />
-          <Text className="mall-section-action">返回</Text>
-        </View>
-      ) : null}
+      <View className="mall-back-row">
+        <ChevronLeft size={24} color="#1F2D1F" onClick={() => Taro.navigateBack()} />
+        <Text className="mall-section-action">返回</Text>
+      </View>
 
       <View className="mall-compliance-hero">
         <View className="mall-compliance-icon"><ShieldCheck size={30} color="#2F7E43" /></View>
@@ -206,45 +323,34 @@ export default function MallPrivacyPage() {
         <Text className="mall-section-action" onClick={() => Taro.navigateTo({ url: '/pages/mall/support/index?topic=privacy_complaint' })}>前往客服中心</Text>
       </View>
 
-      {firstLaunch ? (
+      <View className="mall-card mall-compliance-section">
+        <Text className="mall-list-title">隐私选择与账号管理</Text>
+        <Text className="mall-compliance-body">撤回同意不影响撤回前处理的合法性；账号注销会先检查未完成订单和售后。</Text>
         <View className="mall-compliance-actions">
-          <MallPrimaryButton onClick={acceptPrivacy}>
-            <Text>{submitting ? '保存中' : '同意并继续'}</Text>
-          </MallPrimaryButton>
-          <MallPrimaryButton subtle onClick={browseOnly}>
-            <Text>暂不同意，仅浏览商品</Text>
-          </MallPrimaryButton>
+          {hasGrantedPrivacy ? (
+            <MallPrimaryButton subtle onClick={withdrawPrivacy}><Text>撤回隐私同意</Text></MallPrimaryButton>
+          ) : (
+            <MallPrimaryButton onClick={acceptPrivacy}>
+              <Text>{submitting ? '保存中' : '重新同意并恢复功能'}</Text>
+            </MallPrimaryButton>
+          )}
+          {token ? (
+            <MallPrimaryButton subtle onClick={deleteAccount}>
+              <Trash2 size={16} color="#B91C1C" /><Text>申请注销账号</Text>
+            </MallPrimaryButton>
+          ) : null}
         </View>
-      ) : (
-        <View className="mall-card mall-compliance-section">
-          <Text className="mall-list-title">隐私选择与账号管理</Text>
-          <Text className="mall-compliance-body">撤回同意不影响撤回前处理的合法性；账号注销会先检查未完成订单和售后。</Text>
-          <View className="mall-compliance-actions">
-            {hasGrantedPrivacy ? (
-              <MallPrimaryButton subtle onClick={withdrawPrivacy}><Text>撤回隐私同意</Text></MallPrimaryButton>
-            ) : (
-              <MallPrimaryButton onClick={acceptPrivacy}>
-                <Text>{submitting ? '保存中' : '重新同意并恢复功能'}</Text>
-              </MallPrimaryButton>
-            )}
-            {token ? (
-              <MallPrimaryButton subtle onClick={deleteAccount}>
-                <Trash2 size={16} color="#B91C1C" /><Text>申请注销账号</Text>
-              </MallPrimaryButton>
-            ) : null}
+        {deletion?.status === 'waiting' ? (
+          <View className="mall-compliance-blockers">
+            <Text className="mall-compliance-warning">注销申请等待处理：</Text>
+            {deletion.blockers?.map((blocker) => <Text key={blocker.id}>{blocker.message}（{blocker.label}）</Text>)}
+            <Text className="mall-section-action" onClick={cancelDeletion}>撤销注销申请</Text>
           </View>
-          {deletion?.status === 'waiting' ? (
-            <View className="mall-compliance-blockers">
-              <Text className="mall-compliance-warning">注销申请等待处理：</Text>
-              {deletion.blockers?.map((blocker) => <Text key={blocker.id}>{blocker.message}（{blocker.label}）</Text>)}
-              <Text className="mall-section-action" onClick={cancelDeletion}>撤销注销申请</Text>
-            </View>
-          ) : null}
-          {deletion?.status === 'completed' ? (
-            <Text className="mall-compliance-warning">账号注销已完成，当前登录已退出。</Text>
-          ) : null}
-        </View>
-      )}
+        ) : null}
+        {deletion?.status === 'completed' ? (
+          <Text className="mall-compliance-warning">账号注销已完成，当前登录已退出。</Text>
+        ) : null}
+      </View>
     </MallPage>
   )
 }

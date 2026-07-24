@@ -2,10 +2,15 @@ import { useEffect, useState } from 'react'
 import { Image, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { Building2, ChevronLeft, FileText, ShieldCheck } from 'lucide-react-taro'
+import { Card, CardContent } from '@/components/ui/card'
 import { getLegalCenter, type LegalCenter } from '@/services/mall-compliance'
 import { MallPage } from '../mall-ui'
 
 export default function MallLegalCenterPage() {
+  const params = Taro.getCurrentInstance().router?.params || {}
+  const requestedDocumentType = typeof params.documentType === 'string'
+    ? decodeURIComponent(params.documentType)
+    : ''
   const [center, setCenter] = useState<LegalCenter | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -22,6 +27,56 @@ export default function MallLegalCenterPage() {
   const preview = (url?: string) => {
     if (!url) return
     Taro.previewImage({ urls: [url], current: url })
+  }
+
+  const selectedDocument = requestedDocumentType
+    ? center?.documents.find((document) => document.documentType === requestedDocumentType)
+    : undefined
+
+  if (requestedDocumentType) {
+    return (
+      <MallPage active="mine" noTab>
+        <View className="mall-back-row">
+          <ChevronLeft size={24} color="#1F2D1F" onClick={() => Taro.navigateBack()} />
+          <Text className="mall-section-action">返回确认页</Text>
+        </View>
+        {loading ? <Text className="mall-empty-copy">正在加载条款全文…</Text> : null}
+        {selectedDocument ? (
+          <>
+            <View className="mall-compliance-hero">
+              <View className="mall-compliance-icon"><FileText size={28} color="#2F7E43" /></View>
+              <Text className="mall-page-title">{selectedDocument.title}</Text>
+              {selectedDocument.summary ? (
+                <Text className="block text-sm leading-relaxed text-slate-600">{selectedDocument.summary}</Text>
+              ) : null}
+              <Text className="block text-xs leading-relaxed text-slate-500">
+                版本 {selectedDocument.version} · 生效时间 {formatDate(selectedDocument.effectiveAt || selectedDocument.publishedAt)}
+              </Text>
+            </View>
+            <Card className="border-green-100 bg-white">
+              <CardContent className="flex flex-col gap-5 p-4">
+                {selectedDocument.content.map((section) => (
+                  <View className="flex flex-col gap-2 border-b border-slate-100 pb-5 last:border-b-0 last:pb-0" key={section.heading}>
+                    <Text className="block text-base font-semibold text-slate-900">{section.heading}</Text>
+                    {section.body ? (
+                      <Text className="block text-sm leading-relaxed text-slate-600">{section.body}</Text>
+                    ) : null}
+                    {section.items?.map((item) => (
+                      <Text className="block text-sm leading-relaxed text-slate-600" key={item}>• {item}</Text>
+                    ))}
+                  </View>
+                ))}
+              </CardContent>
+            </Card>
+          </>
+        ) : !loading ? (
+          <View className="mall-empty">
+            <Text className="mall-empty-title">该条款暂未发布</Text>
+            <Text className="mall-empty-copy">请返回确认页后稍后再试。</Text>
+          </View>
+        ) : null}
+      </MallPage>
+    )
   }
 
   return (

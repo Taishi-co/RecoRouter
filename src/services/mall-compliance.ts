@@ -130,6 +130,11 @@ export function getLegalCenter(): Promise<LegalCenter> {
   return request('/api/mall/legal-center', 'GET')
 }
 
+export function resolvePrivacyPolicyVersion(center?: LegalCenter | null) {
+  return center?.documents.find((document) => document.documentType === 'privacy_policy')?.version
+    || MALL_PRIVACY_POLICY_VERSION
+}
+
 export function getPrivacyConsent(): Promise<PrivacyConsentStatus> {
   return request('/api/mall/privacy/consent', 'GET')
 }

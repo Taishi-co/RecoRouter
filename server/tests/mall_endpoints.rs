@@ -352,6 +352,100 @@ async fn mall_privacy_withdrawal_blocks_business_routes_but_keeps_compliance_rou
 }
 
 #[tokio::test]
+async fn admin_can_edit_a_legal_document_draft_and_publish_it_as_a_new_version() {
+    let Some(context) = TestContext::new().await else {
+        return;
+    };
+
+    let admin_id = insert_user(&context.pool, "13950004903", "admin", "条款管理员").await;
+    let token = insert_session(&context.pool, &admin_id, "mall-legal-document-admin").await;
+    let (create_status, create_body) = post_json_with_auth(
+        &context.app,
+        "/api/admin/mall/legal-documents",
+        &token,
+        json!({
+            "documentType": "privacy_policy",
+            "title": "隐私保护指引草稿",
+            "version": "2026.08",
+            "summary": "管理端草稿编辑测试",
+            "content": [{
+                "heading": "测试章节",
+                "body": "发布前仍可继续修改。"
+            }],
+            "publish": false
+        }),
+    )
+    .await;
+    assert_eq!(create_status, StatusCode::OK);
+    assert_eq!(create_body["data"]["status"], "draft");
+    let document_id = create_body["data"]["id"]
+        .as_str()
+        .expect("draft document id should exist");
+
+    let (_, before_publish) = get_json(&context.app, "/api/mall/legal-center").await;
+    assert!(before_publish["data"]["documents"]
+        .as_array()
+        .is_some_and(|documents| documents.iter().any(|document| {
+            document["documentType"] == "privacy_policy" && document["version"] == "2026.07"
+        })));
+
+    let (publish_status, publish_body) = put_json_with_auth(
+        &context.app,
+        &format!("/api/admin/mall/legal-documents/{document_id}"),
+        &token,
+        json!({
+            "documentType": "privacy_policy",
+            "title": "隐私保护指引新版",
+            "version": "2026.08",
+            "summary": "管理端修改并发布",
+            "content": [{
+                "heading": "测试章节",
+                "body": "草稿内容修改后发布。"
+            }],
+            "publish": true
+        }),
+    )
+    .await;
+    assert_eq!(publish_status, StatusCode::OK);
+    assert_eq!(publish_body["data"]["status"], "published");
+
+    let (_, after_publish) = get_json(&context.app, "/api/mall/legal-center").await;
+    assert!(after_publish["data"]["documents"]
+        .as_array()
+        .is_some_and(|documents| documents.iter().any(|document| {
+            document["documentType"] == "privacy_policy" && document["version"] == "2026.08"
+        })));
+    let old_status: String = sqlx::query_scalar(
+        "SELECT status FROM mall_legal_documents WHERE document_type = 'privacy_policy' AND version = '2026.07'",
+    )
+    .fetch_one(&context.pool)
+    .await
+    .expect("old privacy policy should still exist");
+    assert_eq!(old_status, "retired");
+
+    let (immutable_status, immutable_body) = put_json_with_auth(
+        &context.app,
+        &format!("/api/admin/mall/legal-documents/{document_id}"),
+        &token,
+        json!({
+            "documentType": "privacy_policy",
+            "title": "不应直接覆盖",
+            "version": "2026.08",
+            "content": [{ "heading": "不可修改", "body": "已发布版本必须保持不变。" }],
+            "publish": true
+        }),
+    )
+    .await;
+    assert_eq!(immutable_status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        immutable_body["message"],
+        "已发布或已归档条款不可直接修改，请复制为新版本"
+    );
+
+    context.cleanup().await;
+}
+
+#[tokio::test]
 async fn waiting_account_deletion_completes_after_blockers_are_cleared() {
     let Some(context) = TestContext::new().await else {
         return;

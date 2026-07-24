@@ -360,6 +360,10 @@ where
             post(admin_create_legal_document::<S>),
         )
         .route(
+            "/api/admin/mall/legal-documents/:id",
+            put(admin_update_legal_document::<S>),
+        )
+        .route(
             "/api/admin/mall/merchants/:id/qualifications",
             get(admin_list_merchant_qualifications::<S>)
                 .post(admin_create_merchant_qualification::<S>),
@@ -9787,6 +9791,86 @@ where
     .await?;
     tx.commit().await?;
     Ok(ok("规则版本已存档", document))
+}
+
+async fn admin_update_legal_document<S>(
+    State(state): State<AppState<S>>,
+    Path(id): Path<String>,
+    Json(body): Json<LegalDocumentMutationRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let document_type = require_non_empty(Some(body.document_type), "文档类型不能为空")?;
+    if !matches!(
+        document_type.as_str(),
+        "privacy_policy" | "service_agreement" | "transaction_rules"
+    ) {
+        return Err(ApiError::BadRequest("不支持的公示文档类型".to_string()));
+    }
+    let title = require_non_empty(Some(body.title), "文档标题不能为空")?;
+    let version = require_non_empty(Some(body.version), "版本号不能为空")?;
+    let publish = body.publish.unwrap_or(false);
+    let mut tx = state.db.begin().await?;
+    let current_status = sqlx::query_scalar::<_, String>(
+        "SELECT status FROM mall_legal_documents WHERE id = $1 FOR UPDATE",
+    )
+    .bind(&id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("条款草稿不存在".to_string()))?;
+    if current_status != "draft" {
+        return Err(ApiError::BadRequest(
+            "已发布或已归档条款不可直接修改，请复制为新版本".to_string(),
+        ));
+    }
+    if publish {
+        sqlx::query(
+            "UPDATE mall_legal_documents SET status = 'retired', updated_at = now() WHERE document_type = $1 AND status = 'published' AND id <> $2",
+        )
+        .bind(&document_type)
+        .bind(&id)
+        .execute(&mut *tx)
+        .await?;
+    }
+    let document = sqlx::query_scalar::<_, Value>(
+        r#"
+        UPDATE mall_legal_documents
+        SET document_type = $2,
+            title = $3,
+            version = $4,
+            summary = $5,
+            content = $6,
+            status = $7,
+            effective_at = COALESCE($8, CASE WHEN $7 = 'published' THEN now() ELSE effective_at END),
+            published_at = CASE WHEN $7 = 'published' THEN COALESCE(published_at, now()) ELSE NULL END,
+            updated_at = now()
+        WHERE id = $1
+        RETURNING jsonb_build_object(
+          'id', id, 'documentType', document_type, 'title', title,
+          'version', version, 'status', status, 'effectiveAt', effective_at
+        )
+        "#,
+    )
+    .bind(id)
+    .bind(document_type)
+    .bind(title)
+    .bind(version)
+    .bind(non_empty(body.summary))
+    .bind(body.content)
+    .bind(if publish { "published" } else { "draft" })
+    .bind(body.effective_at)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(ok(
+        if publish {
+            "条款新版本已发布"
+        } else {
+            "条款草稿已更新"
+        },
+        document,
+    ))
 }
 
 async fn get_privacy_consent<S>(

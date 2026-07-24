@@ -6,9 +6,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Network } from '@/network'
 import {
+  getLegalCenter,
   MALL_PRIVACY_POLICY_VERSION,
   MALL_PRIVACY_STORAGE_KEY,
   recordPrivacyConsent,
+  resolvePrivacyPolicyVersion,
 } from '@/services/mall-compliance'
 import { MallBrandMark, MallPage, MallPrimaryButton } from '../mall-ui'
 
@@ -60,6 +62,7 @@ export default function MallAuthPage() {
   const [loading, setLoading] = useState(false)
   const [wechatLoading, setWechatLoading] = useState(false)
   const [captchaLoading, setCaptchaLoading] = useState(false)
+  const [currentPolicyVersion, setCurrentPolicyVersion] = useState(MALL_PRIVACY_POLICY_VERSION)
   const [privacyAccepted, setPrivacyAccepted] = useState(
     Taro.getStorageSync(MALL_PRIVACY_STORAGE_KEY) === MALL_PRIVACY_POLICY_VERSION,
   )
@@ -76,6 +79,20 @@ export default function MallAuthPage() {
       loadCaptcha()
     }
   }, [mode])
+
+  useEffect(() => {
+    getLegalCenter()
+      .then((center) => {
+        const nextVersion = resolvePrivacyPolicyVersion(center)
+        setCurrentPolicyVersion(nextVersion)
+        setPrivacyAccepted(
+          Taro.getStorageSync(MALL_PRIVACY_STORAGE_KEY) === nextVersion,
+        )
+      })
+      .catch(() => {
+        // 启动页已完成版本核验；此处网络失败时保留当前选择。
+      })
+  }, [])
 
   const switchMode = (nextMode: AuthMode) => {
     setMode(nextMode)
@@ -144,7 +161,7 @@ export default function MallAuthPage() {
           role: registerRole,
         })
       persistAuth(authUser)
-      await recordPrivacyConsent('granted')
+      await recordPrivacyConsent('granted', currentPolicyVersion)
       Taro.showToast({ title: mode === 'login' ? '登录成功' : '注册成功', icon: 'success' })
       setTimeout(() => Taro.redirectTo({ url: returnUrl }), 500)
     } catch (error) {
@@ -189,7 +206,7 @@ export default function MallAuthPage() {
         role: registerRole,
       })
       persistAuth(authUser)
-      await recordPrivacyConsent('granted')
+      await recordPrivacyConsent('granted', currentPolicyVersion)
       Taro.showToast({ title: '微信登录成功', icon: 'success' })
       setTimeout(() => Taro.redirectTo({ url: returnUrl }), 500)
     } catch (error) {
@@ -279,7 +296,7 @@ export default function MallAuthPage() {
             onClick={() => {
               const next = !privacyAccepted
               setPrivacyAccepted(next)
-              if (next) Taro.setStorageSync(MALL_PRIVACY_STORAGE_KEY, MALL_PRIVACY_POLICY_VERSION)
+              if (next) Taro.setStorageSync(MALL_PRIVACY_STORAGE_KEY, currentPolicyVersion)
               else Taro.removeStorageSync(MALL_PRIVACY_STORAGE_KEY)
             }}
           >
@@ -289,9 +306,15 @@ export default function MallAuthPage() {
           <Text
             className="mall-section-action"
             onClick={() => Taro.navigateTo({
-              url: `/pages/mall/privacy/index?firstLaunch=1&returnUrl=${encodeURIComponent('/pages/mall/auth/index')}`,
+              url: '/pages/mall/legal/index?documentType=privacy_policy',
             })}
-          >《隐私保护指引》《用户服务协议》</Text>
+          >《隐私保护指引》</Text>
+          <Text
+            className="mall-section-action"
+            onClick={() => Taro.navigateTo({
+              url: '/pages/mall/legal/index?documentType=service_agreement',
+            })}
+          >《用户服务协议》</Text>
         </View>
         <MallPrimaryButton onClick={submit}>
           <ShieldCheck size={18} color="#FFFFFF" />
