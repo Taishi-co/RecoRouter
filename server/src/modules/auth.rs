@@ -226,6 +226,14 @@ struct SessionUserRow {
     status: Option<String>,
 }
 
+#[derive(Debug, FromRow)]
+struct MallSessionUserRow {
+    id: String,
+    role: Option<String>,
+    status: Option<String>,
+    has_current_privacy_consent: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct AuthenticatedUser {
     pub id: String,
@@ -880,6 +888,37 @@ where
     Ok(next.run(request).await)
 }
 
+pub async fn mall_customer_guard<S>(
+    State(state): State<AppState<S>>,
+    headers: HeaderMap,
+    mut request: Request<Body>,
+    next: Next,
+) -> ApiResult<Response>
+where
+    S: Storage,
+{
+    let token = bearer_token(&headers)?;
+    let user = mall_session_user(&state.db, token).await?;
+
+    match user.status.as_deref() {
+        Some("disabled") => return Err(ApiError::Unauthorized("账号已被禁用".to_string())),
+        Some("deleted") => return Err(ApiError::Unauthorized("账号已注销".to_string())),
+        _ => {}
+    }
+
+    if user.role.as_deref() != Some("admin") && !user.has_current_privacy_consent {
+        return Err(ApiError::Forbidden(
+            "请先阅读并同意当前隐私政策".to_string(),
+        ));
+    }
+
+    request.extensions_mut().insert(AuthenticatedUser {
+        id: user.id,
+        role: user.role,
+    });
+    Ok(next.run(request).await)
+}
+
 pub fn require_admin(user: &AuthenticatedUser) -> ApiResult<()> {
     if user.is_admin() {
         Ok(())
@@ -893,6 +932,42 @@ pub fn require_self_or_admin(user: &AuthenticatedUser, resource_user_id: &str) -
         Ok(())
     } else {
         Err(ApiError::Forbidden("无权访问该用户数据".to_string()))
+    }
+}
+
+pub async fn require_mall_privacy_consent(
+    pool: &PgPool,
+    user: &AuthenticatedUser,
+) -> ApiResult<()> {
+    if user.is_admin() {
+        return Ok(());
+    }
+
+    let has_current_consent: bool = sqlx::query_scalar(
+        r#"
+        SELECT COALESCE((
+          SELECT consent.action = 'granted'
+            AND document.status = 'published'
+          FROM mall_privacy_consents consent
+          LEFT JOIN mall_legal_documents document
+            ON document.document_type = 'privacy_policy'
+           AND document.version = consent.policy_version
+          WHERE consent.user_id = $1
+          ORDER BY consent.created_at DESC, consent.id DESC
+          LIMIT 1
+        ), false)
+        "#,
+    )
+    .bind(&user.id)
+    .fetch_one(pool)
+    .await?;
+
+    if has_current_consent {
+        Ok(())
+    } else {
+        Err(ApiError::Forbidden(
+            "请先阅读并同意当前隐私政策".to_string(),
+        ))
     }
 }
 
@@ -913,6 +988,33 @@ async fn session_user(pool: &PgPool, token: &str) -> ApiResult<SessionUserRow> {
     sqlx::query_as::<_, SessionUserRow>(
         r#"
         SELECT u.id, u.role, u.status
+        FROM admin_sessions s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.token = $1
+          AND s.revoked_at IS NULL
+        "#,
+    )
+    .bind(token)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| ApiError::Unauthorized("登录已失效".to_string()))
+}
+
+async fn mall_session_user(pool: &PgPool, token: &str) -> ApiResult<MallSessionUserRow> {
+    sqlx::query_as::<_, MallSessionUserRow>(
+        r#"
+        SELECT u.id, u.role, u.status,
+          COALESCE((
+            SELECT consent.action = 'granted'
+              AND document.status = 'published'
+            FROM mall_privacy_consents consent
+            LEFT JOIN mall_legal_documents document
+              ON document.document_type = 'privacy_policy'
+             AND document.version = consent.policy_version
+            WHERE consent.user_id = u.id
+            ORDER BY consent.created_at DESC, consent.id DESC
+            LIMIT 1
+          ), false) AS has_current_privacy_consent
         FROM admin_sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.token = $1

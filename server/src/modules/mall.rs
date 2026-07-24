@@ -158,6 +158,21 @@ where
         )
         .route("/api/support/tickets/:id", put(update_support_ticket::<S>))
         .route(
+            "/api/mall/invoices",
+            get(list_customer_invoices::<S>).post(create_invoice_request::<S>),
+        )
+        .route(
+            "/api/mall/invoices/:id/cancel",
+            post(cancel_invoice_request::<S>),
+        )
+}
+
+pub fn customer_compliance_router<S>() -> Router<AppState<S>>
+where
+    S: Storage,
+{
+    Router::new()
+        .route(
             "/api/mall/privacy/consent",
             get(get_privacy_consent::<S>).post(record_privacy_consent::<S>),
         )
@@ -166,14 +181,6 @@ where
             get(get_account_deletion::<S>)
                 .post(request_account_deletion::<S>)
                 .delete(cancel_account_deletion::<S>),
-        )
-        .route(
-            "/api/mall/invoices",
-            get(list_customer_invoices::<S>).post(create_invoice_request::<S>),
-        )
-        .route(
-            "/api/mall/invoices/:id/cancel",
-            post(cancel_invoice_request::<S>),
         )
 }
 
@@ -9792,14 +9799,20 @@ where
     let consent = sqlx::query_scalar::<_, Value>(
         r#"
         SELECT COALESCE((
-          SELECT jsonb_build_object(
-            'policyVersion', policy_version, 'action', action,
-            'consentItems', consent_items, 'createdAt', created_at
+            SELECT jsonb_build_object(
+              'policyVersion', policy_version, 'action', action,
+              'consentItems', consent_items, 'createdAt', created_at
+            )
+            FROM mall_privacy_consents
+            WHERE user_id = $1
+            ORDER BY created_at DESC, id DESC LIMIT 1
+          ), jsonb_build_object('action', 'not_recorded'))
+          || jsonb_build_object(
+            'currentPolicyVersion',
+            (SELECT version FROM mall_legal_documents
+             WHERE document_type = 'privacy_policy' AND status = 'published'
+             LIMIT 1)
           )
-          FROM mall_privacy_consents
-          WHERE user_id = $1
-          ORDER BY created_at DESC LIMIT 1
-        ), jsonb_build_object('action', 'not_recorded'))
         "#,
     )
     .bind(&user.id)
@@ -9871,6 +9884,25 @@ async fn account_deletion_blockers(pool: &PgPool, user_id: &str) -> ApiResult<Va
           FROM mall_after_sales
           WHERE user_id = $1
             AND status NOT IN ('rejected', 'closed', 'refunded', 'completed')
+          UNION ALL
+          SELECT jsonb_build_object(
+            'type', 'active_group_buy', 'id', id, 'label', id,
+            'message', '仍有集采预售款项或履约待处理，请等待退款或成单后再注销'
+          ) AS blocker
+          FROM mall_group_buy_subscriptions
+          WHERE user_id = $1
+            AND status IN (
+              'deposit_paid', 'pending_balance', 'balance_paid',
+              'activity_cancel_refunding'
+            )
+          UNION ALL
+          SELECT jsonb_build_object(
+            'type', 'active_invoice', 'id', id, 'label', invoice_no,
+            'message', '仍有开票申请处理中，请等待开具、驳回或先撤销后再注销'
+          ) AS blocker
+          FROM mall_invoice_requests
+          WHERE user_id = $1
+            AND status IN ('submitted', 'processing')
         ) blockers
         "#,
     )
@@ -9885,6 +9917,7 @@ async fn complete_account_deletion(
     request_id: &str,
 ) -> ApiResult<()> {
     let mut tx = pool.begin().await?;
+    let deleted_reference = format!("deleted:{request_id}");
     sqlx::query("DELETE FROM mall_addresses WHERE user_id = $1")
         .bind(user_id)
         .execute(&mut *tx)
@@ -9909,10 +9942,105 @@ async fn complete_account_deletion(
         .bind(user_id)
         .execute(&mut *tx)
         .await?;
+    sqlx::query("DELETE FROM mall_community_post_interactions WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM mall_points_ledger WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM mall_credit_ledger WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM support_satisfaction_ratings WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM mall_fulfillment_codes WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
     sqlx::query(
-        "UPDATE mall_community_posts SET author_name = '已注销用户' WHERE author_user_id = $1",
+        r#"
+        UPDATE mall_orders
+        SET user_id = $2, address_id = NULL,
+            recipient_name = '已注销用户', recipient_phone = NULL,
+            address_text = '已匿名化', latitude = NULL, longitude = NULL,
+            origin_address = NULL, origin_latitude = NULL, origin_longitude = NULL,
+            waypoints = '[]'::jsonb, cabin_code = NULL, remark = NULL,
+            updated_at = now()
+        WHERE user_id = $1
+        "#,
     )
     .bind(user_id)
+    .bind(&deleted_reference)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        r#"
+        UPDATE mall_after_sales
+        SET user_id = $2, description = NULL, evidence_images = '[]'::jsonb,
+            updated_at = now()
+        WHERE user_id = $1
+        "#,
+    )
+    .bind(user_id)
+    .bind(&deleted_reference)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "DELETE FROM mall_group_buy_subscriptions WHERE user_id = $1 AND status = 'pending_deposit'",
+    )
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "UPDATE mall_group_buy_subscriptions SET user_id = $2, updated_at = now() WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .bind(&deleted_reference)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "UPDATE mall_invoice_requests SET user_id = $2, updated_at = now() WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .bind(&deleted_reference)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE support_messages SET sender_id = NULL WHERE sender_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("UPDATE support_messages SET read_by = NULL WHERE read_by = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "UPDATE support_sessions SET user_id = $2, last_message = NULL, updated_at = now() WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .bind(&deleted_reference)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE support_tickets SET user_id = $2, updated_at = now() WHERE user_id = $1")
+        .bind(user_id)
+        .bind(&deleted_reference)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "UPDATE mall_group_leaders SET user_id = NULL, updated_at = now() WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "UPDATE mall_community_posts SET author_user_id = $2, author_name = '已注销用户', updated_at = now() WHERE author_user_id = $1",
+    )
+    .bind(user_id)
+    .bind(&deleted_reference)
     .execute(&mut *tx)
     .await?;
     sqlx::query(
@@ -9966,6 +10094,45 @@ async fn fetch_account_deletion(pool: &PgPool, user_id: &str) -> ApiResult<Value
     .await?)
 }
 
+async fn reconcile_account_deletion(pool: &PgPool, user_id: &str) -> ApiResult<()> {
+    let active_request_id = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT id
+        FROM mall_account_deletion_requests
+        WHERE user_id = $1 AND status IN ('pending', 'waiting')
+        ORDER BY requested_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+
+    let Some(request_id) = active_request_id else {
+        return Ok(());
+    };
+
+    let blockers = account_deletion_blockers(pool, user_id).await?;
+    let has_blockers = blockers.as_array().is_some_and(|items| !items.is_empty());
+    if has_blockers {
+        sqlx::query(
+            r#"
+            UPDATE mall_account_deletion_requests
+            SET status = 'waiting', blockers = $2, updated_at = now()
+            WHERE id = $1 AND status IN ('pending', 'waiting')
+            "#,
+        )
+        .bind(request_id)
+        .bind(blockers)
+        .execute(pool)
+        .await?;
+    } else {
+        complete_account_deletion(pool, user_id, &request_id).await?;
+    }
+
+    Ok(())
+}
+
 async fn get_account_deletion<S>(
     State(state): State<AppState<S>>,
     Extension(user): Extension<AuthenticatedUser>,
@@ -9973,6 +10140,7 @@ async fn get_account_deletion<S>(
 where
     S: Storage,
 {
+    reconcile_account_deletion(&state.db, &user.id).await?;
     Ok(ok(
         "查询成功",
         fetch_account_deletion(&state.db, &user.id).await?,

@@ -82,6 +82,14 @@ export interface AccountDeletionStatus {
   cancelledAt?: string
 }
 
+export interface PrivacyConsentStatus {
+  policyVersion?: string
+  currentPolicyVersion?: string
+  action: 'not_recorded' | 'granted' | 'withdrawn'
+  consentItems?: string[]
+  createdAt?: string
+}
+
 export interface MallInvoiceRequest {
   id: string
   invoiceNo: string
@@ -122,12 +130,16 @@ export function getLegalCenter(): Promise<LegalCenter> {
   return request('/api/mall/legal-center', 'GET')
 }
 
-export function recordPrivacyConsent(action: 'granted' | 'withdrawn'): Promise<{
-  policyVersion: string
-  action: string
-}> {
+export function getPrivacyConsent(): Promise<PrivacyConsentStatus> {
+  return request('/api/mall/privacy/consent', 'GET')
+}
+
+export function recordPrivacyConsent(
+  action: 'granted' | 'withdrawn',
+  policyVersion = MALL_PRIVACY_POLICY_VERSION,
+): Promise<PrivacyConsentStatus> {
   return request('/api/mall/privacy/consent', 'POST', {
-    policyVersion: MALL_PRIVACY_POLICY_VERSION,
+    policyVersion,
     action,
     consentItems: action === 'granted'
       ? ['account', 'order_fulfillment', 'customer_service', 'security']

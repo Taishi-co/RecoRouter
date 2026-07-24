@@ -15,7 +15,7 @@ use crate::{
     app::AppState,
     config::read_trimmed,
     error::{ApiError, ApiResult},
-    modules::auth::{require_self_or_admin, AuthenticatedUser},
+    modules::auth::{require_mall_privacy_consent, require_self_or_admin, AuthenticatedUser},
     response::{ok, ApiEnvelope},
     storage::Storage,
     wechat_pay::{
@@ -114,6 +114,13 @@ impl PaymentBusinessType {
             Self::MallGroupBuyDeposit => "mall_group_buy_deposit",
             Self::MallGroupBuyBalance => "mall_group_buy_balance",
         }
+    }
+
+    fn is_mall(self) -> bool {
+        matches!(
+            self,
+            Self::MallOrder | Self::MallGroupBuyDeposit | Self::MallGroupBuyBalance
+        )
     }
 }
 
@@ -289,6 +296,9 @@ where
         .as_deref()
         .unwrap_or("order_fare")
         .parse::<PaymentBusinessType>()?;
+    if business_type.is_mall() {
+        require_mall_privacy_consent(&state.db, &user).await?;
+    }
     let order = fetch_payable_order(&state.db, &body.order_id, business_type).await?;
     require_self_or_admin(&user, order.owner_user_id.as_deref().unwrap_or_default())?;
     let amount_cents = payable_amount_cents(&order, business_type)?;

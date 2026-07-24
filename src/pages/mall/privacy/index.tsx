@@ -6,12 +6,14 @@ import {
   cancelAccountDeletion,
   getAccountDeletion,
   getLegalCenter,
+  getPrivacyConsent,
   MALL_PRIVACY_POLICY_VERSION,
   MALL_PRIVACY_STORAGE_KEY,
   recordPrivacyConsent,
   requestAccountDeletion,
   type AccountDeletionStatus,
   type LegalCenter,
+  type PrivacyConsentStatus,
 } from '@/services/mall-compliance'
 import { MallPage, MallPrimaryButton } from '../mall-ui'
 
@@ -24,6 +26,7 @@ export default function MallPrivacyPage() {
   }, [params.returnUrl])
   const [legalCenter, setLegalCenter] = useState<LegalCenter | null>(null)
   const [deletion, setDeletion] = useState<AccountDeletionStatus | null>(null)
+  const [privacyConsent, setPrivacyConsent] = useState<PrivacyConsentStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const token = String(Taro.getStorageSync('token') || '')
@@ -32,10 +35,19 @@ export default function MallPrivacyPage() {
     Promise.all([
       getLegalCenter(),
       token ? getAccountDeletion().catch(() => null) : Promise.resolve(null),
+      token ? getPrivacyConsent().catch(() => null) : Promise.resolve(null),
     ])
-      .then(([center, nextDeletion]) => {
+      .then(([center, nextDeletion, nextPrivacyConsent]) => {
         setLegalCenter(center)
         setDeletion(nextDeletion)
+        setPrivacyConsent(nextPrivacyConsent)
+        if (nextDeletion?.status === 'completed') {
+          Taro.removeStorageSync('token')
+          Taro.removeStorageSync('userInfo')
+          Taro.removeStorageSync(MALL_PRIVACY_STORAGE_KEY)
+          Taro.showToast({ title: '账号已注销', icon: 'success' })
+          setTimeout(() => Taro.reLaunch({ url: '/pages/mall/index/index' }), 500)
+        }
       })
       .catch((error) => {
         Taro.showToast({
@@ -47,13 +59,20 @@ export default function MallPrivacyPage() {
   }, [token])
 
   const privacyPolicy = legalCenter?.documents.find((document) => document.documentType === 'privacy_policy')
+  const currentPolicyVersion = privacyPolicy?.version || MALL_PRIVACY_POLICY_VERSION
+  const hasGrantedPrivacy = token
+    ? privacyConsent?.action === 'granted' && privacyConsent.policyVersion === currentPolicyVersion
+    : Taro.getStorageSync(MALL_PRIVACY_STORAGE_KEY) === currentPolicyVersion
 
   const acceptPrivacy = async () => {
     if (submitting) return
     setSubmitting(true)
     try {
-      if (token) await recordPrivacyConsent('granted')
-      Taro.setStorageSync(MALL_PRIVACY_STORAGE_KEY, MALL_PRIVACY_POLICY_VERSION)
+      const nextConsent = token
+        ? await recordPrivacyConsent('granted', currentPolicyVersion)
+        : { action: 'granted' as const, policyVersion: currentPolicyVersion }
+      setPrivacyConsent(nextConsent)
+      Taro.setStorageSync(MALL_PRIVACY_STORAGE_KEY, currentPolicyVersion)
       Taro.showToast({ title: '隐私选择已保存', icon: 'success' })
       setTimeout(() => Taro.reLaunch({ url: returnUrl }), 350)
     } catch (error) {
@@ -80,9 +99,13 @@ export default function MallPrivacyPage() {
     })
     if (!result.confirm) return
     try {
-      if (token) await recordPrivacyConsent('withdrawn')
+      const nextConsent = token
+        ? await recordPrivacyConsent('withdrawn', currentPolicyVersion)
+        : { action: 'withdrawn' as const, policyVersion: currentPolicyVersion }
+      setPrivacyConsent(nextConsent)
       Taro.removeStorageSync(MALL_PRIVACY_STORAGE_KEY)
       Taro.showToast({ title: '已撤回同意', icon: 'success' })
+      setTimeout(() => Taro.reLaunch({ url: '/pages/mall/index/index' }), 500)
     } catch (error) {
       Taro.showToast({ title: error instanceof Error ? error.message : '撤回失败', icon: 'none' })
     }
@@ -197,7 +220,13 @@ export default function MallPrivacyPage() {
           <Text className="mall-list-title">隐私选择与账号管理</Text>
           <Text className="mall-compliance-body">撤回同意不影响撤回前处理的合法性；账号注销会先检查未完成订单和售后。</Text>
           <View className="mall-compliance-actions">
-            <MallPrimaryButton subtle onClick={withdrawPrivacy}><Text>撤回隐私同意</Text></MallPrimaryButton>
+            {hasGrantedPrivacy ? (
+              <MallPrimaryButton subtle onClick={withdrawPrivacy}><Text>撤回隐私同意</Text></MallPrimaryButton>
+            ) : (
+              <MallPrimaryButton onClick={acceptPrivacy}>
+                <Text>{submitting ? '保存中' : '重新同意并恢复功能'}</Text>
+              </MallPrimaryButton>
+            )}
             {token ? (
               <MallPrimaryButton subtle onClick={deleteAccount}>
                 <Trash2 size={16} color="#B91C1C" /><Text>申请注销账号</Text>
@@ -210,6 +239,9 @@ export default function MallPrivacyPage() {
               {deletion.blockers?.map((blocker) => <Text key={blocker.id}>{blocker.message}（{blocker.label}）</Text>)}
               <Text className="mall-section-action" onClick={cancelDeletion}>撤销注销申请</Text>
             </View>
+          ) : null}
+          {deletion?.status === 'completed' ? (
+            <Text className="mall-compliance-warning">账号注销已完成，当前登录已退出。</Text>
           ) : null}
         </View>
       )}

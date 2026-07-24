@@ -162,28 +162,32 @@ fn mall_routes<S>(router: Router<AppState<S>>, state: &AppState<S>) -> Router<Ap
 where
     S: Storage + Send + Sync + 'static,
 {
-    let router = router
-        .merge(auth::mall_router::<S>())
-        .merge(mall::router::<S>())
-        .merge(
-            mall::customer_router::<S>().route_layer(middleware::from_fn_with_state(
-                state.clone(),
-                auth::user_guard::<S>,
-            )),
-        )
-        // trips 路由已在 vehicle_routes 中添加，避免重复注册
-        .merge(
-            mall::admin_router::<S>().route_layer(middleware::from_fn_with_state(
-                state.clone(),
-                auth::admin_guard::<S>,
-            )),
-        );
+    let router =
+        router
+            .merge(auth::mall_router::<S>())
+            .merge(mall::router::<S>())
+            .merge(
+                mall::customer_router::<S>().route_layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    auth::mall_customer_guard::<S>,
+                )),
+            )
+            .merge(mall::customer_compliance_router::<S>().route_layer(
+                middleware::from_fn_with_state(state.clone(), auth::user_guard::<S>),
+            ))
+            // trips 路由已在 vehicle_routes 中添加，避免重复注册
+            .merge(
+                mall::admin_router::<S>().route_layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    auth::admin_guard::<S>,
+                )),
+            );
 
     if state.service == ApiService::Mall {
         router.merge(
             notifications::router::<S>().route_layer(middleware::from_fn_with_state(
                 state.clone(),
-                auth::user_guard::<S>,
+                auth::mall_customer_guard::<S>,
             )),
         )
     } else {
