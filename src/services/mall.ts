@@ -68,6 +68,17 @@ export interface MallProduct {
   fixedPriceCampaign?: MallFixedPriceCampaign | null
   promotionTags?: MallProductPromotionTag[]
   promotions?: MallProductPromotion[]
+  merchantId?: string | null
+  merchant?: MallMerchantSummary | null
+}
+
+export interface MallMerchantSummary {
+  id: string
+  name: string
+  legalName?: string | null
+  onboardingStatus?: string | null
+  qualificationStatus?: string | null
+  businessLicenseUrl?: string | null
 }
 
 export interface MallProductPromotionTag {

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { Bell, Gift, Headphones, LogOut, MapPin, PackageCheck, Pencil, Phone, Settings, Users } from 'lucide-react-taro'
+import { Bell, Building2, Gift, Headphones, LogOut, MapPin, PackageCheck, Pencil, Phone, ReceiptText, ShieldCheck, Users } from 'lucide-react-taro'
 import { Input } from '@/components/ui/input'
 import {
   getMallProfile,
@@ -247,11 +247,11 @@ export default function MallProfilePage() {
         onClick={() => Taro.navigateTo({ url: '/pages/mall/address/index' })}
       />
       <ProfileLink
-        icon={<Settings size={20} color="#2F7E43" />}
+        icon={<ReceiptText size={20} color="#2F7E43" />}
         title="发票申请"
-        subtitle="按商城订单申请电子发票，状态同步到客服售后"
-        action="申请"
-        onClick={() => Taro.navigateTo({ url: '/pages/mall/support/index?topic=invoice' })}
+        subtitle="按已支付订单申请，查看进度并下载发票"
+        action="查看"
+        onClick={() => Taro.navigateTo({ url: '/pages/mall/invoices/index' })}
       />
       <ProfileLink
         icon={<Gift size={20} color="#2F7E43" />}
@@ -266,6 +266,20 @@ export default function MallProfilePage() {
         subtitle={`售后 ${Number(profile?.support?.afterSales || 0)} 单 · 会话 ${Number(profile?.support?.openSessions || 0)} 个`}
         action="联系"
         onClick={() => Taro.navigateTo({ url: '/pages/mall/support/index' })}
+      />
+      <ProfileLink
+        icon={<Building2 size={20} color="#2F7E43" />}
+        title="平台规则与经营资质"
+        subtitle="营业执照、交易规则、服务协议和商家食品资质"
+        action="公示"
+        onClick={() => Taro.navigateTo({ url: '/pages/mall/legal/index' })}
+      />
+      <ProfileLink
+        icon={<ShieldCheck size={20} color="#2F7E43" />}
+        title="隐私与账号安全"
+        subtitle="个人信息清单、第三方 SDK、撤回同意和账号注销"
+        action="管理"
+        onClick={() => Taro.navigateTo({ url: '/pages/mall/privacy/index' })}
       />
       <ProfileLink
         icon={<LogOut size={20} color="#B45309" />}

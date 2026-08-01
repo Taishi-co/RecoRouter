@@ -11,6 +11,254 @@
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
 }
 
+.mall-compliance-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 8px 0 18px;
+}
+
+.mall-compliance-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 54px;
+  border: 1px solid #cfe4d3;
+  border-radius: 18px;
+  background: #eff8f0;
+}
+
+.mall-compliance-version,
+.mall-compliance-meta {
+  color: #758176;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.mall-compliance-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.mall-compliance-body {
+  color: #566057;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.mall-compliance-list-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  color: #566057;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.mall-compliance-title-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.mall-compliance-warning {
+  color: #b45309;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.mall-compliance-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.mall-compliance-blockers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #f2d39d;
+  border-radius: 12px;
+  background: #fff8eb;
+  color: #6e6251;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.mall-license-preview {
+  width: 100%;
+  height: 180px;
+  border-radius: 12px;
+  background: #f5f7f5;
+}
+
+.mall-license-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mall-compliance-info-row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 12px;
+  color: #536055;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.mall-compliance-info-row text:last-child {
+  color: #1f2d1f;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.mall-rule-section {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 10px;
+  border-top: 1px solid #eef1ee;
+}
+
+.mall-rule-heading {
+  color: #243027;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mall-compliance-subheading {
+  margin: 22px 0 10px;
+}
+
+.mall-qualification-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-top: 1px solid #eef1ee;
+}
+
+.mall-qualification-row > view:first-child {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mall-status-ok {
+  flex: none;
+  color: #2f7e43;
+  font-size: 12px;
+}
+
+.mall-auth-consent {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+  margin: 14px 0;
+  color: #667166;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.mall-auth-consent-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 2px;
+  border: 1px solid #aab4aa;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.mall-auth-consent-check.active {
+  border-color: #2f7e43;
+  background: #2f7e43;
+}
+
+.mall-invoice-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mall-picker-value {
+  display: flex;
+  align-items: center;
+  min-height: 46px;
+}
+
+.mall-segmented-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: #eef2ee;
+}
+
+.mall-segmented-control > view {
+  padding: 10px;
+  border-radius: 9px;
+  color: #657066;
+  text-align: center;
+  font-size: 13px;
+}
+
+.mall-segmented-control > view.active {
+  background: #fff;
+  color: #245f34;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgb(24 56 33 / 8%);
+}
+
+.mall-input-with-icon {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.mall-input-with-icon .mall-form-input {
+  min-width: 0;
+  flex: 1;
+}
+
+.mall-invoice-record {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.mall-invoice-status {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #eef2ee;
+  color: #607064;
+  font-size: 11px;
+}
+
+.mall-invoice-status-issued {
+  background: #e7f5e9;
+  color: #2f7e43;
+}
+
+.mall-invoice-status-rejected {
+  background: #fff1e8;
+  color: #b45309;
+}
+
 .mall-shell-home {
   padding-left: 18PX;
   padding-right: 18PX;

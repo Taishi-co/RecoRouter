@@ -63,6 +63,9 @@ const miniAppPages = [
   'pages/mall/group-leader/index',       // 商城-我的兼容跳转
   'pages/mall/community/index',          // 商城-社区动态
   'pages/mall/settings/index',           // 商城-消息与设置
+  'pages/mall/privacy/index',            // 商城-隐私与个人信息保护
+  'pages/mall/legal/index',              // 商城-平台规则与经营资质
+  'pages/mall/invoices/index',           // 商城-电子发票
   'pages/owner/rentals/pending/index',   // 运力方端-待确认租赁
   'pages/role-switch/index',             // 角色管理
   'pages/rentals-history/index',         // 我的租赁记录
@@ -150,6 +153,9 @@ const mallPages = [
   'pages/mall/group-leader/index',       // 商城-我的兼容跳转
   'pages/mall/community/index',          // 商城-社区动态
   'pages/mall/settings/index',           // 商城-消息与设置
+  'pages/mall/privacy/index',            // 商城-隐私与个人信息保护
+  'pages/mall/legal/index',              // 商城-平台规则与经营资质
+  'pages/mall/invoices/index',           // 商城-电子发票
   'pages/notifications/index',           // 商城-消息提醒
 ]
 

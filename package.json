@@ -1,6 +1,6 @@
 {
   "name": "coze-mini-program",
-  "version": "1.0.43",
+  "version": "1.0.48",
   "private": true,
   "description": "Coze Mini Program Application",
   "scripts": {
@@ -46,6 +46,8 @@
     "check:mall-ops-dual-surface": "node scripts/check-mall-ops-dual-surface.mjs",
     "check:mall-group-buy-presale": "node scripts/check-mall-group-buy-presale.mjs",
     "check:mall-performance-cache": "node scripts/check-mall-performance-cache.mjs",
+    "check:miniapp-launch-compliance": "node scripts/check-miniapp-launch-compliance.mjs",
+    "check:wechat-platform-profit-sharing": "node scripts/check-wechat-platform-profit-sharing.mjs",
     "check:web-admin-group-buy-inline-product": "node scripts/check-web-admin-group-buy-inline-product.mjs",
     "check:mall-marketing-scope-presale": "node scripts/check-mall-marketing-scope-presale.mjs",
     "check:no-physical-fks": "node scripts/check-no-physical-foreign-keys.mjs",
@@ -93,9 +95,11 @@
     "preview:weapp": "taro build --type weapp --preview",
     "test:rust-server": "cargo test --manifest-path server/Cargo.toml --lib --bins --tests",
     "test:rust-server:db": "test -n \"$TEST_DATABASE_URL\" && cargo test --manifest-path server/Cargo.toml --lib --bins --tests",
+    "test:production:miniapp-compliance": "node scripts/test-production-miniapp-compliance.mjs",
     "test:service-routers": "cargo test --manifest-path server/Cargo.toml --test service_routers",
     "tsc": "npx tsc --noEmit --skipLibCheck",
     "validate:split": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n routers,apis,no-fks,boundary,deploy-sh -c blue,magenta,cyan,yellow,green \"pnpm test:service-routers\" \"pnpm build:apis\" \"pnpm check:no-physical-fks\" \"pnpm check:merchant-enterprise-boundary\" \"pnpm check:deploy-scripts\"",
+    "prevalidate": "pnpm check:miniapp-launch-compliance",
     "validate": "pnpm exec concurrently --kill-others-on-fail --kill-signal SIGKILL -n lint,tsc,sqlx-migrations,miniapp-version,wechat-api,mall-weapp-profile,mall-refresh,network-query,web-auth,admin-mall,admin-ops,mall-cos,mall-auth,mall-real,mall-wechat,mall-width,mall-v7,mall-delivery,mall-address,mall-swipe,mall-order-items,mall-profile-layout,mall-wallet-points,mall-delivery-range,mall-order-support,mall-message-refund,mall-fixed-price,mall-promotion-venues,mall-after-sales,mall-procurement,mall-ops-dual,mall-group-buy,mall-gbuy-orders,mall-perf,gbuy-inline,web-order-detail,web-pickup-leaders,web-marketing,web-ops-data,web-permissions,web-support,web-human-copy,web-formal-shell -c red,blue,magenta,cyan,yellow,green,white,gray,redBright,blueBright,magentaBright,greenBright,cyanBright,yellowBright,whiteBright,blue,magenta,cyan,red,blueBright,green,cyanBright,redBright,yellow,greenBright,blue,magentaBright,whiteBright,blueBright,green,yellow,redBright,cyanBright,white,green \"pnpm lint:build\" \"pnpm tsc\" \"pnpm check:sqlx-migration-immutability\" \"pnpm check:miniapp-version\" \"pnpm check:no-deprecated-wechat-api\" \"pnpm check:mall-weapp-profile\" \"pnpm check:mall-product-refresh\" \"pnpm check:network-query-sanitization\" \"pnpm check:web-admin-auth\" \"pnpm check:admin-mall-auth\" \"pnpm check:admin-mall-ops\" \"pnpm check:mall-cos-image-paths\" \"pnpm check:mall-auth-profile\" \"pnpm check:mall-real-checkout\" \"pnpm check:mall-wechat-auth\" \"pnpm check:mall-h5-width\" \"pnpm check:mall-v7-customer-experience\" \"pnpm check:mall-delivery-only\" \"pnpm check:mall-address-selection\" \"pnpm check:mall-cart-swipe-delete\" \"pnpm check:mall-order-item-insert\" \"pnpm check:mall-profile-address-layout\" \"pnpm check:mall-wallet-points-pages\" \"pnpm check:mall-delivery-range-rules\" \"pnpm check:mall-order-support-experience\" \"pnpm check:mall-message-refund-support\" \"pnpm check:mall-fixed-price-campaign\" \"pnpm check:mall-promotion-venues\" \"pnpm check:mall-after-sales-workflow\" \"pnpm check:mall-procurement-qualifications\" \"pnpm check:mall-ops-dual-surface\" \"pnpm check:mall-group-buy-presale\" \"pnpm check:mall-group-buy-order-notifications\" \"pnpm check:mall-performance-cache\" \"pnpm check:web-admin-group-buy-inline-product\" \"pnpm check:web-admin-mall-order-detail\" \"pnpm check:web-admin-mall-pickup-leaders\" \"pnpm check:web-admin-mall-marketing\" \"pnpm check:web-admin-operations-dashboard\" \"pnpm check:web-admin-mall-permissions\" \"pnpm check:web-admin-support-workbench\" \"pnpm check:web-admin-human-copy\" \"pnpm check:web-admin-formal-shell\"",
     "check:mall-group-buy-order-notifications": "node scripts/check-mall-group-buy-order-notifications.mjs"
   },
