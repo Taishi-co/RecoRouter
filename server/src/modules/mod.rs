@@ -14,6 +14,7 @@ pub mod favorite_routes;
 pub mod health;
 pub mod home;
 pub mod mall;
+mod mall_marketing_agent;
 pub mod notifications;
 pub mod orders;
 pub mod owner_wallet;

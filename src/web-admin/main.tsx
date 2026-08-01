@@ -423,6 +423,9 @@ interface CouponForm {
 interface MarketingAgentState {
   prompt: string;
   mode: string;
+  budgetYuan: string;
+  horizonDays: string;
+  targetMetric: string;
   result: JsonRecord | null;
 }
 
@@ -1283,8 +1286,11 @@ const initialCouponForm: CouponForm = {
 };
 
 const initialMarketingAgentState: MarketingAgentState = {
-  prompt: '帮我分析近30天商城数据，推荐一个定向发券方案和一个营销活动草稿',
-  mode: 'strategy',
+  prompt: '用近30天商城数据，设计一套社区团购全链路增长方案：选品、团长获客、定向发券、营销活动、主题会场和增量实验。',
+  mode: 'full_funnel',
+  budgetYuan: '3000',
+  horizonDays: '14',
+  targetMetric: '支付转化率',
   result: null,
 };
 
@@ -9002,85 +9008,232 @@ function MallMarketingAgentSection({
   const summary = recordValue(context, 'summary');
   const coupons = recordValue(context, 'coupons');
   const campaigns = recordValue(context, 'campaigns');
+  const communities = recordValue(context, 'communities');
+  const plan = recordValue(result, 'plan');
+  const planBudget = recordValue(plan, 'budget');
+  const experiment = recordValue(plan, 'experiment');
   const suggestions = arrayValue(result, 'suggestions');
+  const stages = arrayValue(plan, 'stages');
+  const skills = arrayValue(plan, 'skills');
+  const guardrails = arrayValue(plan, 'guardrails');
+  const segments = arrayValue(context, 'segments');
   const topCategories = arrayValue(context, 'topCategories').slice(0, 4);
   const topProducts = arrayValue(context, 'topProducts').slice(0, 4);
   const provider = stringValue(result, 'provider', 'rules');
   const modelError = stringValue(result, 'modelError');
+  const scenarioPresets = [
+    ['full_funnel', '全链路增长', '用近30天商城数据，设计一套社区团购全链路增长方案：选品、团长获客、定向发券、营销活动、主题会场和增量实验。', '支付转化率'],
+    ['assortment', '智能选品', '为下一个社区团购周期生成主推商品池，按销量、GMV、折后毛利和库存覆盖进行透明评分。', '增量贡献毛利'],
+    ['acquisition', '团长获客', '针对低渗透社区设计团长裂变获客方案、首购利益点、渠道素材和增量实验。', '新客首购转化率'],
+    ['retention', '沉睡召回', '为30天未购买的历史用户设计受预算约束的召回券和复购活动，避免补贴自然订单。', '沉睡召回率'],
+    ['venue', '主题会场', '围绕当前热销品类生成一个社区团购主题会场，包含选品、利益点、展示文案、活动规则和上线质检。', '会场支付转化率'],
+  ];
 
   return (
     <div className="page-grid marketing-agent-page">
-      <Panel title="营销 Agent">
+      <Panel title="社区团购营销 Agent" description="从经营目标到选品、获客、发券、活动、会场和增量复盘的受控执行工作台">
+        <div className="marketing-agent-presets" aria-label="营销场景模板">
+          {scenarioPresets.map(([key, label, prompt, metric]) => (
+            <button
+              className={agent.mode === key ? 'agent-preset active' : 'agent-preset'}
+              key={key}
+              type="button"
+              disabled={busy}
+              onClick={() => onChange({ mode: key, prompt, targetMetric: metric })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="marketing-agent-shell">
           <div className="marketing-agent-input">
-            <label>
-              运营问题
-              <textarea value={agent.prompt} onChange={event => onChange({ prompt: event.target.value })} placeholder="例如：帮我给沉睡用户做一次召回券方案" />
+            <label className="agent-objective-field">
+              经营目标
+              <textarea disabled={busy} value={agent.prompt} onChange={event => onChange({ prompt: event.target.value })} placeholder="例如：帮我给沉睡用户做一次召回券方案" />
+              <small>请勿输入姓名、手机号、邮箱、身份证号或地址等个人信息；运营自由文本不会发送给外部模型。</small>
             </label>
-            <label>
-              生成类型
-              <select value={agent.mode} onChange={event => onChange({ mode: event.target.value })}>
-                <option value="strategy">策略建议</option>
-                <option value="coupon">定向发券</option>
-                <option value="campaign">活动草稿</option>
-                <option value="analysis">人群分析</option>
-              </select>
-            </label>
-            <button className="primary-button" type="button" onClick={() => void onAsk()} disabled={busy || !agent.prompt.trim()}>
-              <Icon name="send" />
-              {busy ? '生成中' : '生成建议'}
-            </button>
+            <div className="agent-constraint-grid">
+              <label>
+                场景
+                <select disabled={busy} value={agent.mode} onChange={event => onChange({ mode: event.target.value })}>
+                  <option value="full_funnel">全链路增长</option>
+                  <option value="assortment">智能选品</option>
+                  <option value="acquisition">团长获客</option>
+                  <option value="retention">沉睡召回</option>
+                  <option value="venue">主题会场</option>
+                  <option value="coupon">定向发券</option>
+                  <option value="campaign">活动生成</option>
+                  <option value="analysis">经营诊断</option>
+                </select>
+              </label>
+              <label>
+                硬预算上限（元）
+                <input disabled={busy} min="0" max="500000" step="100" type="number" value={agent.budgetYuan} onChange={event => onChange({ budgetYuan: event.target.value })} />
+              </label>
+              <label>
+                试点周期（天）
+                <input disabled={busy} min="3" max="90" type="number" value={agent.horizonDays} onChange={event => onChange({ horizonDays: event.target.value })} />
+              </label>
+              <label>
+                主指标
+                <input disabled={busy} value={agent.targetMetric} onChange={event => onChange({ targetMetric: event.target.value })} />
+              </label>
+            </div>
+            <div className="agent-submit-row">
+              <small>仅读取商城聚合数据；商业写操作只生成草稿。</small>
+              <button className="primary-button" type="button" onClick={() => void onAsk()} disabled={busy || !agent.prompt.trim()}>
+                <Icon name="send" />
+                {busy ? '规划中' : '生成执行方案'}
+              </button>
+            </div>
           </div>
 
           <div className="marketing-agent-metrics">
             <StatCard label="近30天订单" value={String(numberValue(summary, 'paidOrders'))} detail={`GMV ${yuan(numberValue(summary, 'gmvCents'))}`} />
             <StatCard label="客单价" value={yuan(numberValue(summary, 'avgOrderCents'))} detail={`优惠 ${yuan(numberValue(summary, 'couponDiscountCents'))}`} />
-            <StatCard label="在售商品" value={String(numberValue(summary, 'activeProducts'))} detail={`${numberValue(summary, 'lowStockProducts')} 个低库存`} />
-            <StatCard label="活动和券" value={`${numberValue(campaigns, 'activeCount')} / ${numberValue(coupons, 'activeCount')}`} detail="启用活动 / 启用券" />
+            <StatCard label="社区网络" value={`${numberValue(communities, 'activePickupPoints')} / ${numberValue(communities, 'activeLeaders')}`} detail="活跃自提点 / 团长" />
+            <StatCard label="现有营销资产" value={`${numberValue(campaigns, 'activeCount')} / ${numberValue(coupons, 'activeCount')}`} detail="启用活动 / 启用券" />
           </div>
         </div>
       </Panel>
 
       {result ? (
-        <div className="marketing-agent-result-grid">
-          <Panel title="建议结果">
-            <div className="marketing-agent-answer">
-              <div className="marketing-agent-meta">
-                <span className={badgeClass(provider === 'minimax' ? 'active' : 'draft')}>{provider === 'minimax' ? 'MiniMax' : '规则建议'}</span>
-                <small>{stringValue(result, 'model')}</small>
-              </div>
-              {modelError ? <p className="agent-warning">{modelError}</p> : null}
-              <p>{stringValue(result, 'answer')}</p>
+        <>
+          <Panel title="Agent 执行链" description={stringValue(plan, 'summary')}>
+            <div className="agent-stage-track">
+              {stages.map((stage, index) => {
+                const status = stringValue(stage, 'status');
+                return (
+                  <article className={`agent-stage ${status}`} key={stringValue(stage, 'key', String(index))}>
+                    <span>{index + 1}</span>
+                    <div>
+                      <strong>{stringValue(stage, 'name')}</strong>
+                      <small>{stringValue(stage, 'output')}</small>
+                    </div>
+                    <i>{marketingAgentStageStatusLabel(status)}</i>
+                  </article>
+                );
+              })}
             </div>
           </Panel>
 
-          <Panel title="候选草稿">
-            <div className="marketing-agent-suggestions">
+          <div className="marketing-agent-result-grid">
+            <Panel title="策略解释">
+              <div className="marketing-agent-answer">
+                <div className="marketing-agent-meta">
+                  <span className={badgeClass(provider === 'rules' ? 'draft' : 'active')}>{provider === 'rules' ? '确定性规划器' : provider}</span>
+                  <small>{stringValue(result, 'model')}</small>
+                  <small>{stringValue(plan, 'runId')}</small>
+                </div>
+                {modelError ? <p className="agent-warning">{modelError}</p> : null}
+                <p>{stringValue(result, 'answer')}</p>
+                <div className="agent-privacy-note">
+                  <Icon name="lock" />
+                  <span>{stringValue(result, 'privacy')}</span>
+                </div>
+              </div>
+            </Panel>
+
+            <Panel title="预算与实验">
+              <div className="agent-budget-grid">
+                <StatCard label="硬预算上限" value={yuan(numberValue(planBudget, 'capCents'))} detail="Agent 不得自动追加" />
+                <StatCard label="券 / 活动" value={`${yuan(numberValue(planBudget, 'couponCents'))} / ${yuan(numberValue(planBudget, 'campaignCents'))}`} detail="建议分配" />
+                <StatCard label="获客 / 预留" value={`${yuan(numberValue(planBudget, 'acquisitionCents'))} / ${yuan(numberValue(planBudget, 'reserveCents'))}`} detail="建议分配" />
+              </div>
+              <div className="agent-experiment-card">
+                <strong>{stringValue(experiment, 'primaryMetric', agent.targetMetric)}</strong>
+                <p>{stringValue(experiment, 'design')}</p>
+                <small>{stringValue(experiment, 'target')}</small>
+              </div>
+            </Panel>
+          </div>
+
+          <Panel title="候选动作与审批包" description="公开基准只说明方法可行性；下列提升区间均为试点目标，不是已实现结果或收益承诺。">
+            <div className="marketing-agent-suggestions agent-action-grid">
               {suggestions.map((suggestion, index) => {
                 const kind = stringValue(suggestion, 'kind');
+                const impact = recordValue(suggestion, 'expectedImpact');
+                const evidence = arrayValue(suggestion, 'evidence');
+                const executable = boolValue(suggestion, 'executable', true);
+                const canCreateDraft = ['coupon', 'campaign', 'venue'].includes(kind);
                 return (
-                  <article key={`${kind}-${index}`} className="marketing-agent-suggestion">
+                  <article key={`${kind}-${index}`} className={`marketing-agent-suggestion agent-action-${kind}`}>
+                    <div className="agent-action-heading">
+                      <span>{marketingAgentKindLabel(kind)}</span>
+                      {boolValue(suggestion, 'requiresApproval') ? <i>需审批</i> : <i className="automatic">自动分析</i>}
+                    </div>
                     <div>
                       <strong>{stringValue(suggestion, 'title')}</strong>
-                      <small>{marketingAgentKindLabel(kind)} · {marketingAgentAudienceLabel(stringValue(suggestion, 'audience'))}</small>
+                      <small>{marketingAgentAudienceLabel(stringValue(suggestion, 'audience'))}</small>
                     </div>
                     <p>{stringValue(suggestion, 'reason')}</p>
-                    {kind === 'coupon' || kind === 'campaign' ? (
-                      <button className="ghost-button small" type="button" onClick={() => void onCreateDraft(suggestion)}>
+                    <ul>
+                      {evidence.map((item, evidenceIndex) => <li key={`${index}-${evidenceIndex}`}>{String(item)}</li>)}
+                    </ul>
+                    <div className="agent-impact-row">
+                      <span>{stringValue(impact, 'metric')}</span>
+                      <strong>{stringValue(impact, 'target')}</strong>
+                      <small>试点目标</small>
+                    </div>
+                    <p className="agent-action-risk">风险：{stringValue(suggestion, 'risk')}</p>
+                    {canCreateDraft ? (
+                      <button className="ghost-button small" type="button" onClick={() => void onCreateDraft(suggestion)} disabled={busy || !executable}>
                         <Icon name="plus" />
-                        创建草稿
+                        {executable ? `人工确认后创建${marketingAgentKindLabel(kind)}草稿` : '未通过护栏'}
                       </button>
                     ) : null}
                   </article>
                 );
               })}
-              {!suggestions.length ? <EmptyState text="暂无候选草稿" /> : null}
+              {!suggestions.length ? <EmptyState text="暂无候选动作" /> : null}
             </div>
           </Panel>
-        </div>
+
+          <div className="marketing-agent-result-grid">
+            <Panel title="Skill 定义注册表（L2）" description="当前由确定性规划器统一执行；定义了读写范围、自主等级和风险等级">
+              <div className="agent-skill-grid">
+                {skills.map((skill, index) => (
+                  <article key={stringValue(skill, 'key', String(index))}>
+                    <div>
+                      <strong>{stringValue(skill, 'name')}</strong>
+                      <span>{stringValue(skill, 'phase')}</span>
+                    </div>
+                    <p>{stringValue(skill, 'description')}</p>
+                    <small>{marketingAgentAutonomyLabel(stringValue(skill, 'autonomy'))} · 风险 {stringValue(skill, 'riskLevel')}</small>
+                  </article>
+                ))}
+              </div>
+            </Panel>
+
+            <Panel title="上线护栏" description="硬规则优先于模型建议">
+              <div className="agent-guardrail-list">
+                {guardrails.map((guardrail, index) => (
+                  <article key={stringValue(guardrail, 'key', String(index))}>
+                    <span>{stringValue(guardrail, 'level')}</span>
+                    <p>{stringValue(guardrail, 'rule')}</p>
+                  </article>
+                ))}
+              </div>
+            </Panel>
+          </div>
+        </>
       ) : null}
 
       <div className="marketing-agent-result-grid">
+        <Panel title="可运营人群">
+          <div className="agent-segment-list">
+            {segments.map((segment, index) => (
+              <article key={stringValue(segment, 'key', String(index))}>
+                <div>
+                  <strong>{stringValue(segment, 'name')}</strong>
+                  <small>{stringValue(segment, 'rule')}</small>
+                </div>
+                <span>{numberValue(segment, 'count')}</span>
+              </article>
+            ))}
+            {!segments.length ? <EmptyState text="生成方案后展示商城聚合人群" /> : null}
+          </div>
+        </Panel>
         <Panel title="热销品类">
           <div className="compact-rank-list">
             {topCategories.map((category, index) => (
@@ -9093,40 +9246,67 @@ function MallMarketingAgentSection({
             {!topCategories.length ? <EmptyState text="暂无品类数据" /> : null}
           </div>
         </Panel>
-        <Panel title="热销商品">
-          <div className="compact-rank-list">
-            {topProducts.map((product, index) => (
-              <article key={`${stringValue(product, 'productId')}-${index}`}>
-                <span>{index + 1}</span>
+      </div>
+
+      <Panel title="选品证据" description="当前按销量、GMV、折后毛利和库存覆盖评分；上线前再次读取实时成本与库存">
+        <div className="agent-product-evidence-grid">
+          {topProducts.slice(0, 12).map((product, index) => (
+            <article key={`${stringValue(product, 'productId')}-${index}`}>
+              <span>{index + 1}</span>
+              <div>
                 <strong>{stringValue(product, 'productName')}</strong>
                 <small>{numberValue(product, 'quantity')} 件 · {yuan(numberValue(product, 'salesCents'))}</small>
-              </article>
-            ))}
-            {!topProducts.length ? <EmptyState text="暂无商品数据" /> : null}
-          </div>
-        </Panel>
-      </div>
+              </div>
+              <div>
+                <small>毛利 {numberValue(product, 'grossMarginBps') ? `${(numberValue(product, 'grossMarginBps') / 100).toFixed(1)}%` : '待补齐'}</small>
+                <small>库存 {numberValue(product, 'stock')} · 覆盖 {numberValue(product, 'stockCoverDays')} 天</small>
+              </div>
+            </article>
+          ))}
+          {!topProducts.length ? <EmptyState text="生成方案后展示商品评分证据" /> : null}
+        </div>
+      </Panel>
     </div>
   );
 }
 
 function marketingAgentKindLabel(kind: string) {
+  if (kind === 'assortment') return '选品';
+  if (kind === 'acquisition') return '获客';
   if (kind === 'coupon') return '优惠券';
   if (kind === 'campaign') return '营销活动';
+  if (kind === 'venue') return '会场';
+  if (kind === 'experiment') return '实验';
   if (kind === 'operation') return '运营动作';
   return kind || '建议';
 }
 
 function marketingAgentAudienceLabel(audience: string) {
   const labels: Record<string, string> = {
-    new_customers: '新客',
+    recent_first_buyers: '近30天首购用户',
+    community_prospects: '社区潜在人群（待接入）',
     repeat_customers: '复购用户',
     sleeping_customers: '沉睡用户',
     coupon_sensitive: '优惠敏感用户',
     after_sale_risk: '售后风险用户',
+    all_customers: '全部商城用户',
     operations: '运营',
   };
   return labels[audience] || audience || '全部用户';
+}
+
+function marketingAgentStageStatusLabel(status: string) {
+  if (status === 'completed') return '已完成';
+  if (status === 'waiting') return '待审批';
+  if (status === 'blocked') return '受控';
+  return '待执行';
+}
+
+function marketingAgentAutonomyLabel(autonomy: string) {
+  if (autonomy === 'automatic') return '自动执行';
+  if (autonomy === 'approval_required') return '审批后建草稿';
+  if (autonomy === 'human_only') return '仅人工';
+  return autonomy || '受控';
 }
 
 function MallCouponCenterSection({
@@ -12847,6 +13027,7 @@ function App() {
   const [groupBuyDetailActivity, setGroupBuyDetailActivity] = useState<JsonRecord | null>(null);
   const [couponForm, setCouponForm] = useState<CouponForm>(initialCouponForm);
   const [marketingAgent, setMarketingAgent] = useState<MarketingAgentState>(initialMarketingAgentState);
+  const marketingAgentRequestRef = useRef(0);
   const [homeBannerForm, setHomeBannerForm] = useState<HomeBannerForm>(initialHomeBannerForm);
   const [homeSectionForm, setHomeSectionForm] = useState<HomeSectionForm>(initialHomeSectionForm);
   const [settingsForm, setSettingsForm] = useState<SettingsForm>(initialSettingsForm);
@@ -12955,6 +13136,7 @@ function App() {
   }, []);
 
   const resetDashboardState = () => {
+    marketingAgentRequestRef.current += 1;
     setData(initialData);
     setErrors({});
     setSupportMessages([]);
@@ -12980,6 +13162,7 @@ function App() {
     setGroupBuyDetailOpen(false);
     setGroupBuyDetailActivity(null);
     setCouponForm(initialCouponForm);
+    setMarketingAgent(initialMarketingAgentState);
     setHomeBannerForm(initialHomeBannerForm);
     setHomeSectionForm(initialHomeSectionForm);
     setPermissionForm(initialPermissionForm);
@@ -14289,23 +14472,50 @@ function App() {
   };
 
   const askMarketingAgent = async () => {
+    const requestId = marketingAgentRequestRef.current + 1;
+    marketingAgentRequestRef.current = requestId;
+    const request = {
+      prompt: marketingAgent.prompt,
+      mode: marketingAgent.mode,
+      budgetYuan: marketingAgent.budgetYuan,
+      horizonDays: marketingAgent.horizonDays,
+      targetMetric: marketingAgent.targetMetric,
+    };
     await runAction('营销 Agent 生成', async () => {
       const result = await apiPost<JsonRecord>('/api/admin/mall/marketing-agent', {
-        question: marketingAgent.prompt,
-        mode: marketingAgent.mode,
+        question: request.prompt,
+        mode: request.mode,
+        budgetCents: moneyFromYuan(request.budgetYuan),
+        horizonDays: Number(request.horizonDays) || 14,
+        targetMetric: request.targetMetric,
       });
-      setMarketingAgent(current => ({ ...current, result }));
+      setMarketingAgent(current => {
+        const requestStillMatches = marketingAgentRequestRef.current === requestId
+          && current.prompt === request.prompt
+          && current.mode === request.mode
+          && current.budgetYuan === request.budgetYuan
+          && current.horizonDays === request.horizonDays
+          && current.targetMetric === request.targetMetric;
+        return requestStillMatches ? { ...current, result } : current;
+      });
     });
   };
 
   const createMarketingAgentDraft = async (suggestion: JsonRecord) => {
     const kind = stringValue(suggestion, 'kind');
     const draft = recordValue(suggestion, 'draft');
-    await runAction(kind === 'coupon' ? '优惠券草稿创建' : '活动草稿创建', async () => {
+    if (!boolValue(suggestion, 'executable', true)) {
+      showMessage('warning', stringValue(suggestion, 'blockedReason', '当前动作未通过预算、库存或毛利护栏'));
+      return;
+    }
+    const confirmed = typeof window === 'undefined' || window.confirm(`确认创建${marketingAgentKindLabel(kind)}草稿？草稿不会自动启用或触达用户。`);
+    if (!confirmed) return;
+    const actionLabel = kind === 'coupon' ? '优惠券草稿创建' : kind === 'venue' ? '会场草稿创建' : '活动草稿创建';
+    await runAction(actionLabel, async () => {
       if (kind === 'coupon') {
         const coupon = await apiPost<JsonRecord>('/api/admin/mall/coupons', {
           name: stringValue(draft, 'name', '营销 Agent 优惠券草稿'),
-          code: `${stringValue(draft, 'code', 'AGENT-COUPON')}-${Date.now().toString().slice(-6)}`,
+          code: stringValue(draft, 'code', 'AGENT-COUPON'),
           couponType: stringValue(draft, 'couponType', 'full_reduction'),
           thresholdCents: numberValue(draft, 'thresholdCents'),
           discountCents: numberValue(draft, 'discountCents', 100),
@@ -14319,7 +14529,7 @@ function App() {
         return;
       }
 
-      if (kind === 'campaign') {
+      if (kind === 'campaign' || kind === 'venue') {
         const campaign = await apiPost<JsonRecord>('/api/admin/mall/campaigns', {
           name: stringValue(draft, 'name', '营销 Agent 活动草稿'),
           campaignType: stringValue(draft, 'campaignType', 'full_reduction'),
@@ -14327,7 +14537,13 @@ function App() {
           status: 'draft',
           rules: recordValue(draft, 'rules'),
         });
-        setData(current => ({ ...current, campaigns: upsertRecordList(current.campaigns, campaign) }));
+        setData(current => ({
+          ...current,
+          campaigns: upsertRecordList(current.campaigns, campaign),
+          promotionVenues: kind === 'venue'
+            ? upsertRecordList(current.promotionVenues, campaign)
+            : current.promotionVenues,
+        }));
         return;
       }
 
@@ -14997,9 +15213,12 @@ function App() {
       return (
         <MallMarketingAgentSection
           agent={marketingAgent}
-          busy={busy === '营销 Agent 生成'}
+          busy={Boolean(busy)}
           onAsk={askMarketingAgent}
-          onChange={patch => setMarketingAgent(current => ({ ...current, ...patch }))}
+          onChange={patch => {
+            marketingAgentRequestRef.current += 1;
+            setMarketingAgent(current => ({ ...current, ...patch, result: null }));
+          }}
           onCreateDraft={createMarketingAgentDraft}
         />
       );
