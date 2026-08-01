@@ -4,13 +4,14 @@ use axum::{
     Json, Router,
 };
 use chrono::{DateTime, Utc};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
 
 use crate::{
     app::AppState,
-    config::ApiService,
+    config::{read_trimmed, ApiService},
     error::{ApiError, ApiResult},
     modules::auth::{require_admin, require_self_or_admin, AuthenticatedUser},
     response::{ok, ApiEnvelope},
@@ -19,6 +20,12 @@ use crate::{
         miniapp_access_token, truncate_chars, wechat_authorization, with_wechat_json_headers,
         WechatMiniappConfig, WechatPayMerchantConfig, WECHAT_USER_AGENT,
     },
+};
+
+use super::mall_marketing_agent::{
+    build_plan as build_marketing_plan, fallback_answer as marketing_agent_fallback_answer,
+    normalize_mode as normalize_marketing_agent_mode, MarketingPlanInput, DEFAULT_BUDGET_CENTS,
+    DEFAULT_HORIZON_DAYS,
 };
 
 const MAX_MALL_PRODUCT_IMAGE_BYTES: usize = 5 * 1024 * 1024;
@@ -412,6 +419,10 @@ where
         .route(
             "/api/admin/mall/campaigns/:id",
             put(update_campaign::<S>).delete(delete_campaign::<S>),
+        )
+        .route(
+            "/api/admin/mall/marketing-agent",
+            post(admin_marketing_agent::<S>),
         )
         .route(
             "/api/admin/mall/coupons",
@@ -1465,6 +1476,33 @@ struct CouponMutationRequest {
     starts_at: Option<String>,
     #[serde(alias = "ends_at")]
     ends_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MarketingAgentRequest {
+    question: String,
+    mode: Option<String>,
+    #[serde(alias = "budget_cents")]
+    budget_cents: Option<i64>,
+    #[serde(alias = "horizon_days")]
+    horizon_days: Option<i32>,
+    #[serde(alias = "target_metric")]
+    target_metric: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MiniMaxChatRequest {
+    model: String,
+    messages: Vec<MiniMaxMessage>,
+    temperature: f32,
+}
+
+#[derive(Debug, Serialize)]
+struct MiniMaxMessage {
+    role: String,
+    content: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -7446,25 +7484,69 @@ where
     let name = require_non_empty(body.name, "活动名称不能为空")?;
     let campaign_type = require_non_empty(body.campaign_type, "活动类型不能为空")?;
     let rules = body.rules.unwrap_or_else(|| json!({}));
+    enforce_agent_activation_gate(body.status.as_deref(), &rules)?;
+    let idempotency_key = marketing_agent_idempotency_key(&rules).map(ToOwned::to_owned);
+    if let Some(idempotency_key) = idempotency_key.as_deref() {
+        if let Some(existing) = sqlx::query_scalar::<_, Value>(
+            r#"
+            SELECT campaign_json(c)
+            FROM mall_campaigns c
+            WHERE c.status <> 'deleted'
+              AND btrim(c.rules ->> 'idempotencyKey') = $1
+            ORDER BY c.created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(idempotency_key)
+        .fetch_optional(&state.db)
+        .await?
+        {
+            return Ok(ok("活动草稿已存在，已返回原草稿", existing));
+        }
+    }
     let starts_at = non_empty(body.starts_at);
     let ends_at = non_empty(body.ends_at);
     let campaign = sqlx::query_scalar::<_, Value>(
         r#"
         INSERT INTO mall_campaigns (name, campaign_type, budget_cents, rules, status, starts_at, ends_at)
         VALUES ($1, $2, COALESCE($3, 0), $4, COALESCE($5, 'draft'), $6::timestamptz, $7::timestamptz)
+        ON CONFLICT DO NOTHING
         RETURNING campaign_json(mall_campaigns)
         "#,
     )
     .bind(name)
     .bind(campaign_type)
     .bind(body.budget_cents)
-    .bind(rules)
+    .bind(&rules)
     .bind(body.status)
     .bind(starts_at)
     .bind(ends_at)
-    .fetch_one(&state.db)
+    .fetch_optional(&state.db)
     .await?;
-    Ok(ok("活动创建成功", campaign))
+    if let Some(campaign) = campaign {
+        return Ok(ok("活动创建成功", campaign));
+    }
+    if let Some(idempotency_key) = idempotency_key.as_deref() {
+        if let Some(existing) = sqlx::query_scalar::<_, Value>(
+            r#"
+            SELECT campaign_json(c)
+            FROM mall_campaigns c
+            WHERE c.status <> 'deleted'
+              AND btrim(c.rules ->> 'idempotencyKey') = $1
+            ORDER BY c.created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(idempotency_key)
+        .fetch_optional(&state.db)
+        .await?
+        {
+            return Ok(ok("活动草稿已存在，已返回原草稿", existing));
+        }
+    }
+    Err(ApiError::BadRequest(
+        "活动创建发生唯一键冲突，请刷新后重试".to_string(),
+    ))
 }
 
 async fn update_campaign<S>(
@@ -7475,6 +7557,15 @@ async fn update_campaign<S>(
 where
     S: Storage,
 {
+    let persisted_rules =
+        sqlx::query_scalar::<_, Value>("SELECT rules FROM mall_campaigns WHERE id = $1")
+            .bind(&id)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or_else(|| ApiError::NotFound("活动不存在".to_string()))?;
+    let rules = merge_protected_agent_rules(&persisted_rules, body.rules)?;
+    let effective_rules = rules.as_ref().unwrap_or(&persisted_rules);
+    enforce_agent_activation_gate(body.status.as_deref(), effective_rules)?;
     let campaign = sqlx::query_scalar::<_, Value>(
         r#"
         UPDATE mall_campaigns
@@ -7494,7 +7585,7 @@ where
     .bind(body.name)
     .bind(body.campaign_type)
     .bind(body.budget_cents)
-    .bind(body.rules)
+    .bind(rules)
     .bind(body.status)
     .bind(non_empty(body.starts_at))
     .bind(non_empty(body.ends_at))
@@ -7525,6 +7616,533 @@ where
     .ok_or_else(|| ApiError::NotFound("活动不存在".to_string()))?;
 
     Ok(ok("活动删除成功", campaign))
+}
+
+async fn admin_marketing_agent<S>(
+    State(state): State<AppState<S>>,
+    Json(body): Json<MarketingAgentRequest>,
+) -> ApiResult<Json<ApiEnvelope<Value>>>
+where
+    S: Storage,
+{
+    let question = require_non_empty(Some(body.question), "请输入要分析的营销问题")?;
+    let question = truncate_for_agent(&question, 800);
+    let mode = normalize_marketing_agent_mode(body.mode.as_deref())
+        .ok_or_else(|| ApiError::BadRequest("营销场景不正确".to_string()))?
+        .to_string();
+    let budget_cents = body.budget_cents.unwrap_or(DEFAULT_BUDGET_CENTS);
+    if !(0..=50_000_000).contains(&budget_cents) {
+        return Err(ApiError::BadRequest(
+            "营销预算需在0到50万元之间".to_string(),
+        ));
+    }
+    let horizon_days = body.horizon_days.unwrap_or(DEFAULT_HORIZON_DAYS);
+    if !(3..=90).contains(&horizon_days) {
+        return Err(ApiError::BadRequest("试点周期需在3到90天之间".to_string()));
+    }
+    let target_metric = truncate_for_agent(
+        &non_empty(body.target_metric).unwrap_or_else(|| "支付转化率".to_string()),
+        80,
+    );
+    if marketing_agent_input_contains_personal_data(&question)
+        || marketing_agent_input_contains_personal_data(&target_metric)
+    {
+        return Err(ApiError::BadRequest(
+            "运营目标和主指标不得包含姓名、手机号、邮箱、身份证号或地址等个人信息".to_string(),
+        ));
+    }
+    let context = marketing_agent_context(&state.db).await?;
+    let plan_input = MarketingPlanInput {
+        objective: question.clone(),
+        mode: mode.clone(),
+        budget_cents,
+        horizon_days,
+        target_metric: target_metric.clone(),
+    };
+    let plan = build_marketing_plan(&context, &plan_input);
+    let suggestions = plan.get("actions").cloned().unwrap_or_else(|| json!([]));
+    let fallback_answer = marketing_agent_fallback_answer(&question, &context, &plan);
+    let mut model_plan = plan.clone();
+    scrub_marketing_agent_user_text(&mut model_plan, &[&question, &target_metric]);
+
+    let (provider, model, answer, model_error) =
+        match call_marketing_model(&mode, &context, &model_plan).await {
+            Ok(Some((provider, model, answer))) => (provider, model, answer, None),
+            Ok(None) => (
+                "rules".to_string(),
+                "local-rules".to_string(),
+                fallback_answer,
+                Some("营销模型密钥未配置，已返回可执行的本地规划结果".to_string()),
+            ),
+            Err(err) => (
+                "rules".to_string(),
+                "local-rules".to_string(),
+                fallback_answer,
+                Some(err.to_string()),
+            ),
+        };
+
+    Ok(ok(
+        "营销 Agent 已生成建议",
+        json!({
+            "question": question,
+            "mode": mode,
+            "provider": provider,
+            "model": model,
+            "answer": answer,
+            "modelError": model_error,
+            "context": context,
+            "suggestions": suggestions,
+            "plan": plan,
+            "privacy": "外部模型只接收商城域聚合指标和已去除运营自由文本的受控方案；系统不传手机号、地址、姓名或用户级明文身份，检测到明显个人信息会拒绝请求。"
+        }),
+    ))
+}
+
+async fn marketing_agent_context(pool: &PgPool) -> ApiResult<Value> {
+    sqlx::query_scalar::<_, Value>(
+        r#"
+        WITH paid_orders AS (
+          SELECT id, user_id, pickup_point_id, payable_cents, coupon_cents, delivery_fee_cents, created_at
+          FROM mall_orders
+          WHERE payment_status = 'paid'
+            AND created_at >= now() - INTERVAL '30 days'
+        ),
+        customer_lifetime AS (
+          SELECT
+            user_id,
+            count(*)::integer AS lifetime_orders,
+            count(*) FILTER (WHERE created_at >= now() - INTERVAL '30 days')::integer AS orders_30d,
+            count(*) FILTER (WHERE created_at >= now() - INTERVAL '90 days')::integer AS orders_90d,
+            count(*) FILTER (
+              WHERE created_at >= now() - INTERVAL '90 days' AND coupon_cents > 0
+            )::integer AS coupon_orders_90d,
+            min(created_at) AS first_paid_at,
+            max(created_at) AS last_paid_at
+          FROM mall_orders
+          WHERE payment_status = 'paid'
+            AND user_id IS NOT NULL
+            AND user_id <> ''
+          GROUP BY user_id
+        ),
+        after_sale_users AS (
+          SELECT user_id, count(*)::integer AS after_sales_90d
+          FROM mall_after_sales
+          WHERE created_at >= now() - INTERVAL '90 days'
+            AND user_id IS NOT NULL
+            AND user_id <> ''
+          GROUP BY user_id
+        ),
+        paid_user_stats AS (
+          SELECT
+            count(*) FILTER (WHERE orders_30d > 0)::integer AS user_count,
+            count(*) FILTER (WHERE orders_30d > 1)::integer AS repeat_user_count
+          FROM customer_lifetime
+        ),
+        product_rows AS (
+          SELECT
+            product.id,
+            product.sku,
+            product.name,
+            COALESCE(category.name, product.category_code, '未分类') AS category_name,
+            product.supply_price_cents,
+            product.price_cents,
+            product.stock,
+            product.stock_alert_threshold,
+            product.sold_count,
+            product.status
+          FROM mall_products product
+          LEFT JOIN mall_categories category ON category.code = product.category_code
+        ),
+        top_products AS (
+          SELECT COALESCE(jsonb_agg(jsonb_build_object(
+            'productId', rows.product_id,
+            'sku', rows.sku,
+            'productName', rows.product_name,
+            'categoryName', rows.category_name,
+            'quantity', rows.quantity,
+            'salesCents', rows.sales_cents,
+            'unitPriceCents', rows.unit_price_cents,
+            'supplyPriceCents', rows.supply_price_cents,
+            'grossMarginBps', rows.gross_margin_bps,
+            'stock', rows.stock,
+            'stockAlertThreshold', rows.stock_alert_threshold,
+            'stockCoverDays', rows.stock_cover_days,
+            'productStatus', rows.product_status
+          ) ORDER BY rows.quantity DESC, rows.sales_cents DESC), '[]'::jsonb) AS rows
+          FROM (
+            SELECT
+              item.product_id,
+              COALESCE(product.sku, item.sku) AS sku,
+              item.product_name,
+              COALESCE(category.name, item.category_code, product.category_code, '未分类') AS category_name,
+              sum(item.quantity)::integer AS quantity,
+              sum(item.line_total_cents)::bigint AS sales_cents,
+              COALESCE(product.price_cents, max(item.unit_price_cents))::bigint AS unit_price_cents,
+              COALESCE(product.supply_price_cents, 0)::bigint AS supply_price_cents,
+              CASE
+                WHEN COALESCE(product.price_cents, max(item.unit_price_cents)) > 0
+                  AND COALESCE(product.supply_price_cents, 0) > 0
+                THEN round(
+                  (COALESCE(product.price_cents, max(item.unit_price_cents)) - product.supply_price_cents)
+                  * 10000.0 / COALESCE(product.price_cents, max(item.unit_price_cents))
+                )::integer
+                ELSE 0
+              END AS gross_margin_bps,
+              COALESCE(product.stock, 0)::integer AS stock,
+              COALESCE(product.stock_alert_threshold, 0)::integer AS stock_alert_threshold,
+              product.status AS product_status,
+              CASE
+                WHEN sum(item.quantity) > 0
+                THEN round(COALESCE(product.stock, 0) * 30.0 / sum(item.quantity), 1)
+                ELSE NULL
+              END AS stock_cover_days
+            FROM paid_orders paid
+            JOIN mall_order_items item ON item.order_id = paid.id
+            LEFT JOIN mall_products product ON product.id = item.product_id
+            LEFT JOIN mall_categories category ON category.code = COALESCE(item.category_code, product.category_code)
+            WHERE product.status = 'on_sale'
+            GROUP BY
+              item.product_id,
+              COALESCE(product.sku, item.sku),
+              item.product_name,
+              COALESCE(category.name, item.category_code, product.category_code, '未分类'),
+              product.price_cents,
+              product.supply_price_cents,
+              product.stock,
+              product.stock_alert_threshold,
+              product.status
+            ORDER BY sum(item.quantity) DESC, sum(item.line_total_cents) DESC
+            LIMIT 30
+          ) rows
+        ),
+        category_rows AS (
+          SELECT COALESCE(jsonb_agg(jsonb_build_object(
+            'categoryName', rows.category_name,
+            'quantity', rows.quantity,
+            'salesCents', rows.sales_cents
+          ) ORDER BY rows.sales_cents DESC), '[]'::jsonb) AS rows
+          FROM (
+            SELECT
+              COALESCE(category.name, item.category_code, product.category_code, '未分类') AS category_name,
+              sum(item.quantity)::integer AS quantity,
+              sum(item.line_total_cents)::bigint AS sales_cents
+            FROM paid_orders paid
+            JOIN mall_order_items item ON item.order_id = paid.id
+            LEFT JOIN mall_products product ON product.id = item.product_id
+            LEFT JOIN mall_categories category ON category.code = COALESCE(item.category_code, product.category_code)
+            GROUP BY COALESCE(category.name, item.category_code, product.category_code, '未分类')
+            ORDER BY sum(item.line_total_cents) DESC
+            LIMIT 8
+          ) rows
+        ),
+        coupon_stats AS (
+          SELECT jsonb_build_object(
+            'activeCount', count(*) FILTER (WHERE status = 'active'),
+            'draftCount', count(*) FILTER (WHERE status = 'draft'),
+            'claimedCount', COALESCE(sum(claimed_count), 0),
+            'usedCount', COALESCE(sum(used_count), 0)
+          ) AS value
+          FROM mall_coupons
+          WHERE status <> 'deleted'
+        ),
+        campaign_stats AS (
+          SELECT jsonb_build_object(
+            'activeCount', count(*) FILTER (WHERE status = 'active'),
+            'draftCount', count(*) FILTER (WHERE status = 'draft'),
+            'types', COALESCE(jsonb_agg(DISTINCT campaign_type) FILTER (WHERE campaign_type IS NOT NULL), '[]'::jsonb)
+          ) AS value
+          FROM mall_campaigns
+          WHERE status <> 'deleted'
+        ),
+        segment_stats AS (
+          SELECT jsonb_build_array(
+            jsonb_build_object(
+              'key', 'recent_first_buyers',
+              'name', '近30天首购用户',
+              'rule', '首次付费发生在近30天',
+              'count', count(*) FILTER (WHERE customer.first_paid_at >= now() - INTERVAL '30 days')
+            ),
+            jsonb_build_object(
+              'key', 'repeat_customers',
+              'name', '复购用户',
+              'rule', '近30天付费订单数大于1',
+              'count', count(*) FILTER (WHERE customer.orders_30d > 1)
+            ),
+            jsonb_build_object(
+              'key', 'sleeping_customers',
+              'name', '沉睡用户',
+              'rule', '历史有付费订单且30天未下单',
+              'count', count(*) FILTER (WHERE customer.last_paid_at < now() - INTERVAL '30 days')
+            ),
+            jsonb_build_object(
+              'key', 'coupon_sensitive',
+              'name', '优惠敏感用户',
+              'rule', '近90天至少2单且优惠订单占比不低于50%',
+              'count', count(*) FILTER (
+                WHERE customer.orders_90d >= 2
+                  AND customer.coupon_orders_90d * 2 >= customer.orders_90d
+              )
+            ),
+            jsonb_build_object(
+              'key', 'after_sale_risk',
+              'name', '售后风险用户',
+              'rule', '近90天售后次数不少于2次',
+              'count', count(*) FILTER (WHERE COALESCE(risk.after_sales_90d, 0) >= 2)
+            )
+          ) AS rows
+          FROM customer_lifetime customer
+          LEFT JOIN after_sale_users risk ON risk.user_id = customer.user_id
+        ),
+        community_stats AS (
+          SELECT jsonb_build_object(
+            'activePickupPoints', (SELECT count(*) FROM mall_pickup_points WHERE status = 'active'),
+            'activeLeaders', (SELECT count(*) FROM mall_group_leaders WHERE status = 'active'),
+            'publishedPosts', (SELECT count(*) FROM mall_community_posts WHERE status = 'published'),
+            'topCommunities', COALESCE((
+              SELECT jsonb_agg(jsonb_build_object(
+                'communityName', rows.community_name,
+                'paidOrders', rows.paid_orders,
+                'gmvCents', rows.gmv_cents
+              ) ORDER BY rows.gmv_cents DESC)
+              FROM (
+                SELECT
+                  COALESCE(point.community_name, point.name, '未分配社区') AS community_name,
+                  count(paid.id)::integer AS paid_orders,
+                  COALESCE(sum(paid.payable_cents), 0)::bigint AS gmv_cents
+                FROM paid_orders paid
+                LEFT JOIN mall_pickup_points point ON point.id = paid.pickup_point_id
+                GROUP BY COALESCE(point.community_name, point.name, '未分配社区')
+                ORDER BY sum(paid.payable_cents) DESC
+                LIMIT 5
+              ) rows
+            ), '[]'::jsonb)
+          ) AS value
+        )
+        SELECT jsonb_build_object(
+          'windowDays', 30,
+          'summary', jsonb_build_object(
+            'paidOrders', COALESCE((SELECT count(*) FROM paid_orders), 0),
+            'gmvCents', COALESCE((SELECT sum(payable_cents) FROM paid_orders), 0),
+            'avgOrderCents', COALESCE((SELECT round(avg(payable_cents))::bigint FROM paid_orders), 0),
+            'couponDiscountCents', COALESCE((SELECT sum(coupon_cents) FROM paid_orders), 0),
+            'deliveryFeeCents', COALESCE((SELECT sum(delivery_fee_cents) FROM paid_orders), 0),
+            'activeProducts', COALESCE((SELECT count(*) FROM product_rows WHERE status = 'on_sale'), 0),
+            'lowStockProducts', COALESCE((SELECT count(*) FROM product_rows WHERE status = 'on_sale' AND stock <= stock_alert_threshold), 0),
+            'afterSales', COALESCE((SELECT count(*) FROM mall_after_sales WHERE created_at >= now() - INTERVAL '30 days'), 0),
+            'repeatUserRateBps', COALESCE((
+              SELECT CASE WHEN user_count = 0 THEN 0 ELSE round(repeat_user_count * 10000.0 / user_count)::integer END
+              FROM paid_user_stats
+            ), 0)
+          ),
+          'topProducts', (SELECT rows FROM top_products),
+          'topCategories', (SELECT rows FROM category_rows),
+          'coupons', (SELECT value FROM coupon_stats),
+          'campaigns', (SELECT value FROM campaign_stats),
+          'segments', (SELECT rows FROM segment_stats),
+          'communities', (SELECT value FROM community_stats)
+        )
+        "#,
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(Into::into)
+}
+
+async fn call_marketing_model(
+    mode: &str,
+    context: &Value,
+    plan: &Value,
+) -> ApiResult<Option<(String, String, String)>> {
+    let provider =
+        read_trimmed("MARKETING_AGENT_MODEL_PROVIDER").unwrap_or_else(|| "minimax".to_string());
+    if !matches!(
+        provider.as_str(),
+        "minimax" | "openai" | "openai-compatible" | "openai_compatible"
+    ) {
+        return Err(ApiError::BadRequest(
+            "营销模型只支持 MiniMax 或 OpenAI-compatible Chat Completions 接口".to_string(),
+        ));
+    }
+    let Some(api_key) =
+        read_trimmed("MARKETING_AGENT_API_KEY").or_else(|| read_trimmed("MINIMAX_API_KEY"))
+    else {
+        return Ok(None);
+    };
+    let model = read_trimmed("MARKETING_AGENT_MODEL")
+        .or_else(|| read_trimmed("MINIMAX_MODEL"))
+        .unwrap_or_else(|| "MiniMax-M3".to_string());
+    let api_url = read_trimmed("MARKETING_AGENT_API_URL")
+        .or_else(|| read_trimmed("MINIMAX_API_URL"))
+        .unwrap_or_else(|| "https://api.minimax.io/v1/chat/completions".to_string());
+    let system_prompt = "你是社区团购商城的营销策略 Agent。结构化方案已由确定性规划器和业务规则生成，你的职责是解释证据、取舍和风险，不得改写预算上限、审批边界或草稿状态。只使用提供的聚合数据，不编造个人隐私、客户成果或不存在的用户明细。所有预测必须明确标为试点目标或待验证假设；不得建议自动启用活动、批量发券、群发或外呼。用简洁中文输出：诊断、方案、预期、风险、下一步。";
+    let user_prompt = format!(
+        "工作模式：{}\n聚合数据：{}\n受控执行方案：{}",
+        mode,
+        serde_json::to_string(context).unwrap_or_else(|_| "{}".to_string()),
+        serde_json::to_string(plan).unwrap_or_else(|_| "{}".to_string())
+    );
+    let request = MiniMaxChatRequest {
+        model: model.clone(),
+        temperature: 0.2,
+        messages: vec![
+            MiniMaxMessage {
+                role: "system".to_string(),
+                content: system_prompt.to_string(),
+            },
+            MiniMaxMessage {
+                role: "user".to_string(),
+                content: user_prompt,
+            },
+        ],
+    };
+    let body = serde_json::to_string(&request)
+        .map_err(|err| ApiError::BadRequest(format!("营销 Agent 请求构建失败: {err}")))?;
+    let response = reqwest::Client::new()
+        .post(api_url)
+        .header("Authorization", format!("Bearer {api_key}"))
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(25))
+        .body(body)
+        .send()
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("营销模型请求失败: {err}")))?;
+    let status = response.status();
+    let response_text = response
+        .text()
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("营销模型响应读取失败: {err}")))?;
+    if !status.is_success() {
+        return Err(ApiError::BadRequest(format!(
+            "营销模型返回异常状态 {}",
+            status.as_u16()
+        )));
+    }
+    let payload: Value = serde_json::from_str(&response_text)
+        .map_err(|err| ApiError::BadRequest(format!("营销模型响应解析失败: {err}")))?;
+    let answer = payload
+        .get("choices")
+        .and_then(Value::as_array)
+        .and_then(|choices| choices.first())
+        .and_then(|choice| choice.get("message"))
+        .and_then(|message| message.get("content"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| ApiError::BadRequest("营销模型未返回可展示内容".to_string()))?;
+    Ok(Some((provider, model, truncate_for_agent(answer, 4_000))))
+}
+
+fn truncate_for_agent(value: &str, max_chars: usize) -> String {
+    value.chars().take(max_chars).collect::<String>()
+}
+
+fn marketing_agent_input_contains_personal_data(value: &str) -> bool {
+    [
+        r"(?:\+?86[-\s]?)?1[3-9](?:[-\s]?\d){9}",
+        r"(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}",
+        r"(?i)\d{17}[\dX]",
+        r"(?:姓名|联系人|收货人|电话|手机|手机号|地址|住址|收货地址|身份证|邮箱)\s*[:：]",
+    ]
+    .iter()
+    .any(|pattern| {
+        Regex::new(pattern)
+            .map(|regex| regex.is_match(value))
+            .unwrap_or(false)
+    })
+}
+
+fn scrub_marketing_agent_user_text(value: &mut Value, user_texts: &[&str]) {
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                scrub_marketing_agent_user_text(item, user_texts);
+            }
+        }
+        Value::Object(map) => {
+            for item in map.values_mut() {
+                scrub_marketing_agent_user_text(item, user_texts);
+            }
+        }
+        Value::String(text) => {
+            for user_text in user_texts {
+                if !user_text.is_empty() && text.contains(user_text) {
+                    *text = text.replace(user_text, "[运营输入已在服务端本地处理]");
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn marketing_agent_idempotency_key(rules: &Value) -> Option<&str> {
+    rules
+        .get("idempotencyKey")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+fn enforce_agent_activation_gate(status: Option<&str>, rules: &Value) -> ApiResult<()> {
+    if status != Some("active") {
+        return Ok(());
+    }
+    let Some(gate) = marketing_agent_activation_gate(rules) else {
+        return Ok(());
+    };
+
+    Err(ApiError::BadRequest(format!(
+        "该营销 Agent 草稿尚未通过执行能力闸门（{gate}），不能启用"
+    )))
+}
+
+fn merge_protected_agent_rules(
+    persisted_rules: &Value,
+    incoming_rules: Option<Value>,
+) -> ApiResult<Option<Value>> {
+    let Some(incoming_rules) = incoming_rules else {
+        return Ok(None);
+    };
+    if marketing_agent_activation_gate(persisted_rules).is_none() {
+        return Ok(Some(incoming_rules));
+    }
+
+    let persisted = persisted_rules
+        .as_object()
+        .ok_or_else(|| ApiError::BadRequest("营销 Agent 草稿的既有规则格式不正确".to_string()))?;
+    let incoming = incoming_rules
+        .as_object()
+        .ok_or_else(|| ApiError::BadRequest("营销 Agent 草稿规则必须是 JSON 对象".to_string()))?;
+    let mut merged = persisted.clone();
+    for (key, value) in incoming {
+        merged.insert(key.clone(), value.clone());
+    }
+    for protected_key in [
+        "activationGate",
+        "runId",
+        "idempotencyKey",
+        "generatedBy",
+        "audience",
+        "scope",
+        "productIds",
+        "categoryName",
+        "experiment",
+        "budgetCapCents",
+        "horizonDays",
+    ] {
+        if let Some(value) = persisted.get(protected_key) {
+            merged.insert(protected_key.to_string(), value.clone());
+        }
+    }
+    Ok(Some(Value::Object(merged)))
+}
+
+fn marketing_agent_activation_gate(rules: &Value) -> Option<&str> {
+    rules
+        .get("activationGate")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
 }
 
 async fn admin_list_coupons<S>(
@@ -7617,6 +8235,27 @@ where
     validate_non_negative_i32(body.total_quantity.unwrap_or(0), "发放数量不能小于 0")?;
     validate_positive_i32(body.per_user_limit.unwrap_or(1), "每人限领必须大于 0")?;
 
+    let rules = body.rules.unwrap_or_else(|| json!({}));
+    enforce_agent_activation_gate(body.status.as_deref(), &rules)?;
+    let idempotency_key = marketing_agent_idempotency_key(&rules).map(ToOwned::to_owned);
+    if let Some(idempotency_key) = idempotency_key.as_deref() {
+        if let Some(existing) = sqlx::query_scalar::<_, Value>(
+            r#"
+            SELECT coupon_json(c)
+            FROM mall_coupons c
+            WHERE c.status <> 'deleted'
+              AND btrim(c.rules ->> 'idempotencyKey') = $1
+            ORDER BY c.created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(idempotency_key)
+        .fetch_optional(&state.db)
+        .await?
+        {
+            return Ok(ok("优惠券草稿已存在，已返回原草稿", existing));
+        }
+    }
     let starts_at = non_empty(body.starts_at);
     let ends_at = non_empty(body.ends_at);
     let coupon = sqlx::query_scalar::<_, Value>(
@@ -7630,6 +8269,7 @@ where
           COALESCE($7, 1), $8, COALESCE($9, '{}'::jsonb), COALESCE($10, 'draft'),
           $11::timestamptz, $12::timestamptz
         )
+        ON CONFLICT DO NOTHING
         RETURNING coupon_json(mall_coupons)
         "#,
     )
@@ -7641,14 +8281,37 @@ where
     .bind(body.total_quantity)
     .bind(body.per_user_limit)
     .bind(non_empty(body.description))
-    .bind(body.rules)
+    .bind(&rules)
     .bind(body.status)
     .bind(starts_at)
     .bind(ends_at)
-    .fetch_one(&state.db)
+    .fetch_optional(&state.db)
     .await?;
 
-    Ok(ok("优惠券创建成功", coupon))
+    if let Some(coupon) = coupon {
+        return Ok(ok("优惠券创建成功", coupon));
+    }
+    if let Some(idempotency_key) = idempotency_key.as_deref() {
+        if let Some(existing) = sqlx::query_scalar::<_, Value>(
+            r#"
+            SELECT coupon_json(c)
+            FROM mall_coupons c
+            WHERE c.status <> 'deleted'
+              AND btrim(c.rules ->> 'idempotencyKey') = $1
+            ORDER BY c.created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(idempotency_key)
+        .fetch_optional(&state.db)
+        .await?
+        {
+            return Ok(ok("优惠券草稿已存在，已返回原草稿", existing));
+        }
+    }
+    Err(ApiError::BadRequest(
+        "优惠券编码或幂等键已存在，请刷新后重试".to_string(),
+    ))
 }
 
 async fn admin_update_coupon<S>(
@@ -7675,6 +8338,15 @@ where
     if let Some(per_user_limit) = body.per_user_limit {
         validate_positive_i32(per_user_limit, "每人限领必须大于 0")?;
     }
+    let persisted_rules =
+        sqlx::query_scalar::<_, Value>("SELECT rules FROM mall_coupons WHERE id = $1")
+            .bind(&id)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or_else(|| ApiError::NotFound("优惠券不存在".to_string()))?;
+    let rules = merge_protected_agent_rules(&persisted_rules, body.rules)?;
+    let effective_rules = rules.as_ref().unwrap_or(&persisted_rules);
+    enforce_agent_activation_gate(body.status.as_deref(), effective_rules)?;
 
     let name = optional_non_empty(body.name, "优惠券名称不能为空")?;
     let code = match body.code {
@@ -7716,7 +8388,7 @@ where
     .bind(body.total_quantity)
     .bind(body.per_user_limit)
     .bind(non_empty(body.description))
-    .bind(body.rules)
+    .bind(rules)
     .bind(body.status)
     .bind(starts_at)
     .bind(ends_at)
@@ -19421,5 +20093,86 @@ mod tests {
             group_buy_balance_due_next_status(99, 100),
             ("ops_review", Some("balance_overdue"))
         );
+    }
+
+    #[test]
+    fn marketing_agent_activation_gate_blocks_unimplemented_execution() {
+        let rules = json!({
+            "generatedBy": "marketing-agent",
+            "activationGate": "audience_engine_required"
+        });
+
+        assert!(enforce_agent_activation_gate(Some("draft"), &rules).is_ok());
+        assert!(enforce_agent_activation_gate(Some("active"), &rules).is_err());
+        assert_eq!(
+            marketing_agent_idempotency_key(&json!({"idempotencyKey": "run:action"})),
+            Some("run:action")
+        );
+    }
+
+    #[test]
+    fn marketing_agent_edit_preserves_gate_and_targeting_provenance() {
+        let persisted = json!({
+            "generatedBy": "marketing-agent",
+            "activationGate": "audience_engine_required",
+            "idempotencyKey": "run:coupon",
+            "runId": "run",
+            "audience": "recent_first_buyers",
+            "budgetCapCents": 30_000,
+            "autoApply": false
+        });
+        let edited = merge_protected_agent_rules(
+            &persisted,
+            Some(json!({
+                "autoApply": true,
+                "activationGate": null,
+                "audience": "all_customers"
+            })),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(edited["activationGate"], "audience_engine_required");
+        assert_eq!(edited["idempotencyKey"], "run:coupon");
+        assert_eq!(edited["audience"], "recent_first_buyers");
+        assert_eq!(edited["autoApply"], true);
+        assert!(enforce_agent_activation_gate(Some("active"), &edited).is_err());
+    }
+
+    #[test]
+    fn marketing_agent_rejects_likely_personal_data_in_free_text() {
+        assert!(marketing_agent_input_contains_personal_data(
+            "请给手机号 13800138000 的用户发券"
+        ));
+        assert!(marketing_agent_input_contains_personal_data(
+            "收货地址：朝阳区某小区"
+        ));
+        assert!(marketing_agent_input_contains_personal_data("联系人：张三"));
+        assert!(marketing_agent_input_contains_personal_data(
+            "customer@example.com"
+        ));
+        assert!(!marketing_agent_input_contains_personal_data(
+            "提升社区团购沉睡用户召回率"
+        ));
+    }
+
+    #[test]
+    fn marketing_agent_external_plan_removes_user_supplied_text() {
+        let objective = "请提升蓝湖社区复购";
+        let metric = "蓝湖社区支付转化率";
+        let mut plan = json!({
+            "objective": objective,
+            "experiment": {
+                "primaryMetric": metric,
+                "evidence": [format!("主指标：{metric}")]
+            }
+        });
+
+        scrub_marketing_agent_user_text(&mut plan, &[objective, metric]);
+        let serialized = serde_json::to_string(&plan).unwrap();
+
+        assert!(!serialized.contains(objective));
+        assert!(!serialized.contains(metric));
+        assert!(serialized.contains("运营输入已在服务端本地处理"));
     }
 }

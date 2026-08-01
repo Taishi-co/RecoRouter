@@ -1,0 +1,394 @@
+{
+  "disclaimer": "以下全部结果来自固定参数的 Monte Carlo 模拟，不是客户实绩，不是收益承诺，也不能代替客户自己的随机对照试验。",
+  "modelVersion": "1.0.0",
+  "simulationDate": "2026-08-01",
+  "seed": 20260801,
+  "iterations": 50000,
+  "design": {
+    "durationDays": 28,
+    "arms": 3,
+    "clustersPerArm": 300,
+    "averageEligibleUsersPerCluster": 180,
+    "clusterSizeCoefficientOfVariation": 0.25,
+    "conversionIntraclusterCorrelation": 0.018,
+    "orderIntraclusterCorrelation": 0.012
+  },
+  "assumptions": {
+    "baseline": {
+      "paidConversionRate": {
+        "mean": 0.09,
+        "trialStandardDeviation": 0.005
+      },
+      "ordersPerPaidUser": {
+        "mean": 1.24,
+        "trialStandardDeviation": 0.03
+      },
+      "averageOrderValueYuan": {
+        "mean": 51,
+        "trialStandardDeviation": 1.5
+      },
+      "contributionMarginRate": {
+        "mean": 0.215,
+        "trialStandardDeviation": 0.012
+      },
+      "individualOrderValueStandardDeviationYuan": 16,
+      "orderCountOverdispersion": 1.25
+    },
+    "arms": {
+      "control": {
+        "label": "现状对照",
+        "description": "保持当前商品、触达和权益策略，不增加本次试点营销费用。",
+        "conversionRelativeLift": {
+          "mean": 0,
+          "standardDeviation": 0
+        },
+        "ordersPerPaidUserRelativeLift": {
+          "mean": 0,
+          "standardDeviation": 0
+        },
+        "averageOrderValueRelativeLift": {
+          "mean": 0,
+          "standardDeviation": 0
+        },
+        "targetedUserShare": {
+          "mean": 0,
+          "standardDeviation": 0
+        },
+        "redemptionRateAmongTargeted": {
+          "mean": 0,
+          "standardDeviation": 0
+        },
+        "subsidyPerRedemptionYuan": {
+          "mean": 0,
+          "standardDeviation": 0
+        },
+        "fixedCampaignCostYuan": {
+          "mean": 0,
+          "standardDeviation": 0
+        },
+        "channelCostPerTargetedUserYuan": 0
+      },
+      "manual": {
+        "label": "人工营销",
+        "description": "运营人员按经验统一选品、圈人、发券和搭建活动。",
+        "conversionRelativeLift": {
+          "mean": 0.09,
+          "standardDeviation": 0.04
+        },
+        "ordersPerPaidUserRelativeLift": {
+          "mean": 0.025,
+          "standardDeviation": 0.018
+        },
+        "averageOrderValueRelativeLift": {
+          "mean": -0.004,
+          "standardDeviation": 0.007
+        },
+        "targetedUserShare": {
+          "mean": 0.22,
+          "standardDeviation": 0.02
+        },
+        "redemptionRateAmongTargeted": {
+          "mean": 0.055,
+          "standardDeviation": 0.009
+        },
+        "subsidyPerRedemptionYuan": {
+          "mean": 4.2,
+          "standardDeviation": 0.35
+        },
+        "fixedCampaignCostYuan": {
+          "mean": 5000,
+          "standardDeviation": 650
+        },
+        "channelCostPerTargetedUserYuan": 0.035
+      },
+      "agent": {
+        "label": "Agent 营销",
+        "description": "Agent 在预算、毛利、库存和频控约束下联合优化选品、人群、权益、活动与会场，执行前仍需人工审批。",
+        "conversionRelativeLift": {
+          "mean": 0.18,
+          "standardDeviation": 0.055
+        },
+        "ordersPerPaidUserRelativeLift": {
+          "mean": 0.055,
+          "standardDeviation": 0.022
+        },
+        "averageOrderValueRelativeLift": {
+          "mean": -0.002,
+          "standardDeviation": 0.006
+        },
+        "targetedUserShare": {
+          "mean": 0.16,
+          "standardDeviation": 0.015
+        },
+        "redemptionRateAmongTargeted": {
+          "mean": 0.06,
+          "standardDeviation": 0.009
+        },
+        "subsidyPerRedemptionYuan": {
+          "mean": 3.8,
+          "standardDeviation": 0.3
+        },
+        "fixedCampaignCostYuan": {
+          "mean": 7500,
+          "standardDeviation": 850
+        },
+        "channelCostPerTargetedUserYuan": 0.025
+      }
+    }
+  },
+  "metricDefinitions": {
+    "incrementalPaidUsers": "实验臂付费用户 - 同轮对照组付费转化率 × 实验臂合规可触达用户数",
+    "incrementalOrders": "实验臂订单数 - 同轮对照组人均订单数 × 实验臂合规可触达用户数",
+    "incrementalGmvYuan": "实验臂 GMV - 同轮对照组人均 GMV × 实验臂合规可触达用户数",
+    "roi": "(增量 GMV × 贡献毛利率 - 本次活动总成本) / 本次活动总成本",
+    "costPerIncrementalPaidUserYuan": "本次活动总成本 / 增量付费用户；仅在增量付费用户大于 0 的轮次计算"
+  },
+  "arms": {
+    "control": {
+      "label": "现状对照",
+      "description": "保持当前商品、触达和权益策略，不增加本次试点营销费用。",
+      "metrics": {
+        "eligibleUsers": {
+          "unit": "users",
+          "mean": 54003,
+          "p10": 53013,
+          "p50": 54001,
+          "p90": 54994,
+          "sampleCount": 50000
+        },
+        "paidConversionRate": {
+          "unit": "rate",
+          "mean": 0.090007,
+          "p10": 0.082843,
+          "p50": 0.090007,
+          "p90": 0.097141,
+          "sampleCount": 50000
+        },
+        "paidConversionLiftPercentagePoints": {
+          "unit": "percentage_points",
+          "mean": 0,
+          "p10": 0,
+          "p50": 0,
+          "p90": 0,
+          "sampleCount": 50000
+        },
+        "incrementalPaidUsers": {
+          "unit": "users",
+          "mean": 0,
+          "p10": 0,
+          "p50": 0,
+          "p90": 0,
+          "sampleCount": 50000
+        },
+        "incrementalOrders": {
+          "unit": "orders",
+          "mean": 0,
+          "p10": 0,
+          "p50": 0,
+          "p90": 0,
+          "sampleCount": 50000
+        },
+        "incrementalGmvYuan": {
+          "unit": "CNY",
+          "mean": 0,
+          "p10": 0,
+          "p50": 0,
+          "p90": 0,
+          "sampleCount": 50000
+        },
+        "campaignCostYuan": {
+          "unit": "CNY",
+          "mean": 0,
+          "p10": 0,
+          "p50": 0,
+          "p90": 0,
+          "sampleCount": 50000
+        },
+        "costPerIncrementalPaidUserYuan": {
+          "unit": "CNY_per_incremental_paid_user",
+          "mean": null,
+          "p10": null,
+          "p50": null,
+          "p90": null,
+          "sampleCount": 0,
+          "note": "对照组无增量营销成本，不计算。"
+        },
+        "roi": {
+          "unit": "rate",
+          "mean": null,
+          "p10": null,
+          "p50": null,
+          "p90": null,
+          "sampleCount": 0,
+          "formula": "(增量 GMV × 贡献毛利率 - 本次活动总成本) / 本次活动总成本"
+        }
+      },
+      "positiveRoiProbability": null,
+      "positiveIncrementalPaidUsersProbability": null
+    },
+    "manual": {
+      "label": "人工营销",
+      "description": "运营人员按经验统一选品、圈人、发券和搭建活动。",
+      "metrics": {
+        "eligibleUsers": {
+          "unit": "users",
+          "mean": 53999,
+          "p10": 52997,
+          "p50": 54004,
+          "p90": 54998,
+          "sampleCount": 50000
+        },
+        "paidConversionRate": {
+          "unit": "rate",
+          "mean": 0.098086,
+          "p10": 0.089165,
+          "p50": 0.097998,
+          "p90": 0.107163,
+          "sampleCount": 50000
+        },
+        "paidConversionLiftPercentagePoints": {
+          "unit": "percentage_points",
+          "mean": 0.8079,
+          "p10": 0.149,
+          "p50": 0.8046,
+          "p90": 1.4702,
+          "sampleCount": 50000
+        },
+        "incrementalPaidUsers": {
+          "unit": "users",
+          "mean": 436.2,
+          "p10": 80.3,
+          "p50": 434.1,
+          "p90": 793.7,
+          "sampleCount": 50000
+        },
+        "incrementalOrders": {
+          "unit": "orders",
+          "mean": 704.3,
+          "p10": 152.8,
+          "p50": 699.6,
+          "p90": 1262.4,
+          "sampleCount": 50000
+        },
+        "incrementalGmvYuan": {
+          "unit": "CNY",
+          "mean": 34538.11,
+          "p10": 6036.36,
+          "p50": 34195.2,
+          "p90": 63471.19,
+          "sampleCount": 50000
+        },
+        "campaignCostYuan": {
+          "unit": "CNY",
+          "mean": 8153.93,
+          "p10": 7036.48,
+          "p50": 8137.33,
+          "p90": 9288.65,
+          "sampleCount": 50000
+        },
+        "costPerIncrementalPaidUserYuan": {
+          "unit": "CNY_per_incremental_paid_user",
+          "mean": 48.93,
+          "p10": 9.93,
+          "p50": 17.94,
+          "p90": 53.89,
+          "sampleCount": 47098,
+          "note": "仅在增量付费用户大于 0 的模拟轮次计算。"
+        },
+        "roi": {
+          "unit": "rate",
+          "mean": -0.078633,
+          "p10": -0.84042,
+          "p50": -0.102418,
+          "p90": 0.712482,
+          "sampleCount": 50000,
+          "formula": "(增量 GMV × 贡献毛利率 - 本次活动总成本) / 本次活动总成本"
+        }
+      },
+      "positiveRoiProbability": 0.43376,
+      "positiveIncrementalPaidUsersProbability": 0.94196
+    },
+    "agent": {
+      "label": "Agent 营销",
+      "description": "Agent 在预算、毛利、库存和频控约束下联合优化选品、人群、权益、活动与会场，执行前仍需人工审批。",
+      "metrics": {
+        "eligibleUsers": {
+          "unit": "users",
+          "mean": 53999,
+          "p10": 53000,
+          "p50": 53999,
+          "p90": 54990,
+          "sampleCount": 50000
+        },
+        "paidConversionRate": {
+          "unit": "rate",
+          "mean": 0.106254,
+          "p10": 0.09586,
+          "p50": 0.10609,
+          "p90": 0.116849,
+          "sampleCount": 50000
+        },
+        "paidConversionLiftPercentagePoints": {
+          "unit": "percentage_points",
+          "mean": 1.6247,
+          "p10": 0.8315,
+          "p50": 1.6158,
+          "p90": 2.4312,
+          "sampleCount": 50000
+        },
+        "incrementalPaidUsers": {
+          "unit": "users",
+          "mean": 877.3,
+          "p10": 448.3,
+          "p50": 872,
+          "p90": 1313.8,
+          "sampleCount": 50000
+        },
+        "incrementalOrders": {
+          "unit": "orders",
+          "mean": 1477.5,
+          "p10": 814.6,
+          "p50": 1467.8,
+          "p90": 2157.1,
+          "sampleCount": 50000
+        },
+        "incrementalGmvYuan": {
+          "unit": "CNY",
+          "mean": 74596.53,
+          "p10": 40436.53,
+          "p50": 73905.52,
+          "p90": 109642.72,
+          "sampleCount": 50000
+        },
+        "campaignCostYuan": {
+          "unit": "CNY",
+          "mean": 9689.45,
+          "p10": 8484.35,
+          "p50": 9688.24,
+          "p90": 10891.21,
+          "sampleCount": 50000
+        },
+        "costPerIncrementalPaidUserYuan": {
+          "unit": "CNY_per_incremental_paid_user",
+          "mean": 15.61,
+          "p10": 7.2,
+          "p50": 11.08,
+          "p90": 21.54,
+          "sampleCount": 49819,
+          "note": "仅在增量付费用户大于 0 的模拟轮次计算。"
+        },
+        "roi": {
+          "unit": "rate",
+          "mean": 0.670535,
+          "p10": -0.115938,
+          "p50": 0.63574,
+          "p90": 1.501618,
+          "sampleCount": 50000,
+          "formula": "(增量 GMV × 贡献毛利率 - 本次活动总成本) / 本次活动总成本"
+        }
+      },
+      "positiveRoiProbability": 0.8602,
+      "positiveIncrementalPaidUsersProbability": 0.99638
+    }
+  }
+}

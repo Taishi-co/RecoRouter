@@ -24,6 +24,8 @@ const adminMain = read('src/web-admin/main.tsx');
 const mallService = read('src/services/mall.ts');
 const mallHome = read('src/pages/mall/index/index.tsx');
 const mallBackend = read('server/src/modules/mall.rs');
+const marketingPlanner = read('server/src/modules/mall_marketing_agent.rs');
+const marketingMethodology = read('docs/community-group-buy-marketing-agent-methodology.md');
 const packageJsonSource = read('package.json');
 const packageJson = JSON.parse(packageJsonSource);
 const migrations = readdirSync(resolve(root, 'server/migrations'))
@@ -40,6 +42,7 @@ assert(!/designPage\('mall\.couponCreate'/.test(adminMain), 'Mall admin coupon c
 assert(/designPage\('mall\.coupons', '券中心'/.test(adminMain), 'Mall admin coupon page must be renamed to coupon center.');
 assert(!/designPage\('mall\.campaignCreate'/.test(adminMain), 'Mall admin campaign creation must be folded into campaign list, not a separate page.');
 assert(/designPage\('mall\.campaigns', '营销活动'/.test(adminMain), 'Mall admin campaign page must be a single searchable activity list.');
+assert(/designPage\('mall\.marketingAgent', '营销 Agent'/.test(adminMain), 'Mall admin must expose a web-only marketing agent page.');
 assert(/function MallCouponCenterSection\(/.test(adminMain), 'Web admin must render a real coupon center section.');
 assert(/function MallHomeBannersSection\(/.test(adminMain), 'Web admin must render a real home configuration section.');
 assert(/designPage\('mall\.banners', '轮播广告位'/.test(adminMain), 'Mall admin must expose carousel banner configuration.');
@@ -49,6 +52,13 @@ assert(/designPage\('mall\.homeNewArrivals', '新上专区'/.test(adminMain), 'M
 assert(/designPage\('mall\.homeHotProducts', '爆款推荐'/.test(adminMain), 'Mall admin must expose hot-product homepage section configuration.');
 assert(/function MallHomeSectionsSection\(/.test(adminMain), 'Web admin must render real homepage section configuration pages.');
 assert(/function MallCampaignsSection\(/.test(adminMain), 'Web admin must render a real campaign list section.');
+assert(/function MallMarketingAgentSection\(/.test(adminMain), 'Web admin must render a marketing agent workspace.');
+assert(/社区团购营销 Agent/.test(adminMain), 'Marketing agent must be positioned as the community group-buy flagship workspace.');
+assert(/硬预算上限（元）/.test(adminMain) && /试点周期（天）/.test(adminMain), 'Marketing agent must capture budget and pilot horizon constraints.');
+assert(/全链路增长/.test(adminMain) && /智能选品/.test(adminMain) && /团长获客/.test(adminMain) && /主题会场/.test(adminMain), 'Marketing agent must expose full-funnel scenario presets.');
+assert(/试点目标，不是已实现结果或收益承诺/.test(adminMain), 'Marketing agent must label forecast ranges as pilot targets rather than achieved outcomes.');
+assert(/window\.confirm\(`确认创建/.test(adminMain), 'Marketing agent draft creation must require an explicit operator confirmation.');
+assert(/disabled=\{busy \|\| !executable\}/.test(adminMain), 'Marketing agent must disable materialization when an action fails guardrails.');
 assert(/function CampaignBusinessFields\(/.test(adminMain), 'Campaign modal must render type-specific business fields instead of a generic rules-only editor.');
 assert(/门槛金额/.test(adminMain) && /满减金额/.test(adminMain), 'Full-reduction campaigns must expose threshold and reduction amount fields.');
 assert(/折扣力度/.test(adminMain), 'Full-discount campaigns must expose a discount input field.');
@@ -74,6 +84,7 @@ assert(/activePageKey === 'mall\.coupons'[\s\S]*<MallCouponCenterSection/.test(a
 assert(/activePageKey === 'mall\.banners'[\s\S]*<MallHomeBannersSection/.test(adminMain), 'mall.banners must route to MallHomeBannersSection.');
 assert(/homeSectionPageConfigs\[activePageKey\][\s\S]*<MallHomeSectionsSection/.test(adminMain), 'Homepage section pages must route to MallHomeSectionsSection.');
 assert(/activePageKey === 'mall\.campaigns'[\s\S]*<MallCampaignsSection/.test(adminMain), 'mall.campaigns must route to MallCampaignsSection.');
+assert(/activePageKey === 'mall\.marketingAgent'[\s\S]*<MallMarketingAgentSection/.test(adminMain), 'mall.marketingAgent must route to MallMarketingAgentSection.');
 assert(/activePageKey === 'mall\.settings'[\s\S]*<MallSettingsSection/.test(adminMain), 'mall.settings must route to MallSettingsSection.');
 assert(/activePageKey === 'mall\.deliveryRules'[\s\S]*<MallDeliveryRulesSection/.test(adminMain), 'mall.deliveryRules must route to MallDeliveryRulesSection.');
 assert(/activePageKey === 'mall\.paymentSplit'[\s\S]*<MallPaymentSplitRulesSection/.test(adminMain), 'mall.paymentSplit must route to MallPaymentSplitRulesSection.');
@@ -92,6 +103,8 @@ assert(/apiPost(?:<[^>]+>)?\('\/api\/admin\/mall\/campaigns'/.test(adminMain), '
 assert(/apiPut<JsonRecord>\(`\/api\/admin\/mall\/campaigns\/\$\{[^}]+\}`/.test(adminMain), 'Campaign edit must call the real admin campaign update API.');
 assert(/apiDelete\(`\/api\/admin\/mall\/campaigns\/\$\{[^}]+\}`/.test(adminMain), 'Campaign delete must call the real admin campaign delete API.');
 assert(/apiGet<JsonRecord\[]>\('\/api\/admin\/mall\/campaigns'/.test(adminMain), 'Campaign list must load from the real admin campaign API.');
+assert(/apiPost<JsonRecord>\('\/api\/admin\/mall\/marketing-agent'/.test(adminMain), 'Marketing agent must call the backend admin agent API.');
+assert(!/sk-cp-[A-Za-z0-9_-]+/.test(adminMain), 'Web admin must never contain a MiniMax API key.');
 assert(/keyword: campaignFilters\.keyword/.test(adminMain), 'Campaign list must support keyword search.');
 assert(/categoryCode: campaignFilters\.categoryCode/.test(adminMain), 'Campaign list must support activity type search.');
 assert(/displayTitle/.test(adminMain), 'Generic marketing campaign form must include a customer-facing display title.');
@@ -157,6 +170,49 @@ assert(/'deliveryRules'/.test(migrations), 'settings_json must expose deliveryRu
 assert(/'paymentSplitRules'/.test(migrations), 'settings_json must expose paymentSplitRules.');
 
 assert(/\/api\/admin\/mall\/coupons/.test(mallBackend), 'Backend must expose admin coupon routes.');
+assert(/\/api\/admin\/mall\/marketing-agent/.test(mallBackend), 'Backend must expose the admin marketing agent route.');
+assert(/MINIMAX_API_KEY/.test(mallBackend), 'Backend marketing agent must read the MiniMax API key from environment variables.');
+assert(/MARKETING_AGENT_API_KEY/.test(mallBackend), 'Backend marketing agent must support a generic server-side model credential.');
+assert(!/sk-cp-[A-Za-z0-9_-]+/.test(mallBackend), 'Backend source must never hardcode a MiniMax API key.');
+assert(/marketing_agent_context/.test(mallBackend), 'Backend marketing agent must build a sanitized marketing context.');
+assert(/admin_marketing_agent/.test(mallBackend), 'Backend must implement the marketing agent handler.');
+assert(/marketing_agent_input_contains_personal_data/.test(mallBackend), 'Backend must reject likely personal data in Agent free text.');
+assert(/scrub_marketing_agent_user_text/.test(mallBackend) && /call_marketing_model\(&mode, &context, &model_plan\)/.test(mallBackend), 'External model payload must remove operator free text.');
+assert(/请勿输入姓名、手机号、邮箱、身份证号或地址/.test(adminMain), 'Agent UI must warn operators not to enter personal data.');
+assert(/enforce_agent_activation_gate/.test(mallBackend), 'Backend must block Agent drafts whose execution engines are not ready.');
+assert(/idempotencyKey/.test(mallBackend), 'Backend draft creation must honor Agent idempotency keys.');
+assert(/merge_protected_agent_rules/.test(mallBackend), 'Backend edits must preserve Agent activation and targeting provenance.');
+assert((mallBackend.match(/ON CONFLICT DO NOTHING/g) || []).length >= 2, 'Agent coupon and campaign creation must use atomic conflict handling.');
+assert(/mall_campaigns_agent_idempotency_uidx/.test(migrations) && /mall_coupons_agent_idempotency_uidx/.test(migrations), 'Database must enforce unique Agent idempotency keys for campaigns and coupons.');
+[
+  'mall.data_profile',
+  'mall.assortment_score',
+  'mall.audience_segment',
+  'mall.coupon_design',
+  'mall.campaign_design',
+  'mall.venue_builder',
+  'mall.experiment_design',
+  'mall.launch_guard',
+].forEach(skill => assert(marketingPlanner.includes(skill), `Marketing planner must register ${skill}.`));
+assert(/activationGate/.test(marketingPlanner), 'Marketing planner must attach an activation gate to unsupported targeted execution.');
+assert(/post_discount_margin_bps < 1_500/.test(marketingPlanner), 'Assortment must enforce at least 15% estimated post-discount margin.');
+assert(/product\.status = 'on_sale'/.test(mallBackend) && /LIMIT 30/.test(mallBackend), 'Assortment candidates must be currently on-sale and use a sufficiently wide pool.');
+assert(/assortmentScoreBps/.test(marketingPlanner) && /销量30%、GMV 20%、折后毛利30%、库存覆盖20%/.test(marketingPlanner), 'Assortment must compute and explain its transparent score.');
+assert(!/eligible_products\.is_empty\(\)[\s\S]{0,180}top_products\.iter/.test(marketingPlanner), 'Unsafe assortment must never fall back to unguarded top products.');
+assert(/coupon_quantity[\s\S]{0,200}else \{\s*0\s*\}/.test(marketingPlanner), 'Zero or insufficient coupon budget must produce zero executable quantity.');
+assert(/let coupon_code = format!/.test(marketingPlanner) && !/"code": "AGENT-TARGETED"/.test(marketingPlanner), 'Each Agent coupon draft must use a run-scoped unique code.');
+assert(/code: stringValue\(draft, 'code', 'AGENT-COUPON'\)/.test(adminMain), 'Web admin must preserve the server-planned coupon code for idempotent retries.');
+assert(/recent_first_buyers/.test(marketingPlanner) && !/new_customers/.test(marketingPlanner), 'Recent first buyers must not be mislabeled as acquisition prospects.');
+assert(/"kind": "venue"[\s\S]{0,180}"audience": "all_customers"/.test(marketingPlanner), 'Global venues must not advertise unsupported audience targeting.');
+assert(/\.\.\.patch, result: null/.test(adminMain), 'Editing Agent inputs must invalidate stale materialization results.');
+assert(/const marketingAgentRequestRef = useRef\(0\)/.test(adminMain), 'Agent responses must be guarded by a request generation token.');
+assert(/marketingAgentRequestRef\.current === requestId/.test(adminMain), 'Agent must reject responses that no longer match the active request.');
+assert(/setMarketingAgent\(initialMarketingAgentState\)/.test(adminMain), 'Logout reset must clear the previous Agent plan.');
+assert(/<textarea disabled=\{busy\}/.test(adminMain) && /<select disabled=\{busy\}/.test(adminMain), 'Agent inputs must remain stable while a plan request is in flight.');
+assert(/busy=\{Boolean\(busy\)\}/.test(adminMain), 'Agent draft actions must stay disabled during any materialization request.');
+assert(!/vehicle|无人车/.test(marketingPlanner), 'Mall marketing planner must not cross into the vehicle domain.');
+assert(/6D \+ G 方法论/.test(marketingMethodology), 'Methodology document must cover model-to-Agent-to-Skills delivery.');
+assert(/建议试点目标或示例计算/.test(marketingMethodology), 'Methodology document must distinguish pilot targets from achieved customer results.');
 assert(/\/api\/admin\/mall\/home-banners/.test(mallBackend), 'Backend must expose admin home banner routes.');
 assert(/\/api\/admin\/mall\/home-sections/.test(mallBackend), 'Backend must expose admin home section routes.');
 assert(/\/api\/mall\/home-banners/.test(mallBackend), 'Backend must expose public mall home banner route.');
